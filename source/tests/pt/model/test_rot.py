@@ -15,13 +15,13 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation import (  # model_dpau,
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
     model_spin,
     model_zbl,
-    model_dos,
 )
 
 dtype = torch.float64
@@ -139,11 +139,13 @@ class TestEnergyModelSeA(unittest.TestCase, RotTest):
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
+
 class TestDOSModelSeA(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dos)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
+
 
 class TestEnergyModelDPA1(unittest.TestCase, RotTest):
     def setUp(self):
