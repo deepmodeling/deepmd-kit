@@ -562,9 +562,7 @@ class DOSFitting(Fitting):
 
             outs = tf.reshape(
                 final_layer,
-                [
-                    tf.shape(inputs)[0], natoms[0], self.numb_dos
-                ],
+                [tf.shape(inputs)[0], natoms[0], self.numb_dos],
             )
         # add bias
         # self.atom_ener_before = outs
