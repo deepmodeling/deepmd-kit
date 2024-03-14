@@ -33,7 +33,7 @@ conda activate /path/to/deepmd-kit
 ```
 
 ## Install with conda
-DeePMD-kit is available with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section), [Miniconda](https://docs.conda.io/en/latest/miniconda.html), or [miniforge](https://github.com/conda-forge/miniforge/) first.
+DeePMD-kit is available with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section), [Miniconda](https://docs.conda.io/en/latest/miniconda.html), or [miniforge](https://conda-forge.org/download/) first.
 You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/conda.html) for how to setup a conda environment.
 
 ### conda-forge channel
