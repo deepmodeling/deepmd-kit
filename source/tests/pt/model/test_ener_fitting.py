@@ -44,12 +44,13 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
 
-        for od, mixed_types, nfp, nap, et in itertools.product(
+        for od, mixed_types, nfp, nap, et, nn in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
             [0, 4],
             [[], [0], [1]],
+            [[4, 4, 4], []],
         ):
             ft0 = InvarFitting(
                 "foo",
@@ -60,6 +61,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 numb_aparam=nap,
                 mixed_types=mixed_types,
                 exclude_types=et,
+                neuron=nn,
             ).to(env.DEVICE)
             ft1 = DPInvarFitting.deserialize(ft0.serialize())
             ft2 = InvarFitting.deserialize(ft0.serialize())
