@@ -25,6 +25,19 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int* numneigh_,
                              int** firstneigh_);
 
+extern DP_Nlist* DP_NewNlist_comm(int inum_,
+                                  int* ilist_,
+                                  int* numneigh_,
+                                  int** firstneigh_,
+                                  int nswap,
+                                  int* sendnum,
+                                  int* recvnum,
+                                  int* firstrecv,
+                                  int** sendlist,
+                                  int* sendproc,
+                                  int* recvproc,
+                                  long int* world);
+
 /**
  * @brief Delete a neighbor list.
  *

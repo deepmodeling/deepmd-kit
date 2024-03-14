@@ -24,6 +24,24 @@ DP_Nlist* DP_NewNlist(int inum_,
             deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
+DP_Nlist* DP_NewNlist_comm(int inum_,
+                           int* ilist_,
+                           int* numneigh_,
+                           int** firstneigh_,
+                           int nswap,
+                           int* sendnum,
+                           int* recvnum,
+                           int* firstrecv,
+                           int** sendlist,
+                           int* sendproc,
+                           int* recvproc,
+                           long int* world) {
+  deepmd::CommData commdata(nswap, sendnum, recvnum, firstrecv, sendlist,
+                            sendproc, recvproc, world);
+  deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_, &commdata);
+  DP_Nlist* new_nl = new DP_Nlist(nl);
+  return new_nl;
+}
 
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
@@ -268,7 +286,6 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   }
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
-
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
                                     nghost, nlist->nl, ago, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer

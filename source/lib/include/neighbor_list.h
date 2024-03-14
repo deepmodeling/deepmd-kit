@@ -11,6 +11,41 @@
 #include "utilities.h"
 
 namespace deepmd {
+struct CommData {
+  int nswap;
+  int* sendnum;
+  int* recvnum;
+  int* firstrecv;
+  int** sendlist;
+  int* sendproc;
+  int* recvproc;
+  long int* world;
+
+  CommData()
+      : nswap(0),
+        sendnum(nullptr),
+        recvnum(nullptr),
+        firstrecv(nullptr),
+        sendlist(nullptr),
+        sendproc(nullptr),
+        recvproc(nullptr),
+        world(nullptr){};
+  CommData(int nswap,
+           int* sendnum,
+           int* recvnum,
+           int* firstrecv,
+           int** sendlist,
+           int* sendproc,
+           int* recvproc,
+           long int* world)
+      : nswap(nswap),
+        sendnum(sendnum),
+        recvnum(recvnum),
+        firstrecv(firstrecv),
+        sendlist(sendlist),
+        recvproc(recvproc),
+        world(world) {}
+};
 
 /**
  * @brief             Construct InputNlist with the input LAMMPS nbor list info.
@@ -26,12 +61,29 @@ struct InputNlist {
   int* numneigh;
   /// Array stores the core region atom's neighbor index
   int** firstneigh;
-  InputNlist() : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL){};
+  CommData* commdata;
+  InputNlist()
+      : inum(0),
+        ilist(NULL),
+        numneigh(NULL),
+        firstneigh(NULL),
+        commdata(NULL){};
   InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
-        firstneigh(firstneigh_){};
+        firstneigh(firstneigh_),
+        commdata(NULL){};
+  InputNlist(int inum_,
+             int* ilist_,
+             int* numneigh_,
+             int** firstneigh_,
+             CommData* commdata_)
+      : inum(inum_),
+        ilist(ilist_),
+        numneigh(numneigh_),
+        firstneigh(firstneigh_),
+        commdata(commdata_){};
   ~InputNlist(){};
 };
 

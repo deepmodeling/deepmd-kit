@@ -471,28 +471,16 @@ void PairDeepMD::compute(int eflag, int vflag) {
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
 
-  int comm_size;
-  MPI_Comm_size(MPI_COMM_WORLD, &comm_size); 
-  int *tag_array = atom->tag;
-  std::vector<int> mapping(nall);
-  // make mapping array
-  if(comm_size == 1){
-    for (int i = 0; i < nall; ++i) {
-      mapping[i] = atom->map(tag_array[i]);
-    }
-  }
   // for dpa2 communication
-  int nswap = cb->nswap;
-  int* sendnum = cb->sendnum; // dim: nswap
-  int* recvnum = cb->recvnum; // dim: nswap
-  int* firstrecv = cb->firstrecv; // dim: nswap
-  int** sendlist = cb->sendlist; // dim: nswap x sendnum[nswap]
-  int* sendproc = cb->sendproc; // dim: nswap
-  int* recvproc = cb->recvproc; // dim: nswap
-  int** pbc = cb->pbc; // dim: nswap x 3
-  int* maxneed = cb->maxneed; // dim: 3
-  auto* recvneed = cb->recvneed; // int array, dim: 3x2
-  auto* sendneed = cb->sendneed; // int array, dim: 3x2
+  deepmd_compat::CommData* commdata = new deepmd_compat::CommData(); 
+  commdata->nswap = cb->nswap;
+  commdata->sendnum = cb->sendnum; // dim: nswap
+  commdata->recvnum = cb->recvnum; // dim: nswap
+  commdata->firstrecv = cb->firstrecv; // dim: nswap
+  commdata->sendlist = cb->sendlist; // dim: nswap x sendnum[nswap]
+  commdata->sendproc = cb->sendproc; // dim: nswap
+  commdata->recvproc = cb->recvproc; // dim: nswap
+  commdata->world = reinterpret_cast<long*>(world);
   double* prd = domain->prd;
   vector<double> dspin(nall * 3, 0.);
   vector<double> dfm(nall * 3, 0.);
@@ -574,7 +562,10 @@ void PairDeepMD::compute(int eflag, int vflag) {
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                       list->firstneigh);
+                                       list->firstneigh,commdata);
+    // else
+    // deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
+    //                                    list->firstneigh);
     deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
