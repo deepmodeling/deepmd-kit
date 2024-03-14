@@ -21,6 +21,10 @@ jobs:
         mpi: mpich
     - uses: lukka/get-cmake@latest
     - run: python -m pip install tensorflow
+    # https://github.com/actions/runner-images/issues/9491
+    - name: Fix kernel mmap rnd bits
+      run: sudo sysctl vm.mmap_rnd_bits=28
+      if: ${{ matrix.check_memleak }}
     - run: source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
