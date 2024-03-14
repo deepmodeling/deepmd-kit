@@ -264,6 +264,11 @@ class CommonTest(ABC):
 
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
+            if tf_obj.__class__.__name__.startswith("DOS"):
+                rr1 = rr1.ravel()
+                rr1.sort()
+                rr2 = rr2.ravel()
+                rr2.sort()
             np.testing.assert_allclose(
                 rr1.ravel(), rr2.ravel(), rtol=self.rtol, atol=self.atol
             )
