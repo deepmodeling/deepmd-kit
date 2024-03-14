@@ -49,11 +49,13 @@ Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#inst
 
 ### Official channel (deprecated)
 
+::::{danger}
 :::{deprecated} 3.0.0
 The official channel has been deprecated since 3.0.0, due to the challenging work of building dependencies for [multiple backends](../backend.md).
 Old packages will still be available at https://conda.deepmodeling.com.
 Maintainers will build packages in the conda-forge organization together with other conda-forge members.
 :::
+::::
 
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
 ```bash
