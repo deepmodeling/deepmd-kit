@@ -44,7 +44,7 @@ DeePMD-kit is available on the [conda-forge](https://conda-forge.org/) channel:
 conda create -n deepmd deepmd-kit lammps horovod -c conda-forge
 ```
 
-The supported platform includes Linux x86-64, macOS x86-64, and macOS arm64.
+The supported platforms include Linux x86-64, macOS x86-64, and macOS arm64.
 Read [conda-forge FAQ](https://conda-forge.org/docs/user/tipsandtricks.html#installing-cuda-enabled-packages-like-tensorflow-and-pytorch) to learn how to install CUDA-enabled packages.
 
 ### Official channel (deprecated)
@@ -79,7 +79,7 @@ conda activate deepmd
 ```
 
 ## Install with docker
-A docker for installing the DeePMD-kit is available [here](https://github.com/orgs/deepmodeling/packages/container/package/deepmd-kit).
+A docker for installing the DeePMD-kit is available [here](https://github.com/deepmodeling/deepmd-kit/pkgs/container/deepmd-kit).
 
 To pull the CPU version:
 ```bash
