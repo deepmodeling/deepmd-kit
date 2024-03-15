@@ -55,7 +55,7 @@ class DeepDOS(DeepEval):
                 ]
             )
         )
-    
+
     @property
     def numb_dos(self) -> int:
         """Get the number of DOS."""
