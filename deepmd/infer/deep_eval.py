@@ -242,6 +242,10 @@ class DeepEvalBackend(ABC):
         atom_types : np.ndarray
             The atom types of all frames, in shape nframes * natoms.
         """
+        if np.count_nonzero(atom_types[0] == -1) > 0:
+            # assume mixed_types if there are virtual types, even when
+            # the atom types of all frames are the same
+            return False
         return np.all(np.equal(atom_types, atom_types[0]))
 
     @property
