@@ -132,9 +132,9 @@ class BaseAtomicModel(BaseAtomicModel_):
         ret_dict
             dict of output atomic properties.
             should implement the definition of `fitting_output_def`.
-            ret_dit["mask"] of shape nf x nloc will be provided.
-            ret_dit["mask"][ff,ii] == 1 indicating the ii-th atom of the ff-th frame is real.
-            ret_dit["mask"][ff,ii] == 0 indicating the ii-th atom of the ff-th frame is virtual.
+            ret_dict["mask"] of shape nf x nloc will be provided.
+            ret_dict["mask"][ff,ii] == 1 indicating the ii-th atom of the ff-th frame is real.
+            ret_dict["mask"][ff,ii] == 0 indicating the ii-th atom of the ff-th frame is virtual.
 
         """
         _, nloc, _ = nlist.shape
