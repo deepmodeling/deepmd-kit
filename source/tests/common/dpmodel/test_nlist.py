@@ -144,7 +144,7 @@ class TestNeighList(unittest.TestCase):
         self.nsel = [10, 10]
         self.ref_nlist = np.array(
             [
-                [-1] * sum(self.sel),
+                [-1] * sum(self.nsel),
                 [1, 1, 1, 1, 1, 1, -1, -1, -1, -1, 2, 2, 2, 2, -1, -1, -1, -1, -1, -1],
                 [1, 1, 1, 1, -1, -1, -1, -1, -1, -1, 2, 2, 2, 2, 2, 2, -1, -1, -1, -1],
             ]

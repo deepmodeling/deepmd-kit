@@ -108,7 +108,33 @@ class BaseAtomicModel(BaseAtomicModel_):
     ) -> Dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
-        This method accept
+        This method accept extended coordinates, extended atom typs, neighbor list,
+        and predict the atomic contribution of the fit property.
+
+        Parameters
+        ----------
+        extended_coord
+            extended coodinates, shape: nf x (nall x 3)
+        extended_atype
+            extended atom typs, shape: nf x nall
+            for a type < 0 indicating the atomic is virtual.
+        nlist
+            neighbor list, shape: nf x nloc x nsel
+        mapping
+            extended to local index mapping, shape: nf x nall
+        fparam
+            frame parameters, shape: nf x dim_fparam
+        aparam
+            atomic parameter, shape: nf x nloc x dim_aparam
+
+        Returns
+        -------
+        ret_dict
+            dict of output atomic properties.
+            should implement the definition of `fitting_output_def`.
+            ret_dit["mask"] of shape nf x nloc will be provided.
+            ret_dit["mask"][ff,ii] == 1 indicating the ii-th atom of the ff-th frame is real.
+            ret_dit["mask"][ff,ii] == 0 indicating the ii-th atom of the ff-th frame is virtual.
 
         """
         _, nloc, _ = nlist.shape
