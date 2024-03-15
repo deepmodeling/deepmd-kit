@@ -5,11 +5,9 @@ from typing import (
     Callable,
     List,
     Optional,
-    Tuple,
     Union,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel import (
@@ -17,7 +15,6 @@ from deepmd.dpmodel import (
     OutputVariableDef,
     fitting_check_output,
 )
-
 from deepmd.pt.model.task.fitting import (
     GeneralFitting,
 )

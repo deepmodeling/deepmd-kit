@@ -22,14 +22,14 @@ from deepmd.pt.model.task.fitting import (
     Fitting,
     GeneralFitting,
 )
+from deepmd.pt.model.task.invar_fitting import (
+    InvarFitting,
+)
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
-)
-from deepmd.pt.model.task.invar_fitting import(
-    InvarFitting
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -39,7 +39,6 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
 
 log = logging.getLogger(__name__)
-
 
 
 @Fitting.register("ener")
