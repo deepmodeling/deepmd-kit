@@ -59,7 +59,8 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
 
         jdata["model"]["fitting_net"].pop("type", None)
-        jdata["model"]["fitting_net"]["descrpt"] = descrpt
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
         fitting = DOSFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
 
         # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
@@ -189,21 +190,20 @@ class TestModel(tf.test.TestCase):
 
         ref_atom_dos_1 = [
             -0.32495014,
-            -0.87979356,
-            -0.26630668,
             -0.32495882,
-            -0.87979767,
-            -0.2663072,
+            -0.32496842,
+            -0.32495892,
+            -0.32495469,
+            -0.32496075,
         ]
         ref_atom_dos_2 = [
-            -0.26630917,
             0.21549911,
-            -0.87979638,
-            -0.26630564,
             0.21550413,
-            -0.87979585,
+            0.21551077,
+            0.21550547,
+            0.21550303,
+            0.21550645,
         ]
         places = 4
-
         np.testing.assert_almost_equal(pred_atom_dos[:, 0], ref_atom_dos_1, places)
         np.testing.assert_almost_equal(pred_atom_dos[:, 50], ref_atom_dos_2, places)

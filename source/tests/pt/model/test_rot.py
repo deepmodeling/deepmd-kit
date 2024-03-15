@@ -15,6 +15,7 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation import (  # model_dpau,
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
@@ -135,6 +136,13 @@ class RotTest:
 class TestEnergyModelSeA(unittest.TestCase, RotTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
+        self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestDOSModelSeA(unittest.TestCase, RotTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dos)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
