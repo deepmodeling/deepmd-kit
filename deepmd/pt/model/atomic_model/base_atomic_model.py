@@ -58,24 +58,44 @@ class BaseAtomicModel(BaseAtomicModel_):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
+    # to make jit happy...
+    def make_atom_mask(
+        self,
+        atype: torch.Tensor,
+    ) -> torch.Tensor:
+        """The atoms with type < 0 are treated as virutal atoms,
+        which serves as place-holders for multi-frame calculations
+        with different number of atoms in different frames.
+
+        Parameters
+        ----------
+        atype
+            Atom types. >= 0 for real atoms <0 for virtual atoms.
+
+        Returns
+        -------
+        mask
+            True for real atoms and False for virutal atoms.
+
+        """
+        # supposed to be supported by all backends
+        return atype >= 0
+
     def atomic_output_def(self) -> FittingOutputDef:
         old_def = self.fitting_output_def()
-        if self.atom_excl is None:
-            return old_def
-        else:
-            old_list = list(old_def.get_data().values())
-            return FittingOutputDef(
-                old_list  # noqa:RUF005
-                + [
-                    OutputVariableDef(
-                        name="mask",
-                        shape=[1],
-                        reduciable=False,
-                        r_differentiable=False,
-                        c_differentiable=False,
-                    )
-                ]
-            )
+        old_list = list(old_def.get_data().values())
+        return FittingOutputDef(
+            old_list  # noqa:RUF005
+            + [
+                OutputVariableDef(
+                    name="mask",
+                    shape=[1],
+                    reduciable=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                )
+            ]
+        )
 
     def forward_common_atomic(
         self,
@@ -86,7 +106,13 @@ class BaseAtomicModel(BaseAtomicModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
+        """Common interface for atomic inference.
+
+        This method accept
+
+        """
         _, nloc, _ = nlist.shape
+        nall = extended_atype.shape[1]
         atype = extended_atype[:, :nloc]
 
         if self.pair_excl is not None:
@@ -94,24 +120,28 @@ class BaseAtomicModel(BaseAtomicModel_):
             # exclude neighbors in the nlist
             nlist = torch.where(pair_mask == 1, nlist, -1)
 
+        ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
             extended_coord,
-            extended_atype,
+            torch.where(ext_atom_mask, extended_atype, 0),
             nlist,
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
         )
 
+        # nf x nloc
+        atom_mask = ext_atom_mask[:, :nloc].to(torch.int32)
         if self.atom_excl is not None:
-            atom_mask = self.atom_excl(atype)
-            for kk in ret_dict.keys():
-                out_shape = ret_dict[kk].shape
-                ret_dict[kk] = (
-                    ret_dict[kk].reshape([out_shape[0], out_shape[1], -1])
-                    * atom_mask[:, :, None]
-                ).reshape(out_shape)
-            ret_dict["mask"] = atom_mask
+            atom_mask *= self.atom_excl(atype)
+
+        for kk in ret_dict.keys():
+            out_shape = ret_dict[kk].shape
+            ret_dict[kk] = (
+                ret_dict[kk].reshape([out_shape[0], out_shape[1], -1])
+                * atom_mask[:, :, None]
+            ).view(out_shape)
+        ret_dict["mask"] = atom_mask
 
         return ret_dict
 

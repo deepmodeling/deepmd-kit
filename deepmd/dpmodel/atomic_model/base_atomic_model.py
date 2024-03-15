@@ -56,22 +56,19 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def atomic_output_def(self) -> FittingOutputDef:
         old_def = self.fitting_output_def()
-        if self.atom_excl is None:
-            return old_def
-        else:
-            old_list = list(old_def.get_data().values())
-            return FittingOutputDef(
-                old_list  # noqa:RUF005
-                + [
-                    OutputVariableDef(
-                        name="mask",
-                        shape=[1],
-                        reduciable=False,
-                        r_differentiable=False,
-                        c_differentiable=False,
-                    )
-                ]
-            )
+        old_list = list(old_def.get_data().values())
+        return FittingOutputDef(
+            old_list  # noqa:RUF005
+            + [
+                OutputVariableDef(
+                    name="mask",
+                    shape=[1],
+                    reduciable=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                )
+            ]
+        )
 
     def forward_common_atomic(
         self,
@@ -89,24 +86,28 @@ class BaseAtomicModel(BaseAtomicModel_):
             # exclude neighbors in the nlist
             nlist = np.where(pair_mask == 1, nlist, -1)
 
+        ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
             extended_coord,
-            extended_atype,
+            np.where(ext_atom_mask, extended_atype, 0),
             nlist,
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
         )
 
+        # nf x nloc
+        atom_mask = ext_atom_mask[:, :nloc].astype(np.int32)
         if self.atom_excl is not None:
-            atom_mask = self.atom_excl.build_type_exclude_mask(atype)
-            for kk in ret_dict.keys():
-                out_shape = ret_dict[kk].shape
-                ret_dict[kk] = (
-                    ret_dict[kk].reshape([out_shape[0], out_shape[1], -1])
-                    * atom_mask[:, :, None]
-                ).reshape(out_shape)
-            ret_dict["mask"] = atom_mask
+            atom_mask *= self.atom_excl.build_type_exclude_mask(atype)
+
+        for kk in ret_dict.keys():
+            out_shape = ret_dict[kk].shape
+            ret_dict[kk] = (
+                ret_dict[kk].reshape([out_shape[0], out_shape[1], -1])
+                * atom_mask[:, :, None]
+            ).reshape(out_shape)
+        ret_dict["mask"] = atom_mask
 
         return ret_dict
 
