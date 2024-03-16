@@ -233,4 +233,4 @@ class TestDPAtomicModelVirtualConsistency(unittest.TestCase):
                 [1, 1, 0, 1],
             ]
         )
-        np.testing.assert_equal(ret1["mask"], expected_mask)
+        np.testing.assert_equal(to_numpy_array(ret1["mask"]), expected_mask)
