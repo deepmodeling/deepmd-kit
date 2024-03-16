@@ -15,7 +15,7 @@ from .region import (
 
 ## translated from torch implemantation by chatgpt
 def build_neighbor_list(
-    coord1: np.ndarray,
+    coord: np.ndarray,
     atype: np.ndarray,
     nloc: int,
     rcut: float,
@@ -26,10 +26,11 @@ def build_neighbor_list(
 
     Parameters
     ----------
-    coord1 : np.ndarray
+    coord : np.ndarray
         exptended coordinates of shape [batch_size, nall x 3]
     atype : np.ndarray
         extended atomic types of shape [batch_size, nall]
+        type < 0 the atom is treat as virtual atoms.
     nloc : int
         number of local atoms.
     rcut : float
@@ -54,11 +55,20 @@ def build_neighbor_list(
         if distinguish_types==True and we have two types
         |---- nsel[0] -----| |---- nsel[1] -----|
         xx xx xx xx -1 -1 -1 xx xx xx -1 -1 -1 -1
+        For virtual atoms all neighboring positions are filled with -1.
 
     """
-    batch_size = coord1.shape[0]
-    coord1 = coord1.reshape(batch_size, -1)
-    nall = coord1.shape[1] // 3
+    batch_size = coord.shape[0]
+    coord = coord.reshape(batch_size, -1)
+    nall = coord.shape[1] // 3
+    # fill virtual atoms with large coords so they are not neighbors of any
+    # real atom.
+    xmax = np.max(coord) + 2.0 * rcut
+    # nf x nall
+    is_vir = atype < 0
+    coord1 = np.where(is_vir[:, :, None], xmax, coord.reshape(-1, nall, 3)).reshape(
+        -1, nall * 3
+    )
     if isinstance(sel, int):
         sel = [sel]
     nsel = sum(sel)
@@ -88,7 +98,7 @@ def build_neighbor_list(
             axis=-1,
         )
     assert list(nlist.shape) == [batch_size, nloc, nsel]
-    nlist = np.where((rr > rcut), -1, nlist)
+    nlist = np.where(np.logical_or((rr > rcut), is_vir[:, :nloc, None]), -1, nlist)
 
     if distinguish_types:
         return nlist_distinguish_types(nlist, atype, sel)

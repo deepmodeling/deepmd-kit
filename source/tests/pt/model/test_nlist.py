@@ -22,16 +22,16 @@ dtype = torch.float64
 class TestNeighList(unittest.TestCase):
     def setUp(self):
         self.nf = 3
-        self.nloc = 2
+        self.nloc = 3
         self.ns = 5 * 5 * 3
         self.nall = self.ns * self.nloc
         self.cell = torch.tensor(
             [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype, device=env.DEVICE
         )
         self.icoord = torch.tensor(
-            [[0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype, device=env.DEVICE
+            [[0, 0, 0], [0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype, device=env.DEVICE
         )
-        self.atype = torch.tensor([0, 1], dtype=torch.int, device=env.DEVICE)
+        self.atype = torch.tensor([-1, 0, 1], dtype=torch.int, device=env.DEVICE)
         [self.cell, self.icoord, self.atype] = [
             ii.unsqueeze(0) for ii in [self.cell, self.icoord, self.atype]
         ]
@@ -51,8 +51,9 @@ class TestNeighList(unittest.TestCase):
         #   mapping[0], type_split=True, )
         self.ref_nlist = torch.tensor(
             [
-                [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1],
-                [0, 0, 0, 0, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1],
+                [-1] * sum(self.nsel),
+                [1, 1, 1, 1, 1, 1, -1, -1, -1, -1, 2, 2, 2, 2, -1, -1, -1, -1, -1, -1],
+                [1, 1, 1, 1, -1, -1, -1, -1, -1, -1, 2, 2, 2, 2, 2, 2, -1, -1, -1, -1],
             ],
             device=env.DEVICE,
         )
@@ -181,7 +182,9 @@ class TestNeighList(unittest.TestCase):
         )
         torch.testing.assert_close(
             cc,
-            torch.tensor([30, 30, 30, 30, 30], dtype=torch.long, device=env.DEVICE),
+            torch.tensor(
+                [self.ns * self.nloc // 5] * 5, dtype=torch.long, device=env.DEVICE
+            ),
             rtol=self.prec,
             atol=self.prec,
         )
@@ -194,7 +197,9 @@ class TestNeighList(unittest.TestCase):
         )
         torch.testing.assert_close(
             cc,
-            torch.tensor([30, 30, 30, 30, 30], dtype=torch.long, device=env.DEVICE),
+            torch.tensor(
+                [self.ns * self.nloc // 5] * 5, dtype=torch.long, device=env.DEVICE
+            ),
             rtol=self.prec,
             atol=self.prec,
         )
@@ -207,7 +212,9 @@ class TestNeighList(unittest.TestCase):
         )
         torch.testing.assert_close(
             cc,
-            torch.tensor([50, 50, 50], dtype=torch.long, device=env.DEVICE),
+            torch.tensor(
+                [self.ns * self.nloc // 3] * 3, dtype=torch.long, device=env.DEVICE
+            ),
             rtol=self.prec,
             atol=self.prec,
         )
