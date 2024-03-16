@@ -59,7 +59,7 @@ def build_neighbor_list(
 
     """
     batch_size = coord.shape[0]
-    coord1 = coord.reshape(batch_size, -1)
+    coord = coord.reshape(batch_size, -1)
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.

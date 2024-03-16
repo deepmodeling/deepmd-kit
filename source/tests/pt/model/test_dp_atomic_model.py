@@ -198,7 +198,6 @@ class TestDPAtomicModelVirtualConsistency(unittest.TestCase):
         self.case1.setUp()
 
     def test_virtual_consistency(self):
-        type_map = ["foo", "bar"]
         nf, _, _ = self.case0.nlist.shape
         ds = DescrptSeA(
             self.case0.rcut,

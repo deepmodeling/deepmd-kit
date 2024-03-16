@@ -138,7 +138,6 @@ class BaseAtomicModel(BaseAtomicModel_):
 
         """
         _, nloc, _ = nlist.shape
-        nall = extended_atype.shape[1]
         atype = extended_atype[:, :nloc]
 
         if self.pair_excl is not None:
