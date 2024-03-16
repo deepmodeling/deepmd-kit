@@ -24,6 +24,9 @@ from .polarizability import (
 from .type_predict import (
     TypePredictNet,
 )
+from .property import (
+    PropertyFittingNet,
+)
 
 __all__ = [
     "FittingNetAttenLcc",
@@ -35,4 +38,5 @@ __all__ = [
     "BaseFitting",
     "TypePredictNet",
     "PolarFittingNet",
+    "PropertyFittingNet",
 ]
