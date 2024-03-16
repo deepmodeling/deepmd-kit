@@ -489,6 +489,11 @@ class DeepEval(DeepEvalBackend):
         natoms_vec[1] = natoms
         for ii in range(self.ntypes):
             natoms_vec[ii + 2] = np.count_nonzero(atom_types[0] == ii)
+        if np.count_nonzero(atom_types[0] == -1) > 0:
+            # contains virtual atoms
+            # energy fitting sums over natoms_vec[2:] instead of reading from natoms_vec[0]
+            # causing errors for shape mismatch
+            natoms_vec[2] += np.count_nonzero(atom_types[0] == -1)
         return natoms_vec
 
     def eval_typeebd(self) -> np.ndarray:
