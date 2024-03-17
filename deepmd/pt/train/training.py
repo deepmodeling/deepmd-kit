@@ -118,9 +118,6 @@ class Trainer:
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
-        self.finetune_from_multi_task = model_params.pop(
-            "finetune_from_multi_task", False
-        )  # should use pop for next finetune
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )

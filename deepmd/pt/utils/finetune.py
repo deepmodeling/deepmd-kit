@@ -42,7 +42,6 @@ def change_finetune_model_params_single(
         )
         single_config["new_type_map"] = new_type_map
     else:
-        single_config["finetune_from_multi_task"] = from_multitask
         model_dict_params = _model_param_pretrained["model_dict"]
         new_fitting = False
         if model_branch_from == "":
