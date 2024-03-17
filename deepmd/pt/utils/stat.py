@@ -10,13 +10,16 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.infer.deep_eval import (
+    DeepEval,
+)
 from deepmd.pt.utils import (
     AtomExcludeMask,
-    env,
 )
 from deepmd.pt.utils.utils import (
     dict_to_device,
     to_numpy_array,
+    to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
@@ -76,6 +79,7 @@ def compute_output_stats(
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
+    model: Optional[DeepEval] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -97,7 +101,10 @@ def compute_output_stats(
         The condition number for the regression of atomic energy.
     atom_ener : List[float], optional
         Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
-
+    model : DeepEval, optional
+        If not None, the model will be utilized to generate the original energy prediction,
+        which will be subtracted from the energy label of the data.
+        The difference will then be used to calculate the delta complement energy bias for each type.
     """
     if stat_file_path is not None:
         stat_file_path = stat_file_path / "bias_atom_e"
@@ -129,13 +136,67 @@ def compute_output_stats(
             )
         else:
             assigned_atom_ener = None
-        bias_atom_e, _ = compute_stats_from_redu(
-            merged_energy,
-            merged_natoms,
-            assigned_bias=assigned_atom_ener,
-            rcond=rcond,
-        )
+        if model is None:
+            # only use statistics result
+            bias_atom_e, _ = compute_stats_from_redu(
+                merged_energy,
+                merged_natoms,
+                assigned_bias=assigned_atom_ener,
+                rcond=rcond,
+            )
+        else:
+            # subtract the model bias and output the delta bias
+            energy_predict = []
+            for system in sampled:
+                nframes = system["coord"].shape[0]
+                coord = to_numpy_array(system["coord"]).reshape(nframes, -1)
+                box = (
+                    to_numpy_array(system["box"]).reshape(nframes, -1)
+                    if system["box"] is not None
+                    else None
+                )
+                if data_mixed_type:
+                    atype = to_numpy_array(system["atype"]).reshape(nframes, -1)
+                else:
+                    atype = to_numpy_array(system["atype"]).reshape(nframes, -1)[0]
+                fparam = (
+                    to_numpy_array(system["fparam"])
+                    if "fparam" in system is not None
+                    else None
+                )
+                aparam = (
+                    to_numpy_array(system["aparam"])
+                    if "aparam" in system is not None
+                    else None
+                )
+                ret = model.eval(
+                    coord,
+                    box,
+                    atype,
+                    mixed_type=data_mixed_type,
+                    fparam=fparam,
+                    aparam=aparam,
+                )
+                energy_predict.append(ret[0].reshape([nframes, 1]))
+            energy_predict = np.concatenate(energy_predict)
+            bias_diff = merged_energy - energy_predict
+            bias_atom_e, _ = compute_stats_from_redu(
+                bias_diff,
+                merged_natoms,
+                assigned_bias=assigned_atom_ener,
+                rcond=rcond,
+            )
+            unbias_e = energy_predict + merged_natoms @ bias_atom_e
+            atom_numbs = merged_natoms.sum(-1)
+            rmse_ae = np.sqrt(
+                np.mean(
+                    np.square((unbias_e.ravel() - merged_energy.ravel()) / atom_numbs)
+                )
+            )
+            log.info(
+                f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
+            )
         if stat_file_path is not None:
             stat_file_path.save_numpy(bias_atom_e)
     assert all(x is not None for x in [bias_atom_e])
-    return torch.tensor(bias_atom_e, device=env.DEVICE)
+    return to_torch_tensor(bias_atom_e)

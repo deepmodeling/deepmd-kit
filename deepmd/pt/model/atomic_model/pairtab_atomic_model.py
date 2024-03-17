@@ -234,10 +234,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])
         )
 
-    def change_energy_bias(self) -> None:
-        # need to implement
-        pass
-
     def forward_atomic(
         self,
         extended_coord: torch.Tensor,

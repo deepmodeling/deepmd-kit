@@ -390,10 +390,6 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self.models[0].compute_or_load_stat(sampled_func, stat_file_path)
         self.models[1].compute_or_load_stat(sampled_func, stat_file_path)
 
-    def change_energy_bias(self):
-        # need to implement
-        pass
-
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(
