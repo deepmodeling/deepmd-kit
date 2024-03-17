@@ -170,7 +170,6 @@ def change_finetune_model_params(finetune_model, model_config, model_branch=""):
                 # not do anything if not defined "finetune_head" in heads that exist in the pretrained model
                 # this will just do resuming
                 model_branch_from = model_key
-                pass
             else:
                 # if not defined "finetune_head" in new heads, the fitting net will bre randomly initialized
                 model_branch_from = ""
