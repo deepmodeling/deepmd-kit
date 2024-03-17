@@ -575,6 +575,7 @@ class Trainer:
                     else:
                         # need to updated
                         raise NotImplementedError
+                        pass
 
                 # finetune
                 if not self.multi_task:
