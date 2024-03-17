@@ -574,7 +574,6 @@ class Trainer:
                         )
                     else:
                         # need to updated
-                        raise NotImplementedError
                         pass
 
                 # finetune
