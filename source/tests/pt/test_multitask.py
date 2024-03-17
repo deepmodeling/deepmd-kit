@@ -117,6 +117,7 @@ class MultiTaskTrainTest:
             deepcopy(self.origin_config),
             finetune_model=self.config["training"].get("save_ckpt", "model.ckpt")
             + ".pt",
+            shared_links=shared_links_finetune,
         )
 
         # check parameters
