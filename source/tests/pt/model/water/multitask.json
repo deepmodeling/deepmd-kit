@@ -38,6 +38,7 @@
           ],
           "resnet_dt": true,
           "seed": 1,
+          "data_stat_nbatch": 1,
           "_comment": " that's all"
         }
       },
@@ -52,6 +53,7 @@
           ],
           "resnet_dt": true,
           "seed": 1,
+          "data_stat_nbatch": 1,
           "_comment": " that's all"
         }
       }

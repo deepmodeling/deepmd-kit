@@ -32,6 +32,7 @@ with open(multitask_template_json) as f:
 
 class MultiTaskTrainTest:
     def test_multitask_train(self):
+        # test multitask training
         trainer = get_trainer(deepcopy(self.config), shared_links=self.shared_links)
         trainer.run()
         # check model keys
@@ -51,6 +52,99 @@ class MultiTaskTrainTest:
                     multi_state_dict[state_key],
                     multi_state_dict[state_key.replace("model_1", "model_2")],
                 )
+
+        # test multitask fine-tuning
+        # add model_3
+        self.origin_config["model"]["model_dict"]["model_3"] = deepcopy(
+            self.origin_config["model"]["model_dict"]["model_2"]
+        )
+        self.origin_config["loss_dict"]["model_3"] = deepcopy(
+            self.origin_config["loss_dict"]["model_2"]
+        )
+        self.origin_config["training"]["model_prob"]["model_3"] = deepcopy(
+            self.origin_config["training"]["model_prob"]["model_2"]
+        )
+        self.origin_config["training"]["data_dict"]["model_3"] = deepcopy(
+            self.origin_config["training"]["data_dict"]["model_2"]
+        )
+        self.origin_config["training"]["data_dict"]["model_3"]["stat_file"] = (
+            self.origin_config[
+                "training"
+            ]["data_dict"]["model_3"]["stat_file"].replace("model_2", "model_3")
+        )
+
+        # add model_4
+        self.origin_config["model"]["model_dict"]["model_4"] = deepcopy(
+            self.origin_config["model"]["model_dict"]["model_2"]
+        )
+        self.origin_config["loss_dict"]["model_4"] = deepcopy(
+            self.origin_config["loss_dict"]["model_2"]
+        )
+        self.origin_config["training"]["model_prob"]["model_4"] = deepcopy(
+            self.origin_config["training"]["model_prob"]["model_2"]
+        )
+        self.origin_config["training"]["data_dict"]["model_4"] = deepcopy(
+            self.origin_config["training"]["data_dict"]["model_2"]
+        )
+        self.origin_config["training"]["data_dict"]["model_4"]["stat_file"] = (
+            self.origin_config[
+                "training"
+            ]["data_dict"]["model_4"]["stat_file"].replace("model_2", "model_4")
+        )
+
+        # set finetune rules
+        # model_1 resuming from model_1
+        # pass
+
+        # model_2 fine-tuning from model_2
+        self.origin_config["model"]["model_dict"]["model_2"]["finetune_head"] = (
+            "model_2"
+        )
+
+        # new model_3 fine-tuning from model_2
+        self.origin_config["model"]["model_dict"]["model_3"]["finetune_head"] = (
+            "model_2"
+        )
+
+        # new model_4 fine-tuning with randomly initialized fitting net
+        # pass
+
+        self.origin_config["model"], shared_links_finetune = preprocess_shared_params(
+            self.origin_config["model"]
+        )
+
+        trainer_finetune = get_trainer(
+            deepcopy(self.origin_config),
+            finetune_model=self.config["training"].get("save_ckpt", "model.ckpt")
+            + ".pt",
+        )
+
+        # check parameters
+        multi_state_dict_finetuned = trainer_finetune.wrapper.model.state_dict()
+        for state_key in multi_state_dict_finetuned:
+            if "model_1" in state_key:
+                torch.testing.assert_close(
+                    multi_state_dict[state_key],
+                    multi_state_dict_finetuned[state_key],
+                )
+            elif "model_2" in state_key and "bias_atom_e" not in state_key:
+                torch.testing.assert_close(
+                    multi_state_dict[state_key],
+                    multi_state_dict_finetuned[state_key],
+                )
+            elif "model_3" in state_key and "bias_atom_e" not in state_key:
+                torch.testing.assert_close(
+                    multi_state_dict[state_key.replace("model_3", "model_2")],
+                    multi_state_dict_finetuned[state_key],
+                )
+            elif "model_4" in state_key and "fitting_net" not in state_key:
+                torch.testing.assert_close(
+                    multi_state_dict[state_key.replace("model_4", "model_2")],
+                    multi_state_dict_finetuned[state_key],
+                )
+
+        # check running
+        trainer_finetune.run()
         self.tearDown()
 
     def tearDown(self):
@@ -93,6 +187,7 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.origin_config = deepcopy(self.config)
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
@@ -131,6 +226,7 @@ class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
         )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.origin_config = deepcopy(self.config)
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
@@ -169,6 +265,7 @@ class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
         )
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.origin_config = deepcopy(self.config)
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
         )
