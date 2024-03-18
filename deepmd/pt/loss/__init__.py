@@ -14,6 +14,9 @@ from .loss import (
 from .tensor import (
     TensorLoss,
 )
+from .dos import (
+    DOSLoss,
+)
 
 __all__ = [
     "DenoiseLoss",
@@ -21,4 +24,5 @@ __all__ = [
     "EnergySpinLoss",
     "TensorLoss",
     "TaskLoss",
+    "DOSLoss",
 ]

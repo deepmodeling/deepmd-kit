@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
     TensorLoss,
+    DOSLoss,
 )
 from deepmd.pt.model.model import (
     DPZBLModel,
@@ -276,7 +277,10 @@ class Trainer:
                 return EnergyStdLoss(**loss_params)
             elif loss_type == "dos":
                 loss_params["starter_learning_rate"] = start_lr
-                raise NotImplementedError()
+                loss_params["numb_dos"] = _model.model_output_def()[
+                    "dos"
+                ].output_size
+                return DOSLoss(**loss_params)
             elif loss_type == "ener_spin":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergySpinLoss(**loss_params)
