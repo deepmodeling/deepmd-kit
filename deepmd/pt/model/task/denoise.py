@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-import os
-import tempfile
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Callable,
     List,
@@ -16,25 +11,27 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.infer.deep_eval import (
-    DeepEval,
+from deepmd.dpmodel import (
+    FittingOutputDef,
+    OutputVariableDef,
+    fitting_check_output,
 )
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
 )
 from deepmd.pt.model.network.network import (
-    ResidualDeep,
+    MaskLMHead,
+    NonLinearHead,
 )
-from deepmd.pt.model.task.base_fitting import (
-    BaseFitting,
+from deepmd.pt.model.task.fitting import (
+    Fitting,
 )
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
-    DEVICE,
     PRECISION_DICT,
 )
 from deepmd.pt.utils.exclude_mask import (
@@ -44,24 +41,6 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.utils.finetune import (
-    change_energy_bias_lower,
-)
-from deepmd.pt.model.task.fitting import (
-    Fitting,
-)
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-    fitting_check_output,
-)
-from deepmd.pt.model.network.network import (
-    MaskLMHead,
-    NonLinearHead,
-)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -70,6 +49,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
 
 log = logging.getLogger(__name__)
+
 
 @Fitting.register("denoise")
 class DenoiseFittingNet(Fitting):
@@ -139,7 +119,7 @@ class DenoiseFittingNet(Fitting):
         **kwargs,
     ):
         super().__init__()
-        self.var_name = ["updated_coord","logits"]
+        self.var_name = ["updated_coord", "logits"]
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
         self.embedding_width = embedding_width
@@ -364,7 +344,7 @@ class DenoiseFittingNet(Fitting):
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         return [3, self.ntypes]
-        #pass
+        # pass
 
     def output_def(self):
         return FittingOutputDef(
@@ -482,17 +462,17 @@ class DenoiseFittingNet(Fitting):
             device=descriptor.device,
         )
         if self.mixed_types:
-            atom_updated_coord = ((self.filter_layers_coord.networks[0](g2)) * h2).sum(dim=-2) / (sw.sum(dim=-1).unsqueeze(-1)+1e-6)
+            atom_updated_coord = ((self.filter_layers_coord.networks[0](g2)) * h2).sum(
+                dim=-2
+            ) / (sw.sum(dim=-1).unsqueeze(-1) + 1e-6)
             atom_logits = self.filter_layers_logits[0](xx)
-            #Is xx_zeros useful in denoise task??????????????
-            #if xx_zeros is not None:
+            # Is xx_zeros useful in denoise task??????????????
+            # if xx_zeros is not None:
             #    atom_property -= self.filter_layers.networks[0](xx_zeros)
             outs_coord = (
                 outs_coord + atom_updated_coord
             )  # Shape is [nframes, natoms[0], net_dim_out]
-            outs_logits = (
-                outs_logits + atom_logits
-            )
+            outs_logits = outs_logits + atom_logits
         # TODO:
         '''
         else:
@@ -519,8 +499,10 @@ class DenoiseFittingNet(Fitting):
         # nf x nloc x nod
         outs_coord = outs_coord * mask[:, :, None]
         outs_logits = outs_logits * mask[:, :, None]
-        return {self.var_name[0]: outs_coord.to(env.GLOBAL_PT_FLOAT_PRECISION),
-                self.var_name[1]: outs_logits.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        return {
+            self.var_name[0]: outs_coord.to(env.GLOBAL_PT_FLOAT_PRECISION),
+            self.var_name[1]: outs_logits.to(env.GLOBAL_PT_FLOAT_PRECISION),
+        }
 
     def compute_output_stats(
         self,
@@ -544,6 +526,7 @@ class DenoiseFittingNet(Fitting):
 
         """
         pass
+
 
 @fitting_check_output
 class DenoiseNet(Fitting):

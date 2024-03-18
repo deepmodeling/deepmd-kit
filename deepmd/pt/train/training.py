@@ -27,8 +27,8 @@ from deepmd.pt.loss import (
     DenoiseLoss,
     EnergySpinLoss,
     EnergyStdLoss,
-    TensorLoss,
     PropertyLoss,
+    TensorLoss,
 )
 from deepmd.pt.model.model import (
     DPZBLModel,

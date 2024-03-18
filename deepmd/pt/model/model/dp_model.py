@@ -15,6 +15,9 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+from deepmd.pt.model.task.denoise import (
+    DenoiseFittingNet,
+)
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
 )
@@ -30,9 +33,6 @@ from deepmd.pt.model.task.polarizability import (
 )
 from deepmd.pt.model.task.property import (
     PropertyFittingNet,
-)
-from deepmd.pt.model.task.denoise import (
-    DenoiseFittingNet
 )
 
 from .make_model import (
@@ -51,6 +51,9 @@ class DPModel(make_model(DPAtomicModel)):
         atomic_model_: Optional[DPAtomicModel] = None,
         **kwargs,
     ):
+        from deepmd.pt.model.model.denoise_model import (
+            DenoiseModel,
+        )
         from deepmd.pt.model.model.dipole_model import (
             DipoleModel,
         )
@@ -65,9 +68,6 @@ class DPModel(make_model(DPAtomicModel)):
         )
         from deepmd.pt.model.model.property_model import (
             PropertyModel,
-        )
-        from deepmd.pt.model.model.denoise_model import (
-            DenoiseModel,
         )
 
         if atomic_model_ is not None:

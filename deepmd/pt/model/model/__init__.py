@@ -140,7 +140,7 @@ def get_standard_model(model_params):
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["mixed_types"] = descriptor.mixed_types()
-    if fitting_net["type"] in ["dipole", "polar","denoise"]:
+    if fitting_net["type"] in ["dipole", "polar", "denoise"]:
         fitting_net["embedding_width"] = descriptor.get_dim_emb()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     grad_force = "direct" not in fitting_net["type"]

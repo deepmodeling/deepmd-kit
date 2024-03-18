@@ -1175,6 +1175,7 @@ def fitting_dipole():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
 
+
 @fitting_args_plugin.register("property")
 def fitting_property():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
@@ -1213,6 +1214,7 @@ def fitting_property():
         Argument("task_num", int, optional=True, default=1, doc=doc_task_num),
     ]
 
+
 @fitting_args_plugin.register("denoise")
 def fitting_denoise():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
@@ -1248,6 +1250,7 @@ def fitting_denoise():
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
+
 
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
@@ -1991,6 +1994,7 @@ def loss_tensor():
         ),
     ]
 
+
 @loss_args_plugin.register("property")
 def loss_property():
     doc_loss_func = "The loss function, such as 'mae','smooth_mae'."
@@ -2000,21 +2004,42 @@ def loss_property():
     doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
     return [
         Argument(
-            "loss_func", str, optional=True, default="smooth_mae", doc=doc_loss_func,
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
         ),
         Argument(
-            "metric", list, optional=True, default=["mae"], doc=doc_metric,
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
         ),
         Argument(
-            "mean", [float, int, list], optional=True, default=0, doc=doc_mean,
+            "mean",
+            [float, int, list],
+            optional=True,
+            default=0,
+            doc=doc_mean,
         ),
         Argument(
-            "std", [float, int, list], optional=True, default=1, doc=doc_std,
+            "std",
+            [float, int, list],
+            optional=True,
+            default=1,
+            doc=doc_std,
         ),
         Argument(
-            "beta", [float, int], optional=True, default=1.00, doc=doc_beta,
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
         ),
     ]
+
 
 def loss_variant_type_args():
     doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."

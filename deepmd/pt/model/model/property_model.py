@@ -40,7 +40,7 @@ class PropertyModel(DPModel):
         )
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
-        model_predict["property"] = model_ret["property_redu"]/atype.shape[-1]
+        model_predict["property"] = model_ret["property_redu"] / atype.shape[-1]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
