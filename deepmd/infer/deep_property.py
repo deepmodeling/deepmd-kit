@@ -133,4 +133,5 @@ class DeepProperty(DeepEval):
     def get_numb_task(self) -> int:
         return self.deep_eval.get_numb_task()
 
+
 __all__ = ["DeepProperty"]

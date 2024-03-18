@@ -1,20 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    Callable,
-    Union,
     TYPE_CHECKING,
     Any,
+    Callable,
     List,
     Optional,
-)
-
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
-from deepmd.utils.path import (
-    DPPath,
+    Union,
 )
 
 from deepmd.dpmodel.common import (
@@ -23,11 +15,19 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    OutputVariableDef,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.fitting.general_fitting import (
         GeneralFitting,
     )
+
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -91,11 +91,7 @@ class PropertyFittingNet(InvarFitting):
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
-        return {
-            **super().serialize(),
-            "type": "property",
-            "task_num": self.task_num
-        }
+        return {**super().serialize(), "type": "property", "task_num": self.task_num}
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

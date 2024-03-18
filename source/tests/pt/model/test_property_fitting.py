@@ -145,6 +145,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
+
 class TestInvariance(unittest.TestCase):
     def setUp(self) -> None:
         self.natoms = 5
@@ -229,7 +230,7 @@ class TestInvariance(unittest.TestCase):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
-                task_num = 8,
+                task_num=8,
                 numb_fparam=0,
                 numb_aparam=0,
                 mixed_types=True,
@@ -274,7 +275,7 @@ class TestInvariance(unittest.TestCase):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
-                task_num = 11,
+                task_num=11,
                 numb_fparam=0,
                 numb_aparam=0,
                 mixed_types=True,
@@ -320,7 +321,7 @@ class TestPropertyModel(unittest.TestCase):
         self.ft0 = PropertyFittingNet(
             self.nt,
             self.dd0.dim_out,
-            task_num = 3,
+            task_num=3,
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=True,

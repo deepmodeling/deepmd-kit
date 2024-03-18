@@ -35,11 +35,11 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
-from deepmd.infer.deep_wfc import (
-    DeepWFC,
-)
 from deepmd.infer.deep_property import (
     DeepProperty,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
 )
 from deepmd.pt.model.model import (
     get_model,

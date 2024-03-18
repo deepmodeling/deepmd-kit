@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     List,
 )
@@ -12,14 +13,12 @@ from deepmd.pt.loss.loss import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.env import (
-    GLOBAL_PT_FLOAT_PRECISION,
-)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-import logging
+
 log = logging.getLogger(__name__)
+
 
 class PropertyLoss(TaskLoss):
     def __init__(
@@ -33,11 +32,11 @@ class PropertyLoss(TaskLoss):
 
         Parameters
         ----------
-        starter_learning_rate : float
+        task_num : float
             The learning rate at the start of the training.
-        loss_func: str
+        loss_func : str
             The loss function, such as "smooth_mae", "mae", "rmse"
-        metric: list
+        metric : list
             The metric such as mae,rmse which will be printed.
         **kwargs
             Other keyword arguments.
@@ -62,35 +61,77 @@ class PropertyLoss(TaskLoss):
         -------
         - loss: Loss to minimize.
         """
-        assert label['property'].shape[-1] == self.task_num
-        assert model_pred['property'].shape[-1] == self.task_num
+        assert label["property"].shape[-1] == self.task_num
+        assert model_pred["property"].shape[-1] == self.task_num
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
 
-        label_mean = torch.tensor(self.mean, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
-        label_std = torch.tensor(self.std, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
+        label_mean = torch.tensor(
+            self.mean, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        )
+        label_std = torch.tensor(
+            self.std, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        )
 
         # loss
         if self.loss_func == "smooth_mae":
-            loss += F.smooth_l1_loss((label['property'] - label_mean) / label_std, model_pred['property'], reduction="sum", beta=self.beta)
+            loss += F.smooth_l1_loss(
+                (label["property"] - label_mean) / label_std,
+                model_pred["property"],
+                reduction="sum",
+                beta=self.beta,
+            )
         elif self.func == "mae":
-            loss += F.l1_loss((label['property'] - label_mean) / label_std, model_pred['property'], reduction="sum")
+            loss += F.l1_loss(
+                (label["property"] - label_mean) / label_std,
+                model_pred["property"],
+                reduction="sum",
+            )
         elif self.func == "mse":
-            loss += F.mse_loss((label['property'] - label_mean) / label_std, model_pred['property'], reduction="sum")
+            loss += F.mse_loss(
+                (label["property"] - label_mean) / label_std,
+                model_pred["property"],
+                reduction="sum",
+            )
         elif self.func == "rmse":
-            loss += torch.sqrt(F.mse_loss((label['property'] - label_mean) / label_std, model_pred['property'], reduction="mean"))
+            loss += torch.sqrt(
+                F.mse_loss(
+                    (label["property"] - label_mean) / label_std,
+                    model_pred["property"],
+                    reduction="mean",
+                )
+            )
         else:
             raise RuntimeError(f"Unknown loss function : {self.func}")
 
         # more loss
         if "smooth_mae" in self.metric:
-            more_loss["smooth_mae"] = F.smooth_l1_loss(label['property'], (model_pred['property'] * label_std) + label_mean, reduction="mean", beta=self.beta).detach()
+            more_loss["smooth_mae"] = F.smooth_l1_loss(
+                label["property"],
+                (model_pred["property"] * label_std) + label_mean,
+                reduction="mean",
+                beta=self.beta,
+            ).detach()
         if "mae" in self.metric:
-            more_loss['mae'] = F.l1_loss(label['property'], (model_pred['property'] * label_std) + label_mean, reduction="mean").detach()
+            more_loss["mae"] = F.l1_loss(
+                label["property"],
+                (model_pred["property"] * label_std) + label_mean,
+                reduction="mean",
+            ).detach()
         if "mse" in self.metric:
-            more_loss['mse'] = F.mse_loss(label['property'], (model_pred['property'] * label_std) + label_mean, reduction="mean").detach()
+            more_loss["mse"] = F.mse_loss(
+                label["property"],
+                (model_pred["property"] * label_std) + label_mean,
+                reduction="mean",
+            ).detach()
         if "rmse" in self.metric:
-            more_loss['rmse'] = torch.sqrt(F.mse_loss(label['property'], (model_pred['property'] * label_std) + label_mean, reduction="mean")).detach()
+            more_loss["rmse"] = torch.sqrt(
+                F.mse_loss(
+                    label["property"],
+                    (model_pred["property"] * label_std) + label_mean,
+                    reduction="mean",
+                )
+            ).detach()
 
         return loss, more_loss
 

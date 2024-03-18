@@ -37,7 +37,7 @@ class DenoiseModel(DPModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
-        )    
+        )
         model_predict = model_ret
         return model_predict
 

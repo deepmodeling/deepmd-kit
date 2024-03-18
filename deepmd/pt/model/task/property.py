@@ -3,12 +3,11 @@ import copy
 import logging
 from typing import (
     Callable,
-    Union,
     List,
     Optional,
+    Union,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel import (
@@ -28,11 +27,11 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -85,12 +84,8 @@ class PropertyFittingNet(InvarFitting):
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
-        return {
-            **super().serialize(),
-            "type": "property",
-            "task_num": self.task_num
-        }
- 
+        return {**super().serialize(), "type": "property", "task_num": self.task_num}
+
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
