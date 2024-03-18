@@ -12,4 +12,5 @@ jobs:
         REPO: ${{ github.repository }}
         SHA: ${{ github.sha }}
         REF: ${{ github.ref }}
-        EXCLUDE_PATTERN: "(3rdparty|.git)/.*"
+        EXCLUDE_PATTERN: "(source/3rdparty|.git)/.*"
+        COMMENT_ON_ISSUES: 1
