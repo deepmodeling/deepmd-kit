@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
     TensorLoss,
+    PropertyLoss,
 )
 from deepmd.pt.model.model import (
     DPZBLModel,
@@ -297,6 +298,10 @@ class Trainer:
                     label_name = "polarizability"
                 loss_params["label_name"] = label_name
                 return TensorLoss(**loss_params)
+            elif loss_type == "property":
+                task_num = _model.model_output_def()["property"].output_size
+                loss_params["task_num"] = task_num
+                return PropertyLoss(**loss_params)
             else:
                 raise NotImplementedError
 

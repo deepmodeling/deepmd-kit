@@ -176,6 +176,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             gr=rot_mat,
             g2=g2,
             h2=h2,
+            sw=sw,
             fparam=fparam,
             aparam=aparam,
         )

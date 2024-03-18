@@ -1183,6 +1183,7 @@ def fitting_property():
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_task_num = "The number of outputs of fitting net"
     return [
         Argument(
             "neuron",
@@ -1206,6 +1207,43 @@ def fitting_property():
             [List[int], int, None],
             optional=True,
             alias=["property_type"],
+            doc=doc_sel_type + doc_only_tf_supported,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("task_num", int, optional=True, default=1, doc=doc_task_num),
+    ]
+
+@fitting_args_plugin.register("denoise")
+def fitting_denoise():
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    return [
+        Argument(
+            "neuron",
+            List[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument(
+            "sel_type",
+            [List[int], int, None],
+            optional=True,
+            alias=["denoise_type"],
             doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
@@ -1953,6 +1991,30 @@ def loss_tensor():
         ),
     ]
 
+@loss_args_plugin.register("property")
+def loss_property():
+    doc_loss_func = "The loss function, such as 'mae','smooth_mae'."
+    doc_metric = "The metric such as 'mae','smooth_mae' which will be printed."
+    doc_mean = "The averge value of target."
+    doc_std = "The standard deviation of the target."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "loss_func", str, optional=True, default="smooth_mae", doc=doc_loss_func,
+        ),
+        Argument(
+            "metric", list, optional=True, default=["mae"], doc=doc_metric,
+        ),
+        Argument(
+            "mean", [float, int, list], optional=True, default=0, doc=doc_mean,
+        ),
+        Argument(
+            "std", [float, int, list], optional=True, default=1, doc=doc_std,
+        ),
+        Argument(
+            "beta", [float, int], optional=True, default=1.00, doc=doc_beta,
+        ),
+    ]
 
 def loss_variant_type_args():
     doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener` or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."

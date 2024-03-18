@@ -31,6 +31,9 @@ from deepmd.pt.model.task.polarizability import (
 from deepmd.pt.model.task.property import (
     PropertyFittingNet,
 )
+from deepmd.pt.model.task.denoise import (
+    DenoiseFittingNet
+)
 
 from .make_model import (
     make_model,
@@ -63,6 +66,9 @@ class DPModel(make_model(DPAtomicModel)):
         from deepmd.pt.model.model.property_model import (
             PropertyModel,
         )
+        from deepmd.pt.model.model.denoise_model import (
+            DenoiseModel,
+        )
 
         if atomic_model_ is not None:
             fitting = atomic_model_.fitting_net
@@ -84,6 +90,8 @@ class DPModel(make_model(DPAtomicModel)):
                 cls = DOSModel
             elif isinstance(fitting, PropertyFittingNet):
                 cls = PropertyModel
+            elif isinstance(fitting, DenoiseFittingNet):
+                cls = DenoiseModel
             # else: unknown fitting type, fall back to DPModel
         return super().__new__(cls)
 

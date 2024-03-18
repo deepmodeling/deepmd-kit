@@ -15,10 +15,6 @@ import torch
 from deepmd.dpmodel import (
     FittingOutputDef,
     OutputVariableDef,
-    fitting_check_output,
-)
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
 )
 from deepmd.pt.model.task.fitting import (
     Fitting,
@@ -52,6 +48,7 @@ class PropertyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
+        task_num: int = 1,
         neuron: List[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
@@ -66,7 +63,7 @@ class PropertyFittingNet(InvarFitting):
             "property",
             ntypes,
             dim_descrpt,
-            1,
+            task_num,
             neuron=neuron,
             bias_atom_e=bias_atom_e,
             resnet_dt=resnet_dt,
