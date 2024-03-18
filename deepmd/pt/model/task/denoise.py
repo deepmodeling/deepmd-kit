@@ -474,7 +474,7 @@ class DenoiseFittingNet(Fitting):
             )  # Shape is [nframes, natoms[0], net_dim_out]
             outs_logits = outs_logits + atom_logits
         # TODO:
-        '''
+        """
         else:
             for type_i, ll in enumerate(self.filter_layers_coord.networks):
                 mask = (atype == type_i).unsqueeze(-1)
@@ -493,7 +493,7 @@ class DenoiseFittingNet(Fitting):
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
-        '''
+        """
         # nf x nloc
         mask = self.emask(atype)
         # nf x nloc x nod
