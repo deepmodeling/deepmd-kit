@@ -173,21 +173,17 @@ class DOSLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_global_dos_loss"] = (
-                    l2_global_loss_dos.detach()
-                )
+                more_loss["l2_global_dos_loss"] = l2_global_loss_dos.detach()
             loss += pref_dos * l2_global_loss_dos
             rmse_global_dos = l2_global_loss_dos.sqrt() / atom_num
-            more_loss[f"rmse_global_dos"] = rmse_global_dos.detach()
-        if (
-            self.has_cdf
-            and "global_dos" in model_pred
-            and "dos" in label
-        ):
-            global_tensor_pred_cdf = torch.cusum(model_pred["global_dos"].reshape(
-                [-1, self.numb_dos]
-            ), dim=-1)
-            global_tensor_label_cdf = torch.cusum(label["dos"].reshape([-1, self.numb_dos]),dim=-1)
+            more_loss["rmse_global_dos"] = rmse_global_dos.detach()
+        if self.has_cdf and "global_dos" in model_pred and "dos" in label:
+            global_tensor_pred_cdf = torch.cusum(
+                model_pred["global_dos"].reshape([-1, self.numb_dos]), dim=-1
+            )
+            global_tensor_label_cdf = torch.cusum(
+                label["dos"].reshape([-1, self.numb_dos]), dim=-1
+            )
             diff = global_tensor_pred_cdf - global_tensor_label_cdf
             if "mask" in model_pred:
                 atom_num = model_pred["mask"].sum(-1, keepdim=True)
