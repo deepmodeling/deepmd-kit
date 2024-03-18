@@ -67,14 +67,14 @@ class DOSLoss(TaskLoss):
         self.limit_pref_acdf = limit_pref_acdf
 
         assert (
-            self.start_pref_dos >= 0.0 and 
-            self.limit_pref_dos >= 0.0 and
-            self.start_pref_cdf >= 0.0 and
-            self.limit_pref_cdf >= 0.0 and
-            self.start_pref_ados >= 0.0 and
-            self.limit_pref_ados >= 0.0 and
-            self.start_pref_acdf >= 0.0 and
-            self.limit_pref_acdf >= 0.0
+            self.start_pref_dos >= 0.0
+            and self.limit_pref_dos >= 0.0
+            and self.start_pref_cdf >= 0.0
+            and self.limit_pref_cdf >= 0.0
+            and self.start_pref_ados >= 0.0
+            and self.limit_pref_ados >= 0.0
+            and self.start_pref_acdf >= 0.0
+            and self.limit_pref_acdf >= 0.0
         ), "Can not assign negative weight to `pref` and `pref_atomic`"
 
         self.has_dos = (start_pref_dos != 0.0 and limit_pref_dos != 0.0) or inference
@@ -82,9 +82,9 @@ class DOSLoss(TaskLoss):
         self.has_ados = (start_pref_ados != 0.0 and limit_pref_ados != 0.0) or inference
         self.has_acdf = (start_pref_acdf != 0.0 and limit_pref_acdf != 0.0) or inference
 
-        assert self.has_dos or self.has_cdf or self.has_ados or self.has_acdf, AssertionError(
-            "Can not assian zero weight both to `pref` and `pref_atomic`"
-        )
+        assert (
+            self.has_dos or self.has_cdf or self.has_ados or self.has_acdf
+        ), AssertionError("Can not assian zero weight both to `pref` and `pref_atomic`")
 
     def forward(self, model_pred, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on local and global tensors.
@@ -105,20 +105,23 @@ class DOSLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
-
         coef = learning_rate / self.starter_learning_rate
-        pref_dos = self.limit_pref_dos + (self.start_pref_dos - self.limit_pref_dos) * coef
-        pref_cdf = self.limit_pref_cdf + (self.start_pref_cdf - self.limit_pref_cdf) * coef
-        pref_ados = self.limit_pref_ados + (self.start_pref_ados - self.limit_pref_ados) * coef
-        pref_acdf = self.limit_pref_acdf + (self.start_pref_acdf - self.limit_pref_acdf) * coef
+        pref_dos = (
+            self.limit_pref_dos + (self.start_pref_dos - self.limit_pref_dos) * coef
+        )
+        pref_cdf = (
+            self.limit_pref_cdf + (self.start_pref_cdf - self.limit_pref_cdf) * coef
+        )
+        pref_ados = (
+            self.limit_pref_ados + (self.start_pref_ados - self.limit_pref_ados) * coef
+        )
+        pref_acdf = (
+            self.limit_pref_acdf + (self.start_pref_acdf - self.limit_pref_acdf) * coef
+        )
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
-        if (
-            self.has_ados
-            and "dos" in model_pred
-            and "atomic_dos" in label
-        ):
+        if self.has_ados and "dos" in model_pred and "atomic_dos" in label:
             local_tensor_pred_dos = model_pred["dos"].reshape(
                 [-1, natoms, self.numb_dos]
             )
@@ -132,21 +135,17 @@ class DOSLoss(TaskLoss):
                 diff = diff[model_pred["mask"].reshape([-1]).bool()]
             l2_local_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_local_dos_loss"] = l2_local_loss_dos.detach()
+                more_loss["l2_local_dos_loss"] = l2_local_loss_dos.detach()
             loss += pref_ados * l2_local_loss_dos
             rmse_local_dos = l2_local_loss_dos.sqrt()
-            more_loss[f"rmse_local_dos"] = rmse_local_dos.detach()
-        if (
-            self.has_acdf
-            and "dos" in model_pred
-            and "atom_dos" in label
-        ):
-            local_tensor_pred_cdf = torch.cusum(model_pred["dos"].reshape(
-                [-1, natoms, self.numb_dos]
-            ), dim=-1)
-            local_tensor_label_cdf = torch.cusum(label["atom_dos"].reshape(
-                [-1, natoms, self.numb_dos]
-            ), dim=-1)
+            more_loss["rmse_local_dos"] = rmse_local_dos.detach()
+        if self.has_acdf and "dos" in model_pred and "atom_dos" in label:
+            local_tensor_pred_cdf = torch.cusum(
+                model_pred["dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
+            )
+            local_tensor_label_cdf = torch.cusum(
+                label["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
+            )
             diff = (local_tensor_pred_cdf - local_tensor_label_cdf).reshape(
                 [-1, self.numb_dos]
             )
@@ -154,15 +153,11 @@ class DOSLoss(TaskLoss):
                 diff = diff[model_pred["mask"].reshape([-1]).bool()]
             l2_local_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_local_cdf_loss"] = l2_local_loss_cdf.detach()
+                more_loss["l2_local_cdf_loss"] = l2_local_loss_cdf.detach()
             loss += pref_acdf * l2_local_loss_cdf
             rmse_local_cdf = l2_local_loss_cdf.sqrt()
-            more_loss[f"rmse_local_cdf"] = rmse_local_cdf.detach()
-        if (
-            self.has_dos
-            and "global_dos" in model_pred
-            and "dos" in label
-        ):
+            more_loss["rmse_local_cdf"] = rmse_local_cdf.detach()
+        if self.has_dos and "global_dos" in model_pred and "dos" in label:
             global_tensor_pred_dos = model_pred["global_dos"].reshape(
                 [-1, self.numb_dos]
             )
@@ -178,21 +173,17 @@ class DOSLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_global_dos_loss"] = (
-                    l2_global_loss_dos.detach()
-                )
+                more_loss["l2_global_dos_loss"] = l2_global_loss_dos.detach()
             loss += pre_dos * l2_global_loss_dos
             rmse_global_dos = l2_global_loss_dos.sqrt() / atom_num
-            more_loss[f"rmse_global_dos"] = rmse_global_dos.detach()
-        if (
-            self.has_cdf
-            and "global_dos" in model_pred
-            and "dos" in label
-        ):
-            global_tensor_pred_cdf = torch.cusum(model_pred["global_dos"].reshape(
-                [-1, self.numb_dos]
-            ), dim-1)
-            global_tensor_label_cdf = torch.cusum(label["dos"].reshape([-1, self.numb_dos]),dim=-1)
+            more_loss["rmse_global_dos"] = rmse_global_dos.detach()
+        if self.has_cdf and "global_dos" in model_pred and "dos" in label:
+            global_tensor_pred_cdf = torch.cusum(
+                model_pred["global_dos"].reshape([-1, self.numb_dos]), dim - 1
+            )
+            global_tensor_label_cdf = torch.cusum(
+                label["dos"].reshape([-1, self.numb_dos]), dim=-1
+            )
             diff = global_tensor_pred_cdf - global_tensor_label_cdf
             if "mask" in model_pred:
                 atom_num = model_pred["mask"].sum(-1, keepdim=True)
@@ -204,12 +195,10 @@ class DOSLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_global_cdf_loss"] = (
-                    l2_global_loss_cdf.detach()
-                )
+                more_loss["l2_global_cdf_loss"] = l2_global_loss_cdf.detach()
             loss += pre_cdf * l2_global_loss_cdf
             rmse_global_dos = l2_global_loss_cdf.sqrt() / atom_num
-            more_loss[f"rmse_global_cdf"] = rmse_global_dos.detach()
+            more_loss["rmse_global_cdf"] = rmse_global_dos.detach()
         return loss, more_loss
 
     @property
