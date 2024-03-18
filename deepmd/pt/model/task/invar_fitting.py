@@ -168,7 +168,7 @@ class InvarFitting(GeneralFitting):
             merged, self.ntypes, stat_file_path, self.rcond, self.atom_ener
         )
         self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view(
+            bias_atom_e.view(
                 [self.ntypes, self.dim_out]
             )
         )
