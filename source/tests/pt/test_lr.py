@@ -73,6 +73,14 @@ class TestLearningRate(unittest.TestCase):
             self.stop_step,
             decay_rate=decay_rate,
         )
+        min_lr = 1e-5
+        my_lr_decay_trunc = LearningRateExp(
+            self.start_lr,
+            min_lr,
+            self.decay_step,
+            self.stop_step,
+            decay_rate=decay_rate,
+        )
         my_vals = [
             my_lr.value(step_id)
             for step_id in range(self.stop_step)
@@ -83,7 +91,15 @@ class TestLearningRate(unittest.TestCase):
             for step_id in range(self.stop_step)
             if step_id % self.decay_step != 0
         ]
+        my_vals_decay_trunc = [
+            my_lr_decay_trunc.value(step_id)
+            for step_id in range(self.stop_step)
+            if step_id % self.decay_step != 0
+        ]
         self.assertTrue(np.allclose(my_vals_decay, my_vals))
+        self.assertTrue(
+            np.allclose(my_vals_decay_trunc, np.clip(my_vals, a_min=min_lr, a_max=None))
+        )
 
 
 if __name__ == "__main__":
