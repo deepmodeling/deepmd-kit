@@ -55,7 +55,6 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        **kwargs,
     ):
         self.task_num = task_num
         super().__init__(
@@ -71,7 +70,6 @@ class PropertyFittingNet(InvarFitting):
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
-            **kwargs,
         )
 
     @classmethod
