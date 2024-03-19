@@ -20,11 +20,11 @@ from deepmd.pt.infer import (
 )
 
 from .test_permutation import (
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
     model_se_e2_a,
-    model_dos,
 )
 
 
@@ -61,6 +61,7 @@ class TestEnergyModelSeA(unittest.TestCase, JITTest):
 
     def tearDown(self):
         JITTest.tearDown(self)
+
 
 class TestDOSModelSeA(unittest.TestCase, JITTest):
     def setUp(self):
