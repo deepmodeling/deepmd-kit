@@ -97,7 +97,6 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
-@unittest.skip("loss not implemented")
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "dos/input.json")

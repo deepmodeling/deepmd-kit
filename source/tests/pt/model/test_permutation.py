@@ -53,7 +53,7 @@ model_dos = {
         "resnet_dt": True,
         "seed": 1,
         "type": "dos",
-        "numb_dos": 5,
+        "numb_dos": 250,
     },
     "data_stat_nbatch": 20,
 }
