@@ -51,7 +51,6 @@ class AutoBatchSize(ABC):
 
     def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
         # See also PyTorchLightning/pytorch-lightning#1638
-        # TODO: discuss a proper initial batch size
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
         if DP_INFER_BATCH_SIZE > 0:

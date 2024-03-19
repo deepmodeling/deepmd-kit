@@ -22,7 +22,6 @@ from deepmd.tf.utils.sess import (
 )
 
 
-# TODO (JZ): I think in this file we can merge some duplicated lines into one method...
 def load_graph_def(model_file: str) -> Tuple[tf.Graph, tf.GraphDef]:
     """Load graph as well as the graph_def from the frozen model(model_file).
 

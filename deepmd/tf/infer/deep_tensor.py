@@ -412,7 +412,6 @@ class DeepTensor(DeepEval):
         if ghost_map is not None:
             # add the value of ghost atoms to real atoms
             force = np.reshape(force, [nframes * nout, -1, 3])
-            # TODO: is there some way not to use for loop?
             for ii in range(nframes * nout):
                 np.add.at(force[ii], ghost_map, force[ii, nloc:])
             if atomic:

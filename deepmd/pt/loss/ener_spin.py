@@ -47,7 +47,7 @@ class EnergySpinLoss(TaskLoss):
         self.has_fr = (start_pref_fr != 0.0 and limit_pref_fr != 0.0) or inference
         self.has_fm = (start_pref_fm != 0.0 and limit_pref_fm != 0.0) or inference
 
-        # TODO need support for virial, atomic energy and atomic pref
+        # TODO EnergySpinLoss needs support for virial, atomic energy and atomic pref
         self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
