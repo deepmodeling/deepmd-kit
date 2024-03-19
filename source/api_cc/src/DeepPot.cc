@@ -2,7 +2,6 @@
 #include "DeepPot.h"
 
 #include "common.h"
-// TODO: only include when TF backend is built
 #include <memory>
 #include <stdexcept>
 

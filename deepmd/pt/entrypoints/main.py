@@ -286,7 +286,6 @@ def freeze(FLAGS):
         model,
         FLAGS.output,
         {
-            # TODO: _extra_files
         },
     )
 

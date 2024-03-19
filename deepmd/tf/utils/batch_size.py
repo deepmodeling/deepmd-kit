@@ -35,6 +35,4 @@ class AutoBatchSize(AutoBatchSizeBase):
         e : Exception
             Exception
         """
-        # TODO: it's very slow to catch OOM error; I don't know what TF is doing here
-        # but luckily we only need to catch once
         return isinstance(e, (tf.errors.ResourceExhaustedError, OutOfMemoryError))

@@ -355,7 +355,7 @@ class DipoleFittingSeA(Fitting):
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class
+            # TODO: refactor the class for type embedding and dipole fitting
             "mixed_types": False,
             "dim_out": 3,
             "neuron": self.n_neuron,
@@ -365,7 +365,7 @@ class DipoleFittingSeA(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings
+                # TODO: consider type embeddings in dipole fitting
                 ndim=1,
                 in_dim=self.dim_descrpt,
                 out_dim=self.dim_rot_mat_1,
