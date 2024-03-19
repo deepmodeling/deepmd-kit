@@ -39,7 +39,6 @@ class DPPath(ABC):
                 return super().__new__(DPOSPath)
             elif os.path.isfile(path.split("#")[0]):
                 # assume h5 if it is not dir
-                # TODO: check if it is a real h5? or just check suffix?
                 return super().__new__(DPH5Path)
             raise FileNotFoundError("%s not found" % path)
         return super().__new__(cls)
@@ -217,7 +216,6 @@ class DPOSPath(DPPath):
             list of paths
         """
         # currently DPOSPath will only derivative DPOSPath
-        # TODO: discuss if we want to mix DPOSPath and DPH5Path?
         return [type(self)(p, mode=self.mode) for p in self.path.glob(pattern)]
 
     def rglob(self, pattern: str) -> List["DPPath"]:

@@ -313,7 +313,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
-            # TODO: Idealy, the input for vaccum should be computed;
+            # TODO: comput the input for vaccum when setting remove_vaccum_contribution
+            # Idealy, the input for vaccum should be computed;
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
             # descriptor.

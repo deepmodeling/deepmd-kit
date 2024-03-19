@@ -157,7 +157,8 @@ FITTING_NET_PATTERN = str(
     r"(final)_layer_type_(\d+)/(matrix)|"
     r"(final)_layer/(bias)|"
     r"(final)_layer_type_(\d+)/(bias)|"
-    # TODO: not sure how to parse for shared layers...
+    # TODO: supporting extracting parameters for shared layers
+    # not sure how to parse for shared layers...
     # layer_name
     r"share_.+_type_\d/matrix|"
     r"share_.+_type_\d/bias|"
