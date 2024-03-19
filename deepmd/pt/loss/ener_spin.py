@@ -63,13 +63,15 @@ class EnergySpinLoss(TaskLoss):
         self.use_l1_all = use_l1_all
         self.inference = inference
 
-    def forward(self, model_pred, label, natoms, learning_rate, mae=False):
+    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
         """Return energy loss with magnetic labels.
 
         Parameters
         ----------
-        model_pred : dict[str, torch.Tensor]
-            Model predictions.
+        input_dict : dict[str, torch.Tensor]
+            Model inputs.
+        model : torch.nn.Module
+            Model to be used to output the predictions.
         label : dict[str, torch.Tensor]
             Labels.
         natoms : int
@@ -82,6 +84,7 @@ class EnergySpinLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
+        model_pred = model(**input_dict)
         coef = learning_rate / self.starter_learning_rate
         pref_e = self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * coef
         pref_fr = self.limit_pref_fr + (self.start_pref_fr - self.limit_pref_fr) * coef
@@ -175,7 +178,7 @@ class EnergySpinLoss(TaskLoss):
 
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
-        return loss, more_loss
+        return model_pred, loss, more_loss
 
     @property
     def label_requirement(self) -> List[DataRequirementItem]:
