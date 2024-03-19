@@ -272,9 +272,9 @@ class DeepmdData:
         i = bisect.bisect_right(self.prefix_sum, index)
         frames = self._load_set(self.dirs[i])
         if self.multistru:
-            size = frames['coord'].shape[1]
+            size = frames["coord"].shape[1]
             sample_idx = np.random.randint(size)
-            frames['coord'] = frames['coord'][:, sample_idx, :]
+            frames["coord"] = frames["coord"][:, sample_idx, :]
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
         frame = self.reformat_data_torch(frame)
         frame["fid"] = index
@@ -517,7 +517,9 @@ class DeepmdData:
             coord = coord.reshape([1, -1])
         nframes = coord.shape[0]
         if self.multistru:
-            assert (coord.shape[1] / self.data_dict["coord"]["ndof"] * self.natoms).is_integer()
+            assert (
+                coord.shape[1] / self.data_dict["coord"]["ndof"] * self.natoms
+            ).is_integer()
         else:
             assert coord.shape[1] == self.data_dict["coord"]["ndof"] * self.natoms
         # load keys
