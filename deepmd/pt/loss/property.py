@@ -52,7 +52,7 @@ class PropertyLoss(TaskLoss):
     def forward(self, model_pred, label, natoms, learning_rate, mae=False):
         """Return loss on properties .
 
-        Parameters:
+        Parameters
         ----------
         model_pred : dict[str, torch.Tensor]
             Model predictions.
