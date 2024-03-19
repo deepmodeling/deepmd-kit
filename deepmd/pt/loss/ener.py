@@ -77,7 +77,7 @@ class EnergyStdLoss(TaskLoss):
         self.has_f = (start_pref_f != 0.0 and limit_pref_f != 0.0) or inference
         self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
 
-        # TODO need support for atomic energy and atomic pref
+        # TODO EnergyStdLoss need support for atomic energy and atomic pref
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
 

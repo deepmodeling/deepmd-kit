@@ -701,7 +701,7 @@ class DOSFitting(Fitting):
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class
+            # TODO: refactor the class for DOSFitting and type embedding
             "mixed_types": False,
             "dim_out": self.numb_dos,
             "neuron": self.n_neuron,
@@ -715,7 +715,7 @@ class DOSFitting(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings
+                # TODO: consider type embeddings for DOSFitting
                 ndim=1,
                 in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
                 out_dim=self.numb_dos,

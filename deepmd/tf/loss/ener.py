@@ -120,7 +120,6 @@ class EnerStdLoss(Loss):
             "atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3
         )
         # drdq: the partial derivative of atomic coordinates w.r.t. generalized coordinates
-        # TODO: could numb_generalized_coord decided from the training data?
         if self.has_gf > 0:
             add_data_requirement(
                 "drdq",
