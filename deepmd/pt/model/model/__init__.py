@@ -59,7 +59,7 @@ from .spin_model import (
 
 def get_spin_model(model_params):
     model_params = copy.deepcopy(model_params)
-    if model_params["spin"]["use_spin"] and isinstance(
+    if not model_params["spin"]["use_spin"] or isinstance(
         model_params["spin"]["use_spin"][0], int
     ):
         use_spin = np.full(len(model_params["type_map"]), False)
