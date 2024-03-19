@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test virtual atomic type."""
+
 import os
 import unittest
 

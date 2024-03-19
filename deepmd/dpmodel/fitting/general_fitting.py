@@ -40,6 +40,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             The dimension of the input descriptor.
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
+    bias_atom_e
+            Average enery per atom for each element.
     resnet_dt
             Time-step `dt` in the resnet construction:
             :math:`y = x + dt * \phi (Wx + b)`
@@ -85,6 +87,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        bias_atom_e: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
@@ -125,7 +128,11 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         net_dim_out = self._net_out_dim()
         # init constants
-        self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])
+        if bias_atom_e is None:
+            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])
+        else:
+            assert bias_atom_e.shape == (self.ntypes, net_dim_out)
+            self.bias_atom_e = bias_atom_e
         if self.numb_fparam > 0:
             self.fparam_avg = np.zeros(self.numb_fparam)
             self.fparam_inv_std = np.ones(self.numb_fparam)
@@ -306,7 +313,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
-            # TODO: Idealy, the input for vaccum should be computed;
+            # TODO: comput the input for vaccum when setting remove_vaccum_contribution
+            # Idealy, the input for vaccum should be computed;
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
             # descriptor.

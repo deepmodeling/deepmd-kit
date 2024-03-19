@@ -274,6 +274,9 @@ class Trainer:
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergyStdLoss(**loss_params)
+            elif loss_type == "dos":
+                loss_params["starter_learning_rate"] = start_lr
+                raise NotImplementedError()
             elif loss_type == "ener_spin":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergySpinLoss(**loss_params)
@@ -555,14 +558,16 @@ class Trainer:
                 output_device=LOCAL_RANK,
             )
 
-        # TODO ZD add lr warmups for multitask
+        # TODO add lr warmups for multitask
+        # author: iProzd
         def warm_up_linear(step, warmup_steps):
             if step < warmup_steps:
                 return step / warmup_steps
             else:
                 return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
 
-        # TODO ZD add optimizers for multitask
+        # TODO add optimizers for multitask
+        # author: iProzd
         if self.opt_type == "Adam":
             self.optimizer = torch.optim.Adam(
                 self.wrapper.parameters(), lr=self.lr_exp.start_lr

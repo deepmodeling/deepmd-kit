@@ -27,6 +27,7 @@ from deepmd.pt.utils.utils import (
 
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
+    TestCaseSingleFrameWithNlistWithVirtual,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -166,10 +167,8 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
             # check output def
             out_names = [vv.name for vv in md0.atomic_output_def().get_data().values()]
-            if atom_excl == []:
-                self.assertEqual(out_names, ["energy"])
-            else:
-                self.assertEqual(out_names, ["energy", "mask"])
+            self.assertEqual(out_names, ["energy", "mask"])
+            if atom_excl != []:
                 for ii in md0.atomic_output_def().get_data().values():
                     if ii.name == "mask":
                         self.assertEqual(ii.shape, [1])
@@ -189,3 +188,49 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 np.testing.assert_array_equal(to_numpy_array(ret0["mask"]), expected)
             else:
                 raise ValueError(f"not expected atom_excl {atom_excl}")
+
+
+class TestDPAtomicModelVirtualConsistency(unittest.TestCase):
+    def setUp(self):
+        self.case0 = TestCaseSingleFrameWithNlist()
+        self.case1 = TestCaseSingleFrameWithNlistWithVirtual()
+        self.case0.setUp()
+        self.case1.setUp()
+
+    def test_virtual_consistency(self):
+        nf, _, _ = self.case0.nlist.shape
+        ds = DescrptSeA(
+            self.case0.rcut,
+            self.case0.rcut_smth,
+            self.case0.sel,
+        )
+        ft = InvarFitting(
+            "energy",
+            self.case0.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        )
+        type_map = ["foo", "bar"]
+        md1 = DPAtomicModel(ds, ft, type_map=type_map).to(env.DEVICE)
+
+        args0 = [self.case0.coord_ext, self.case0.atype_ext, self.case0.nlist]
+        args0 = [to_torch_tensor(ii) for ii in args0]
+        args1 = [self.case1.coord_ext, self.case1.atype_ext, self.case1.nlist]
+        args1 = [to_torch_tensor(ii) for ii in args1]
+
+        ret0 = md1.forward_common_atomic(*args0)
+        ret1 = md1.forward_common_atomic(*args1)
+
+        for dd in range(self.case0.nf):
+            np.testing.assert_allclose(
+                to_numpy_array(ret0["energy"])[dd],
+                to_numpy_array(ret1["energy"])[dd, self.case1.get_real_mapping[dd], :],
+            )
+        expected_mask = np.array(
+            [
+                [1, 0, 1, 1],
+                [1, 1, 0, 1],
+            ]
+        )
+        np.testing.assert_equal(to_numpy_array(ret1["mask"]), expected_mask)

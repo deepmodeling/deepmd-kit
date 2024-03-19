@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Alias for backward compatibility."""
+
 from deepmd.utils.model_stat import (
     _make_all_stat_ref,
     make_stat_input,

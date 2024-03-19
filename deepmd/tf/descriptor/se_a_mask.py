@@ -249,10 +249,9 @@ class DescrptSeAMask(DescrptSeA):
         **kwargs
             Additional keyword arguments.
         """
-        """
-        TODO: Since not all input atoms are real in se_a_mask,
-        statistics should be reimplemented for se_a_mask descriptor.
-        """
+        # TODO: implement compute_input_stats for DescrptSeAMask
+        # Since not all input atoms are real in se_a_mask,
+        # statistics should be reimplemented for se_a_mask descriptor.
 
         self.davg = None
         self.dstd = None

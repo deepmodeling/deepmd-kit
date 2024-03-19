@@ -118,8 +118,8 @@ class Fitting(torch.nn.Module, BaseFitting):
             The number of test samples in a system to change the energy bias.
         """
         log.info(
-            "Changing energy bias in pretrained model for types {}... "
-            "(this step may take long time)".format(str(new_type_map))
+            f"Changing energy bias in pretrained model for types {new_type_map!s}... "
+            "(this step may take long time)"
         )
         # data
         systems = config["training"]["training_data"]["systems"]
@@ -457,7 +457,8 @@ class GeneralFitting(Fitting):
     ):
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
-            # TODO: Idealy, the input for vaccum should be computed;
+            # TODO: compute the input for vaccm when remove_vaccum_contribution is set
+            # Idealy, the input for vaccum should be computed;
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
             # descriptor.

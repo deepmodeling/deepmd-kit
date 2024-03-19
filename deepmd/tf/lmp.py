@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Register entry points for lammps-wheel."""
+
 import os
 import platform
 from importlib import (

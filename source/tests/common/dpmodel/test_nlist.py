@@ -125,12 +125,12 @@ dtype = np.float64
 class TestNeighList(unittest.TestCase):
     def setUp(self):
         self.nf = 3
-        self.nloc = 2
+        self.nloc = 3
         self.ns = 5 * 5 * 3
         self.nall = self.ns * self.nloc
         self.cell = np.array([[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype)
-        self.icoord = np.array([[0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype)
-        self.atype = np.array([0, 1], dtype=np.int32)
+        self.icoord = np.array([[0, 0, 0], [0, 0, 0], [0.5, 0.5, 0.1]], dtype=dtype)
+        self.atype = np.array([-1, 0, 1], dtype=np.int32)
         [self.cell, self.icoord, self.atype] = [
             np.expand_dims(ii, 0) for ii in [self.cell, self.icoord, self.atype]
         ]
@@ -144,8 +144,9 @@ class TestNeighList(unittest.TestCase):
         self.nsel = [10, 10]
         self.ref_nlist = np.array(
             [
-                [0, 0, 0, 0, 0, 0, -1, -1, -1, -1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1],
-                [0, 0, 0, 0, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1],
+                [-1] * sum(self.nsel),
+                [1, 1, 1, 1, 1, 1, -1, -1, -1, -1, 2, 2, 2, 2, -1, -1, -1, -1, -1, -1],
+                [1, 1, 1, 1, -1, -1, -1, -1, -1, -1, 2, 2, 2, 2, 2, 2, -1, -1, -1, -1],
             ]
         )
 
@@ -269,7 +270,7 @@ class TestNeighList(unittest.TestCase):
         )
         np.testing.assert_allclose(
             cc,
-            np.array([30, 30, 30, 30, 30], dtype=np.int32),
+            np.array([self.ns * self.nloc // 5] * 5, dtype=np.int32),
             rtol=self.prec,
             atol=self.prec,
         )
@@ -282,7 +283,7 @@ class TestNeighList(unittest.TestCase):
         )
         np.testing.assert_allclose(
             cc,
-            np.array([30, 30, 30, 30, 30], dtype=np.int32),
+            np.array([self.ns * self.nloc // 5] * 5, dtype=np.int32),
             rtol=self.prec,
             atol=self.prec,
         )
@@ -295,7 +296,7 @@ class TestNeighList(unittest.TestCase):
         )
         np.testing.assert_allclose(
             cc,
-            np.array([50, 50, 50], dtype=np.int32),
+            np.array([self.ns * self.nloc // 3] * 3, dtype=np.int32),
             rtol=self.prec,
             atol=self.prec,
         )

@@ -246,9 +246,9 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
                 fitting_net_variables[f"{layer_name}{key}{suffix}/matrix"] = layer.w
                 fitting_net_variables[f"{layer_name}{key}{suffix}/bias"] = layer.b
                 if layer.idt is not None:
-                    fitting_net_variables[
-                        f"{layer_name}{key}{suffix}/idt"
-                    ] = layer.idt.reshape(1, -1)
+                    fitting_net_variables[f"{layer_name}{key}{suffix}/idt"] = (
+                        layer.idt.reshape(1, -1)
+                    )
                 else:
                     # prevent keyError
                     fitting_net_variables[f"{layer_name}{key}{suffix}/idt"] = 0.0

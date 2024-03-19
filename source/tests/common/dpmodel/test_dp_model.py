@@ -87,7 +87,10 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
             else:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
-            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            if ii != "mask":
+                self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            else:
+                self.assertEqual(model_l_ret_64[ii].dtype, np.int32)
             np.testing.assert_allclose(
                 model_l_ret_32[ii],
                 model_l_ret_64[ii],
@@ -138,8 +141,10 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
             else:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
-            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
-            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            if ii != "mask":
+                self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            else:
+                self.assertEqual(model_l_ret_64[ii].dtype, np.int32)
             np.testing.assert_allclose(
                 model_l_ret_32[ii],
                 model_l_ret_64[ii],

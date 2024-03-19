@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DeepPot.h"
 
-#include "common.h"
-// TODO: only include when TF backend is built
 #include <memory>
 #include <stdexcept>
 
 #include "AtomMap.h"
+#include "common.h"
 #ifdef BUILD_TENSORFLOW
 #include "DeepPotTF.h"
 #endif
