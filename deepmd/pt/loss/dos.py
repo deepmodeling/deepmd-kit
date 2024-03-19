@@ -121,11 +121,11 @@ class DOSLoss(TaskLoss):
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
-        if self.has_ados and "dos" in model_pred and "atomic_dos" in label:
-            local_tensor_pred_dos = model_pred["dos"].reshape(
+        if self.has_ados and "atom_dos" in model_pred and "atom_dos" in label:
+            local_tensor_pred_dos = model_pred["atom_dos"].reshape(
                 [-1, natoms, self.numb_dos]
             )
-            local_tensor_label_dos = label["atomic_dos"].reshape(
+            local_tensor_label_dos = label["atom_dos"].reshape(
                 [-1, natoms, self.numb_dos]
             )
             diff = (local_tensor_pred_dos - local_tensor_label_dos).reshape(
@@ -139,9 +139,9 @@ class DOSLoss(TaskLoss):
             loss += pref_ados * l2_local_loss_dos
             rmse_local_dos = l2_local_loss_dos.sqrt()
             more_loss["rmse_local_dos"] = rmse_local_dos.detach()
-        if self.has_acdf and "dos" in model_pred and "atom_dos" in label:
+        if self.has_acdf and "atom_dos" in model_pred and "atom_dos" in label:
             local_tensor_pred_cdf = torch.cusum(
-                model_pred["dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
+                model_pred["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
             )
             local_tensor_label_cdf = torch.cusum(
                 label["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
@@ -157,8 +157,8 @@ class DOSLoss(TaskLoss):
             loss += pref_acdf * l2_local_loss_cdf
             rmse_local_cdf = l2_local_loss_cdf.sqrt()
             more_loss["rmse_local_cdf"] = rmse_local_cdf.detach()
-        if self.has_dos and "global_dos" in model_pred and "dos" in label:
-            global_tensor_pred_dos = model_pred["global_dos"].reshape(
+        if self.has_dos and "dos" in model_pred and "dos" in label:
+            global_tensor_pred_dos = model_pred["dos"].reshape(
                 [-1, self.numb_dos]
             )
             global_tensor_label_dos = label["dos"].reshape([-1, self.numb_dos])
@@ -177,9 +177,9 @@ class DOSLoss(TaskLoss):
             loss += pref_dos * l2_global_loss_dos
             rmse_global_dos = l2_global_loss_dos.sqrt() / atom_num
             more_loss["rmse_global_dos"] = rmse_global_dos.detach()
-        if self.has_cdf and "global_dos" in model_pred and "dos" in label:
+        if self.has_cdf and "dos" in model_pred and "dos" in label:
             global_tensor_pred_cdf = torch.cusum(
-                model_pred["global_dos"].reshape([-1, self.numb_dos]), dim=-1
+                model_pred["dos"].reshape([-1, self.numb_dos]), dim=-1
             )
             global_tensor_label_cdf = torch.cusum(
                 label["dos"].reshape([-1, self.numb_dos]), dim=-1
