@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
 from typing import (
     Dict,
     Optional,
@@ -10,8 +9,6 @@ import torch
 from .dp_model import (
     DPModel,
 )
-
-log = logging.getLogger(__name__)
 
 
 class EnergyModel(DPModel):

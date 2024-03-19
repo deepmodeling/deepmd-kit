@@ -101,7 +101,7 @@ def compute_output_stats(
         The condition number for the regression of atomic energy.
     atom_ener : List[float], optional
         Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
-    model_forward : Callable, optional
+    model_forward : Callable[..., torch.Tensor], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
