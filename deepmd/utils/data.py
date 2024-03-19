@@ -272,10 +272,10 @@ class DeepmdData:
         i = bisect.bisect_right(self.prefix_sum, index)
         frames = self._load_set(self.dirs[i])
         if self.multistru:
-            size = frames['coord'].shape[1]
+            size = frames["coord"].shape[1]
             rng = np.random.default_rng()
-            sample_idx = rng.integers(low=0, high=size, size=1)[0]  
-            frames['coord'] = frames['coord'][:, sample_idx, :]
+            sample_idx = rng.integers(low=0, high=size, size=1)[0]
+            frames["coord"] = frames["coord"][:, sample_idx, :]
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
         frame = self.reformat_data_torch(frame)
         frame["fid"] = index
