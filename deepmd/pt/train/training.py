@@ -696,8 +696,13 @@ class Trainer:
                     module = (
                         self.wrapper.module if dist.is_initialized() else self.wrapper
                     )
-                    loss, more_loss = module.loss[task_key](
-                        model_pred,
+
+                    def fake_model():
+                        return model_pred
+
+                    _, loss, more_loss = module.loss[task_key](
+                        {},
+                        fake_model,
                         label_dict,
                         int(input_dict["atype"].shape[-1]),
                         learning_rate=pref_lr,
