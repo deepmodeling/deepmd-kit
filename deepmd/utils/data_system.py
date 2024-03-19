@@ -670,7 +670,6 @@ def print_summary(
             % (
                 _format_name_length(system_dirs[ii], sys_width),
                 natoms[ii],
-                # TODO batch size * nbatches = number of structures
                 batch_size[ii],
                 nbatches[ii],
                 sys_probs[ii],

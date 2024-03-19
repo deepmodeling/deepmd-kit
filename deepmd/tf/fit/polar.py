@@ -545,7 +545,7 @@ class PolarFittingSeA(Fitting):
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class
+            # TODO: refactor the class for polar fitting and type embedding
             "mixed_types": False,
             "dim_out": 3,
             "neuron": self.n_neuron,
@@ -558,7 +558,7 @@ class PolarFittingSeA(Fitting):
             "shift_diag": self.shift_diag,
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings
+                # TODO: consider type embeddings for polar fitting
                 ndim=1,
                 in_dim=self.dim_descrpt,
                 out_dim=self.dim_rot_mat_1,

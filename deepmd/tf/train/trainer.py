@@ -296,8 +296,6 @@ class DPTrainer:
                 )
 
             # neighbor_stat is moved to train.py as duplicated
-            # TODO: this is a simple fix but we should have a clear
-            #       architecture to call neighbor stat
         else:
             self.model.enable_compression()
 

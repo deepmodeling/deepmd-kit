@@ -12,7 +12,6 @@ repos:
     -   id: check-json
     -   id: check-added-large-files
         args: ['--maxkb=1024', '--enforce-all']
-        # TODO: remove the following after resolved
         exclude: |
             (?x)^(
                 source/tests/infer/dipolecharge_e.pbtxt|

@@ -90,7 +90,8 @@ class Counter:
         return self.count
 
 
-# TODO: should be moved to otherwhere...
+# TODO: move save_dp_model and load_dp_model to a seperated module
+# should be moved to otherwhere...
 def save_dp_model(filename: str, model_dict: dict) -> None:
     """Save a DP model to a file in the native format.
 

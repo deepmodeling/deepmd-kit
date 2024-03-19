@@ -17,5 +17,5 @@ class UpdateSel(BaseUpdateSel):
         return NeighborStat
 
     def hook(self, min_nbor_dist, max_nbor_size):
-        # TODO: save to the model
+        # TODO: save to the model in UpdateSel.hook
         pass
