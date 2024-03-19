@@ -1206,6 +1206,7 @@ def fitting_property():
         Argument("task_num", int, optional=True, default=1, doc=doc_task_num),
     ]
 
+
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
     doc_descrpt_type = "The type of the fitting. See explanation below. \n\n\
