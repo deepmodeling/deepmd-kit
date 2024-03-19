@@ -89,15 +89,6 @@ def change_finetune_model_params_single(
 def change_finetune_model_params(finetune_model, model_config, model_branch=""):
     """
     Load model_params according to the pretrained one.
-
-    Parameters
-    ----------
-    finetune_model:
-        The pretrained model.
-    model_config
-        The fine-tuning input parameters.
-    model_branch
-        The model branch chosen in command-line mode, only for single-task fine-tuning.
     This function modifies the fine-tuning input in different modes as follows:
     1. Single-task fine-tuning from a single-task pretrained model:
         - Updates the model parameters based on the pretrained model.
@@ -116,6 +107,15 @@ def change_finetune_model_params(finetune_model, model_config, model_branch=""):
           it will resume from the model_key branch without fine-tuning.
         - If `finetune_head` is not defined and a new model_key is used,
           model parameters in the fitting network of the branch will be randomly initialized.
+
+    Parameters
+    ----------
+    finetune_model
+        The pretrained model.
+    model_config
+        The fine-tuning input parameters.
+    model_branch
+        The model branch chosen in command-line mode, only for single-task fine-tuning.
 
     Returns
     -------

@@ -56,7 +56,7 @@ class FinetuneTest:
         full_type_map = ["O", "H", "B"]
 
         # change energy bias
-        model.change_out_bias(
+        model.atomic_model.change_out_bias(
             self.sampled,
             bias_shift="delta",
             origin_type_map=origin_type_map,

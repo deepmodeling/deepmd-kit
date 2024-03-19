@@ -10,11 +10,11 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.infer.deep_eval import (
-    DeepEval,
-)
 from deepmd.pt.utils import (
     AtomExcludeMask,
+)
+from deepmd.pt.utils.auto_batch_size import (
+    AutoBatchSize,
 )
 from deepmd.pt.utils.utils import (
     dict_to_device,
@@ -79,7 +79,7 @@ def compute_output_stats(
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
-    model: Optional[DeepEval] = None,
+    model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -101,7 +101,8 @@ def compute_output_stats(
         The condition number for the regression of atomic energy.
     atom_ener : List[float], optional
         Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
-    model : DeepEval, optional
+    model_forward : Callable, optional
+        The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
@@ -136,7 +137,7 @@ def compute_output_stats(
             )
         else:
             assigned_atom_ener = None
-        if model is None:
+        if model_forward is None:
             # only use statistics result
             bias_atom_e, _ = compute_stats_from_redu(
                 merged_energy,
@@ -146,38 +147,37 @@ def compute_output_stats(
             )
         else:
             # subtract the model bias and output the delta bias
+            auto_batch_size = AutoBatchSize()
             energy_predict = []
             for system in sampled:
                 nframes = system["coord"].shape[0]
-                coord = to_numpy_array(system["coord"]).reshape(nframes, -1)
-                box = (
-                    to_numpy_array(system["box"]).reshape(nframes, -1)
-                    if system["box"] is not None
-                    else None
+                coord, atype, box, natoms = (
+                    system["coord"],
+                    system["atype"],
+                    system["box"],
+                    system["natoms"],
                 )
-                if data_mixed_type:
-                    atype = to_numpy_array(system["atype"]).reshape(nframes, -1)
-                else:
-                    atype = to_numpy_array(system["atype"]).reshape(nframes, -1)[0]
-                fparam = (
-                    to_numpy_array(system["fparam"])
-                    if "fparam" in system is not None
-                    else None
+                fparam = system["fparam"] if "fparam" in system else None
+                aparam = system["aparam"] if "aparam" in system else None
+
+                def model_forward_auto_batch_size(*args, **kwargs):
+                    return auto_batch_size.execute_all(
+                        model_forward,
+                        nframes,
+                        system["atype"].shape[-1],
+                        *args,
+                        **kwargs,
+                    )
+
+                energy = (
+                    model_forward_auto_batch_size(
+                        coord, atype, box, fparam=fparam, aparam=aparam
+                    )
+                    .reshape(nframes, -1)
+                    .sum(-1)
                 )
-                aparam = (
-                    to_numpy_array(system["aparam"])
-                    if "aparam" in system is not None
-                    else None
-                )
-                ret = model.eval(
-                    coord,
-                    box,
-                    atype,
-                    mixed_type=data_mixed_type,
-                    fparam=fparam,
-                    aparam=aparam,
-                )
-                energy_predict.append(ret[0].reshape([nframes, 1]))
+                energy_predict.append(to_numpy_array(energy).reshape([nframes, 1]))
+
             energy_predict = np.concatenate(energy_predict)
             bias_diff = merged_energy - energy_predict
             bias_atom_e, _ = compute_stats_from_redu(
@@ -194,7 +194,7 @@ def compute_output_stats(
                 )
             )
             log.info(
-                f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
+                f"RMSE of energy per atom after linear regression is: {rmse_ae} eV/atom."
             )
         if stat_file_path is not None:
             stat_file_path.save_numpy(bias_atom_e)

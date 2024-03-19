@@ -78,8 +78,3 @@ class DOSModel(DPModel):
         else:
             model_predict = model_ret
         return model_predict
-
-    def change_out_bias(
-        self, merged, origin_type_map, full_type_map, bias_shift="delta"
-    ) -> None:
-        raise NotImplementedError

@@ -38,9 +38,9 @@
           ],
           "resnet_dt": true,
           "seed": 1,
-          "data_stat_nbatch": 1,
           "_comment": " that's all"
-        }
+        },
+        "data_stat_nbatch": 1
       },
       "model_2": {
         "type_map": "my_type_map",
@@ -53,9 +53,9 @@
           ],
           "resnet_dt": true,
           "seed": 1,
-          "data_stat_nbatch": 1,
           "_comment": " that's all"
-        }
+        },
+        "data_stat_nbatch": 1
       }
     }
   },

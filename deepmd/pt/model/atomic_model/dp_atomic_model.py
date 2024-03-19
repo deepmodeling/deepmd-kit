@@ -8,6 +8,7 @@ from typing import (
     Optional,
 )
 
+import numpy as np
 import torch
 
 from deepmd.dpmodel import (
@@ -18,6 +19,15 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -222,6 +232,86 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         if self.fitting_net is not None:
             self.fitting_net.compute_output_stats(wrapped_sampler, stat_file_path)
+
+    def change_out_bias(
+        self, merged, origin_type_map, full_type_map, bias_shift="delta"
+    ) -> None:
+        """Change the energy bias according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        origin_type_map : List[str]
+            The original type_map in dataset, they are targets to change the energy bias.
+        full_type_map : List[str]
+            The full type_map in pre-trained model
+        bias_shift : str
+            The mode for changing energy bias : ['delta', 'statistic']
+            'delta' : perform predictions on energies of target dataset,
+                    and do least sqaure on the errors to obtain the target shift as bias.
+            'statistic' : directly use the statistic energy bias in the target dataset.
+        """
+        sorter = np.argsort(full_type_map)
+        missing_types = [t for t in origin_type_map if t not in full_type_map]
+        assert (
+            not missing_types
+        ), f"Some types are not in the pre-trained model: {list(missing_types)} !"
+        idx_type_map = sorter[
+            np.searchsorted(full_type_map, origin_type_map, sorter=sorter)
+        ]
+        original_bias = self.fitting_net["bias_atom_e"]
+        if bias_shift == "delta":
+
+            def model_forward(coord, atype, box, fparam=None, aparam=None):
+                with torch.no_grad():  # it's essential for pure torch forward function to use auto_batchsize
+                    (
+                        extended_coord,
+                        extended_atype,
+                        mapping,
+                        nlist,
+                    ) = extend_input_and_build_neighbor_list(
+                        coord,
+                        atype,
+                        self.get_rcut(),
+                        self.get_sel(),
+                        mixed_types=self.mixed_types(),
+                        box=box,
+                    )
+                    atomic_ret = self.forward_common_atomic(
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping=mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                    )
+                    return atomic_ret["energy"]
+
+            delta_bias_e = compute_output_stats(
+                merged,
+                self.get_ntypes(),
+                model_forward=model_forward,
+            )
+            bias_atom_e = delta_bias_e + original_bias
+        elif bias_shift == "statistic":
+            bias_atom_e = compute_output_stats(
+                merged,
+                self.get_ntypes(),
+            )
+        else:
+            raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
+        log.info(
+            f"Change energy bias of {origin_type_map!s} "
+            f"from {to_numpy_array(original_bias[idx_type_map]).reshape(-1)!s} "
+            f"to {to_numpy_array(bias_atom_e[idx_type_map]).reshape(-1)!s}."
+        )
+        self.fitting_net["bias_atom_e"] = bias_atom_e
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""

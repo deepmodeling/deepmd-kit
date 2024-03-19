@@ -566,7 +566,7 @@ class Trainer:
                         _model_params["new_type_map"],
                     )
                     if isinstance(_model, EnergyModel):
-                        _model.change_out_bias(
+                        _model.atomic_model.change_out_bias(
                             _sample_func,
                             bias_shift=_model_params.get("bias_shift", "delta"),
                             origin_type_map=new_type_map,
