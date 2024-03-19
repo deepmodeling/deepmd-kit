@@ -1182,9 +1182,8 @@ def fitting_property():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_task_num = "The number of outputs of fitting net"
+    doc_task_num = "The dimension of outputs of fitting net"
     return [
         Argument(
             "neuron",
@@ -1203,13 +1202,6 @@ def fitting_property():
         ),
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
-        Argument(
-            "sel_type",
-            [List[int], int, None],
-            optional=True,
-            alias=["property_type"],
-            doc=doc_sel_type + doc_only_tf_supported,
-        ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("task_num", int, optional=True, default=1, doc=doc_task_num),
     ]

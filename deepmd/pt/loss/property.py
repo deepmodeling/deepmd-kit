@@ -50,16 +50,23 @@ class PropertyLoss(TaskLoss):
         self.beta = kwargs.get("beta", 1.00)
 
     def forward(self, model_pred, label, natoms, learning_rate, mae=False):
-        """Return loss on loss and force.
+        """Return loss on properties .
 
-        Args:
-        - model_pred: Property prediction.
-        - label: Target property.
-        - natoms: Tell atom count.
+        Parameters:
+        ----------
+        model_pred : dict[str, torch.Tensor]
+            Model predictions.
+        label : dict[str, torch.Tensor]
+            Labels.
+        natoms : int
+            The local atom number.
 
         Returns
         -------
-        - loss: Loss to minimize.
+        loss: torch.Tensor
+            Loss for model to minimize.
+        more_loss: dict[str, torch.Tensor]
+            Other losses for display.
         """
         assert label["property"].shape[-1] == self.task_num
         assert model_pred["property"].shape[-1] == self.task_num

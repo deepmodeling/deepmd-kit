@@ -15,9 +15,6 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
-from deepmd.pt.model.task.denoise import (
-    DenoiseFittingNet,
-)
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
 )
@@ -51,9 +48,6 @@ class DPModel(make_model(DPAtomicModel)):
         atomic_model_: Optional[DPAtomicModel] = None,
         **kwargs,
     ):
-        from deepmd.pt.model.model.denoise_model import (
-            DenoiseModel,
-        )
         from deepmd.pt.model.model.dipole_model import (
             DipoleModel,
         )
@@ -90,8 +84,6 @@ class DPModel(make_model(DPAtomicModel)):
                 cls = DOSModel
             elif isinstance(fitting, PropertyFittingNet):
                 cls = PropertyModel
-            elif isinstance(fitting, DenoiseFittingNet):
-                cls = DenoiseModel
             # else: unknown fitting type, fall back to DPModel
         return super().__new__(cls)
 

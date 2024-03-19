@@ -72,8 +72,7 @@ class DeepProperty(DeepEval):
         mixed_type: bool = False,
         **kwargs: Dict[str, Any],
     ) -> Tuple[np.ndarray, ...]:
-        """Evaluate energy, force, and virial. If atomic is True,
-        also return atomic energy and atomic virial.
+        """Evaluate properties. If atomic is True, also return atomic property.
 
         Parameters
         ----------
@@ -86,7 +85,7 @@ class DeepProperty(DeepEval):
             The types of the atoms. If mixed_type is False, the shape is (natoms,);
             otherwise, the shape is (nframes, natoms).
         atomic : bool, optional
-            Whether to return atomic energy and atomic virial, by default False.
+            Whether to return atomic property, by default False.
         fparam : np.ndarray, optional
             The frame parameters, by default None.
         aparam : np.ndarray, optional
