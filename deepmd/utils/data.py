@@ -273,7 +273,8 @@ class DeepmdData:
         frames = self._load_set(self.dirs[i])
         if self.multistru:
             size = frames["coord"].shape[1]
-            sample_idx = np.random.randint(size)
+            rng = np.random.default_rng()
+            sample_idx = rng.integers(low=0, high=size, size=1)[0]
             frames["coord"] = frames["coord"][:, sample_idx, :]
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
         frame = self.reformat_data_torch(frame)
