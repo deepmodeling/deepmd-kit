@@ -108,6 +108,7 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"] = deepcopy(model_dos)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.not_all_grad = True
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
