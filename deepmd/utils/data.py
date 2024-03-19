@@ -518,7 +518,9 @@ class DeepmdData:
             coord = coord.reshape([1, -1])
         nframes = coord.shape[0]
         if self.multistru:
-            assert (coord.shape[1] / self.data_dict["coord"]["ndof"] * self.natoms).is_integer()
+            assert (
+                coord.shape[1] / self.data_dict["coord"]["ndof"] * self.natoms
+            ).is_integer()
         else:
             assert coord.shape[1] == self.data_dict["coord"]["ndof"] * self.natoms
         # load keys
