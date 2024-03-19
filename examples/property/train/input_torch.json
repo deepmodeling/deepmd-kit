@@ -192,7 +192,7 @@
         "../data/3",
         "../data/6"
       ],
-      "batch_size": 1,
+      "batch_size": 2,
       "_comment": "that's all"
     },
     "validation_data": {
