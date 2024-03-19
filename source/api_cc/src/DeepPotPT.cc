@@ -116,7 +116,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   select_real_atoms_coord(dcoord, datype, aparam_, nghost_real, fwd_map,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
-  std::cout << datype.size() << std::endl;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, nall_real, 3}, options)

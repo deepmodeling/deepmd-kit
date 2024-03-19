@@ -65,13 +65,11 @@ class ActivationFn(torch.nn.Module):
 
 
 @overload
-def to_numpy_array(xx: torch.Tensor) -> np.ndarray:
-    ...
+def to_numpy_array(xx: torch.Tensor) -> np.ndarray: ...
 
 
 @overload
-def to_numpy_array(xx: None) -> None:
-    ...
+def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
@@ -91,13 +89,11 @@ def to_numpy_array(
 
 
 @overload
-def to_torch_tensor(xx: np.ndarray) -> torch.Tensor:
-    ...
+def to_torch_tensor(xx: np.ndarray) -> torch.Tensor: ...
 
 
 @overload
-def to_torch_tensor(xx: None) -> None:
-    ...
+def to_torch_tensor(xx: None) -> None: ...
 
 
 def to_torch_tensor(

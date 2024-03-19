@@ -22,7 +22,6 @@ from deepmd.tf.utils.sess import (
 )
 
 
-# TODO (JZ): I think in this file we can merge some duplicated lines into one method...
 def load_graph_def(model_file: str) -> Tuple[tf.Graph, tf.GraphDef]:
     """Load graph as well as the graph_def from the frozen model(model_file).
 
@@ -308,13 +307,13 @@ def get_extra_embedding_net_variables_from_graph_def(
     extra_embedding_net_variables = {}
     for i in range(1, layer_size + 1):
         matrix_pattern = f"filter_type_all{suffix}/matrix_{i}{extra_suffix}"
-        extra_embedding_net_variables[
-            matrix_pattern
-        ] = get_variables_from_graph_def_as_numpy_array(graph_def, matrix_pattern)
+        extra_embedding_net_variables[matrix_pattern] = (
+            get_variables_from_graph_def_as_numpy_array(graph_def, matrix_pattern)
+        )
         bias_pattern = f"filter_type_all{suffix}/bias_{i}{extra_suffix}"
-        extra_embedding_net_variables[
-            bias_pattern
-        ] = get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
+        extra_embedding_net_variables[bias_pattern] = (
+            get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
+        )
     return extra_embedding_net_variables
 
 

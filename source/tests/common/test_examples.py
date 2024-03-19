@@ -2,6 +2,7 @@
 """This module ensures input in the examples directory
 could pass the argument checking.
 """
+
 import unittest
 from pathlib import (
     Path,

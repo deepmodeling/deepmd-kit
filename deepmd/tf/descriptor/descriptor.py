@@ -102,9 +102,6 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         int
             the first dimension of the rotation matrix
         """
-        # TODO: I think this method should be implemented as it's called by dipole and
-        # polar fitting network. However, currently not all descriptors have this
-        # method.
         raise NotImplementedError
 
     def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
@@ -121,8 +118,6 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         sel_r : list[int]
             The number of neighbors with only radial information
         """
-        # TODO: I think this method should be implemented as it's called by energy
-        # model. However, se_ar and hybrid doesn't have this method.
         raise NotImplementedError
 
     @abstractmethod

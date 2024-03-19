@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """dpdata driver."""
+
 # Derived from https://github.com/deepmodeling/dpdata/blob/18a0ed5ebced8b1f6887038883d46f31ae9990a4/dpdata/plugins/deepmd.py#L361-L443
 # under LGPL-3.0-or-later license.
 # The original deepmd driver maintained in the dpdata package will be overriden.

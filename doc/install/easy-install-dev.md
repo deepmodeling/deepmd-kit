@@ -35,3 +35,8 @@ The [pre-comiled C library](./install-from-c-library.md) can be downloaded from 
 ```sh
 wget https://nightly.link/deepmodeling/deepmd-kit/workflows/package_c/devel/libdeepmd_c-0-libdeepmd_c.tar.gz.zip && unzip libdeepmd_c-0-libdeepmd_c.tar.gz.zip
 ```
+
+## Pre-release conda-forge packages
+
+Pre-release conda-forge packages are in `conda-forge/label/deepmd-kit_dev` or `conda-forge/label/deepmd-kit_rc` channels, other than the `conda-forge` channel.
+See [conda-forge documentation](https://conda-forge.org/docs/maintainer/knowledge_base/#pre-release-builds) for more information.

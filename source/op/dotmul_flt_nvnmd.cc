@@ -159,7 +159,7 @@ class DotmulFltNvnmdOp : public OpKernel {
       ufi3.nint &= FLT_MASK;
       y[ii] = ufi3.nflt;
     }  // loop ii
-  }    // Compute
+  }  // Compute
 
 };  // DotmulFltNvnmdOp
 

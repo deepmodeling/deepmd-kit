@@ -24,8 +24,6 @@ class UpdateSel(BaseUpdateSel):
 
     def hook(self, min_nbor_dist, max_nbor_size):
         # moved from traier.py as duplicated
-        # TODO: this is a simple fix but we should have a clear
-        #       architecture to call neighbor stat
         tf.constant(
             min_nbor_dist,
             name="train_attr/min_nbor_dist",
