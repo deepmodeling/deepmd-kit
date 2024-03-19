@@ -7,9 +7,7 @@ from typing import (
     Optional,
     Union,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
 import torch
 
 from deepmd.dpmodel import (
@@ -25,15 +23,18 @@ from deepmd.pt.model.task.fitting import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.utils.out_stat import (
-    compute_stats_from_atomic,
-    compute_stats_from_redu,
-)
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
+)
+from deepmd.utils.out_stat import (
+    compute_stats_from_atomic,
+    compute_stats_from_redu,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -102,7 +103,7 @@ class DOSFittingNet(InvarFitting):
                 ),
             ]
         )
-    
+
     def compute_output_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
@@ -152,10 +153,10 @@ class DOSFittingNet(InvarFitting):
                             force=True
                         )
                     sys_bias_redu = sampled[sys]["dos"].numpy(force=True)
-                    
+
                     sys_atom_dos = compute_stats_from_redu(
-                            sys_bias_redu, sys_type_count, rcond=self.rcond
-                        )[0]
+                        sys_bias_redu, sys_type_count, rcond=self.rcond
+                    )[0]
                 if stat_file_path is not None:
                     stat_file_path.save_numpy(sys_atom_dos)
                 self.bias_dos = torch.tensor(sys_atom_dos, device=env.DEVICE)

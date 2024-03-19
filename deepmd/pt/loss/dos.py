@@ -158,9 +158,7 @@ class DOSLoss(TaskLoss):
             rmse_local_cdf = l2_local_loss_cdf.sqrt()
             more_loss["rmse_local_cdf"] = rmse_local_cdf.detach()
         if self.has_dos and "dos" in model_pred and "dos" in label:
-            global_tensor_pred_dos = model_pred["dos"].reshape(
-                [-1, self.numb_dos]
-            )
+            global_tensor_pred_dos = model_pred["dos"].reshape([-1, self.numb_dos])
             global_tensor_label_dos = label["dos"].reshape([-1, self.numb_dos])
             diff = global_tensor_pred_dos - global_tensor_label_dos
             if "mask" in model_pred:
