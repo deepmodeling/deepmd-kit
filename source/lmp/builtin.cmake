@@ -24,6 +24,7 @@ target_sources(
           ${LAMMPS_SOURCE_DIR}/EXTRA-FIX/fix_ttm.cpp # for ttm
 )
 target_link_libraries(lammps PUBLIC DeePMD::deepmd_c)
+target_link_libraries(lammps PUBLIC -Wl,--no-as-needed "/mnt/user/zhangxiangyu/workspace/dpkit/deepmd-kit/source/op_pt/libop_pt.so" "/home/zhangxiangyu/.conda/envs/dp-cxxabi/lib/libmpi.so")
 target_include_directories(
   lammps PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_LIST_DIR}
                  ${LAMMPS_SOURCE_DIR}/KSPACE ${LAMMPS_SOURCE_DIR}/EXTRA-FIX)

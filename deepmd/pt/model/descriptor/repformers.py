@@ -226,7 +226,7 @@ class DescrptBlockRepformers(DescriptorBlock):
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
-
+    @torch.jit.script_method
     def forward(
         self,
         nlist: torch.Tensor,
@@ -234,9 +234,10 @@ class DescrptBlockRepformers(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None
     ):
-        assert mapping is not None
-        assert extended_atype_embd is not None
+        if comm_dict is None:
+            assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
@@ -257,8 +258,12 @@ class DescrptBlockRepformers(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
         # [nframes, nloc, tebd_dim]
-        atype_embd = extended_atype_embd[:, :nloc, :]
-        assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
+        #atype_embd = extended_atype_embd[:, :nloc, :]
+        atype_embd = extended_atype_embd
+        if atype_embd is not None:
+            assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
+        else:
+            raise NotImplementedError
 
         g1 = self.act(atype_embd)
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
@@ -275,11 +280,33 @@ class DescrptBlockRepformers(DescriptorBlock):
         # if the a neighbor is real or not is indicated by nlist_mask
         nlist[nlist == -1] = 0
         # nb x nall x ng1
-        mapping = mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.g1_dim)
+        if comm_dict is None:
+            assert mapping is not None
+            mapping = mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.g1_dim)
         for idx, ll in enumerate(self.layers):
             # g1:     nb x nloc x ng1
             # g1_ext: nb x nall x ng1
-            g1_ext = torch.gather(g1, 1, mapping)
+            if comm_dict is None:
+                assert mapping is not None
+                g1_ext = torch.gather(g1, 1, mapping)
+            else:
+                # padding = torch.zeros(nall-nloc, g1.size(2),device=mydev)
+                # g1 = torch.cat((g1.squeeze(0), padding), dim=0)
+                n_padding = nall -nloc
+                g1 = torch.nn.functional.pad(g1.squeeze(0), (0, 0, 0, n_padding), value=0.0)
+                assert 'send_list' in comm_dict
+                assert 'send_proc' in comm_dict
+                assert 'recv_proc' in comm_dict
+                assert 'send_num'  in comm_dict
+                assert 'recv_num'  in comm_dict
+                assert 'communicator' in comm_dict
+                ret = env.op_module.border_op(comm_dict['send_list'],
+                                comm_dict['send_proc'], comm_dict['recv_proc'],
+                                comm_dict['send_num'], comm_dict['recv_num'],
+                                g1,
+                                comm_dict['communicator'],torch.tensor(nloc),torch.tensor(nall-nloc))
+                g1_ext = ret[0].unsqueeze(0) 
+            
             g1, g2, h2 = ll.forward(
                 g1_ext,
                 g2,

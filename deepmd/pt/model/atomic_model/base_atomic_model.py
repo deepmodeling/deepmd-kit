@@ -91,6 +91,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None
     ) -> Dict[str, torch.Tensor]:
         _, nloc, _ = nlist.shape
         atype = extended_atype[:, :nloc]
@@ -107,6 +108,7 @@ class BaseAtomicModel(BaseAtomicModel_):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            comm_dict=comm_dict
         )
 
         if self.atom_excl is not None:

@@ -46,6 +46,7 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
+    load_op
 )
 from deepmd.pt.utils.finetune import (
     change_finetune_model_params,
@@ -301,7 +302,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
     log.debug("Log handles were successfully set")
     log.info("DeepMD version: %s", __version__)
-
+    load_op()
     if FLAGS.command == "train":
         train(FLAGS)
     elif FLAGS.command == "freeze":

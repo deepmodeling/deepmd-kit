@@ -147,7 +147,7 @@ def make_model(T_AtomicModel):
                 mapping,
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
-                aparam=ap,
+                aparam=ap
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -167,6 +167,7 @@ def make_model(T_AtomicModel):
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
+            comm_dict: Optional[Dict[str, torch.Tensor]] = None
         ):
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -210,6 +211,7 @@ def make_model(T_AtomicModel):
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
+                comm_dict = comm_dict
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,

@@ -141,7 +141,7 @@ class PairDeepMD : public Pair {
   tagint *tagsend, *tagrecv;
   double *stdfsend, *stdfrecv;
   std::vector<int> type_idx_map;
-  CommBrickDeepMD* cb;
+  CommBrickDeepMD* commdata_;
 };
 
 }  // namespace LAMMPS_NS

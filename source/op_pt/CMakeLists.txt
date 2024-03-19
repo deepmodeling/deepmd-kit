@@ -1,25 +1,22 @@
 # libop
+cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
+project(op)
+set(GLIBCXX_USE_CXX11_ABI 1)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-file(
-  GLOB
-  OP_PT_SRC
-  comm.cc
-)
-find_package(MPI REQUIRED)
-
-add_library(${LIB_DEEPMD_OP_PT} MODULE ${OP_PT_SRC})
-target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE "${TORCH_LIBRARIES}")
-target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE MPI::MPI_CXX)
-target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE ${LIB_DEEPMD})
-
-if(CMAKE_TESTING_ENABLED)
-  target_link_libraries(${LIB_DEEPMD_OP_PT} PRIVATE coverage_config)
+find_package(Python REQUIRED COMPONENTS Development)
+find_package(Torch REQUIRED)
+#find_package(MPI REQUIRED)
+find_package(CUDA REQUIRED)
+if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 80)
+endif ()
+option(USE_CUDA "GPU_SUPPORT" ON)
+if(USE_CUDA)
+  add_definitions(-DUSE_CUDA)
 endif()
 
-
-
-if(BUILD_PY_IF)
-  install(TARGETS ${LIB_DEEPMD_OP_PT} DESTINATION deepmd/lib/)
-else(BUILD_PY_IF)
-  install(TARGETS ${LIB_DEEPMD_OP_PT} DESTINATION lib/)
-endif(BUILD_PY_IF)
+add_library(op_pt SHARED comm.cc)
+target_include_directories(op_pt PRIVATE ${Python_INCLUDE_DIRS})
+target_link_libraries(op_pt "${TORCH_LIBRARIES}" "${Python_LIBRARIES}" "/home/zhangxiangyu/.conda/envs/dp-cxxabi/lib/libmpi.so")

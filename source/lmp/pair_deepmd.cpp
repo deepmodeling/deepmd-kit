@@ -6,6 +6,7 @@
 #include <limits>
 #include <map>
 #include <sstream>
+#include <cassert>
 
 #include "atom.h"
 #include "citeme.h"
@@ -472,15 +473,17 @@ void PairDeepMD::compute(int eflag, int vflag) {
   int newton_pair = force->newton_pair;
 
   // for dpa2 communication
-  deepmd_compat::CommData* commdata = new deepmd_compat::CommData(); 
-  commdata->nswap = cb->nswap;
-  commdata->sendnum = cb->sendnum; // dim: nswap
-  commdata->recvnum = cb->recvnum; // dim: nswap
-  commdata->firstrecv = cb->firstrecv; // dim: nswap
-  commdata->sendlist = cb->sendlist; // dim: nswap x sendnum[nswap]
-  commdata->sendproc = cb->sendproc; // dim: nswap
-  commdata->recvproc = cb->recvproc; // dim: nswap
-  commdata->world = reinterpret_cast<long*>(world);
+  // deepmd_compat::CommData* commdata = new deepmd_compat::CommData(); 
+  // commdata->nswap = cb->nswap;
+  // commdata->sendnum = cb->sendnum; // dim: nswap
+  // commdata->recvnum = cb->recvnum; // dim: nswap
+  // commdata->firstrecv = cb->firstrecv; // dim: nswap
+  // commdata->sendlist = cb->sendlist; // dim: nswap x sendnum[nswap]
+  // commdata->sendproc = cb->sendproc; // dim: nswap
+  // commdata->recvproc = cb->recvproc; // dim: nswap
+  assert(sizeof(MPI_Comm) == sizeof(int));
+  //std::cout<<"world:"<<world<<std::endl;
+  int world_int = world;
   double* prd = domain->prd;
   vector<double> dspin(nall * 3, 0.);
   vector<double> dfm(nall * 3, 0.);
@@ -562,7 +565,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                       list->firstneigh,commdata);
+                                       list->firstneigh,commdata_->nswap,commdata_->sendnum,commdata_->recvnum,commdata_->firstrecv,commdata_->sendlist,commdata_->sendproc,commdata_->recvproc,world_int);
     // else
     // deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
     //                                    list->firstneigh);
@@ -1291,7 +1294,7 @@ void PairDeepMD::coeff(int narg, char **arg) {
   }
 
   //dpa2 communication
-  cb = (CommBrickDeepMD *)comm;
+  commdata_ = (CommBrickDeepMD *)comm;
 }
 
 void PairDeepMD::init_style() {
