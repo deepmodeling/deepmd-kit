@@ -15,8 +15,6 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
-import logging
-log = logging.getLogger(__name__)
 
 class DeepmdDataSetForLoader(Dataset):
     def __init__(self, system: str, type_map: Optional[List[str]] = None):

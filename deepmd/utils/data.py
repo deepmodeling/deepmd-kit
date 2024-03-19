@@ -9,7 +9,6 @@ from typing import (
 )
 
 import numpy as np
-import contextlib
 
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -274,7 +273,6 @@ class DeepmdData:
         frames = self._load_set(self.dirs[i])
         if self.multistru:
             size = frames['coord'].shape[1]
-        with numpy_seed(index):
             sample_idx = np.random.randint(size)
             frames['coord'] = frames['coord'][:, sample_idx, :]
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
@@ -435,8 +433,7 @@ class DeepmdData:
                 if idx is not None:
                     new_data[ii] = dd[idx]
                 else:
-                    new_data[ii] = dd     
-  
+                    new_data[ii] = dd
         return new_data
 
     def _load_batch_set(self, set_name: DPPath):
@@ -523,7 +520,6 @@ class DeepmdData:
             assert (coord.shape[1] / self.data_dict["coord"]["ndof"] * self.natoms).is_integer()
         else:
             assert coord.shape[1] == self.data_dict["coord"]["ndof"] * self.natoms
-        
         # load keys
         data = {}
         for kk in self.data_dict.keys():
@@ -638,7 +634,6 @@ class DeepmdData:
                     data = data.reshape([nframes, -1, natoms, 3])
                     size = data.shape[1]
                     data = data[:, :, idx_map, :]
-                    data = data.reshape([nframes, -1])
                     data = np.reshape(data, [nframes, size, ndof])
                 else:
                     if atomic:
@@ -810,19 +805,3 @@ class DataRequirementItem:
         if key not in self.dict:
             raise KeyError(key)
         return self.dict[key]
-
-@contextlib.contextmanager
-def numpy_seed(seed, *addl_seeds):
-    """Context manager which seeds the NumPy PRNG with the specified seed and
-    restores the state afterward"""
-    if seed is None:
-        yield
-        return
-    if len(addl_seeds) > 0:
-        seed = int(hash((seed, *addl_seeds)) % 1e6)
-    state = np.random.get_state()
-    np.random.seed(seed)
-    try:
-        yield
-    finally:
-        np.random.set_state(state)
