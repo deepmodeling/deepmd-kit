@@ -120,6 +120,7 @@ class BaseUpdateSel:
                 jdata["training"]["training_data"], max_rcut, type_map, None
             )
             train_data.get_batch()
+            log.info(train_data)
         else:
             assert (
                 type_map is not None
