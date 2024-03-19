@@ -285,8 +285,7 @@ def freeze(FLAGS):
     torch.jit.save(
         model,
         FLAGS.output,
-        {
-        },
+        {},
     )
 
 
