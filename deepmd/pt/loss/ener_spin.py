@@ -79,6 +79,8 @@ class EnergySpinLoss(TaskLoss):
 
         Returns
         -------
+        model_pred: dict[str, torch.Tensor]
+            Model predictions.
         loss: torch.Tensor
             Loss for model to minimize.
         more_loss: dict[str, torch.Tensor]

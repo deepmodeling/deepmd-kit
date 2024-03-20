@@ -93,9 +93,11 @@ class EnergyStdLoss(TaskLoss):
     def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
         """Return loss on energy and force.
 
-        input_dict: dict[str, torch.Tensor]
+        Parameters
+        ----------
+        input_dict : dict[str, torch.Tensor]
             Model inputs.
-        model: torch.nn.Module
+        model : torch.nn.Module
             Model to be used to output the predictions.
         label : dict[str, torch.Tensor]
             Labels.
@@ -104,6 +106,8 @@ class EnergyStdLoss(TaskLoss):
 
         Returns
         -------
+        model_pred: dict[str, torch.Tensor]
+            Model predictions.
         loss: torch.Tensor
             Loss for model to minimize.
         more_loss: dict[str, torch.Tensor]
