@@ -160,7 +160,7 @@ class DOSFittingNet(InvarFitting):
                     )[0]
                 if stat_file_path is not None:
                     stat_file_path.save_numpy(bias_dos)
-                self.bias_dos = torch.tensor(bias_dos, device=env.DEVICE)
+        self.bias_dos = torch.tensor(bias_dos, device=env.DEVICE)
 
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
