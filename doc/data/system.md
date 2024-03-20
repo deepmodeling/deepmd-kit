@@ -15,7 +15,7 @@ The input frame properties contain the following property, the first axis of whi
 
 ID       | Property                | Raw file       | Unit | Required/Optional    | Shape                    | Description
 -------- | ----------------------  | -------------- | ---- | -------------------- | -----------------------  | -----------
-coord    | Atomic coordinates      | coord.raw      | Å    | Required             | Nframes \* Natoms \* 3   | if `multistru` is true, shape is `Nframes * Nconformations * Natoms *3` 
+coord    | Atomic coordinates      | coord.raw      | Å    | Required             | Nframes \* Natoms \* 3   | if `multistru` is true, shape is `Nframes * Nconformations * Natoms *3`
 box      | Boxes                   | box.raw        | Å    | Required if periodic | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
 fparam   | Extra frame parameters  | fparam.raw     | Any  | Optional             | Nframes \* Any           |
 aparam   | Extra atomic parameters | aparam.raw     | Any  | Optional             | Nframes \* aparam \* Any |
