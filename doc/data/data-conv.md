@@ -4,7 +4,7 @@ Two binary formats, NumPy and HDF5, are supported for training. The raw format i
 
 ## NumPy format
 
-In a system with the Numpy format, the system properties are stored as text files ending with `.raw`, such as `type.raw` and `type_map.raw`, under the system directory. If one needs to train a non-periodic system, an empty `nopbc` file should be put under the system directory. Both input and labeled frame properties are saved as the [NumPy binary data (NPY) files](https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html#npy-format) ending with `.npy` in each of the `set.*` directories. Take an example, a system may contain the following files:
+In a system with the Numpy format, the system properties are stored as text files ending with `.raw`, such as `type.raw` and `type_map.raw`, under the system directory. If one needs to train a non-periodic system, an empty `nopbc` file should be put under the system directory. If one needs to train a system which has multiple conformations(such as multiple conformations for one molecule produced by rdkit from SMILES), an empty `multistru` file should be put under the system directory. Both input and labeled frame properties are saved as the [NumPy binary data (NPY) files](https://numpy.org/doc/stable/reference/generated/numpy.lib.format.html#npy-format) ending with `.npy` in each of the `set.*` directories. Take an example, a system may contain the following files:
 ```
 type.raw
 type_map.raw
@@ -54,6 +54,8 @@ $ cat force.raw
 -1.968 -0.163  1.020 -0.225 -0.789  0.343
 ```
 This `force.raw` contains 3 frames with each frame having the forces of 2 atoms, thus it has 3 lines and 6 columns. Each line provides all the 3 force components of 2 atoms in 1 frame. The first three numbers are the 3 force components of the first atom, while the second three numbers are the 3 force components of the second atom. Other files are organized similarly. The number of lines of all raw files should be identical.
+
+If `multistru` file is put under the system directory. The `coord.npy` files under this directory should have one more dimension(number of conformations for one frame). Specifically, the first dimension is number of frames, the second dimension is the number of conformations for one frame.
 
 One can use the script `$deepmd_source_dir/data/raw/raw_to_set.sh` to convert the prepared raw files to the NumPy format. For example, if we have a raw file that contains 6000 frames,
 ```bash

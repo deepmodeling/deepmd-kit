@@ -9,12 +9,13 @@ ID       | Property                | Raw file     | Required/Optional    | Shape
 type     | Atom type indexes       | type.raw     | Required             | Natoms                   | Integers that start with 0. If both the training parameter {ref}`type_map <model/type_map>` is set and `type_map.raw` is provided, the system atom type should be mapped to `type_map.raw` in `type.raw` and will be mapped to the model atom type when training; otherwise, the system atom type will be always mapped to the model atom type (whether {ref}`type_map <model/type_map>` is set or not)
 type_map | Atom type names         | type_map.raw | Optional             | Ntypes                   | Atom names that map to atom type, which is unnecessary to be contained in the periodic table. Only works when the training parameter {ref}`type_map <model/type_map>` is set
 nopbc    | Non-periodic system     | nopbc        | Optional             | 1                        | If True, this system is non-periodic; otherwise it's periodic
+multistru    | multiple conformations system     | nopbc        | Optional             | 1                        | If True, there are multiple conformations for one structure; otherwise there is only one conformation for one structure(usually)
 
 The input frame properties contain the following property, the first axis of which is the number of frames:
 
 ID       | Property                | Raw file       | Unit | Required/Optional    | Shape                    | Description
 -------- | ----------------------  | -------------- | ---- | -------------------- | -----------------------  | -----------
-coord    | Atomic coordinates      | coord.raw      | Å    | Required             | Nframes \* Natoms \* 3   |
+coord    | Atomic coordinates      | coord.raw      | Å    | Required             | Nframes \* Natoms \* 3   | if `multistru` is true, shape is `Nframes * Nconformations * Natoms *3` 
 box      | Boxes                   | box.raw        | Å    | Required if periodic | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`
 fparam   | Extra frame parameters  | fparam.raw     | Any  | Optional             | Nframes \* Any           |
 aparam   | Extra atomic parameters | aparam.raw     | Any  | Optional             | Nframes \* aparam \* Any |
