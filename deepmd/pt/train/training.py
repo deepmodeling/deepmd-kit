@@ -1052,6 +1052,7 @@ class Trainer:
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
         print_str += "   %8s\n" % "lr"
+        print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
 
