@@ -1181,7 +1181,7 @@ def fitting_dipole():
     ]
 
 
-@fitting_args_plugin.register("property")
+@fitting_args_plugin.register("property", doc=doc_only_pt_supported)
 def fitting_property():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'

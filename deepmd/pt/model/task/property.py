@@ -42,19 +42,52 @@ log = logging.getLogger(__name__)
 
 @Fitting.register("property")
 class PropertyFittingNet(InvarFitting):
+    """Construct a fitting net for energy.
+
+    Parameters
+    ----------
+    ntypes : int
+        Element count.
+    dim_descrpt : int
+        Embedding width per atom.
+    task_dim : int
+        The dimension of outputs of fitting net
+    neuron : List[int]
+        Number of neurons in each hidden layers of the fitting net.
+    bias_atom_p : torch.Tensor, optional
+        Average property per atom for each element.
+    resnet_dt : bool
+        Using time-step in the ResNet construction.
+    numb_fparam : int
+        Number of frame parameters.
+    numb_aparam : int
+        Number of atomic parameters.
+    activation_function : str
+        Activation function.
+    precision : str
+        Numerical precision.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
+    seed : int, optional
+        Random seed.
+    
+    """
+        
     def __init__(
         self,
         ntypes: int,
         dim_descrpt: int,
         task_dim: int = 1,
         neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_p: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         self.task_dim = task_dim
@@ -64,13 +97,14 @@ class PropertyFittingNet(InvarFitting):
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
             neuron=neuron,
-            bias_atom_e=bias_atom_e,
+            bias_atom_e=bias_atom_p,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
+            seed=seed,
             **kwargs,
         )
 
