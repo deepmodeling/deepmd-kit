@@ -93,7 +93,12 @@ def type_embedding_args():
 
 
 def spin_args():
-    doc_use_spin = "Whether to use atomic spin model for each atom type"
+    doc_use_spin = (
+        "Whether to use atomic spin model for each atom type. "
+        "List of boolean values with the shape of [ntypes] to specify which types use spin, "
+        f"or a list of integer values {doc_only_pt_supported} "
+        "to indicate the index of the type that uses spin."
+    )
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
     doc_virtual_scale = (
@@ -106,7 +111,7 @@ def spin_args():
     )
 
     return [
-        Argument("use_spin", List[bool], doc=doc_use_spin),
+        Argument("use_spin", [List[bool], List[int]], doc=doc_use_spin),
         Argument(
             "spin_norm",
             List[float],
@@ -121,7 +126,7 @@ def spin_args():
         ),
         Argument(
             "virtual_scale",
-            List[float],
+            [List[float], float],
             optional=True,
             doc=doc_only_pt_supported + doc_virtual_scale,
         ),
