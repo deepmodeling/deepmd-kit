@@ -68,7 +68,7 @@ class TestDOSModelSeA(unittest.TestCase, JITTest):
         input_json = str(Path(__file__).parent.parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = [str(Path(__file__).parent.parent / "dos/data")]
+        data_file = [str(Path(__file__).parent.parent / "dos/data/global_system")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dos)
