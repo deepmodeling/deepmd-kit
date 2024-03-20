@@ -140,7 +140,7 @@ class DOSFittingNet(InvarFitting):
                 nframs = sampled[sys]["atype"].shape[0]
 
                 if "atom_dos" in sampled[sys]:
-                    sys_atom_dos = compute_stats_from_atomic(
+                    bias_dos = compute_stats_from_atomic(
                         sampled[sys]["atom_dos"].numpy(force=True),
                         sampled[sys]["atype"].numpy(force=True),
                     )[0]
@@ -155,12 +155,12 @@ class DOSFittingNet(InvarFitting):
                         )
                     sys_bias_redu = sampled[sys]["dos"].numpy(force=True)
 
-                    sys_atom_dos = compute_stats_from_redu(
+                    bias_dos = compute_stats_from_redu(
                         sys_bias_redu, sys_type_count, rcond=self.rcond
                     )[0]
                 if stat_file_path is not None:
-                    stat_file_path.save_numpy(sys_atom_dos)
-                self.bias_dos = torch.tensor(sys_atom_dos, device=env.DEVICE)
+                    stat_file_path.save_numpy(bias_dos)
+                self.bias_dos = torch.tensor(bias_dos, device=env.DEVICE)
 
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
