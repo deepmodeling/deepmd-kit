@@ -99,6 +99,7 @@ class DOSLoss(TaskLoss):
             Labels.
         natoms : int
             The local atom number.
+
         Returns
         -------
         model_pred: dict[str, torch.Tensor]
