@@ -36,8 +36,8 @@
   },
   "loss": {
     "type": "dos",
-    "start_pref_dos": 0.0,
-    "limit_pref_dos": 0.0,
+    "start_pref_dos": 1.0,
+    "limit_pref_dos": 1.0,
     "start_pref_cdf": 0.0,
     "limit_pref_cdf": 0.0,
     "start_pref_ados": 1.0,
