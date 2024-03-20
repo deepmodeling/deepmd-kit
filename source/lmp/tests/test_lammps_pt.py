@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import os
+import shutil
 import subprocess as sp
 import sys
+import tempfile
 from pathlib import (
     Path,
 )
@@ -667,3 +670,97 @@ def test_pair_deepmd_si(lammps_si):
             expected_f[lammps_si.atoms[ii].id - 1] * constants.force_metal2si
         )
     lammps_si.run(1)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.parametrize(
+    ("balance_args",),
+    [(["--balance"],), ([],)],
+)
+def test_pair_deepmd_mpi(balance_args: list):
+    if balance_args == []:
+        # TODO: [BUG] pt: fix torch.cat error in the C++ interface when nloc==0
+        # when a processor has no atoms, it throws the following errors:
+        # terminate called after throwing an instance of 'c10::Error'
+        #   what():  torch.cat(): expected a non-empty list of Tensors
+        # Exception raised from meta at /home/conda/feedstock_root/build_artifacts/libtorch_1706629241544/work/aten/src/ATen/native/TensorShape.cpp:256 (most recent call first):
+        # frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xb2 (0x1456de6755d2 in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libc10.so)
+        # frame #1: c10::detail::torchCheckFail(char const*, char const*, unsigned int, char const*) + 0xfa (0x1456de62ad7c in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libc10.so)
+        # frame #2: at::meta::structured_cat::meta(c10::IListRef<at::Tensor> const&, long) + 0x9dc (0x1456485f6fdc in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #3: <unknown function> + 0x2337b7d (0x145649337b7d in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #4: <unknown function> + 0x2337c23 (0x145649337c23 in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #5: at::_ops::cat::call(c10::IListRef<at::Tensor> const&, long) + 0x1af (0x145648a1e97f in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #6: createNlistTensor(std::vector<std::vector<int, std::allocator<int> >, std::allocator<std::vector<int, std::allocator<int> > > > const&) + 0x405 (0x1456de7a0d65 in /home/jz748/anaconda3/envs/dp3/bin/../lib/./libdeepmd_cc.so)
+        # frame #7: void deepmd::DeepPotPT::compute<double, std::vector<double, std::allocator<double> > >(std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> > const&, std::vector<int, std::allocator<int> > const&, std::vector<double, std::allocator<double> > const&, int, deepmd::InputNlist const&, int const&, std::vector<double, std::allocator<double> > const&, std::vector<double, std::allocator<double> > const&) + 0x52c (0x1456de7a563c in /home/jz748/anaconda3/envs/dp3/bin/../lib/./libdeepmd_cc.so)
+        # frame #8: void deepmd::DeepPotModelDevi::compute<double>(std::vector<double, std::allocator<double> >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<double, std::allocator<double> > const&, std::vector<int, std::allocator<int> > const&, std::vector<double, std::allocator<double> > const&, int, deepmd::InputNlist const&, int const&, std::vector<double, std::allocator<double> > const&, std::vector<double, std::allocator<double> > const&) + 0x367 (0x1456de799057 in /home/jz748/anaconda3/envs/dp3/bin/../lib/./libdeepmd_cc.so)
+        # frame #9: void DP_DeepPotModelDeviComputeNList_variant<double>(DP_DeepPotModelDevi*, int, int, double const*, int const*, double const*, int, DP_Nlist const*, int, double const*, double const*, double*, double*, double*, double*, double*) + 0x321 (0x1456f74126e1 in /home/jz748/anaconda3/envs/dp3/bin/../lib/libdeepmd_c.so)
+        # frame #10: LAMMPS_NS::PairDeepMD::compute(int, int) + 0xf2f (0x1456e6c7d21f in /home/jz748/anaconda3/envs/dp3/lib/deepmd_lmp/dpplugin.so)
+        # frame #11: LAMMPS_NS::Verlet::setup(int) + 0x3a2 (0x1456885c2552 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #12: LAMMPS_NS::Run::command(int, char**) + 0xa1c (0x14568855969c in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #13: LAMMPS_NS::Input::execute_command() + 0x76a (0x1456883bb5ba in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #14: LAMMPS_NS::Input::one(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x97 (0x1456883bc5c7 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #15: lammps_command + 0x90 (0x145688408eb0 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #16: <unknown function> + 0x6a4a (0x14571dfffa4a in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../libffi.so.8)
+        # frame #17: <unknown function> + 0x5fea (0x14571dffefea in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../libffi.so.8)
+        # frame #18: <unknown function> + 0x12545 (0x14570d2bf545 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so)
+        # frame #19: <unknown function> + 0x8802 (0x14570d2b5802 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so)
+        # frame #20: _PyObject_MakeTpCall + 0x253 (0x556477a31323 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #21: _PyEval_EvalFrameDefault + 0x716 (0x556477a3ee36 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #22: _PyFunction_Vectorcall + 0x181 (0x556477a624c1 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #23: _PyEval_EvalFrameDefault + 0x49f9 (0x556477a43119 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #24: <unknown function> + 0x2a442d (0x556477af542d in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #25: PyEval_EvalCode + 0x9f (0x556477af4abf in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #26: <unknown function> + 0x2c2a1a (0x556477b13a1a in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #27: <unknown function> + 0x2be593 (0x556477b0f593 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #28: <unknown function> + 0x2d3930 (0x556477b24930 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #29: _PyRun_SimpleFileObject + 0x1ae (0x556477b242ce in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #30: _PyRun_AnyFileObject + 0x44 (0x556477b23ff4 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #31: Py_RunMain + 0x374 (0x556477b1e6f4 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #32: Py_BytesMain + 0x37 (0x556477ae4a77 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #33: <unknown function> + 0x27b8a (0x14571e136b8a in /lib64/libc.so.6)
+        # frame #34: __libc_start_main + 0x8b (0x14571e136c4b in /lib64/libc.so.6)
+        # frame #35: <unknown function> + 0x29391d (0x556477ae491d in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        pytest.skip(
+            "An error will be thrown in this test. See the comment above in the source code."
+        )
+    with tempfile.NamedTemporaryFile() as f:
+        sp.check_call(
+            [
+                "mpirun",
+                "-n",
+                "2",
+                sys.executable,
+                Path(__file__).parent / "run_mpi_pair_deepmd.py",
+                data_file,
+                pb_file,
+                pb_file2,
+                md_file,
+                f.name,
+                *balance_args,
+            ]
+        )
+        arr = np.loadtxt(f.name, ndmin=1)
+    pe = arr[0]
+
+    relative = 1.0
+    assert pe == pytest.approx(expected_e)
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f /= norm + relative
+    assert md[7:] == pytest.approx(expected_md_f)
+    assert md[4] == pytest.approx(np.max(expected_md_f))
+    assert md[5] == pytest.approx(np.min(expected_md_f))
+    assert md[6] == pytest.approx(np.mean(expected_md_f))
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v))
+    assert md[2] == pytest.approx(np.min(expected_md_v))
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
