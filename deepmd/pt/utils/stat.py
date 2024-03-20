@@ -157,8 +157,8 @@ def compute_output_stats(
                     system["box"],
                     system["natoms"],
                 )
-                fparam = system["fparam"] if "fparam" in system else None
-                aparam = system["aparam"] if "aparam" in system else None
+                fparam = system.get("fparam", None)
+                aparam = system.get("aparam", None)
 
                 def model_forward_auto_batch_size(*args, **kwargs):
                     return auto_batch_size.execute_all(

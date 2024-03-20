@@ -291,7 +291,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
                         fparam=fparam,
                         aparam=aparam,
                     )
-                    return atomic_ret["energy"]
+                    return atomic_ret["energy"].detach()
 
             delta_bias_e = compute_output_stats(
                 merged,
