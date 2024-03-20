@@ -39,7 +39,7 @@ class PropertyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        task_num: int = 1,
+        task_dim: int = 1,
         neuron: List[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -58,12 +58,12 @@ class PropertyFittingNet(InvarFitting):
         # not used
         seed: Optional[int] = None,
     ):
-        self.task_num = task_num
+        self.task_dim = task_dim
         super().__init__(
             var_name="property",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=task_num,
+            dim_out=task_dim,
             neuron=neuron,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
@@ -91,7 +91,7 @@ class PropertyFittingNet(InvarFitting):
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
-        return {**super().serialize(), "type": "property", "task_num": self.task_num}
+        return {**super().serialize(), "type": "property", "task_dim": self.task_dim}
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

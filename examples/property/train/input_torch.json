@@ -157,7 +157,7 @@
     },
     "fitting_net": {
       "type": "property",
-      "task_num": 3,
+      "task_dim": 3,
       "neuron": [
         240,
         240,

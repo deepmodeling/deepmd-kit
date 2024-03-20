@@ -46,7 +46,7 @@ class PropertyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        task_num: int = 1,
+        task_dim: int = 1,
         neuron: List[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
@@ -57,12 +57,12 @@ class PropertyFittingNet(InvarFitting):
         mixed_types: bool = True,
         **kwargs,
     ):
-        self.task_num = task_num
+        self.task_dim = task_dim
         super().__init__(
             var_name="property",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
-            dim_out=task_num,
+            dim_out=task_dim,
             neuron=neuron,
             bias_atom_e=bias_atom_e,
             resnet_dt=resnet_dt,
@@ -84,7 +84,7 @@ class PropertyFittingNet(InvarFitting):
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
-        return {**super().serialize(), "type": "property", "task_num": self.task_num}
+        return {**super().serialize(), "type": "property", "task_dim": self.task_dim}
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

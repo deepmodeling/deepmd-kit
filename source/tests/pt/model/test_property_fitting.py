@@ -69,7 +69,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
-                task_num=5,
+                task_dim=5,
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=mixed_types,
@@ -137,7 +137,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
-                task_num=5,
+                task_dim=5,
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=mixed_types,
@@ -178,7 +178,7 @@ class TestInvariance(unittest.TestCase):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,  # dim_descrpt
-                task_num=9,
+                task_dim=9,
                 numb_fparam=nfp,
                 numb_aparam=nap,
                 mixed_types=True,
@@ -230,7 +230,7 @@ class TestInvariance(unittest.TestCase):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
-                task_num=8,
+                task_dim=8,
                 numb_fparam=0,
                 numb_aparam=0,
                 mixed_types=True,
@@ -275,7 +275,7 @@ class TestInvariance(unittest.TestCase):
             ft0 = PropertyFittingNet(
                 self.nt,
                 self.dd0.dim_out,
-                task_num=11,
+                task_dim=11,
                 numb_fparam=0,
                 numb_aparam=0,
                 mixed_types=True,
@@ -321,7 +321,7 @@ class TestPropertyModel(unittest.TestCase):
         self.ft0 = PropertyFittingNet(
             self.nt,
             self.dd0.dim_out,
-            task_num=3,
+            task_dim=3,
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=True,

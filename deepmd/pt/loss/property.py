@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 class PropertyLoss(TaskLoss):
     def __init__(
         self,
-        task_num,
+        task_dim,
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         **kwargs,
@@ -32,7 +32,7 @@ class PropertyLoss(TaskLoss):
 
         Parameters
         ----------
-        task_num : float
+        task_dim : float
             The learning rate at the start of the training.
         loss_func : str
             The loss function, such as "smooth_mae", "mae", "rmse"
@@ -44,7 +44,7 @@ class PropertyLoss(TaskLoss):
         super().__init__()
         self.loss_func = loss_func
         self.metric = metric
-        self.task_num = task_num
+        self.task_dim = task_dim
         self.mean = kwargs.get("mean", 0)
         self.std = kwargs.get("std", 1)
         self.beta = kwargs.get("beta", 1.00)
@@ -68,8 +68,8 @@ class PropertyLoss(TaskLoss):
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
-        assert label["property"].shape[-1] == self.task_num
-        assert model_pred["property"].shape[-1] == self.task_num
+        assert label["property"].shape[-1] == self.task_dim
+        assert model_pred["property"].shape[-1] == self.task_dim
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
 
@@ -149,7 +149,7 @@ class PropertyLoss(TaskLoss):
         label_requirement.append(
             DataRequirementItem(
                 "property",
-                ndof=self.task_num,
+                ndof=self.task_dim,
                 atomic=False,
                 must=False,
                 high_prec=True,

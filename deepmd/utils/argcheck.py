@@ -1183,7 +1183,7 @@ def fitting_property():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_task_num = "The dimension of outputs of fitting net"
+    doc_task_dim = "The dimension of outputs of fitting net"
     return [
         Argument(
             "neuron",
@@ -1203,7 +1203,7 @@ def fitting_property():
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
-        Argument("task_num", int, optional=True, default=1, doc=doc_task_num),
+        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
     ]
 
 
