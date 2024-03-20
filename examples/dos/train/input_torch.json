@@ -1,10 +1,10 @@
 {
   "model": {
     "type_map": [
-      "H"
+      "Si"
     ],
     "descriptor": {
-      "type": "se_e2_a",
+      "type": "se_a",
       "sel": [
         90
       ],
@@ -17,6 +17,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 8,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1
     },
@@ -48,7 +49,6 @@
   "learning_rate": {
     "type": "exp",
     "start_lr": 0.001,
-    "decay_steps": 5000,
     "stop_lr": 1e-08
   },
   "training": {
@@ -57,23 +57,15 @@
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 1000,
-    "save_ckpt": "model",
+    "save_ckpt": "model.ckpt",
     "disp_training": true,
     "time_training": true,
     "profiling": false,
     "profiling_file": "timeline.json",
     "training_data": {
       "systems": [
-        "pt/dos/data/atomic_system/",
-        "pt/dos/data/global_system/"
-      ],
-      "set_prefix": "set",
-      "batch_size": 1
-    },
-    "validation_data": {
-      "systems": [
-        "pt/dos/data/atomic_system/",
-        "pt/dos/data/global_system/"
+        "../data/heat-221-reformat/atomic_system/",
+        "../data/heat-221-reformat/global_system/"
       ],
       "set_prefix": "set",
       "batch_size": 1
