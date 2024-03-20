@@ -119,7 +119,7 @@ class DeepProperty(DeepEval):
             **kwargs,
         )
         atomic_property = results["property"].reshape(nframes, natoms, -1)
-        property = np.sum(atomic_property, axis=1)
+        property = results["property_redu"].reshape(nframes, -1)
 
         if atomic:
             return (
