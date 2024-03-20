@@ -178,7 +178,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return self.dp.model["Default"].get_fitting_net().dim_out
+        return self.dp.model["Default"].get_numb_dos()
 
     def get_has_efield(self):
         """Check if the model has efield."""
