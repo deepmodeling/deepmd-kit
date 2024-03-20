@@ -86,25 +86,30 @@ class DOSLoss(TaskLoss):
             self.has_dos or self.has_cdf or self.has_ados or self.has_acdf
         ), AssertionError("Can not assian zero weight both to `pref` and `pref_atomic`")
 
-    def forward(self, model_pred, label, natoms, learning_rate=0.0, mae=False):
+    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on local and global tensors.
 
         Parameters
         ----------
-        model_pred : dict[str, torch.Tensor]
-            Model predictions.
+        input_dict : dict[str, torch.Tensor]
+            Model inputs.
+        model : torch.nn.Module
+            Model to be used to output the predictions.
         label : dict[str, torch.Tensor]
             Labels.
         natoms : int
             The local atom number.
-
         Returns
         -------
+        model_pred: dict[str, torch.Tensor]
+            Model predictions.
         loss: torch.Tensor
             Loss for model to minimize.
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
+        model_pred = model(**input_dict)
+
         coef = learning_rate / self.starter_learning_rate
         pref_dos = (
             self.limit_pref_dos + (self.start_pref_dos - self.limit_pref_dos) * coef
@@ -197,7 +202,7 @@ class DOSLoss(TaskLoss):
             loss += pref_cdf * l2_global_loss_cdf
             rmse_global_dos = l2_global_loss_cdf.sqrt() / atom_num
             more_loss["rmse_global_cdf"] = rmse_global_dos.detach()
-        return loss, more_loss
+        return model_pred, loss, more_loss
 
     @property
     def label_requirement(self) -> List[DataRequirementItem]:
