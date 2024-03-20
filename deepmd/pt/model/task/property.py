@@ -71,9 +71,9 @@ class PropertyFittingNet(InvarFitting):
         different fitting nets for different atom types.
     seed : int, optional
         Random seed.
-    
+
     """
-        
+
     def __init__(
         self,
         ntypes: int,
