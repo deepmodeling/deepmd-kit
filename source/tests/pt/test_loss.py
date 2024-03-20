@@ -148,8 +148,11 @@ class TestEnerStdLoss(unittest.TestCase):
         }
         self.label = {
             "energy": torch.from_numpy(l_energy),
+            "find_energy": 1.0,
             "force": torch.from_numpy(l_force),
+            "find_force": 1.0,
             "virial": torch.from_numpy(l_virial),
+            "find_virial": 1.0,
         }
         self.natoms = pt_batch["natoms"]
 
@@ -327,8 +330,11 @@ class TestEnerSpinLoss(unittest.TestCase):
         }
         self.label = {
             "energy": torch.from_numpy(l_energy),
+            "find_energy": 1.0,
             "force": torch.from_numpy(l_force_real).reshape(nframes, self.nloc, 3),
+            "find_force": 1.0,
             "force_mag": torch.from_numpy(l_force_mag).reshape(nframes, self.nloc, 3),
+            "find_force_mag": 1.0,
         }
         self.natoms = pt_batch["natoms"]
 

@@ -95,6 +95,8 @@ class TensorLoss(TaskLoss):
             and self.tensor_name in model_pred
             and "atomic_" + self.label_name in label
         ):
+            find_local = label.get("find_" + "atomic_" + self.label_name, 0.0)
+            local_weight = self.local_weight * find_local
             local_tensor_pred = model_pred[self.tensor_name].reshape(
                 [-1, natoms, self.tensor_size]
             )
@@ -108,15 +110,21 @@ class TensorLoss(TaskLoss):
                 diff = diff[model_pred["mask"].reshape([-1]).bool()]
             l2_local_loss = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_local_{self.tensor_name}_loss"] = l2_local_loss.detach()
-            loss += self.local_weight * l2_local_loss
+                more_loss[f"l2_local_{self.tensor_name}_loss"] = self.display_if_exist(
+                    l2_local_loss.detach(), find_local
+                )
+            loss += local_weight * l2_local_loss
             rmse_local = l2_local_loss.sqrt()
-            more_loss[f"rmse_local_{self.tensor_name}"] = rmse_local.detach()
+            more_loss[f"rmse_local_{self.tensor_name}"] = self.display_if_exist(
+                rmse_local.detach(), find_local
+            )
         if (
             self.has_global_weight
             and "global_" + self.tensor_name in model_pred
             and self.label_name in label
         ):
+            find_global = label.get("find_" + self.label_name, 0.0)
+            global_weight = self.global_weight * find_global
             global_tensor_pred = model_pred["global_" + self.tensor_name].reshape(
                 [-1, self.tensor_size]
             )
@@ -132,12 +140,14 @@ class TensorLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss[f"l2_global_{self.tensor_name}_loss"] = (
-                    l2_global_loss.detach()
+                more_loss[f"l2_global_{self.tensor_name}_loss"] = self.display_if_exist(
+                    l2_global_loss.detach(), find_global
                 )
-            loss += self.global_weight * l2_global_loss
+            loss += global_weight * l2_global_loss
             rmse_global = l2_global_loss.sqrt() / atom_num
-            more_loss[f"rmse_global_{self.tensor_name}"] = rmse_global.detach()
+            more_loss[f"rmse_global_{self.tensor_name}"] = self.display_if_exist(
+                rmse_global.detach(), find_global
+            )
         return model_pred, loss, more_loss
 
     @property

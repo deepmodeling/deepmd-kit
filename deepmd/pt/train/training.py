@@ -1017,7 +1017,7 @@ class Trainer:
             if item_key in input_keys:
                 input_dict[item_key] = batch_data[item_key]
             else:
-                if item_key not in ["sid", "fid"] and "find_" not in item_key:
+                if item_key not in ["sid", "fid"]:
                     label_dict[item_key] = batch_data[item_key]
         log_dict = {}
         if "fid" in batch_data:
