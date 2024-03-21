@@ -5,6 +5,7 @@ In this section, we will take `$deepmd_source_dir/examples/NiO/se_e2_a/input.jso
 ## Spin
 
 The construction of the fitting net is give by section {ref}`spin <model/spin>`
+
 ```json
     "spin" : {
         "use_spin":         [true, false],
@@ -12,9 +13,10 @@ The construction of the fitting net is give by section {ref}`spin <model/spin>`
         "spin_norm":        [1.2737],
     },
 ```
-* {ref}`use_spin <model/spin[ener_spin]/use_spin>` determines whether to turn on the magnetism of the atoms.The index of this option matches option `type_map <model/type_map>`.
-* {ref}`virtual_len <model/spin[ener_spin]/virtual_len>` specifies the distance between virtual atom and the belonging real atom.
-* {ref}`spin_norm <model/spin[ener_spin]/spin_norm>` gives the magnitude of the magnetic moment for each magnatic atom.
+
+- {ref}`use_spin <model/spin[ener_spin]/use_spin>` determines whether to turn on the magnetism of the atoms.The index of this option matches option `type_map <model/type_map>`.
+- {ref}`virtual_len <model/spin[ener_spin]/virtual_len>` specifies the distance between virtual atom and the belonging real atom.
+- {ref}`spin_norm <model/spin[ener_spin]/spin_norm>` gives the magnitude of the magnetic moment for each magnatic atom.
 
 ## Spin Loss
 
@@ -29,11 +31,13 @@ The prefectors may not be a constant, rather it changes linearly with the learni
 $$p_{fr}(t) = p_{fr}^0 \frac{ \alpha(t) }{ \alpha(0) } + p_{fr}^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$
 
 where $\alpha(t)$ denotes the learning rate at step $t$. $p_{fr}^0$ and $p_{fr}^\infty$ specifies the $p_f$ at the start of the training and at the limit of $t \to \infty$ (set by {ref}`start_pref_fr <loss[ener_spin]/start_pref_fr>` and {ref}`limit_pref_f <loss[ener_spin]/limit_pref_fr>`, respectively), i.e.
+
 ```math
 pref_fr(t) = start_pref_fr * ( lr(t) / start_lr ) + limit_pref_fr * ( 1 - lr(t) / start_lr )
 ```
 
 The {ref}`loss <loss>` section in the `input.json` is
+
 ```json
     "loss" :{
 	"type":		        "ener_spin",
@@ -47,6 +51,7 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"limit_pref_v":	    0,
     },
 ```
+
 The options {ref}`start_pref_e <loss[ener_spin]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_spin]/limit_pref_e>`, {ref}`start_pref_fr <loss[ener_spin]/start_pref_fr>`, {ref}`limit_pref_fm <loss[ener_spin]/limit_pref_fm>`, {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` determine the start and limit prefactors of energy, atomic force, magnatic force and virial, respectively.
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` to 0.

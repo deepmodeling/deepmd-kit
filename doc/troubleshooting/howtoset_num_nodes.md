@@ -13,9 +13,11 @@ To enable MPI support for training, one should [install horovod](../install/inst
 MPI support for inference is not directly supported by DeePMD-kit, but indirectly supported by the third-party software. For example, [LAMMPS enables running simulations in parallel](https://docs.lammps.org/Developer_parallel.html) using the MPI parallel communication standard with distributed data. That software has to build against MPI.
 
 Set the number of processes with:
+
 ```bash
 mpirun -np $num_nodes dp
 ```
+
 Note that `mpirun` here should be the same as the MPI used to build software. For example, one can use `mpirun --version` and `lmp -h` to see if `mpirun` and LAMMPS has the same MPI version.
 
 Sometimes, `$num_nodes` and the nodes information can be directly given by the HPC scheduler system, if the MPI used here is the same as the MPI used to build the scheduler system. Otherwise, one have to manually assign these information.
@@ -54,6 +56,7 @@ There is no one general parallel configuration that works for all situations, so
 
 Here are some empirical examples.
 If you wish to use 3 cores of 2 CPUs on one node, you may set the environmental variables and run DeePMD-kit as follows:
+
 ```bash
 export OMP_NUM_THREADS=3
 export TF_INTRA_OP_PARALLELISM_THREADS=3
