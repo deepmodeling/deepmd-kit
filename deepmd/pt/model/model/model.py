@@ -3,6 +3,8 @@ from typing import (
     Optional,
 )
 
+import torch
+
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
 )
@@ -11,61 +13,15 @@ from deepmd.utils.path import (
 )
 
 
-# trick: torch.nn.Module should not be inherbited here, otherwise,
-# the abstract method will override the method from the atomic model
-# as Python resolves method lookups using the C3 linearisation.
-# See https://stackoverflow.com/a/47117600/9567349
-# Take an example, this is the situation for only inheriting make_model():
-#       torch.nn.Module        BaseAtomicModel        make_model()
-#             |                       |                    |
-#             -------------------------                    |
-#                         |                                |
-#                    DPAtomicModel                      BaseModel
-#                         |                                |
-#                make_model(DPAtomicModel)                 |
-#                         |                                |
-#                         ----------------------------------
-#                                           |
-#                                         DPModel
-#
-# The order is: DPModel -> make_model(DPAtomicModel) -> DPAtomicModel ->
-# torch.nn.Module -> BaseAtomicModel -> BaseModel -> make_model()
-#
-# However, if BaseModel also inherbits from torch.nn.Module:
-#         torch.nn.Module                      make_model()
-#                |                                   |
-#                |---------------------------        |
-#                |                          |        |
-#                |      BaseAtomicModel     |        |
-#                |            |             |        |
-#                |-------------             ----------
-#                |                              |
-#           DPAtomicModel                   BaseModel
-#                |                              |
-#                |                              |
-#       make_model(DPAtomicModel)               |
-#                |                              |
-#                |                              |
-#                --------------------------------
-#                         |
-#                         |
-#                      DPModel
-#
-# The order is DPModel -> make_model(DPAtomicModel) -> DPAtomicModel ->
-# BaseModel -> torch.nn.Module -> BaseAtomicModel -> make_model()
-# BaseModel has higher proirity than BaseAtomicModel, which is not what
-# we want.
-# Alternatively, we can also make BaseAtomicModel in front of torch.nn.Module
-# in DPAtomicModel (and other classes), but this requires the developer aware
-# of it when developing it...
-class BaseModel(make_base_model()):
+class BaseModel(torch.nn.Module, make_base_model()):
     def __init__(self, *args, **kwargs):
         """Construct a basic model for different tasks."""
-        super().__init__(*args, **kwargs)
+        torch.nn.Module.__init__(self)
+        self.model_def_script = ""
 
     def compute_or_load_stat(
         self,
-        sampled,
+        sampled_func,
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -78,9 +34,14 @@ class BaseModel(make_base_model()):
 
         Parameters
         ----------
-        sampled
+        sampled_func
             The sampled data frames from different data systems.
         stat_file_path
             The path to the statistics files.
         """
         raise NotImplementedError
+
+    @torch.jit.export
+    def get_model_def_script(self) -> str:
+        """Get the model definition script."""
+        return self.model_def_script

@@ -35,6 +35,7 @@ from .base_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     """Pairwise tabulation energy model.
 
@@ -78,7 +79,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         **kwargs,
     ):
         torch.nn.Module.__init__(self)
-        self.model_def_script = ""
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
@@ -139,11 +139,9 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
-    @torch.jit.export
     def get_rcut(self) -> float:
         return self.rcut
 
-    @torch.jit.export
     def get_type_map(self) -> List[str]:
         return self.type_map
 
@@ -417,20 +415,28 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         # (nframes, nloc, nnei)
         expanded_i_type = i_type.unsqueeze(-1).expand(-1, -1, j_type.shape[-1])
 
-        # (nframes, nloc, nnei, nspline, 4)
-        expanded_tab_data = tab_data[expanded_i_type, j_type]
-
-        # (nframes, nloc, nnei, 1, 4)
-        expanded_idx = idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, -1, 4)
-
         # handle the case where idx is beyond the number of splines
-        clipped_indices = torch.clamp(expanded_idx, 0, nspline - 1).to(torch.int64)
+        clipped_indices = torch.clamp(idx, 0, nspline - 1).to(torch.int64)
 
+        nframes = i_type.shape[0]
+        nloc = i_type.shape[1]
+        nnei = j_type.shape[2]
+        ntypes = tab_data.shape[0]
+        # tab_data_idx: (nframes, nloc, nnei)
+        tab_data_idx = (
+            expanded_i_type * ntypes * nspline + j_type * nspline + clipped_indices
+        )
+        # tab_data: (ntype, ntype, nspline, 4)
+        tab_data = tab_data.view(ntypes * ntypes * nspline, 4)
+        # tab_data_idx: (nframes * nloc * nnei, 4)
+        tab_data_idx = tab_data_idx.view(nframes * nloc * nnei, 1).expand(-1, 4)
         # (nframes, nloc, nnei, 4)
-        final_coef = torch.gather(expanded_tab_data, 3, clipped_indices).squeeze()
+        final_coef = torch.gather(tab_data, 0, tab_data_idx).view(
+            nframes, nloc, nnei, 4
+        )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
-        final_coef[expanded_idx.squeeze() > nspline] = 0
+        final_coef[idx > nspline] = 0
         return final_coef
 
     @staticmethod
@@ -454,17 +460,14 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
         return ener
 
-    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return 0
 
-    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return 0
 
-    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -474,7 +477,6 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return []
 
-    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 

@@ -17,6 +17,7 @@ from deepmd.pt.entrypoints.main import (
 )
 
 from .model.test_permutation import (
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
@@ -52,11 +53,11 @@ class DPTrainTest:
             fix_params["model"]["descriptor"]["trainable"] = True
             trainer_fix = get_trainer(fix_params)
             model_dict_before_training = deepcopy(
-                trainer_fix.model.fitting_net.state_dict()
+                trainer_fix.model.get_fitting_net().state_dict()
             )
             trainer_fix.run()
             model_dict_after_training = deepcopy(
-                trainer_fix.model.fitting_net.state_dict()
+                trainer_fix.model.get_fitting_net().state_dict()
             )
         else:
             trainer_fix = get_trainer(fix_params)
@@ -89,6 +90,23 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+@unittest.skip("loss not implemented")
+class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "dos/input.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "dos/data/")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dos)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
 
@@ -293,6 +311,7 @@ class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
         self.config["model"]["atom_exclude_types"] = [1]
         self.config["model"]["fitting_net"]["type"] = "polar"
         self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         # can not set requires_grad false for all parameters,
@@ -326,6 +345,7 @@ class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
         self.config["model"]["atom_exclude_types"] = [1]
         self.config["model"]["fitting_net"]["type"] = "polar"
         self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         # can not set requires_grad false for all parameters,
@@ -359,6 +379,7 @@ class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
         self.config["model"]["atom_exclude_types"] = [1]
         self.config["model"]["fitting_net"]["type"] = "polar"
         self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         # can not set requires_grad false for all parameters,

@@ -49,9 +49,6 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     change_energy_bias_lower,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -121,8 +118,8 @@ class Fitting(torch.nn.Module, BaseFitting):
             The number of test samples in a system to change the energy bias.
         """
         log.info(
-            "Changing energy bias in pretrained model for types {}... "
-            "(this step may take long time)".format(str(new_type_map))
+            f"Changing energy bias in pretrained model for types {new_type_map!s}... "
+            "(this step may take long time)"
         )
         # data
         systems = config["training"]["training_data"]["systems"]
@@ -371,7 +368,6 @@ class GeneralFitting(Fitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
@@ -461,7 +457,8 @@ class GeneralFitting(Fitting):
     ):
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
-            # TODO: Idealy, the input for vaccum should be computed;
+            # TODO: compute the input for vaccm when remove_vaccum_contribution is set
+            # Idealy, the input for vaccum should be computed;
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
             # descriptor.

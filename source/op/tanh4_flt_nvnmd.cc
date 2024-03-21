@@ -117,8 +117,8 @@ class Tanh4FltNvnmdOp : public OpKernel {
         y = floor(y * prechi) / prechi;
         ys(ii, jj) = (x < 0) ? (-y) : y;
       }  // loop jj
-    }    // loop ii
-  }      // Compute
+    }  // loop ii
+  }  // Compute
 
   //- define the private variable for calculation
 };  // Tanh4FltNvnmd

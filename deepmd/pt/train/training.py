@@ -274,6 +274,9 @@ class Trainer:
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergyStdLoss(**loss_params)
+            elif loss_type == "dos":
+                loss_params["starter_learning_rate"] = start_lr
+                raise NotImplementedError()
             elif loss_type == "ener_spin":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergySpinLoss(**loss_params)
@@ -520,8 +523,11 @@ class Trainer:
                         model_params["type_map"],
                         model_params["new_type_map"],
                     )
-                    if hasattr(self.model, "fitting_net"):
-                        self.model.fitting_net.change_energy_bias(
+                    # TODO: need an interface instead of fetching fitting_net!!!!!!!!!
+                    if hasattr(self.model, "atomic_model") and hasattr(
+                        self.model.atomic_model, "fitting_net"
+                    ):
+                        self.model.atomic_model.fitting_net.change_energy_bias(
                             config,
                             self.model,
                             old_type_map,
@@ -531,7 +537,7 @@ class Trainer:
                         )
                     elif isinstance(self.model, DPZBLModel):
                         # need to updated
-                        self.model.change_energy_bias()
+                        self.model.atomic_model.change_energy_bias()
                     else:
                         raise NotImplementedError
         if init_frz_model is not None:
@@ -552,14 +558,16 @@ class Trainer:
                 output_device=LOCAL_RANK,
             )
 
-        # TODO ZD add lr warmups for multitask
+        # TODO add lr warmups for multitask
+        # author: iProzd
         def warm_up_linear(step, warmup_steps):
             if step < warmup_steps:
                 return step / warmup_steps
             else:
                 return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
 
-        # TODO ZD add optimizers for multitask
+        # TODO add optimizers for multitask
+        # author: iProzd
         if self.opt_type == "Adam":
             self.optimizer = torch.optim.Adam(
                 self.wrapper.parameters(), lr=self.lr_exp.start_lr
@@ -688,8 +696,13 @@ class Trainer:
                     module = (
                         self.wrapper.module if dist.is_initialized() else self.wrapper
                     )
-                    loss, more_loss = module.loss[task_key](
-                        model_pred,
+
+                    def fake_model():
+                        return model_pred
+
+                    _, loss, more_loss = module.loss[task_key](
+                        {},
+                        fake_model,
                         label_dict,
                         int(input_dict["atype"].shape[-1]),
                         learning_rate=pref_lr,

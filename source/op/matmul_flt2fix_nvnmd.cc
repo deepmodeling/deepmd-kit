@@ -138,9 +138,9 @@ class MatmulFlt2fixNvnmdOp : public OpKernel {
           ufi.nint &= FLT_MASK;
           y[hh * N * K + ii * K + kk] = ufi.nflt;
         }  // loop jj
-      }    // loop ii
-    }      // loop hh
-  }        // Compute
+      }  // loop ii
+    }  // loop hh
+  }  // Compute
 
  private:
   int nbit;

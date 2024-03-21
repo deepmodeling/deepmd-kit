@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Any,
     Dict,
@@ -15,6 +16,9 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
     fitting_check_output,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .general_fitting import (
@@ -78,6 +82,8 @@ class InvarFitting(GeneralFitting):
             Number of atomic parameter
     rcond
             The condition number for the regression of atomic energy.
+    bias_atom
+            Bias for each element.
     tot_ener_zero
             Force the total energy to zero. Useful for the charge fitting.
     trainable
@@ -113,10 +119,11 @@ class InvarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        bias_atom: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = [],
+        atom_ener: Optional[List[float]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -148,6 +155,7 @@ class InvarFitting(GeneralFitting):
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
             rcond=rcond,
+            bias_atom_e=bias_atom,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
             activation_function=activation_function,
@@ -169,16 +177,18 @@ class InvarFitting(GeneralFitting):
         data["atom_ener"] = self.atom_ener
         return data
 
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        return super().deserialize(data)
+
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
         return self.dim_out
 
     def compute_output_stats(self, merged):
         """Update the output bias for fitting net."""
-        raise NotImplementedError
-
-    def init_fitting_stat(self, result_dict):
-        """Initialize the model bias by the statistics."""
         raise NotImplementedError
 
     def output_def(self):

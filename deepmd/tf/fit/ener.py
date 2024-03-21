@@ -868,7 +868,7 @@ class EnerFitting(Fitting):
             data["nets"],
             suffix=suffix,
         )
-        fitting.bias_atom_e = data["@variables"]["bias_atom_e"]
+        fitting.bias_atom_e = data["@variables"]["bias_atom_e"].ravel()
         if fitting.numb_fparam > 0:
             fitting.fparam_avg = data["@variables"]["fparam_avg"]
             fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
@@ -893,7 +893,7 @@ class EnerFitting(Fitting):
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class
+            # TODO: refactor the class for energy fitting and type embedding
             "mixed_types": False,
             "dim_out": 1,
             "neuron": self.n_neuron,
@@ -912,7 +912,7 @@ class EnerFitting(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings
+                # TODO: consider type embeddings for type embedding
                 ndim=1,
                 in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
                 neuron=self.n_neuron,
@@ -922,7 +922,7 @@ class EnerFitting(Fitting):
                 suffix=suffix,
             ),
             "@variables": {
-                "bias_atom_e": self.bias_atom_e,
+                "bias_atom_e": self.bias_atom_e.reshape(-1, 1),
                 "fparam_avg": self.fparam_avg,
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,

@@ -38,7 +38,7 @@ class DipoleModel(DPModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
@@ -77,7 +77,7 @@ class DipoleModel(DPModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]

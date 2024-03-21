@@ -566,7 +566,8 @@ class Model(ABC, make_plugin_registry("model")):
         """
         if cls is Model:
             return Model.get_class_by_type(data.get("type", "standard")).deserialize(
-                data
+                data,
+                suffix=suffix,
             )
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 

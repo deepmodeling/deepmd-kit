@@ -60,13 +60,13 @@ VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
 
 def torch2tf(torch_name, last_layer_id=None):
     fields = torch_name.split(".")
-    offset = int(fields[2] == "networks")
+    offset = int(fields[3] == "networks") + 1
     element_id = int(fields[2 + offset])
-    if fields[0] == "descriptor":
+    if fields[1] == "descriptor":
         layer_id = int(fields[4 + offset]) + 1
         weight_type = fields[5 + offset]
         ret = "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
-    elif fields[0] == "fitting_net":
+    elif fields[1] == "fitting_net":
         layer_id = int(fields[4 + offset])
         weight_type = fields[5 + offset]
         if layer_id != last_layer_id:
@@ -301,7 +301,7 @@ class TestEnergy(unittest.TestCase):
         )
 
         # Keep statistics consistency between 2 implentations
-        my_em = my_model.descriptor
+        my_em = my_model.get_descriptor()
         mean = stat_dict["descriptor.mean"].reshape([self.ntypes, my_em.get_nsel(), 4])
         stddev = stat_dict["descriptor.stddev"].reshape(
             [self.ntypes, my_em.get_nsel(), 4]
@@ -310,7 +310,7 @@ class TestEnergy(unittest.TestCase):
             torch.tensor(mean, device=DEVICE),
             torch.tensor(stddev, device=DEVICE),
         )
-        my_model.fitting_net.bias_atom_e = torch.tensor(
+        my_model.get_fitting_net().bias_atom_e = torch.tensor(
             stat_dict["fitting_net.bias_atom_e"], device=DEVICE
         )
 
@@ -338,34 +338,33 @@ class TestEnergy(unittest.TestCase):
         batch["natoms"] = torch.tensor(
             batch["natoms_vec"], device=batch["coord"].device
         ).unsqueeze(0)
-        model_predict = my_model(
-            batch["coord"].to(env.DEVICE),
-            batch["atype"].to(env.DEVICE),
-            batch["box"].to(env.DEVICE),
-            do_atomic_virial=True,
+        model_input = {
+            "coord": batch["coord"].to(env.DEVICE),
+            "atype": batch["atype"].to(env.DEVICE),
+            "box": batch["box"].to(env.DEVICE),
+            "do_atomic_virial": True,
+        }
+        model_input_1 = {
+            "coord": batch["coord"].to(env.DEVICE),
+            "atype": batch["atype"].to(env.DEVICE),
+            "box": batch["box"].to(env.DEVICE),
+            "do_atomic_virial": False,
+        }
+        label = {
+            "energy": batch["energy"].to(env.DEVICE),
+            "force": batch["force"].to(env.DEVICE),
+        }
+        cur_lr = my_lr.value(self.wanted_step)
+        model_predict, loss, _ = my_loss(
+            model_input, my_model, label, int(batch["natoms"][0, 0]), cur_lr
         )
-        model_predict_1 = my_model(
-            batch["coord"].to(env.DEVICE),
-            batch["atype"].to(env.DEVICE),
-            batch["box"].to(env.DEVICE),
-            do_atomic_virial=False,
-        )
+        model_predict_1 = my_model(**model_input_1)
         p_energy, p_force, p_virial, p_atomic_virial = (
             model_predict["energy"],
             model_predict["force"],
             model_predict["virial"],
             model_predict["atom_virial"],
         )
-        cur_lr = my_lr.value(self.wanted_step)
-        model_pred = {
-            "energy": p_energy,
-            "force": p_force,
-        }
-        label = {
-            "energy": batch["energy"].to(env.DEVICE),
-            "force": batch["force"].to(env.DEVICE),
-        }
-        loss, _ = my_loss(model_pred, label, int(batch["natoms"][0, 0]), cur_lr)
         np.testing.assert_allclose(
             head_dict["energy"], p_energy.view(-1).cpu().detach().numpy()
         )

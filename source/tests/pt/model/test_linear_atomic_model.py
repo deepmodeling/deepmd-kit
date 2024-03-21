@@ -178,11 +178,13 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(self):
         md1 = torch.jit.script(self.md1)
-        self.assertEqual(md1.get_rcut(), self.rcut)
-        self.assertEqual(md1.get_type_map(), ["foo", "bar"])
+        # atomic model no more export methods
+        # self.assertEqual(md1.get_rcut(), self.rcut)
+        # self.assertEqual(md1.get_type_map(), ["foo", "bar"])
         md3 = torch.jit.script(self.md3)
-        self.assertEqual(md3.get_rcut(), self.rcut)
-        self.assertEqual(md3.get_type_map(), ["foo", "bar"])
+        # atomic model no more export methods
+        # self.assertEqual(md3.get_rcut(), self.rcut)
+        # self.assertEqual(md3.get_type_map(), ["foo", "bar"])
 
 
 class TestRemmapMethod(unittest.TestCase):

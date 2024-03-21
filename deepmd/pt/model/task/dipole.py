@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     Callable,
@@ -24,6 +25,9 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 log = logging.getLogger(__name__)
@@ -123,6 +127,12 @@ class DipoleFittingNet(GeneralFitting):
         data["c_differentiable"] = self.c_differentiable
         return data
 
+    @classmethod
+    def deserialize(cls, data: dict) -> "GeneralFitting":
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        return super().deserialize(data)
+
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
@@ -182,3 +192,6 @@ class DipoleFittingNet(GeneralFitting):
         # (nframes, nloc, 3)
         out = torch.bmm(out, gr).squeeze(-2).view(nframes, nloc, 3)
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+
+    # make jit happy with torch 2.0.0
+    exclude_types: List[int]

@@ -1,7 +1,7 @@
 [build-system]
 requires = [
+    # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    # TODO: unpin the upper bound when it is stable
     "scikit-build-core>=0.5,<0.9,!=0.6.0",
     "packaging",
 ]
@@ -134,7 +134,7 @@ test-command = [
 test-extras = ["cpu", "test", "lmp", "ipi"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
-# TODO: uncomment when CUDA 11 is deprecated
+# TODO: uncomment to use the latest image when CUDA 11 is deprecated
 # manylinux-x86_64-image = "manylinux_2_28"
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "manylinux_2_28"

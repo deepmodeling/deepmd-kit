@@ -19,7 +19,7 @@ class TaskLoss(torch.nn.Module, ABC):
         """Construct loss."""
         super().__init__()
 
-    def forward(self, model_pred, label, natoms, learning_rate):
+    def forward(self, input_dict, model, label, natoms, learning_rate):
         """Return loss ."""
         raise NotImplementedError
 

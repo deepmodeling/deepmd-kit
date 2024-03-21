@@ -4,6 +4,7 @@
 The NPM package downloads the C library binary from GitHub releases.
 This script changes the package.json to make it work.
 """
+
 import json
 import shutil
 

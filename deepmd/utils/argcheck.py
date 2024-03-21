@@ -93,7 +93,12 @@ def type_embedding_args():
 
 
 def spin_args():
-    doc_use_spin = "Whether to use atomic spin model for each atom type"
+    doc_use_spin = (
+        "Whether to use atomic spin model for each atom type. "
+        "List of boolean values with the shape of [ntypes] to specify which types use spin, "
+        f"or a list of integer values {doc_only_pt_supported} "
+        "to indicate the index of the type that uses spin."
+    )
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
     doc_virtual_scale = (
@@ -106,7 +111,7 @@ def spin_args():
     )
 
     return [
-        Argument("use_spin", List[bool], doc=doc_use_spin),
+        Argument("use_spin", [List[bool], List[int]], doc=doc_use_spin),
         Argument(
             "spin_norm",
             List[float],
@@ -121,7 +126,7 @@ def spin_args():
         ),
         Argument(
             "virtual_scale",
-            List[float],
+            [List[float], float],
             optional=True,
             doc=doc_only_pt_supported + doc_virtual_scale,
         ),
@@ -1461,7 +1466,6 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
-        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1518,15 +1522,32 @@ def linear_ener_model_args() -> Argument:
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
     doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_stop_lr = (
+        "The desired learning rate at the end of the training. "
+        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
+        "this value will serve as the minimum learning rate during training. "
+        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
+    )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
+    )
+    doc_decay_rate = (
+        "The decay rate for the learning rate. "
+        "If this is provided, it will be used directly as the decay rate for learning rate "
+        "instead of calculating it through interpolation between start_lr and stop_lr."
     )
 
     args = [
         Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
         Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
+        Argument(
+            "decay_rate",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_decay_rate,
+        ),
     ]
     return args
 
@@ -2386,10 +2407,10 @@ def normalize_multi_task(data):
                 data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
             )
         elif single_learning_rate:
-            data[
-                "learning_rate_dict"
-            ] = normalize_learning_rate_dict_with_single_learning_rate(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+            data["learning_rate_dict"] = (
+                normalize_learning_rate_dict_with_single_learning_rate(
+                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+                )
             )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
@@ -2432,11 +2453,7 @@ def normalize_data_dict(data_dict):
 def normalize_loss_dict(fitting_keys, loss_dict):
     # check the loss dict
     failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
-    assert (
-        not failed_loss_keys
-    ), "Loss dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_loss_keys), str(list(fitting_keys))
-    )
+    assert not failed_loss_keys, f"Loss dict key(s) {failed_loss_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     new_dict = {}
     base = Argument("base", dict, [], [loss_variant_type_args()], doc="")
     for item in loss_dict:
@@ -2451,9 +2468,7 @@ def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
     failed_learning_rate_keys = [
         item for item in learning_rate_dict if item not in fitting_keys
     ]
-    assert not failed_learning_rate_keys, "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_learning_rate_keys), str(list(fitting_keys))
-    )
+    assert not failed_learning_rate_keys, f"Learning rate dict key(s) {failed_learning_rate_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     new_dict = {}
     base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
     for item in learning_rate_dict:
@@ -2476,11 +2491,7 @@ def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learnin
 def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
     # check the mapping
     failed_data_keys = [item for item in data_keys if item not in fitting_keys]
-    assert (
-        not failed_data_keys
-    ), "Data dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_data_keys), str(list(fitting_keys))
-    )
+    assert not failed_data_keys, f"Data dict key(s) {failed_data_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     empty_fitting_keys = []
     valid_fitting_keys = []
     for item in fitting_keys:
@@ -2490,9 +2501,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
             valid_fitting_keys.append(item)
     if empty_fitting_keys:
         log.warning(
-            "Fitting net(s) {} have no data and will not be used in training.".format(
-                str(empty_fitting_keys)
-            )
+            f"Fitting net(s) {empty_fitting_keys!s} have no data and will not be used in training."
         )
     num_pair = len(valid_fitting_keys)
     assert num_pair > 0, "No valid training data systems for fitting nets!"
@@ -2507,9 +2516,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
         failed_weight_keys = [
             item for item in fitting_weight if item not in fitting_keys
         ]
-        assert not failed_weight_keys, "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
-            str(failed_weight_keys), str(list(fitting_keys))
-        )
+        assert not failed_weight_keys, f"Fitting weight key(s) {failed_weight_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
         sum_prob = 0.0
         for item in fitting_keys:
             if item in valid_fitting_keys:

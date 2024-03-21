@@ -38,7 +38,7 @@ class PolarModel(DPModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["polar"] = model_ret["polar"]
             model_predict["global_polar"] = model_ret["polar_redu"]
@@ -69,7 +69,7 @@ class PolarModel(DPModel):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        if self.fitting_net is not None:
+        if self.get_fitting_net() is not None:
             model_predict = {}
             model_predict["polar"] = model_ret["polar"]
             model_predict["global_polar"] = model_ret["polar_redu"]

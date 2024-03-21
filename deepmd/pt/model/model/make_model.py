@@ -4,6 +4,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Type,
 )
 
 import torch
@@ -12,9 +13,16 @@ from deepmd.dpmodel import (
     ModelOutputDef,
 )
 from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
     OutputVariableCategory,
     OutputVariableOperation,
     check_operation_applied,
+)
+from deepmd.pt.model.atomic_model.base_atomic_model import (
+    BaseAtomicModel,
+)
+from deepmd.pt.model.model.model import (
+    BaseModel,
 )
 from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
@@ -30,9 +38,12 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
-def make_model(T_AtomicModel):
+def make_model(T_AtomicModel: Type[BaseAtomicModel]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -55,16 +66,19 @@ def make_model(T_AtomicModel):
 
     """
 
-    class CM(T_AtomicModel):
+    class CM(BaseModel):
         def __init__(
             self,
             *args,
+            # underscore to prevent conflict with normal inputs
+            atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
         ):
-            super().__init__(
-                *args,
-                **kwargs,
-            )
+            super().__init__(*args, **kwargs)
+            if atomic_model_ is not None:
+                self.atomic_model: T_AtomicModel = atomic_model_
+            else:
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
@@ -204,7 +218,7 @@ def make_model(T_AtomicModel):
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
-            atomic_ret = self.forward_common_atomic(
+            atomic_ret = self.atomic_model.forward_common_atomic(
                 cc_ext,
                 extended_atype,
                 nlist,
@@ -383,5 +397,106 @@ def make_model(T_AtomicModel):
                 pass  # great!
             assert nlist.shape[-1] == nnei
             return nlist
+
+        def do_grad_r(
+            self,
+            var_name: Optional[str] = None,
+        ) -> bool:
+            """Tell if the output variable `var_name` is r_differentiable.
+            if var_name is None, returns if any of the variable is r_differentiable.
+            """
+            return self.atomic_model.do_grad_r(var_name)
+
+        def do_grad_c(
+            self,
+            var_name: Optional[str] = None,
+        ) -> bool:
+            """Tell if the output variable `var_name` is c_differentiable.
+            if var_name is None, returns if any of the variable is c_differentiable.
+            """
+            return self.atomic_model.do_grad_c(var_name)
+
+        def serialize(self) -> dict:
+            return self.atomic_model.serialize()
+
+        @classmethod
+        def deserialize(cls, data) -> "CM":
+            return cls(atomic_model_=T_AtomicModel.deserialize(data))
+
+        @torch.jit.export
+        def get_dim_fparam(self) -> int:
+            """Get the number (dimension) of frame parameters of this atomic model."""
+            return self.atomic_model.get_dim_fparam()
+
+        @torch.jit.export
+        def get_dim_aparam(self) -> int:
+            """Get the number (dimension) of atomic parameters of this atomic model."""
+            return self.atomic_model.get_dim_aparam()
+
+        @torch.jit.export
+        def get_sel_type(self) -> List[int]:
+            """Get the selected atom types of this model.
+
+            Only atoms with selected atom types have atomic contribution
+            to the result of the model.
+            If returning an empty list, all atom types are selected.
+            """
+            return self.atomic_model.get_sel_type()
+
+        @torch.jit.export
+        def is_aparam_nall(self) -> bool:
+            """Check whether the shape of atomic parameters is (nframes, nall, ndim).
+
+            If False, the shape is (nframes, nloc, ndim).
+            """
+            return self.atomic_model.is_aparam_nall()
+
+        @torch.jit.export
+        def get_rcut(self) -> float:
+            """Get the cut-off radius."""
+            return self.atomic_model.get_rcut()
+
+        @torch.jit.export
+        def get_type_map(self) -> List[str]:
+            """Get the type map."""
+            return self.atomic_model.get_type_map()
+
+        @torch.jit.export
+        def get_nsel(self) -> int:
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
+            return self.atomic_model.get_nsel()
+
+        @torch.jit.export
+        def get_nnei(self) -> int:
+            """Returns the total number of selected neighboring atoms in the cut-off radius."""
+            return self.atomic_model.get_nnei()
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the output def of the atomic model."""
+            return self.atomic_model.atomic_output_def()
+
+        def compute_or_load_stat(
+            self,
+            sampled_func,
+            stat_file_path: Optional[DPPath] = None,
+        ):
+            """Compute or load the statistics."""
+            return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+
+        def get_sel(self) -> List[int]:
+            """Returns the number of selected atoms for each type."""
+            return self.atomic_model.get_sel()
+
+        def mixed_types(self) -> bool:
+            """If true, the model
+            1. assumes total number of atoms aligned across frames;
+            2. uses a neighbor list that does not distinguish different atomic types.
+
+            If false, the model
+            1. assumes total number of atoms of each atom type aligned across frames;
+            2. uses a neighbor list that distinguishes different atomic types.
+
+            """
+            return self.atomic_model.mixed_types()
 
     return CM

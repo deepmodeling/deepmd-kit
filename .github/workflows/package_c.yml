@@ -42,7 +42,7 @@ jobs:
       - name: Test C library
         run: ./source/install/docker_test_package_c.sh
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ matrix.filename }}

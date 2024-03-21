@@ -75,12 +75,12 @@ class ModelWrapper(torch.nn.Module):
             shared_level_base = shared_base["shared_level"]
             if "descriptor" in class_type_base:
                 if class_type_base == "descriptor":
-                    base_class = self.model[model_key_base].__getattr__("descriptor")
+                    base_class = self.model[model_key_base].get_descriptor()
                 elif "hybrid" in class_type_base:
                     hybrid_index = int(class_type_base.split("_")[-1])
                     base_class = (
                         self.model[model_key_base]
-                        .__getattr__("descriptor")
+                        .get_descriptor()
                         .descriptor_list[hybrid_index]
                     )
                 else:
@@ -96,14 +96,12 @@ class ModelWrapper(torch.nn.Module):
                         "descriptor" in class_type_link
                     ), f"Class type mismatched: {class_type_base} vs {class_type_link}!"
                     if class_type_link == "descriptor":
-                        link_class = self.model[model_key_link].__getattr__(
-                            "descriptor"
-                        )
+                        link_class = self.model[model_key_link].get_descriptor()
                     elif "hybrid" in class_type_link:
                         hybrid_index = int(class_type_link.split("_")[-1])
                         link_class = (
                             self.model[model_key_link]
-                            .__getattr__("descriptor")
+                            .get_descriptor()
                             .descriptor_list[hybrid_index]
                         )
                     else:
@@ -170,15 +168,20 @@ class ModelWrapper(torch.nn.Module):
             has_spin = has_spin()
         if has_spin:
             input_dict["spin"] = spin
-        model_pred = self.model[task_key](**input_dict)
-        natoms = atype.shape[-1]
-        if not self.inference_only and not inference_only:
-            loss, more_loss = self.loss[task_key](
-                model_pred, label, natoms=natoms, learning_rate=cur_lr
+
+        if self.inference_only or inference_only:
+            model_pred = self.model[task_key](**input_dict)
+            return model_pred, None, None
+        else:
+            natoms = atype.shape[-1]
+            model_pred, loss, more_loss = self.loss[task_key](
+                input_dict,
+                self.model[task_key],
+                label,
+                natoms=natoms,
+                learning_rate=cur_lr,
             )
             return model_pred, loss, more_loss
-        else:
-            return model_pred, None, None
 
     def set_extra_state(self, state: Dict):
         self.model_params = state["model_params"]

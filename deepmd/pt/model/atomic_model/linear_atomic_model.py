@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import sys
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Dict,
     List,
@@ -96,12 +92,10 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return True
 
-    @torch.jit.export
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         return self.type_map
@@ -262,48 +256,48 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
-    @staticmethod
-    def serialize(models, type_map) -> dict:
+    def serialize(self) -> dict:
         return {
             "@class": "Model",
             "@version": 1,
             "type": "linear",
-            "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models],
-            "type_map": type_map,
+            "models": [model.serialize() for model in self.models],
+            "type_map": self.type_map,
         }
 
-    @staticmethod
-    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
+    @classmethod
+    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        model_names = data["model_name"]
-        type_map = data["type_map"]
+        data.pop("@class")
+        data.pop("type")
+        type_map = data.pop("type_map")
         models = [
-            getattr(sys.modules[__name__], name).deserialize(model)
-            for name, model in zip(model_names, data["models"])
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
         ]
-        return models, type_map
+        data.pop("models")
+        return cls(models, type_map, **data)
 
-    @abstractmethod
     def _compute_weight(
         self, extended_coord, extended_atype, nlists_
     ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        raise NotImplementedError
+        nmodels = len(self.models)
+        return [
+            torch.ones(1, dtype=torch.float64, device=env.DEVICE) / nmodels
+            for _ in range(nmodels)
+        ]
 
-    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         # tricky...
         return max([model.get_dim_fparam() for model in self.models])
 
-    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
-    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -324,7 +318,6 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             )
         ).tolist()
 
-    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
@@ -366,9 +359,6 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     ):
         models = [dp_model, zbl_model]
         super().__init__(models, type_map, **kwargs)
-        self.model_def_script = ""
-        self.dp_model = dp_model
-        self.zbl_model = zbl_model
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -397,8 +387,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         stat_file_path
             The dictionary of paths to the statistics files.
         """
-        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
-        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
+        self.models[0].compute_or_load_stat(sampled_func, stat_file_path)
+        self.models[1].compute_or_load_stat(sampled_func, stat_file_path)
 
     def change_energy_bias(self):
         # need to implement
@@ -409,11 +399,11 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "zbl",
-                "models": LinearEnergyAtomicModel.serialize(
-                    [self.dp_model, self.zbl_model], self.type_map
-                ),
+                "models": LinearEnergyAtomicModel(
+                    models=[self.models[0], self.models[1]], type_map=self.type_map
+                ).serialize(),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -424,14 +414,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         sw_rmin = data.pop("sw_rmin")
         sw_rmax = data.pop("sw_rmax")
         smin_alpha = data.pop("smin_alpha")
-
-        [dp_model, zbl_model], type_map = LinearEnergyAtomicModel.deserialize(
-            data.pop("models")
-        )
+        linear_model = LinearEnergyAtomicModel.deserialize(data.pop("models"))
+        dp_model, zbl_model = linear_model.models
+        type_map = linear_model.type_map
 
         data.pop("@class", None)
         data.pop("type", None)
@@ -486,7 +475,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             dim=-1,
         )  # handle masked nnei.
 
-        sigma = numerator / denominator  # nfrmes, nloc
+        sigma = numerator / torch.clamp(denominator, 1e-20)  # nfrmes, nloc
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = torch.zeros_like(u)
         left_mask = sigma < self.sw_rmin

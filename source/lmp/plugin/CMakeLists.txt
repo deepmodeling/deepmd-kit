@@ -127,7 +127,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
       install(
         CODE "execute_process( \
         COMMAND ${CMAKE_COMMAND} -E create_symlink \
-		../${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${CMAKE_SHARED_LIBRARY_SUFFIX} \
+		../${CMAKE_SHARED_MODULE_PREFIX}${libname}${CMAKE_SHARED_MODULE_SUFFIX} \
         ${CMAKE_INSTALL_PREFIX}/lib/${libname}/${PLUGINNAME}   \
         )")
     endif()

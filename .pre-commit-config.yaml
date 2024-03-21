@@ -12,7 +12,6 @@ repos:
     -   id: check-json
     -   id: check-added-large-files
         args: ['--maxkb=1024', '--enforce-all']
-        # TODO: remove the following after resolved
         exclude: |
             (?x)^(
                 source/tests/infer/dipolecharge_e.pbtxt|
@@ -30,7 +29,7 @@ repos:
       exclude: ^source/3rdparty
 -   repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.2.2
+    rev: v0.3.3
     hooks:
     - id: ruff
       args: ["--fix"]
@@ -53,7 +52,7 @@ repos:
     -   id: blacken-docs
 # C++
 -   repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v17.0.6
+    rev: v18.1.1
     hooks:
     -   id: clang-format
         exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc

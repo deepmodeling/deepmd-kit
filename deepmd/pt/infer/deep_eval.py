@@ -388,7 +388,7 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_input = None
         do_atomic_virial = any(
-            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
         batch_output = model(
             coord_input,

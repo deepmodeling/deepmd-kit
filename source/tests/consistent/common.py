@@ -252,11 +252,16 @@ class CommonTest(ABC):
         tf_obj = self.tf_class.deserialize(data1, suffix=self.unique_id)
         ret2, data2 = self.get_tf_ret_serialization_from_cls(tf_obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.TF)
-        if tf_obj.__class__.__name__.startswith(("Polar", "Dipole")):
+        if tf_obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
             # tf, pt serialization mismatch
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
             data2 = {k: data2[k] for k in common_keys}
+
+        # not comparing version
+        data1.pop("@version")
+        data2.pop("@version")
+
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             np.testing.assert_allclose(
@@ -326,7 +331,7 @@ class CommonTest(ABC):
         ret2 = self.eval_pt(obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.PT)
         data2 = obj.serialize()
-        if obj.__class__.__name__.startswith(("Polar", "Dipole")):
+        if obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
             # tf, pt serialization mismatch
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
