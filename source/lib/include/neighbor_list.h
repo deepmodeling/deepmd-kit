@@ -28,14 +28,16 @@ struct InputNlist {
   int** firstneigh;
 
   int* mapping;
-  InputNlist() : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL), mapping(NULL) {};
+  InputNlist()
+      : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL), mapping(NULL){};
   InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
         firstneigh(firstneigh_),
         mapping(NULL){};
-  InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_,int* mapping)
+  InputNlist(
+      int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int* mapping)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
