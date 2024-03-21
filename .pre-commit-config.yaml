@@ -61,7 +61,7 @@ repos:
     rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        types_or: [markdown, yaml, css, javascript]
+        types_or: [markdown, yaml, css]
         # workflow files cannot be modified by pre-commit.ci
         exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
   # Shell
