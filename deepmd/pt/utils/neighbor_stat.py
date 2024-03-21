@@ -155,15 +155,27 @@ class NeighborStat(BaseNeighborStat):
             for jj in data.data_systems[ii].dirs:
                 data_set = data.data_systems[ii]
                 data_set_data = data_set._load_set(jj)
-                minrr2, max_nnei = self.auto_batch_size.execute_all(
-                    self._execute,
-                    data_set_data["coord"].shape[0],
-                    data_set.get_natoms(),
-                    data_set_data["coord"],
-                    data_set_data["type"],
-                    data_set_data["box"] if data_set.pbc else None,
-                )
-                yield np.max(max_nnei, axis=0), np.min(minrr2), jj
+                if data_set.multistru:
+                    for kk in range(data_set_data["coord"].shape[1]):
+                        minrr2, max_nnei = self.auto_batch_size.execute_all(
+                            self._execute,
+                            data_set_data["coord"].shape[0],
+                            data_set.get_natoms(),
+                            data_set_data["coord"][:, kk, :],
+                            data_set_data["type"],
+                            data_set_data["box"] if data_set.pbc else None,
+                        )
+                        yield np.max(max_nnei, axis=0), np.min(minrr2), jj
+                else:
+                    minrr2, max_nnei = self.auto_batch_size.execute_all(
+                        self._execute,
+                        data_set_data["coord"].shape[0],
+                        data_set.get_natoms(),
+                        data_set_data["coord"],
+                        data_set_data["type"],
+                        data_set_data["box"] if data_set.pbc else None,
+                    )
+                    yield np.max(max_nnei, axis=0), np.min(minrr2), jj
 
     def _execute(
         self,

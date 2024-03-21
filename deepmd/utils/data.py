@@ -85,6 +85,8 @@ class DeepmdData:
             assert len(self.type_map) >= max(self.atom_type) + 1
         # check pbc
         self.pbc = self._check_pbc(root)
+        # check stru
+        self.multistru = self._check_multistru(root)
         # enforce type_map if necessary
         self.enforce_type_map = False
         if type_map is not None and self.type_map is not None and len(type_map):
@@ -269,6 +271,10 @@ class DeepmdData:
         """
         i = bisect.bisect_right(self.prefix_sum, index)
         frames = self._load_set(self.dirs[i])
+        if self.multistru:
+            num_stru = frames["coord"].shape[1]
+            sample_idx = dp_random.choice(range(num_stru), size=1)[0]
+            frames["coord"] = frames["coord"][:, sample_idx, :]
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
         frame = self.reformat_data_torch(frame)
         frame["fid"] = index
@@ -510,7 +516,12 @@ class DeepmdData:
         if coord.ndim == 1:
             coord = coord.reshape([1, -1])
         nframes = coord.shape[0]
-        assert coord.shape[1] == self.data_dict["coord"]["ndof"] * self.natoms
+        if self.multistru:
+            assert (
+                coord.shape[1] / self.data_dict["coord"]["ndof"] * self.natoms
+            ).is_integer()
+        else:
+            assert coord.shape[1] == self.data_dict["coord"]["ndof"] * self.natoms
         # load keys
         data = {}
         for kk in self.data_dict.keys():
@@ -621,43 +632,49 @@ class DeepmdData:
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
-                if atomic:
-                    if type_sel is not None:
-                        # check the data shape is nsel or natoms
-                        if data.size == nframes * natoms_sel * ndof_:
-                            if output_natoms_for_type_sel:
-                                tmp = np.zeros(
-                                    [nframes, natoms, ndof_], dtype=data.dtype
-                                )
-                                sel_mask = np.isin(self.atom_type, type_sel)
-                                tmp[:, sel_mask] = data.reshape(
-                                    [nframes, natoms_sel, ndof_]
-                                )
-                                data = tmp
+                if key == "coord" and self.multistru:
+                    data = data.reshape([nframes, -1, natoms, 3])
+                    size = data.shape[1]
+                    data = data[:, :, idx_map, :]
+                    data = np.reshape(data, [nframes, size, ndof])
+                else:
+                    if atomic:
+                        if type_sel is not None:
+                            # check the data shape is nsel or natoms
+                            if data.size == nframes * natoms_sel * ndof_:
+                                if output_natoms_for_type_sel:
+                                    tmp = np.zeros(
+                                        [nframes, natoms, ndof_], dtype=data.dtype
+                                    )
+                                    sel_mask = np.isin(self.atom_type, type_sel)
+                                    tmp[:, sel_mask] = data.reshape(
+                                        [nframes, natoms_sel, ndof_]
+                                    )
+                                    data = tmp
+                                else:
+                                    natoms = natoms_sel
+                                    idx_map = idx_map_sel
+                                    ndof = ndof_ * natoms
+                            elif data.size == nframes * natoms * ndof_:
+                                if output_natoms_for_type_sel:
+                                    pass
+                                else:
+                                    sel_mask = np.isin(self.atom_type, type_sel)
+                                    data = data[:, sel_mask]
+                                    natoms = natoms_sel
+                                    idx_map = idx_map_sel
+                                    ndof = ndof_ * natoms
                             else:
-                                natoms = natoms_sel
-                                idx_map = idx_map_sel
-                                ndof = ndof_ * natoms
-                        elif data.size == nframes * natoms * ndof_:
-                            if output_natoms_for_type_sel:
-                                pass
-                            else:
-                                sel_mask = np.isin(self.atom_type, type_sel)
-                                data = data[:, sel_mask]
-                                natoms = natoms_sel
-                                idx_map = idx_map_sel
-                                ndof = ndof_ * natoms
-                        else:
-                            raise ValueError(
-                                f"The shape of the data {key} in {set_name}"
-                                f"is {data.shape}, which doesn't match either"
-                                f"({nframes}, {natoms_sel}, {ndof_}) or"
-                                f"({nframes}, {natoms}, {ndof_})"
-                            )
-                    data = data.reshape([nframes, natoms, -1])
-                    data = data[:, idx_map, :]
-                    data = data.reshape([nframes, -1])
-                data = np.reshape(data, [nframes, ndof])
+                                raise ValueError(
+                                    f"The shape of the data {key} in {set_name}"
+                                    f"is {data.shape}, which doesn't match either"
+                                    f"({nframes}, {natoms_sel}, {ndof_}) or"
+                                    f"({nframes}, {natoms}, {ndof_})"
+                                )
+                        data = data.reshape([nframes, natoms, -1])
+                        data = data[:, idx_map, :]
+                        data = data.reshape([nframes, -1])
+                    data = np.reshape(data, [nframes, ndof])
             except ValueError as err_message:
                 explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
                 log.error(str(err_message))
@@ -706,6 +723,12 @@ class DeepmdData:
         if (sys_path / "nopbc").is_file():
             pbc = False
         return pbc
+
+    def _check_multistru(self, sys_path: DPPath):
+        multistru = False
+        if (sys_path / "multistru").is_file():
+            multistru = True
+        return multistru
 
     def _check_mode(self, set_path: DPPath):
         return (set_path / "real_atom_types.npy").is_file()
