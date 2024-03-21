@@ -520,7 +520,6 @@ class DOSFitting(Fitting):
             inputs = tf.concat(
                 [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
             )
-            original_dim_descrpt = self.dim_descrpt
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
 
         if not self.mixed_types:

@@ -590,6 +590,8 @@ class EnerFitting(Fitting):
                 )
             else:
                 inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+        else:
+            inputs_zero = None
 
         if bias_atom_e is not None:
             assert len(bias_atom_e) == self.ntypes
@@ -647,6 +649,7 @@ class EnerFitting(Fitting):
             )
             self.dim_descrpt = self.dim_descrpt + type_shape[1]
             if len(self.atom_ener):
+                assert inputs_zero is not None
                 inputs_zero = tf.concat(
                     [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
                     axis=1,
