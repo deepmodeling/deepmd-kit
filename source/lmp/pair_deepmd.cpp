@@ -462,6 +462,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
 
   double **x = atom->x;
   double **f = atom->f;
+  int *tag_array = atom->tag;
   int *type = atom->type;
   int nlocal = atom->nlocal;
   int nghost = 0;
@@ -483,6 +484,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
         dspin[ii * 3 + dd] = sp[ii][dd];
       }
     }
+  }
+  //make mapping array
+  int* mapping = new int[nall];
+  for (int i = 0; i < nall; ++i) {
+    mapping[i] = atom->map(tag_array[i]);
   }
 
   vector<int> dtype(nall);
@@ -551,7 +557,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
     deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                       list->firstneigh);
+                                       list->firstneigh,mapping);
     deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
@@ -1280,6 +1286,8 @@ void PairDeepMD::coeff(int narg, char **arg) {
 void PairDeepMD::init_style() {
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
+  atom->map_user=2;
+  atom->map_init(1);
 #else
   int irequest = neighbor->request(this, instance_me);
   neighbor->requests[irequest]->half = 0;

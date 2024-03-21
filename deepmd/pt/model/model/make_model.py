@@ -468,6 +468,11 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def get_nnei(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
+        
+        @torch.jit.export
+        def get_ntypes(self) -> int:
+            """Returns the number of element types."""
+            return self.atomic_model.get_ntypes()
 
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""

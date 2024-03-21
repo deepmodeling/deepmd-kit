@@ -24,7 +24,15 @@ DP_Nlist* DP_NewNlist(int inum_,
             deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
-
+DP_Nlist* DP_NewNlist_mapping(int inum_,
+                      int* ilist_,
+                      int* numneigh_,
+                      int** firstneigh_,
+                      int* mapping) {
+            deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_,mapping);
+            DP_Nlist* new_nl = new DP_Nlist(nl); 
+            return new_nl;
+}
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 DP_DeepPot::DP_DeepPot() {}
