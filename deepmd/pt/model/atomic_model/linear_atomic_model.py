@@ -289,6 +289,27 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             for _ in range(nmodels)
         ]
 
+    def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
+        """
+        Modify the output bias for all the models in the linear atomic model.
+
+        Parameters
+        ----------
+        out_bias : torch.Tensor
+            The new bias to be applied.
+        add : bool, optional
+            Whether to add the new bias to the existing one.
+            If False, the output bias will be directly replaced by the new bias.
+            If True, the new bias will be added to the existing one.
+        """
+        for model in self.models:
+            model.set_out_bias(out_bias, add=add)
+
+    def get_out_bias(self) -> torch.Tensor:
+        """Return the weighted output bias of the linear atomic model."""
+        # TODO add get_out_bias for linear atomic model
+        raise NotImplementedError
+
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         # tricky...
