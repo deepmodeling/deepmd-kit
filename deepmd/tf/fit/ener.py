@@ -635,6 +635,8 @@ class EnerFitting(Fitting):
         ):
             type_embedding = nvnmd_cfg.map["t_ebd"]
         if type_embedding is not None:
+            # keep old behavior
+            self.mixed_types = True
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
             atype_embed = None

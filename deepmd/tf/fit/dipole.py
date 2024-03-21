@@ -224,6 +224,8 @@ class DipoleFittingSeA(Fitting):
             nframes = tf.shape(inputs)[0]
 
         if self.mixed_types or type_embedding is not None:
+            # keep old behavior
+            self.mixed_types = True
             nloc_mask = tf.reshape(
                 tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1]
             )

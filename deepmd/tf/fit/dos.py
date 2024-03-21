@@ -509,6 +509,8 @@ class DOSFitting(Fitting):
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will make error
         if type_embedding is not None:
+            # keep old behavior
+            self.mixed_types = True
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
             atype_embed = None
