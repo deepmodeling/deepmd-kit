@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import os
+import shutil
 import subprocess as sp
 import sys
+import tempfile
 from pathlib import (
     Path,
 )
@@ -667,3 +670,163 @@ def test_pair_deepmd_si(lammps_si):
             expected_f[lammps_si.atoms[ii].id - 1] * constants.force_metal2si
         )
     lammps_si.run(1)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.parametrize(
+    ("balance_args",),
+    [(["--balance"],), ([],)],
+)
+# TODO: [BUG] pt: C++ interface throws errors when the number of ranks is larger than the number of GPUs
+# terminate called after throwing an instance of 'c10::Error'
+#   what():  CUDA error: invalid device ordinal
+# CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+# For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+# Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+# Exception raised from c10_cuda_check_implementation at ../c10/cuda/CUDAException.cpp:44 (most recent call first):
+# frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x6c (0x7f55c1b9fa0c in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libc10.so)
+# frame #1: c10::detail::torchCheckFail(char const*, char const*, unsigned int, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0xfa (0x7f55c1b498bc in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libc10.so)
+# frame #2: c10::cuda::c10_cuda_check_implementation(int, char const*, char const*, int, bool) + 0x3cc (0x7f55c173201c in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libc10_cuda.so)
+# frame #3: c10::cuda::ExchangeDevice(int) + 0x62 (0x7f55c1732542 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libc10_cuda.so)
+# frame #4: <unknown function> + 0x2935c (0x7f55c16fe35c in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libc10_cuda.so)
+# frame #5: <unknown function> + 0x12fc71d (0x7f5522c1771d in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cuda.so)
+# frame #6: <unknown function> + 0x34ccdf5 (0x7f5524de7df5 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cuda.so)
+# frame #7: <unknown function> + 0x34ccf84 (0x7f5524de7f84 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cuda.so)
+# frame #8: at::_ops::empty_strided::redispatch(c10::DispatchKeySet, c10::ArrayRef<c10::SymInt>, c10::ArrayRef<c10::SymInt>, std::optional<c10::ScalarType>, std::optional<c10::Layout>, std::optional<c10::Device>, std::optional<bool>) + 0x107 (0x7f55779aefb7 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #9: <unknown function> + 0x2d23a0b (0x7f5577da3a0b in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #10: at::_ops::empty_strided::call(c10::ArrayRef<c10::SymInt>, c10::ArrayRef<c10::SymInt>, std::optional<c10::ScalarType>, std::optional<c10::Layout>, std::optional<c10::Device>, std::optional<bool>) + 0x1b9 (0x7f55779ff349 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #11: <unknown function> + 0x1c64e49 (0x7f5576ce4e49 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #12: at::native::_to_copy(at::Tensor const&, std::optional<c10::ScalarType>, std::optional<c10::Layout>, std::optional<c10::Device>, std::optional<bool>, bool, std::optional<c10::MemoryFormat>) + 0x1af0 (0x7f55770962d0 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #13: <unknown function> + 0x2f5545f (0x7f5577fd545f in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #14: at::_ops::_to_copy::redispatch(c10::DispatchKeySet, at::Tensor const&, std::optional<c10::ScalarType>, std::optional<c10::Layout>, std::optional<c10::Device>, std::optional<bool>, bool, std::optional<c10::MemoryFormat>) + 0x109 (0x7f55775f74b9 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #15: <unknown function> + 0x2d271fa (0x7f5577da71fa in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #16: at::_ops::_to_copy::redispatch(c10::DispatchKeySet, at::Tensor const&, std::optional<c10::ScalarType>, std::optional<c10::Layout>, std::optional<c10::Device>, std::optional<bool>, bool, std::optional<c10::MemoryFormat>) + 0x109 (0x7f55775f74b9 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #17: <unknown function> + 0x46f3a45 (0x7f5579773a45 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #18: <unknown function> + 0x46f3f12 (0x7f5579773f12 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #19: at::_ops::_to_copy::call(at::Tensor const&, std::optional<c10::ScalarType>, std::optional<c10::Layout>, std::optional<c10::Device>, std::optional<bool>, bool, std::optional<c10::MemoryFormat>) + 0x1fe (0x7f557769565e in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #20: at::native::to(at::Tensor const&, c10::Device, c10::ScalarType, bool, bool, std::optional<c10::MemoryFormat>) + 0xf7 (0x7f557708dcd7 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #21: <unknown function> + 0x319275d (0x7f557821275d in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #22: at::_ops::to_device::call(at::Tensor const&, c10::Device, c10::ScalarType, bool, bool, std::optional<c10::MemoryFormat>) + 0x1ce (0x7f557785899e in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #23: torch::jit::Unpickler::readInstruction() + 0x1d5a (0x7f557aa190ca in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #24: torch::jit::Unpickler::run() + 0xa8 (0x7f557aa1a418 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #25: torch::jit::Unpickler::parse_ivalue() + 0x32 (0x7f557aa1bf92 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #26: torch::jit::readArchiveAndTensors(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::optional<std::function<c10::StrongTypePtr (c10::QualifiedName const&)> >, std::optional<std::function<c10::intrusive_ptr<c10::ivalue::Object, c10::detail::intrusive_target_default_null_type<c10::ivalue::Object> > (c10::StrongTypePtr const&, c10::IValue)> >, std::optional<c10::Device>, caffe2::serialize::PyTorchStreamReader&, c10::Type::SingletonOrSharedTypePtr<c10::Type> (*)(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&), std::shared_ptr<torch::jit::DeserializationStorageContext>) + 0x569 (0x7f557a9d5629 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #27: <unknown function> + 0x594a178 (0x7f557a9ca178 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #28: <unknown function> + 0x594cfc3 (0x7f557a9ccfc3 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #29: torch::jit::import_ir_module(std::shared_ptr<torch::jit::CompilationUnit>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::optional<c10::Device>, std::unordered_map<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::hash<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::equal_to<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::pair<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > >&, bool, bool) + 0x3df (0x7f557a9d2a1f in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #30: torch::jit::import_ir_module(std::shared_ptr<torch::jit::CompilationUnit>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::optional<c10::Device>, bool) + 0x92 (0x7f557a9d2cd2 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #31: torch::jit::load(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::optional<c10::Device>, bool) + 0xc0 (0x7f557a9d2de0 in /__w/deepmd-kit/deepmd-kit/libtorch/lib/libtorch_cpu.so)
+# frame #32: deepmd::DeepPotPT::init(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x3d2 (0x7f55bf64f21a in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #33: deepmd::DeepPotPT::DeepPotPT(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0xba (0x7f55bf64ed74 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #34: void __gnu_cxx::new_allocator<deepmd::DeepPotPT>::construct<deepmd::DeepPotPT, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(deepmd::DeepPotPT*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0xa8 (0x7f55bf64d508 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #35: void std::allocator_traits<std::allocator<deepmd::DeepPotPT> >::construct<deepmd::DeepPotPT, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(std::allocator<deepmd::DeepPotPT>&, deepmd::DeepPotPT*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x8a (0x7f55bf64cb12 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #36: std::_Sp_counted_ptr_inplace<deepmd::DeepPotPT, std::allocator<deepmd::DeepPotPT>, (__gnu_cxx::_Lock_policy)2>::_Sp_counted_ptr_inplace<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(std::allocator<deepmd::DeepPotPT>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x12a (0x7f55bf64bc52 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #37: std::__shared_count<(__gnu_cxx::_Lock_policy)2>::__shared_count<deepmd::DeepPotPT, std::allocator<deepmd::DeepPotPT>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(deepmd::DeepPotPT*&, std::_Sp_alloc_shared_tag<std::allocator<deepmd::DeepPotPT> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x155 (0x7f55bf649e39 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #38: std::__shared_ptr<deepmd::DeepPotPT, (__gnu_cxx::_Lock_policy)2>::__shared_ptr<std::allocator<deepmd::DeepPotPT>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(std::_Sp_alloc_shared_tag<std::allocator<deepmd::DeepPotPT> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0xa2 (0x7f55bf647eac in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #39: std::shared_ptr<deepmd::DeepPotPT>::shared_ptr<std::allocator<deepmd::DeepPotPT>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(std::_Sp_alloc_shared_tag<std::allocator<deepmd::DeepPotPT> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x8f (0x7f55bf645eab in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #40: std::shared_ptr<deepmd::DeepPotPT> std::allocate_shared<deepmd::DeepPotPT, std::allocator<deepmd::DeepPotPT>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(std::allocator<deepmd::DeepPotPT> const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x8a (0x7f55bf643abb in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #41: std::shared_ptr<deepmd::DeepPotPT> std::make_shared<deepmd::DeepPotPT, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&>(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0xaf (0x7f55bf641402 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #42: deepmd::DeepPot::init(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x384 (0x7f55bf636a7e in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #43: deepmd::DeepPot::DeepPot(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x5e (0x7f55bf63667e in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_cc.so)
+# frame #44: DP_NewDeepPotWithParam2 + 0x12d (0x7f55c229bf4b in /__w/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_c.so)
+# frame #45: deepmd::hpp::DeepPot::init(std::string const&, int const&, std::string const&) + 0xeb (0x7f55c1f8730b in /__w/deepmd-kit/deepmd-kit/dp_test/lib/deepmd_lmp/dpplugin.so)
+# frame #46: LAMMPS_NS::PairDeepMD::settings(int, char**) + 0x6b8 (0x7f55c1f7e170 in /__w/deepmd-kit/deepmd-kit/dp_test/lib/deepmd_lmp/dpplugin.so)
+# frame #47: LAMMPS_NS::Input::execute_command() + 0x741 (0x7f55c2bb79f1 in /__w/_tool/Python/3.11.8/x64/lib/python3.11/site-packages/lammps/liblammps.so)
+# frame #48: LAMMPS_NS::Input::one(std::string const&) + 0x89 (0x7f55c2bb8919 in /__w/_tool/Python/3.11.8/x64/lib/python3.11/site-packages/lammps/liblammps.so)
+# frame #49: lammps_command + 0x91 (0x7f55c2c09631 in /__w/_tool/Python/3.11.8/x64/lib/python3.11/site-packages/lammps/liblammps.so)
+# frame #50: <unknown function> + 0x7e2e (0x7f55ca69be2e in /lib/x86_64-linux-gnu/libffi.so.8)
+# frame #51: <unknown function> + 0x4493 (0x7f55ca698493 in /lib/x86_64-linux-gnu/libffi.so.8)
+# frame #52: <unknown function> + 0xe6d0 (0x7f55ca0ec6d0 in /__w/_tool/Python/3.11.8/x64/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so)
+# frame #53: <unknown function> + 0x14249 (0x7f55ca0f2249 in /__w/_tool/Python/3.11.8/x64/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so)
+# <omitting python frames>
+@pytest.mark.skipif(
+    os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") == ["0"],
+    reason="An error will be thrown when there is only one GPU. See the comment above in the source code.",
+)
+def test_pair_deepmd_mpi(balance_args: list):
+    if balance_args == []:
+        # TODO: [BUG] pt: fix torch.cat error in the C++ interface when nloc==0
+        # when a processor has no atoms, it throws the following errors:
+        # terminate called after throwing an instance of 'c10::Error'
+        #   what():  torch.cat(): expected a non-empty list of Tensors
+        # Exception raised from meta at /home/conda/feedstock_root/build_artifacts/libtorch_1706629241544/work/aten/src/ATen/native/TensorShape.cpp:256 (most recent call first):
+        # frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xb2 (0x1456de6755d2 in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libc10.so)
+        # frame #1: c10::detail::torchCheckFail(char const*, char const*, unsigned int, char const*) + 0xfa (0x1456de62ad7c in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libc10.so)
+        # frame #2: at::meta::structured_cat::meta(c10::IListRef<at::Tensor> const&, long) + 0x9dc (0x1456485f6fdc in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #3: <unknown function> + 0x2337b7d (0x145649337b7d in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #4: <unknown function> + 0x2337c23 (0x145649337c23 in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #5: at::_ops::cat::call(c10::IListRef<at::Tensor> const&, long) + 0x1af (0x145648a1e97f in /home/jz748/anaconda3/envs/dp3/bin/../lib/././libtorch_cpu.so)
+        # frame #6: createNlistTensor(std::vector<std::vector<int, std::allocator<int> >, std::allocator<std::vector<int, std::allocator<int> > > > const&) + 0x405 (0x1456de7a0d65 in /home/jz748/anaconda3/envs/dp3/bin/../lib/./libdeepmd_cc.so)
+        # frame #7: void deepmd::DeepPotPT::compute<double, std::vector<double, std::allocator<double> > >(std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> >&, std::vector<double, std::allocator<double> > const&, std::vector<int, std::allocator<int> > const&, std::vector<double, std::allocator<double> > const&, int, deepmd::InputNlist const&, int const&, std::vector<double, std::allocator<double> > const&, std::vector<double, std::allocator<double> > const&) + 0x52c (0x1456de7a563c in /home/jz748/anaconda3/envs/dp3/bin/../lib/./libdeepmd_cc.so)
+        # frame #8: void deepmd::DeepPotModelDevi::compute<double>(std::vector<double, std::allocator<double> >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<std::vector<double, std::allocator<double> >, std::allocator<std::vector<double, std::allocator<double> > > >&, std::vector<double, std::allocator<double> > const&, std::vector<int, std::allocator<int> > const&, std::vector<double, std::allocator<double> > const&, int, deepmd::InputNlist const&, int const&, std::vector<double, std::allocator<double> > const&, std::vector<double, std::allocator<double> > const&) + 0x367 (0x1456de799057 in /home/jz748/anaconda3/envs/dp3/bin/../lib/./libdeepmd_cc.so)
+        # frame #9: void DP_DeepPotModelDeviComputeNList_variant<double>(DP_DeepPotModelDevi*, int, int, double const*, int const*, double const*, int, DP_Nlist const*, int, double const*, double const*, double*, double*, double*, double*, double*) + 0x321 (0x1456f74126e1 in /home/jz748/anaconda3/envs/dp3/bin/../lib/libdeepmd_c.so)
+        # frame #10: LAMMPS_NS::PairDeepMD::compute(int, int) + 0xf2f (0x1456e6c7d21f in /home/jz748/anaconda3/envs/dp3/lib/deepmd_lmp/dpplugin.so)
+        # frame #11: LAMMPS_NS::Verlet::setup(int) + 0x3a2 (0x1456885c2552 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #12: LAMMPS_NS::Run::command(int, char**) + 0xa1c (0x14568855969c in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #13: LAMMPS_NS::Input::execute_command() + 0x76a (0x1456883bb5ba in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #14: LAMMPS_NS::Input::one(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x97 (0x1456883bc5c7 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #15: lammps_command + 0x90 (0x145688408eb0 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../liblammps.so)
+        # frame #16: <unknown function> + 0x6a4a (0x14571dfffa4a in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../libffi.so.8)
+        # frame #17: <unknown function> + 0x5fea (0x14571dffefea in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/../../libffi.so.8)
+        # frame #18: <unknown function> + 0x12545 (0x14570d2bf545 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so)
+        # frame #19: <unknown function> + 0x8802 (0x14570d2b5802 in /home/jz748/anaconda3/envs/dp3/lib/python3.11/lib-dynload/_ctypes.cpython-311-x86_64-linux-gnu.so)
+        # frame #20: _PyObject_MakeTpCall + 0x253 (0x556477a31323 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #21: _PyEval_EvalFrameDefault + 0x716 (0x556477a3ee36 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #22: _PyFunction_Vectorcall + 0x181 (0x556477a624c1 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #23: _PyEval_EvalFrameDefault + 0x49f9 (0x556477a43119 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #24: <unknown function> + 0x2a442d (0x556477af542d in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #25: PyEval_EvalCode + 0x9f (0x556477af4abf in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #26: <unknown function> + 0x2c2a1a (0x556477b13a1a in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #27: <unknown function> + 0x2be593 (0x556477b0f593 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #28: <unknown function> + 0x2d3930 (0x556477b24930 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #29: _PyRun_SimpleFileObject + 0x1ae (0x556477b242ce in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #30: _PyRun_AnyFileObject + 0x44 (0x556477b23ff4 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #31: Py_RunMain + 0x374 (0x556477b1e6f4 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #32: Py_BytesMain + 0x37 (0x556477ae4a77 in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        # frame #33: <unknown function> + 0x27b8a (0x14571e136b8a in /lib64/libc.so.6)
+        # frame #34: __libc_start_main + 0x8b (0x14571e136c4b in /lib64/libc.so.6)
+        # frame #35: <unknown function> + 0x29391d (0x556477ae491d in /home/jz748/anaconda3/envs/dp3/bin/python3.11)
+        pytest.skip(
+            "An error will be thrown in this test. See the comment above in the source code."
+        )
+    with tempfile.NamedTemporaryFile() as f:
+        sp.check_call(
+            [
+                "mpirun",
+                "-n",
+                "2",
+                sys.executable,
+                Path(__file__).parent / "run_mpi_pair_deepmd.py",
+                data_file,
+                pb_file,
+                pb_file2,
+                md_file,
+                f.name,
+                *balance_args,
+            ]
+        )
+        arr = np.loadtxt(f.name, ndmin=1)
+    pe = arr[0]
+
+    relative = 1.0
+    assert pe == pytest.approx(expected_e)
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f /= norm + relative
+    assert md[7:] == pytest.approx(expected_md_f)
+    assert md[4] == pytest.approx(np.max(expected_md_f))
+    assert md[5] == pytest.approx(np.min(expected_md_f))
+    assert md[6] == pytest.approx(np.mean(expected_md_f))
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v))
+    assert md[2] == pytest.approx(np.min(expected_md_v))
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
