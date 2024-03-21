@@ -190,25 +190,6 @@ class BaseAtomicModel(BaseAtomicModel_):
             "pair_exclude_types": self.pair_exclude_types,
         }
 
-    def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
-        """
-        Modify the output bias for the atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        raise NotImplementedError
-
-    def get_out_bias(self) -> torch.Tensor:
-        """Return the output bias of the atomic model."""
-        raise NotImplementedError
-
     def get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
         model_output_type = list(self.atomic_output_def().keys())
@@ -266,9 +247,13 @@ class BaseAtomicModel(BaseAtomicModel_):
         raise NotImplementedError
 
     def change_out_bias(
-        self, merged, origin_type_map, full_type_map, bias_shift="delta"
+        self,
+        merged,
+        origin_type_map,
+        full_type_map,
+        bias_adjust_mode="change-by-statistic",
     ) -> None:
-        """Change the energy bias according to the input data and the pretrained model.
+        """Change the output bias according to the input data and the pretrained model.
 
         Parameters
         ----------
@@ -280,14 +265,14 @@ class BaseAtomicModel(BaseAtomicModel_):
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         origin_type_map : List[str]
-            The original type_map in dataset, they are targets to change the energy bias.
+            The original type_map in dataset, they are targets to change the output bias.
         full_type_map : List[str]
             The full type_map in pre-trained model
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
+        bias_adjust_mode : str
+            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on labels of target dataset,
+                    and do least square on the errors to obtain the target shift as bias.
+            'set-by-statistic' : directly use the statistic output bias in the target dataset.
         """
         sorter = np.argsort(full_type_map)
         missing_types = [t for t in origin_type_map if t not in full_type_map]
@@ -298,21 +283,21 @@ class BaseAtomicModel(BaseAtomicModel_):
             np.searchsorted(full_type_map, origin_type_map, sorter=sorter)
         ]
         original_bias = self.get_out_bias()
-        if bias_shift == "delta":
+        if bias_adjust_mode == "change-by-statistic":
             delta_bias = compute_output_stats(
                 merged,
                 self.get_ntypes(),
                 model_forward=self.get_forward_wrapper_func(),
             )
             self.set_out_bias(delta_bias, add=True)
-        elif bias_shift == "statistic":
+        elif bias_adjust_mode == "set-by-statistic":
             bias_atom = compute_output_stats(
                 merged,
                 self.get_ntypes(),
             )
             self.set_out_bias(bias_atom)
         else:
-            raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
+            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
         bias_atom = self.get_out_bias()
         log.info(
             f"Change output bias of {origin_type_map!s} "

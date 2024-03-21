@@ -47,10 +47,12 @@ def change_finetune_model_params_single(
         if model_branch_from == "":
             model_branch_chosen = next(iter(model_dict_params.keys()))
             new_fitting = True
-            single_config["bias_shift"] = "statistic"  # fitting net re-init
+            single_config["bias_adjust_mode"] = (
+                "set-by-statistic"  # fitting net re-init
+            )
             log.warning(
                 "The fitting net will be re-init instead of using that in the pretrained model! "
-                "The bias_shift will be statistic!"
+                "The bias_adjust_mode will be set-by-statistic!"
             )
         else:
             model_branch_chosen = model_branch_from

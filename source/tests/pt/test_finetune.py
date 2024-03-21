@@ -58,7 +58,7 @@ class FinetuneTest:
         # change energy bias
         model.atomic_model.change_out_bias(
             self.sampled,
-            bias_shift="delta",
+            bias_adjust_mode="change-by-statistic",
             origin_type_map=origin_type_map,
             full_type_map=full_type_map,
         )
