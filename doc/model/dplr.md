@@ -194,7 +194,7 @@ fix ID group-ID style_name keyword value ...
 - ID, group-ID are documented in :doc:`fix <fix>` command
   <!-- See https://github.com/prettier/prettier/issues/16160 -->
   <!-- prettier-ignore -->
-- style_name = _dplr_
+- style*name = \_dplr*
 - three or more keyword/value pairs may be appended
 
 ```
