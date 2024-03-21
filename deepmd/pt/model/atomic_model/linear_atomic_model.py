@@ -92,25 +92,31 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return True
 
+    @torch.jit.export
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
-
+    
+    @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         return self.type_map
-
+    
+    @torch.jit.export
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
-
+    
+    @torch.jit.export
     def get_sel(self) -> List[int]:
         return [max([model.get_nsel() for model in self.models])]
 
+    @torch.jit.export
     def get_model_nsels(self) -> List[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
+    @torch.jit.export
     def get_model_sels(self) -> List[List[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
@@ -289,15 +295,18 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             for _ in range(nmodels)
         ]
 
+    @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         # tricky...
         return max([model.get_dim_fparam() for model in self.models])
 
+    @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
+    @torch.jit.export
     def get_sel_type(self) -> List[int]:
         """Get the selected atom types of this model.
 
@@ -318,6 +327,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             )
         ).tolist()
 
+    @torch.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
