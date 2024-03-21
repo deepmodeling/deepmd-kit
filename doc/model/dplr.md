@@ -191,10 +191,10 @@ The long-range part is calculated by the `kspace` support of LAMMPS. The `kspace
 fix ID group-ID style_name keyword value ...
 ```
 
+<!-- See https://github.com/prettier/prettier/issues/16160 -->
+<!-- prettier-ignore -->
 - ID, group-ID are documented in :doc:`fix <fix>` command
-  <!-- See https://github.com/prettier/prettier/issues/16160 -->
-  <!-- prettier-ignore -->
-- style*name = \_dplr*
+- style\_name = _dplr_
 - three or more keyword/value pairs may be appended
 
 ```
