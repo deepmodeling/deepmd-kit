@@ -202,7 +202,9 @@ class PolarFittingSeA(Fitting):
 
                         polar_bias.append(
                             np.sum(
-                                all_stat["atomic_polarizability"][ss][:, index_lis, :]
+                                all_stat["atomic_polarizability"][ss].reshape(
+                                    nframes, len(atom_has_polar), -1
+                                )[:, index_lis, :]
                                 / nframes,
                                 axis=(0, 1),
                             ).reshape((1, 9))

@@ -643,6 +643,7 @@ class DeepmdData:
                                 pass
                             else:
                                 sel_mask = np.isin(self.atom_type, type_sel)
+                                data = data.reshape([nframes, natoms, ndof_])
                                 data = data[:, sel_mask]
                                 natoms = natoms_sel
                                 idx_map = idx_map_sel
@@ -669,7 +670,7 @@ class DeepmdData:
         elif must:
             raise RuntimeError("%s not found!" % path)
         else:
-            if type_sel is not None and not output_natoms_for_type_sel:
+            if atomic and type_sel is not None and not output_natoms_for_type_sel:
                 ndof = ndof_ * natoms_sel
             data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:
