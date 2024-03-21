@@ -11,6 +11,7 @@ An [OpenMM](https://github.com/openmm/openmm) plugin is provided from [JingHuang
 Starting from [AmberTools24](https://ambermd.org/), `sander` includes an interface to the DeePMD-kit, which implements the [Deep Potential Range Corrected (DPRc) correction](../model/dprc.md).
 The DPRc model and the interface were developed by the [York Lab](https://theory.rutgers.edu/) from Rutgers University.
 More details are available in
+
 - [Amber Reference Manuals](https://ambermd.org/Manuals.php), providing documentation for how to enable the interface and the `&dprc` namelist;
 - [GitLab RutgersLBSR/AmberDPRc](https://gitlab.com/RutgersLBSR/AmberDPRc/), providing examples mdin files;
 - [DP-Amber](https://github.com/njzjz/dpamber/), a tiny tool to convert Amber trajectory to DPRc training data;
