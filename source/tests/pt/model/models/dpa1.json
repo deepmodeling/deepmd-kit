@@ -1,18 +1,11 @@
 {
-  "type_map": [
-    "O",
-    "H"
-  ],
+  "type_map": ["O", "H"],
   "descriptor": {
     "type": "se_atten",
     "sel": 30,
     "rcut_smth": 2.0,
     "rcut": 6.0,
-    "neuron": [
-      2,
-      4,
-      8
-    ],
+    "neuron": [2, 4, 8],
     "axis_neuron": 4,
     "attn": 5,
     "attn_layer": 2,
@@ -28,11 +21,7 @@
     "temperature": 1.0
   },
   "fitting_net": {
-    "neuron": [
-      240,
-      240,
-      240
-    ],
+    "neuron": [240, 240, 240],
     "resnet_dt": true,
     "seed": 1
   }

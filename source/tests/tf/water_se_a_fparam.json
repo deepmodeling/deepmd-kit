@@ -3,27 +3,16 @@
   "model": {
     "descriptor": {
       "type": "se_a",
-      "sel": [
-        46,
-        92
-      ],
-      "rcut_smth": 5.80,
-      "rcut": 6.00,
-      "neuron": [
-        25,
-        50,
-        100
-      ],
+      "sel": [46, 92],
+      "rcut_smth": 5.8,
+      "rcut": 6.0,
+      "neuron": [25, 50, 100],
       "resnet_dt": false,
       "axis_neuron": 16,
       "seed": 1
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "numb_fparam": 2,
       "seed": 1
@@ -31,9 +20,7 @@
   },
 
   "_comment2": " traing controls",
-  "systems": [
-    "system"
-  ],
+  "systems": ["system"],
   "set_prefix": "set",
   "stop_batch": 1000000,
   "batch_size": 1,

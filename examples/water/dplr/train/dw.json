@@ -1,23 +1,13 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [
-        46,
-        92
-      ],
-      "rcut_smth": 0.50,
-      "rcut": 6.00,
-      "neuron": [
-        16,
-        32,
-        64
-      ],
+      "sel": [46, 92],
+      "rcut_smth": 0.5,
+      "rcut": 6.0,
+      "neuron": [16, 32, 64],
       "resnet_dt": false,
       "axis_neuron": 8,
       "type_one_side": true,
@@ -27,14 +17,8 @@
     },
     "fitting_net": {
       "type": "dipole",
-      "dipole_type": [
-        0
-      ],
-      "neuron": [
-        128,
-        128,
-        128
-      ],
+      "dipole_type": [0],
+      "neuron": [128, 128, 128],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 1,
@@ -61,9 +45,7 @@
   "_comment7": " traing controls",
   "training": {
     "training_data": {
-      "systems": [
-        "data"
-      ],
+      "systems": ["data"],
       "batch_size": "auto",
       "set_prefix": "set",
       "_comment8": "that's all"

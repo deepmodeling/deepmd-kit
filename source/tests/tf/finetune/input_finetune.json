@@ -4,10 +4,7 @@
     "type_embedding": {
       "trainable": false
     },
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "_comment2": " that's all"
     },
@@ -38,16 +35,12 @@
 
   "training": {
     "training_data": {
-      "systems": [
-        "finetune/data"
-      ],
+      "systems": ["finetune/data"],
       "batch_size": "auto",
       "_comment7": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "finetune/data"
-      ],
+      "systems": ["finetune/data"],
       "batch_size": 1,
       "numb_btch": 3,
       "_comment8": "that's all"

@@ -1,23 +1,13 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [
-        46,
-        92
-      ],
+      "sel": [46, 92],
       "rcut_smth": 0.5,
-      "rcut": 6.00,
-      "neuron": [
-        16,
-        32,
-        64
-      ],
+      "rcut": 6.0,
+      "neuron": [16, 32, 64],
       "resnet_dt": false,
       "axis_neuron": 8,
       "type_one_side": true,
@@ -26,11 +16,7 @@
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [
-        128,
-        128,
-        128
-      ],
+      "neuron": [128, 128, 128],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 108835393,
@@ -39,15 +25,10 @@
     "modifier": {
       "type": "dipole_charge",
       "model_name": "dw.pb",
-      "model_charge_map": [
-        -8
-      ],
-      "sys_charge_map": [
-        6,
-        1
-      ],
-      "ewald_h": 1.00,
-      "ewald_beta": 0.40
+      "model_charge_map": [-8],
+      "sys_charge_map": [6, 1],
+      "ewald_h": 1.0,
+      "ewald_beta": 0.4
     },
     "_comment4": " that's all"
   },
@@ -73,9 +54,7 @@
 
   "training": {
     "training_data": {
-      "systems": [
-        "data"
-      ],
+      "systems": ["data"],
       "batch_size": "auto",
       "_comment7": "that's all"
     },

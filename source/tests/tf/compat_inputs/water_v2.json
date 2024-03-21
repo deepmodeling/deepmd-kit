@@ -2,38 +2,13 @@
   "model": {
     "descriptor": {
       "type": "loc_frame",
-      "sel_a": [
-        16,
-        32
-      ],
-      "sel_r": [
-        30,
-        60
-      ],
-      "rcut": 6.00,
-      "axis_rule": [
-        0,
-        1,
-        0,
-        0,
-        1,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1,
-        0
-      ]
+      "sel_a": [16, 32],
+      "sel_r": [30, 60],
+      "rcut": 6.0,
+      "axis_rule": [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        120,
-        60,
-        30,
-        10
-      ],
+      "neuron": [240, 120, 60, 30, 10],
       "resnet_dt": true,
       "seed": 1
     }
@@ -42,7 +17,7 @@
   "learning_rate": {
     "type": "exp",
     "decay_steps": 5000,
-    "stop_lr": 3.505266624882874e-08,
+    "stop_lr": 3.505266624882874e-8,
     "start_lr": 0.001
   },
 
@@ -57,13 +32,9 @@
 
   "training": {
     "training_data": {
-      "systems": [
-        "../data/"
-      ],
+      "systems": ["../data/"],
       "set_prefix": "set",
-      "batch_size": [
-        4
-      ]
+      "batch_size": [4]
     },
     "stop_batch": 1000000,
     "seed": 1,

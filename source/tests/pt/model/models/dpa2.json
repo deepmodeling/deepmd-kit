@@ -1,8 +1,5 @@
 {
-  "type_map": [
-    "O",
-    "H"
-  ],
+  "type_map": ["O", "H"],
   "descriptor": {
     "type": "dpa2",
     "repinit_rcut": 6.0,
@@ -11,11 +8,7 @@
     "repformer_rcut": 4.0,
     "repformer_rcut_smth": 0.5,
     "repformer_nsel": 10,
-    "repinit_neuron": [
-      2,
-      4,
-      8
-    ],
+    "repinit_neuron": [2, 4, 8],
     "repinit_axis_neuron": 4,
     "repinit_activation": "tanh",
     "repformer_nlayers": 12,
@@ -37,11 +30,7 @@
     "repformer_add_type_ebd_to_seq": false
   },
   "fitting_net": {
-    "neuron": [
-      240,
-      240,
-      240
-    ],
+    "neuron": [240, 240, 240],
     "resnet_dt": true,
     "seed": 1
   }

@@ -1,22 +1,14 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "Be"
-    ],
+    "type_map": ["Be"],
     "data_stat_nbatch": 1,
     "descriptor": {
       "type": "se_a",
-      "sel": [
-        60
-      ],
-      "rcut_smth": 1.80,
-      "rcut": 6.00,
-      "neuron": [
-        25,
-        50,
-        100
-      ],
+      "sel": [60],
+      "rcut_smth": 1.8,
+      "rcut": 6.0,
+      "neuron": [25, 50, 100],
       "resnet_dt": false,
       "axis_neuron": 8,
       "type_one_side": true,
@@ -24,11 +16,7 @@
       "seed": 1
     },
     "fitting_net": {
-      "neuron": [
-        120,
-        120,
-        120
-      ],
+      "neuron": [120, 120, 120],
       "resnet_dt": true,
       "numb_fparam": 1,
       "precision": "float64",
@@ -54,10 +42,7 @@
   "_comment2": " traing controls",
   "training": {
     "training_data": {
-      "systems": [
-        "../data/e3000_i2000/",
-        "../data/e8000_i2000/"
-      ],
+      "systems": ["../data/e3000_i2000/", "../data/e8000_i2000/"],
       "set_prefix": "set",
       "batch_size": 1
     },

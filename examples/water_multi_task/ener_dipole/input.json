@@ -1,23 +1,13 @@
 {
   "_comment1": "that's all",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [
-        46,
-        92
-      ],
+      "sel": [46, 92],
       "rcut_smth": 0.5,
       "rcut": 6.0,
-      "neuron": [
-        25,
-        50,
-        100
-      ],
+      "neuron": [25, 50, 100],
       "resnet_dt": false,
       "axis_neuron": 16,
       "type_one_side": true,
@@ -28,25 +18,15 @@
     "fitting_net_dict": {
       "water_dipole": {
         "type": "dipole",
-        "sel_type": [
-          0
-        ],
-        "neuron": [
-          100,
-          100,
-          100
-        ],
+        "sel_type": [0],
+        "neuron": [100, 100, 100],
         "resnet_dt": true,
         "precision": "float64",
         "seed": 1,
         "_comment3": " that's all"
       },
       "water_ener": {
-        "neuron": [
-          240,
-          240,
-          240
-        ],
+        "neuron": [240, 240, 240],
         "resnet_dt": true,
         "precision": "float64",
         "seed": 1,
@@ -59,7 +39,7 @@
     "type": "exp",
     "decay_steps": 5000,
     "start_lr": 0.001,
-    "stop_lr": 3.51e-08,
+    "stop_lr": 3.51e-8,
     "_comment6": "that's all"
   },
   "loss_dict": {
@@ -112,9 +92,7 @@
           "_comment11": "that's all"
         },
         "validation_data": {
-          "systems": [
-            "../../water/data/data_3/"
-          ],
+          "systems": ["../../water/data/data_3/"],
           "batch_size": 1,
           "numb_btch": 3,
           "_comment12": "that's all"

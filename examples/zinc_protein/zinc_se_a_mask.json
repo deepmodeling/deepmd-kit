@@ -1,30 +1,11 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "C",
-      "O",
-      "N",
-      "H",
-      "S",
-      "ZN"
-    ],
+    "type_map": ["C", "O", "N", "H", "S", "ZN"],
     "descriptor": {
       "type": "se_a_mask",
-      "sel": [
-        36,
-        16,
-        24,
-        64,
-        6,
-        1
-      ],
-      "neuron": [
-        32,
-        32,
-        64,
-        128
-      ],
+      "sel": [36, 16, 24, 64, 6, 1],
+      "neuron": [32, 32, 64, 128],
       "resnet_dt": true,
       "axis_neuron": 16,
       "type_one_side": true,
@@ -33,11 +14,7 @@
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 1,
@@ -68,16 +45,12 @@
   },
   "training": {
     "training_data": {
-      "systems": [
-        "examples/zinc_protein/train_data_dp_mask/"
-      ],
+      "systems": ["examples/zinc_protein/train_data_dp_mask/"],
       "batch_size": 2,
       "_comment7": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "examples/zinc_protein/val_data_dp_mask/"
-      ],
+      "systems": ["examples/zinc_protein/val_data_dp_mask/"],
       "batch_size": 2,
       "_comment8": "that's all"
     },

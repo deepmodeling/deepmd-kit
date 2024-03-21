@@ -1,27 +1,15 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
-    "atom_exclude_types": [
-      1
-    ],
+    "type_map": ["O", "H"],
+    "atom_exclude_types": [1],
     "data_stat_nbatch": 10,
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [
-        46,
-        92
-      ],
-      "rcut_smth": 5.80,
-      "rcut": 6.00,
-      "neuron": [
-        25,
-        50,
-        100
-      ],
+      "sel": [46, 92],
+      "rcut_smth": 5.8,
+      "rcut": 6.0,
+      "neuron": [25, 50, 100],
       "resnet_dt": false,
       "axis_neuron": 16,
       "type_one_side": true,
@@ -32,11 +20,7 @@
     "fitting_net": {
       "type": "polar",
       "fit_diag": false,
-      "neuron": [
-        100,
-        100,
-        100
-      ],
+      "neuron": [100, 100, 100],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 1,

@@ -1,36 +1,21 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [
-        46,
-        92
-      ],
-      "rcut_smth": 0.50,
-      "rcut": 6.00,
+      "sel": [46, 92],
+      "rcut_smth": 0.5,
+      "rcut": 6.0,
       "_comment": "N2=2N1, N2=N1, and otherwise can be tested",
-      "neuron": [
-        4,
-        8,
-        17,
-        17
-      ],
+      "neuron": [4, 8, 17, 17],
       "resnet_dt": false,
       "axis_neuron": 16,
       "seed": 1,
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [
-        20,
-        20,
-        20
-      ],
+      "neuron": [20, 20, 20],
       "resnet_dt": true,
       "seed": 1,
       "_comment3": " that's all"
@@ -59,16 +44,12 @@
 
   "training": {
     "training_data": {
-      "systems": [
-        "model_compression/data"
-      ],
+      "systems": ["model_compression/data"],
       "batch_size": "auto",
       "_comment7": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "model_compression/data"
-      ],
+      "systems": ["model_compression/data"],
       "batch_size": 1,
       "numb_btch": 3,
       "_comment8": "that's all"

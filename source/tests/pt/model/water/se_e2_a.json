@@ -1,33 +1,19 @@
 {
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [
-        46,
-        92
-      ],
-      "rcut_smth": 0.50,
-      "rcut": 6.00,
-      "neuron": [
-        25,
-        50,
-        100
-      ],
+      "sel": [46, 92],
+      "rcut_smth": 0.5,
+      "rcut": 6.0,
+      "neuron": [25, 50, 100],
       "resnet_dt": false,
       "axis_neuron": 16,
       "seed": 1,
       "_comment": " that's all"
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "seed": 1,
       "_comment": " that's all"
@@ -52,16 +38,12 @@
   },
   "training": {
     "training_data": {
-      "systems": [
-        "pt/water/data/data_0"
-      ],
+      "systems": ["pt/water/data/data_0"],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "pt/water/data/data_0"
-      ],
+      "systems": ["pt/water/data/data_0"],
       "batch_size": 1,
       "numb_btch": 3,
       "_comment": "that's all"

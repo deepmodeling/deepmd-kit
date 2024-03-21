@@ -3,35 +3,22 @@
   "model": {
     "descriptor": {
       "type": "se_3be",
-      "sel": [
-        40,
-        80
-      ],
-      "rcut_smth": 0.50,
-      "rcut": 6.00,
-      "neuron": [
-        2,
-        4,
-        8
-      ],
+      "sel": [40, 80],
+      "rcut_smth": 0.5,
+      "rcut": 6.0,
+      "neuron": [2, 4, 8],
       "resnet_dt": false,
       "seed": 1
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "seed": 1
     }
   },
 
   "_comment2": " traing controls",
-  "systems": [
-    "system"
-  ],
+  "systems": ["system"],
   "set_prefix": "set",
   "stop_batch": 1000000,
   "batch_size": 1,

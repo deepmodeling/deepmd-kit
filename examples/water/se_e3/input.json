@@ -1,31 +1,20 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "se_e3",
       "sel": "auto",
-      "rcut_smth": 0.50,
-      "rcut": 5.80,
-      "neuron": [
-        2,
-        4,
-        8
-      ],
+      "rcut_smth": 0.5,
+      "rcut": 5.8,
+      "neuron": [2, 4, 8],
       "resnet_dt": false,
       "precision": "float64",
       "seed": 1,
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 1,
@@ -55,18 +44,12 @@
   "_comment7": " traing controls",
   "training": {
     "training_data": {
-      "systems": [
-        "../data/data_0/",
-        "../data/data_1/",
-        "../data/data_2/"
-      ],
+      "systems": ["../data/data_0/", "../data/data_1/", "../data/data_2/"],
       "batch_size": "auto",
       "_comment8": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "../data/data_3"
-      ],
+      "systems": ["../data/data_3"],
       "batch_size": 1,
       "numb_btch": 3,
       "_comment9": "that's all"

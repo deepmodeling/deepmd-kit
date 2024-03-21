@@ -1,10 +1,7 @@
 {
   "_comment": "that's all",
   "model": {
-    "type_map": [
-      "O",
-      "H"
-    ],
+    "type_map": ["O", "H"],
     "descriptor": {
       "type": "dpa2",
       "tebd_dim": 8,
@@ -14,11 +11,7 @@
       "repformer_rcut": 4.0,
       "repformer_rcut_smth": 3.5,
       "repformer_nsel": 40,
-      "repinit_neuron": [
-        25,
-        50,
-        100
-      ],
+      "repinit_neuron": [25, 50, 100],
       "repinit_axis_neuron": 12,
       "repinit_activation": "tanh",
       "repformer_nlayers": 12,
@@ -40,11 +33,7 @@
       "repformer_add_type_ebd_to_seq": false
     },
     "fitting_net": {
-      "neuron": [
-        240,
-        240,
-        240
-      ],
+      "neuron": [240, 240, 240],
       "resnet_dt": true,
       "seed": 1,
       "_comment": " that's all"
@@ -55,7 +44,7 @@
     "type": "exp",
     "decay_steps": 5000,
     "start_lr": 0.0002,
-    "stop_lr": 3.51e-08,
+    "stop_lr": 3.51e-8,
     "_comment": "that's all"
   },
   "loss": {
@@ -71,18 +60,12 @@
   "training": {
     "stat_file": "./dpa2",
     "training_data": {
-      "systems": [
-        "../data/data_0",
-        "../data/data_1",
-        "../data/data_2"
-      ],
+      "systems": ["../data/data_0", "../data/data_1", "../data/data_2"],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "validation_data": {
-      "systems": [
-        "../data/data_3"
-      ],
+      "systems": ["../data/data_3"],
       "batch_size": 1,
       "_comment": "that's all"
     },

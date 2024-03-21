@@ -2,17 +2,10 @@
   "model": {
     "descriptor": {
       "type": "se_a",
-      "sel": [
-        60,
-        60
-      ],
-      "rcut_smth": 4.80,
-      "rcut": 5.00,
-      "neuron": [
-        25,
-        50,
-        100
-      ],
+      "sel": [60, 60],
+      "rcut_smth": 4.8,
+      "rcut": 5.0,
+      "neuron": [25, 50, 100],
       "resnet_dt": false,
       "axis_neuron": 6,
       "seed": 1
@@ -20,11 +13,7 @@
     "fitting_net": {
       "type": "dos",
       "numb_dos": 100,
-      "neuron": [
-        100,
-        100,
-        100
-      ],
+      "neuron": [100, 100, 100],
       "resnet_dt": true,
       "numb_fparam": 0,
       "seed": 1
@@ -50,9 +39,7 @@
   },
 
   "training": {
-    "systems": [
-      "system/"
-    ],
+    "systems": ["system/"],
     "set_prefix": "set",
     "stop_batch": 100000,
     "batch_size": 1,
