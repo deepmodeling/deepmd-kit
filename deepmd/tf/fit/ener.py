@@ -141,6 +141,9 @@ class EnerFitting(Fitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     """
 
     def __init__(
@@ -162,6 +165,7 @@ class EnerFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
+        mixed_types: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -238,6 +242,7 @@ class EnerFitting(Fitting):
             assert (
                 len(self.layer_name) == len(self.n_neuron) + 1
             ), "length of layer_name should be that of n_neuron + 1"
+        self.mixed_types = mixed_types
 
     def get_numb_fparam(self) -> int:
         """Get the number of frame parameters."""
@@ -633,8 +638,21 @@ class EnerFitting(Fitting):
             atype_embed = None
 
         self.atype_embed = atype_embed
+        original_dim_descrpt = self.dim_descrpt
+        if atype_embed is not None:
+            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat(
+                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
+            )
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
+            if len(self.atom_ener):
+                inputs_zero = tf.concat(
+                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
+                    axis=1,
+                )
 
-        if atype_embed is None:
+        if not self.mixed_types:
             start_index = 0
             outs_list = []
             for type_i in range(ntypes_atom):
@@ -673,13 +691,6 @@ class EnerFitting(Fitting):
             outs = tf.concat(outs_list, axis=1)
         # with type embedding
         else:
-            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
-            type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat(
-                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
-            )
-            original_dim_descrpt = self.dim_descrpt
-            self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
                 0,
@@ -693,10 +704,6 @@ class EnerFitting(Fitting):
             )
             if len(self.atom_ener):
                 # remove contribution in vacuum
-                inputs_zero = tf.concat(
-                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
-                    axis=1,
-                )
                 inputs_zero = tf.reshape(inputs_zero, [-1, natoms[0], self.dim_descrpt])
                 zero_layer = self._build_lower(
                     0,
@@ -892,9 +899,7 @@ class EnerFitting(Fitting):
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
-            # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class for energy fitting and type embedding
-            "mixed_types": False,
+            "mixed_types": self.mixed_types,
             "dim_out": 1,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
@@ -912,8 +917,7 @@ class EnerFitting(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings for type embedding
-                ndim=1,
+                ndim=0 if self.mixed_types else 1,
                 in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,

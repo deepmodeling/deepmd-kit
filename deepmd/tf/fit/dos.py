@@ -95,6 +95,9 @@ class DOSFitting(Fitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     """
 
     def __init__(
@@ -114,6 +117,7 @@ class DOSFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
+        mixed_types: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -171,6 +175,7 @@ class DOSFitting(Fitting):
             assert (
                 len(self.layer_name) == len(self.n_neuron) + 1
             ), "length of layer_name should be that of n_neuron + 1"
+        self.mixed_types = mixed_types
 
     def get_numb_fparam(self) -> int:
         """Get the number of frame parameters."""
@@ -509,8 +514,16 @@ class DOSFitting(Fitting):
             atype_embed = None
 
         self.atype_embed = atype_embed
+        if atype_embed is not None:
+            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat(
+                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
+            )
+            original_dim_descrpt = self.dim_descrpt
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
 
-        if atype_embed is None:
+        if not self.mixed_types:
             start_index = 0
             outs_list = []
             for type_i in range(self.ntypes):
@@ -541,13 +554,6 @@ class DOSFitting(Fitting):
             outs = tf.concat(outs_list, axis=1)
         # with type embedding
         else:
-            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
-            type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat(
-                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
-            )
-            original_dim_descrpt = self.dim_descrpt
-            self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
                 0,
@@ -700,9 +706,7 @@ class DOSFitting(Fitting):
             "var_name": "dos",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
-            # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class for DOSFitting and type embedding
-            "mixed_types": False,
+            "mixed_types": self.mixed_types,
             "dim_out": self.numb_dos,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
@@ -715,8 +719,7 @@ class DOSFitting(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings for DOSFitting
-                ndim=1,
+                ndim=0 if self.mixed_types else 1,
                 in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
                 out_dim=self.numb_dos,
                 neuron=self.n_neuron,
