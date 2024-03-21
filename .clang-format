@@ -2,3 +2,4 @@
 BasedOnStyle: Google
 BinPackParameters: false
 InsertBraces: true
+...

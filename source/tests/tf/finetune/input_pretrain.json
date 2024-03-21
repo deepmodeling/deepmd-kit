@@ -1,13 +1,22 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": ["H", "X1", "X2", "O"],
+    "type_map": [
+      "H",
+      "X1",
+      "X2",
+      "O"
+    ],
     "descriptor": {
       "type": "se_atten",
       "sel": 120,
-      "rcut_smth": 0.5,
-      "rcut": 6.0,
-      "neuron": [4, 8, 16],
+      "rcut_smth": 0.50,
+      "rcut": 6.00,
+      "neuron": [
+        4,
+        8,
+        16
+      ],
       "resnet_dt": false,
       "axis_neuron": 16,
       "attn": 128,
@@ -18,7 +27,11 @@
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [20, 20, 20],
+      "neuron": [
+        20,
+        20,
+        20
+      ],
       "resnet_dt": true,
       "seed": 1,
       "_comment3": " that's all"
@@ -47,12 +60,16 @@
 
   "training": {
     "training_data": {
-      "systems": ["finetune/data"],
+      "systems": [
+        "finetune/data"
+      ],
       "batch_size": "auto",
       "_comment7": "that's all"
     },
     "validation_data": {
-      "systems": ["finetune/data"],
+      "systems": [
+        "finetune/data"
+      ],
       "batch_size": 1,
       "numb_btch": 3,
       "_comment8": "that's all"

@@ -3,7 +3,6 @@
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
-
 1. Register and implement new components (e.g. descriptor) in a Python file.
 2. Register new arguments for user inputs.
 3. Package new codes into a Python package.
@@ -73,6 +72,7 @@ The serialize and deserialize methods are important for cross-backend model conv
 
 In many instances, there is no requirement to create a new fitting net. For fitting user-defined scalar properties, the {py:class}`deepmd.pt.model.task.ener.InvarFitting` class can be utilized. However, if there is a need for a new fitting net, one should inherit from both the {py:class}`deepmd.pt.model.task.base_fitting.BaseFitting` class and the {py:class}`torch.nn.Module` class. Alternatively, for a more straightforward approach, inheritance from the {py:class}`deepmd.pt.model.task.fitting.GeneralFitting` class is also an option.
 
+
 ```py
 from deepmd.pt.model.task.fitting import (
     GeneralFitting,
@@ -104,12 +104,10 @@ class SomeFittingNet(GeneralFitting):
     def output_def(self) -> FittingOutputDef:
         pass
 ```
-
 ### New models
-
 The PyTorch backend's model architecture is meticulously structured with multiple layers of abstraction, ensuring a high degree of flexibility. Typically, the process commences with an atomic model responsible for atom-wise property calculations. This atomic model inherits from both the {py:class}`deepmd.pt.model.atomic_model.base_atomic_model.BaseAtomicModel` class and the {py:class}`torch.nn.Module` class.
 
-Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, which leverages the `deepmd.pt.model.model.make_model.make_model` function. The purpose of the `make_model` wrapper is to facilitate the translation between atomic property predictions and the extended property predictions and differentiation , e.g. the reduction of atomic energy contribution and the autodiff for calculating the forces and virial. The developers usually need to implement an `AtomicModel` not a `Model`.
+Subsequently, the `AtomicModel` is encapsulated using the `make_model(AtomicModel)` function, which leverages the `deepmd.pt.model.model.make_model.make_model` function.  The purpose of the `make_model` wrapper is to facilitate the translation between atomic property predictions and the extended property predictions and differentiation , e.g. the reduction of atomic energy contribution and the autodiff for calculating the forces and virial. The developers usually need to implement an `AtomicModel` not a `Model`.
 
 ```py
 from deepmd.pt.model.atomic_model.base_atomic_model import (

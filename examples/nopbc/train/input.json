@@ -1,13 +1,25 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": ["C", "H", "O"],
+    "type_map": [
+      "C",
+      "H",
+      "O"
+    ],
     "descriptor": {
       "type": "se_e2_a",
-      "sel": [40, 80, 40],
-      "rcut_smth": 1.0,
-      "rcut": 6.0,
-      "neuron": [25, 50, 100],
+      "sel": [
+        40,
+        80,
+        40
+      ],
+      "rcut_smth": 1.00,
+      "rcut": 6.00,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
       "resnet_dt": false,
       "axis_neuron": 12,
       "type_one_side": true,
@@ -15,7 +27,11 @@
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [240, 240, 240],
+      "neuron": [
+        240,
+        240,
+        240
+      ],
       "resnet_dt": true,
       "seed": 1,
       "_comment3": " that's all"

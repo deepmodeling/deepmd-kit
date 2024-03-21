@@ -1,18 +1,33 @@
 {
   "_comment1": "that's all",
   "model": {
-    "type_map": ["C", "ZN"],
+    "type_map": [
+      "C",
+      "ZN"
+    ],
     "descriptor": {
       "type": "se_a_mask",
-      "sel": [20, 1],
-      "neuron": [2, 2, 2, 2],
+      "sel": [
+        20,
+        1
+      ],
+      "neuron": [
+        2,
+        2,
+        2,
+        2
+      ],
       "resnet_dt": true,
       "axis_neuron": 2,
       "seed": 1,
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [2, 2, 2],
+      "neuron": [
+        2,
+        2,
+        2
+      ],
       "resnet_dt": true,
       "seed": 1,
       "numb_aparam": 1,
@@ -25,7 +40,7 @@
     "type": "exp",
     "decay_steps": 20000,
     "start_lr": 0.001,
-    "stop_lr": 3.51e-8,
+    "stop_lr": 3.51e-08,
     "_comment5": "that's all"
   },
   "loss": {
@@ -45,7 +60,9 @@
       "_comment7": "that's all"
     },
     "validation_data": {
-      "systems": ["source/tests/data_dp_mask/"],
+      "systems": [
+        "source/tests/data_dp_mask/"
+      ],
       "batch_size": 4,
       "numb_btch": 1,
       "_comment8": "that's all"

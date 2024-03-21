@@ -1,13 +1,20 @@
 {
   "_comment": "that's all",
   "model": {
-    "type_map": ["O", "H"],
+    "type_map": [
+      "O",
+      "H"
+    ],
     "descriptor": {
       "type": "se_atten",
       "sel": 40,
       "rcut_smth": 0.5,
       "rcut": 4.0,
-      "neuron": [25, 50, 100],
+      "neuron": [
+        25,
+        50,
+        100
+      ],
       "axis_neuron": 16,
       "type_one_side": true,
       "attn": 64,
@@ -24,7 +31,11 @@
       "temperature": 1.0
     },
     "fitting_net": {
-      "neuron": [240, 240, 240],
+      "neuron": [
+        240,
+        240,
+        240
+      ],
       "resnet_dt": true,
       "seed": 1,
       "_comment": " that's all"
@@ -35,7 +46,7 @@
     "type": "exp",
     "decay_steps": 5000,
     "start_lr": 0.001,
-    "stop_lr": 3.51e-8,
+    "stop_lr": 3.51e-08,
     "_comment": "that's all"
   },
   "loss": {
@@ -50,12 +61,16 @@
   },
   "training": {
     "training_data": {
-      "systems": ["pt/water/data/data_0"],
+      "systems": [
+        "pt/water/data/data_0"
+      ],
       "batch_size": 1,
       "_comment": "that's all"
     },
     "validation_data": {
-      "systems": ["pt/water/data/data_0"],
+      "systems": [
+        "pt/water/data/data_0"
+      ],
       "batch_size": 1,
       "numb_btch": 1,
       "_comment": "that's all"

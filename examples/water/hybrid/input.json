@@ -1,16 +1,26 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": ["O", "H"],
+    "type_map": [
+      "O",
+      "H"
+    ],
     "descriptor": {
       "type": "hybrid",
       "list": [
         {
           "type": "se_e2_a",
-          "sel": [20, 40],
-          "rcut_smth": 0.5,
-          "rcut": 4.0,
-          "neuron": [10, 20, 40],
+          "sel": [
+            20,
+            40
+          ],
+          "rcut_smth": 0.50,
+          "rcut": 4.00,
+          "neuron": [
+            10,
+            20,
+            40
+          ],
           "resnet_dt": false,
           "axis_neuron": 4,
           "type_one_side": true,
@@ -20,10 +30,17 @@
         },
         {
           "type": "se_e2_r",
-          "sel": [46, 92],
-          "rcut_smth": 0.5,
-          "rcut": 6.0,
-          "neuron": [5, 10, 20],
+          "sel": [
+            46,
+            92
+          ],
+          "rcut_smth": 0.50,
+          "rcut": 6.00,
+          "neuron": [
+            5,
+            10,
+            20
+          ],
           "resnet_dt": false,
           "type_one_side": true,
           "precision": "float64",
@@ -33,7 +50,11 @@
       ]
     },
     "fitting_net": {
-      "neuron": [240, 240, 240],
+      "neuron": [
+        240,
+        240,
+        240
+      ],
       "resnet_dt": true,
       "seed": 1,
       "_comment4": " that's all"
@@ -62,12 +83,18 @@
 
   "training": {
     "training_data": {
-      "systems": ["../data/data_0/", "../data/data_1/", "../data/data_2/"],
+      "systems": [
+        "../data/data_0/",
+        "../data/data_1/",
+        "../data/data_2/"
+      ],
       "batch_size": "auto",
       "_comment8": "that's all"
     },
     "validation_data": {
-      "systems": ["../data/data_3"],
+      "systems": [
+        "../data/data_3"
+      ],
       "batch_size": 1,
       "numb_btch": 3,
       "_comment9": "that's all"

@@ -1,12 +1,20 @@
 {
   "model": {
-    "type_map": ["Si"],
+    "type_map": [
+      "Si"
+    ],
     "descriptor": {
       "type": "se_a",
-      "sel": [90],
+      "sel": [
+        90
+      ],
       "rcut_smth": 1.8,
       "rcut": 6.0,
-      "neuron": [25, 50, 100],
+      "neuron": [
+        25,
+        50,
+        100
+      ],
       "resnet_dt": false,
       "axis_neuron": 8,
       "type_one_side": true,
@@ -16,7 +24,11 @@
     "fitting_net": {
       "type": "dos",
       "numb_dos": 250,
-      "neuron": [120, 120, 120],
+      "neuron": [
+        120,
+        120,
+        120
+      ],
       "resnet_dt": true,
       "numb_fparam": 0,
       "precision": "float64",
@@ -37,7 +49,7 @@
   "learning_rate": {
     "type": "exp",
     "start_lr": 0.001,
-    "stop_lr": 1e-8
+    "stop_lr": 1e-08
   },
   "training": {
     "stop_batch": 100000,
@@ -51,7 +63,9 @@
     "profiling": false,
     "profiling_file": "timeline.json",
     "training_data": {
-      "systems": ["../data/heat-221/"],
+      "systems": [
+        "../data/heat-221/"
+      ],
       "set_prefix": "set",
       "batch_size": 1
     }

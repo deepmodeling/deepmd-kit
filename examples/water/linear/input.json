@@ -38,7 +38,9 @@
     "training_data": {
       "_comment4": "Currently there must be systems",
       "_comment5": "TODO: support empty systems",
-      "systems": ["../data/data_0"],
+      "systems": [
+        "../data/data_0"
+      ],
       "batch_size": "auto",
       "_comment6": "that's all"
     },

@@ -3,10 +3,16 @@
     "version": 0,
     "max_nnei": 128,
     "net_size": 128,
-    "sel": [60, 60],
+    "sel": [
+      60,
+      60
+    ],
     "rcut": 6.0,
     "rcut_smth": 0.5,
-    "type_map": ["Ge", "Te"]
+    "type_map": [
+      "Ge",
+      "Te"
+    ]
   },
   "learning_rate": {
     "type": "exp",
@@ -31,9 +37,13 @@
     "save_ckpt": "model.ckpt",
     "save_freq": 10000,
     "training_data": {
-      "systems": ["../data"],
+      "systems": [
+        "../data"
+      ],
       "set_prefix": "set",
-      "batch_size": [1]
+      "batch_size": [
+        1
+      ]
     }
   }
 }

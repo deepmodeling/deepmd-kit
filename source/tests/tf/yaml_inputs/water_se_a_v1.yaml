@@ -2,22 +2,22 @@ model:
   descriptor:
     type: se_a
     sel:
-      - 46
-      - 92
+    - 46
+    - 92
     rcut_smth: 5.8
     rcut: 6.0
     neuron:
-      - 25
-      - 50
-      - 100
+    - 25
+    - 50
+    - 100
     axis_neuron: 16
     resnet_dt: false
     seed: 1
   fitting_net:
     neuron:
-      - 240
-      - 240
-      - 240
+    - 240
+    - 240
+    - 240
     resnet_dt: true
     seed: 1
 learning_rate:
@@ -33,11 +33,11 @@ loss:
   start_pref_v: 0
   limit_pref_v: 0
 training:
-  systems: ["../data/"]
+  systems: ['../data/']
   set_prefix: set
   stop_batch: 1000000
   batch_size:
-    - 1
+  - 1
   seed: 1
   disp_file: lcurve.out
   disp_freq: 100

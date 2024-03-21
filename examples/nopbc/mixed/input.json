@@ -1,13 +1,21 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": ["C", "H", "O"],
+    "type_map": [
+      "C",
+      "H",
+      "O"
+    ],
     "descriptor": {
       "type": "se_atten",
       "sel": 120,
-      "rcut_smth": 1.0,
-      "rcut": 6.0,
-      "neuron": [25, 50, 100],
+      "rcut_smth": 1.00,
+      "rcut": 6.00,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
       "resnet_dt": false,
       "axis_neuron": 12,
       "precision": "float64",
@@ -15,7 +23,11 @@
       "_comment2": " that's all"
     },
     "fitting_net": {
-      "neuron": [240, 240, 240],
+      "neuron": [
+        240,
+        240,
+        240
+      ],
       "resnet_dt": true,
       "precision": "float64",
       "seed": 1,

@@ -1,18 +1,27 @@
 {
   "_comment1": " model parameters",
   "model": {
-    "type_map": ["O", "H"],
+    "type_map": [
+      "O",
+      "H"
+    ],
     "type_embedding": {
-      "neuron": [8],
+      "neuron": [
+        8
+      ],
       "resnet_dt": false,
       "seed": 1
     },
     "descriptor": {
       "type": "se_atten",
       "sel": 120,
-      "rcut_smth": 5.8,
-      "rcut": 6.0,
-      "neuron": [25, 50, 100],
+      "rcut_smth": 5.80,
+      "rcut": 6.00,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
       "resnet_dt": false,
       "type_one_side": false,
       "axis_neuron": 16,
@@ -23,14 +32,20 @@
       "attn_mask": false
     },
     "fitting_net": {
-      "neuron": [240, 240, 240],
+      "neuron": [
+        240,
+        240,
+        240
+      ],
       "resnet_dt": true,
       "seed": 1
     }
   },
 
   "_comment2": " traing controls",
-  "systems": ["system"],
+  "systems": [
+    "system"
+  ],
   "set_prefix": "set",
   "stop_batch": 1000000,
   "batch_size": 1,

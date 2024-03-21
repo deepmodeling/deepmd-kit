@@ -5,7 +5,6 @@
 :::
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
-
 Currently, parallel training in tensorflow version is enabled in a synchronized way with help of [Horovod](https://github.com/horovod/horovod).
 Depending on the number of training processes (according to MPI context) and the number of GPU cards available, DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode. Therefore, no additional options are specified in your JSON/YAML input file.
 
@@ -16,7 +15,6 @@ Horovod works in the data-parallel mode, resulting in a larger global batch size
 The number of decay steps required to achieve the same accuracy can decrease by the number of cards (e.g., 1/2 of steps in the above case), but needs to be scaled manually in the input file.
 
 In some cases, it won't work well when scaling the learning rate by worker count in a `linear` way. Then you can try `sqrt` or `none` by setting argument {ref}`scale_by_worker <learning_rate/scale_by_worker>` like below.
-
 ```json
     "learning_rate" :{
         "scale_by_worker": "none",
@@ -29,11 +27,11 @@ In some cases, it won't work well when scaling the learning rate by worker count
 Testing `examples/water/se_e2_a` on an 8-GPU host, linear acceleration can be observed with the increasing number of cards.
 
 | Num of GPU cards | Seconds every 100 samples | Samples per second | Speed up |
-| ---------------- | ------------------------- | ------------------ | -------- |
-| 1                | 1.4515                    | 68.89              | 1.00     |
-| 2                | 1.5962                    | 62.65\*2           | 1.82     |
-| 4                | 1.7635                    | 56.71\*4           | 3.29     |
-| 8                | 1.7267                    | 57.91\*8           | 6.72     |
+|  --  | -- | -- | -- |
+| 1  | 1.4515 | 68.89 | 1.00 |
+| 2  | 1.5962 | 62.65*2 | 1.82 |
+| 4  | 1.7635 | 56.71*4 | 3.29 |
+| 8  | 1.7267 | 57.91*8 | 6.72 |
 
 ### How to use
 
@@ -49,16 +47,13 @@ Need to mention, the environment variable `CUDA_VISIBLE_DEVICES` must be set to 
 To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
 
 When using MPI with Horovod, `horovodrun` is a simple wrapper around `mpirun`. In the case where fine-grained control over options is passed to `mpirun`, [`mpirun` can be invoked directly](https://horovod.readthedocs.io/en/stable/mpi_include.html), and it will be detected automatically by Horovod, e.g.,
-
 ```bash
 CUDA_VISIBLE_DEVICES=4,5,6,7 mpirun -l -launcher=fork -hosts=localhost -np 4 \
     dp train --mpi-log=workers input.json
 ```
-
 this is sometimes necessary for an HPC environment.
 
 Whether distributed workers are initiated can be observed in the "Summary of the training" section in the log (`world size` > 1, and `distributed`).
-
 ```
 [0] DEEPMD INFO    ---Summary of the training---------------------------------------
 [0] DEEPMD INFO    distributed
@@ -77,7 +72,6 @@ Whether distributed workers are initiated can be observed in the "Summary of the
 ### Logging
 
 What's more, 2 command-line arguments are defined to control the logging behavior when performing parallel training with MPI.
-
 ```
 optional arguments:
   -l LOG_PATH, --log-path LOG_PATH
@@ -94,20 +88,19 @@ optional arguments:
 
 ## PyTorch Implementation {{ pytorch_icon }}
 
-Currently, parallel training in pytorch version is implemented in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
+Currently, parallel training in pytorch version is implemented  in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
 
 ### Dataloader and Dataset
-
 One of the major differences between two backends during training is that the PyTorch version employs a multi-threaded data loading utility [DataLoader](https://pytorch.org/docs/stable/data.html).
 We utilize the PyTorch framework and have designed and implemented a multiprocessing data processing and loading system called DpLoaderSet based on torch DataLoader and Dataset.
 
+
 First, we establish a DeepmdData class for each system, which is consistent with the TensorFlow version in this level. Then, we create a dataloader for each system, resulting in the same number of dataloaders as the number of systems. Next, we create a dataset for the dataloaders obtained in the previous step. This allows us to query the data for each system through this dataset, while the iteration pointers for each system are maintained by their respective dataloaders. Finally, a dataloader is created for the outermost dataset.
 
-We achieve custom sampling methods using a weighted sampler. The length of the sampler is set to total_batch_num \* num_workers.The parameter "num_workers" defines the number of threads involved in multi-threaded loading, which can be modified by setting the environment variable NUM_WORKERS (default: min(8, ncpus)).
+We achieve custom sampling methods using a weighted sampler. The length of the sampler is set to total_batch_num * num_workers.The parameter "num_workers" defines the number of threads involved in multi-threaded loading, which can be modified by setting the environment variable NUM_WORKERS (default:  min(8, ncpus)).
 
 > **Note** The underlying dataloader will use a distributed sampler to ensure that each GPU receives batches with different content in parallel mode, which will use sequential sampler in serial mode. In the TensorFlow version, Horovod shuffles the dataset using different random seeds for the same purpose..
-
 ```mermaid
 flowchart LR
 
@@ -181,7 +174,6 @@ torchrun --rdzv_endpoint=node0:12321 --nnodes=2 --nproc_per_node=4 --node_rank=0
 # On node 1:
 torchrun --rdzv_endpoint=node0:12321 --nnodes=2 --nproc_per_node=4 --node_rank=1 --no_python dp --pt train tests/water/se_e2_a.json
 ```
-
 > **Note** Set environment variables to tune [CPU specific optimizations](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html#cpu-specific-optimizations) in advance.
 
 > **Note** for developers: `torchrun` by default passes settings as environment variables [(list here)](https://pytorch.org/docs/stable/elastic/run.html#environment-variables).

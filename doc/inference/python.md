@@ -1,7 +1,6 @@
 # Python interface
 
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
-
 ```python
 from deepmd.infer import DeepPot
 import numpy as np
@@ -12,11 +11,9 @@ cell = np.diag(10 * np.ones(3)).reshape([1, -1])
 atype = [1, 0, 1]
 e, f, v = dp.eval(coord, cell, atype)
 ```
-
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
 Furthermore, one can use the python interface to calculate model deviation.
-
 ```python
 from deepmd.infer import calc_model_devi
 from deepmd.infer import DeepPot as DP

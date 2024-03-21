@@ -18,24 +18,21 @@ Python 3.8 or above is required for Python interface.
 - [Install with docker](#install-with-docker)
 - [Install Python interface with pip](#install-python-interface-with-pip)
 
-## Install off-line packages
 
+## Install off-line packages
 Both CPU and GPU version offline packages are available on [the Releases page](https://github.com/deepmodeling/deepmd-kit/releases).
 
 Some packages are split into two files due to the size limit of GitHub. One may merge them into one after downloading:
-
 ```bash
 cat deepmd-kit-2.2.9-cuda118-Linux-x86_64.sh.0 deepmd-kit-2.2.9-cuda118-Linux-x86_64.sh.1 > deepmd-kit-2.2.9-cuda118-Linux-x86_64.sh
 ```
 
 One may enable the environment using
-
 ```bash
 conda activate /path/to/deepmd-kit
 ```
 
 ## Install with conda
-
 DeePMD-kit is available with [conda](https://github.com/conda/conda). Install [Anaconda](https://www.anaconda.com/distribution/#download-section), [Miniconda](https://docs.conda.io/en/latest/miniconda.html), or [miniforge](https://conda-forge.org/download/) first.
 You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/conda.html) for how to setup a conda environment.
 
@@ -61,43 +58,35 @@ Maintainers will build packages in the conda-forge organization together with ot
 ::::
 
 One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
-
 ```bash
 conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps -c https://conda.deepmodeling.com -c defaults
 ```
 
 Or one may want to create a GPU environment containing [CUDA Toolkit](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
-
 ```bash
 conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com -c defaults
 ```
-
 One could change the CUDA Toolkit version from `10.2` or `11.6`.
 
 One may specify the DeePMD-kit version such as `2.2.9` using
-
 ```bash
 conda create -n deepmd deepmd-kit=2.2.9=*cpu libdeepmd=2.2.9=*cpu lammps horovod -c https://conda.deepmodeling.com -c defaults
 ```
 
 One may enable the environment using
-
 ```bash
 conda activate deepmd
 ```
 
 ## Install with docker
-
 A docker for installing the DeePMD-kit is available [here](https://github.com/deepmodeling/deepmd-kit/pkgs/container/deepmd-kit).
 
 To pull the CPU version:
-
 ```bash
 docker pull ghcr.io/deepmodeling/deepmd-kit:2.2.8_cpu
 ```
 
 To pull the GPU version:
-
 ```bash
 docker pull ghcr.io/deepmodeling/deepmd-kit:2.2.8_cuda12.0_gpu
 ```
@@ -120,18 +109,15 @@ pip install deepmd-kit-cu11[gpu,cu11]
 ```
 
 Or install the CPU version without CUDA supported:
-
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install deepmd-kit[cpu]
 ```
 
 [The LAMMPS module](../third-party/lammps-command.md) and [the i-Pi driver](../third-party/ipi.md) are only provided on Linux and macOS for the TensorFlow backend. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
-
 ```bash
 pip install deepmd-kit[gpu,cu12,torch,lmp,ipi]
 ```
-
 MPICH is required for parallel running. (The macOS arm64 package doesn't support MPI yet.)
 
 It is suggested to install the package into an isolated environment.
