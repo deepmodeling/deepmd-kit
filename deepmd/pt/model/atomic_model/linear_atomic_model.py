@@ -96,17 +96,17 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
-    
+
     @torch.jit.export
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         return self.type_map
-    
+
     @torch.jit.export
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
-    
+
     @torch.jit.export
     def get_sel(self) -> List[int]:
         return [max([model.get_nsel() for model in self.models])]
