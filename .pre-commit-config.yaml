@@ -62,6 +62,8 @@ repos:
     hooks:
     -   id: prettier
         types_or: [markdown, json, yaml, css, javascript]
+        # workflow files cannot be modified by pre-commit.ci
+        exclude: ^source/3rdparty|.github/workflows
 # Shell
 - repo: https://github.com/scop/pre-commit-shfmt
   rev: v3.8.0-1
