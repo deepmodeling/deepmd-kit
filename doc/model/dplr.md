@@ -192,7 +192,7 @@ fix ID group-ID style_name keyword value ...
 ```
 
 - ID, group-ID are documented in :doc:`fix <fix>` command
-- style*name = \_dplr*
+- style\_name = _dplr_
 - three or more keyword/value pairs may be appended
 
 ```
