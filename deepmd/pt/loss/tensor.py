@@ -63,13 +63,15 @@ class TensorLoss(TaskLoss):
             "Can not assian zero weight both to `pref` and `pref_atomic`"
         )
 
-    def forward(self, model_pred, label, natoms, learning_rate=0.0, mae=False):
+    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on local and global tensors.
 
         Parameters
         ----------
-        model_pred : dict[str, torch.Tensor]
-            Model predictions.
+        input_dict : dict[str, torch.Tensor]
+            Model inputs.
+        model : torch.nn.Module
+            Model to be used to output the predictions.
         label : dict[str, torch.Tensor]
             Labels.
         natoms : int
@@ -77,11 +79,14 @@ class TensorLoss(TaskLoss):
 
         Returns
         -------
+        model_pred: dict[str, torch.Tensor]
+            Model predictions.
         loss: torch.Tensor
             Loss for model to minimize.
         more_loss: dict[str, torch.Tensor]
             Other losses for display.
         """
+        model_pred = model(**input_dict)
         del learning_rate, mae
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
@@ -133,7 +138,7 @@ class TensorLoss(TaskLoss):
             loss += self.global_weight * l2_global_loss
             rmse_global = l2_global_loss.sqrt() / atom_num
             more_loss[f"rmse_global_{self.tensor_name}"] = rmse_global.detach()
-        return loss, more_loss
+        return model_pred, loss, more_loss
 
     @property
     def label_requirement(self) -> List[DataRequirementItem]:

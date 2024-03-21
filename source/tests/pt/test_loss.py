@@ -171,8 +171,13 @@ class TestEnerStdLoss(unittest.TestCase):
             self.start_pref_v,
             self.limit_pref_v,
         )
-        my_loss, my_more_loss = mine(
-            self.model_pred,
+
+        def fake_model():
+            return self.model_pred
+
+        _, my_loss, my_more_loss = mine(
+            {},
+            fake_model,
             self.label,
             self.nloc,
             self.cur_lr,
@@ -345,8 +350,13 @@ class TestEnerSpinLoss(unittest.TestCase):
             self.start_pref_fm,
             self.limit_pref_fm,
         )
-        my_loss, my_more_loss = mine(
-            self.model_pred,
+
+        def fake_model():
+            return self.model_pred
+
+        _, my_loss, my_more_loss = mine(
+            {},
+            fake_model,
             self.label,
             self.nloc_tf,  # use tf natoms pref
             self.cur_lr,
