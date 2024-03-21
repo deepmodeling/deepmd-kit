@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Tuple,
     Union,
-    Dict,
 )
 
 import torch
@@ -21,10 +21,6 @@ from deepmd.pt.utils.nlist import (
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
-)
-
-from deepmd.pt.utils.env import(
-    load_op
 )
 from deepmd.utils.path import (
     DPPath,
@@ -400,7 +396,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -456,7 +452,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         # linear to change shape
         g1 = self.g1_shape_tranform(g1)
         # mapping g1
-        if(comm_dict is None):
+        if comm_dict is None:
             assert mapping is not None
             # mapping_ext = (
             #     mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, g1.shape[-1])
@@ -473,7 +469,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             extended_atype,
             g1,
             mapping,
-            comm_dict
+            comm_dict,
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)

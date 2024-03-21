@@ -105,7 +105,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -154,7 +154,7 @@ class BaseAtomicModel(BaseAtomicModel_):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
-            comm_dict=comm_dict
+            comm_dict=comm_dict,
         )
 
         # nf x nloc

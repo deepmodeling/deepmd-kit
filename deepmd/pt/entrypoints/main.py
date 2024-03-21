@@ -46,7 +46,7 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
-    load_op
+    load_op,
 )
 from deepmd.pt.utils.finetune import (
     change_finetune_model_params,

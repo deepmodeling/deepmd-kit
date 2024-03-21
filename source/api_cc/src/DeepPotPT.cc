@@ -143,18 +143,20 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
         torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
     // torch::Tensor communicator_tensor =
     //     torch::from_blob(lmp_list.commdata->world, {1}, int_option);
-    torch::Tensor communicator_tensor = torch::tensor(lmp_list.world,int32_option);
+    torch::Tensor communicator_tensor =
+        torch::tensor(lmp_list.world, int32_option);
     torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-    int total_send = std::accumulate(lmp_list.sendnum,lmp_list.sendnum+nswap,0);
-    torch::Tensor sendlist_tensor = torch::from_blob(
-        lmp_list.sendlist, {total_send}, int32_option);
+    int total_send =
+        std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+    torch::Tensor sendlist_tensor =
+        torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
 
-    comm_dict.insert("send_list",sendlist_tensor);
-    comm_dict.insert("send_proc",sendproc_tensor);
-    comm_dict.insert("recv_proc",recvproc_tensor);
-    comm_dict.insert("send_num",sendnum_tensor);
-    comm_dict.insert("recv_num",recvnum_tensor);
-    comm_dict.insert("communicator",communicator_tensor);
+    comm_dict.insert("send_list", sendlist_tensor);
+    comm_dict.insert("send_proc", sendproc_tensor);
+    comm_dict.insert("recv_proc", recvproc_tensor);
+    comm_dict.insert("send_num", sendnum_tensor);
+    comm_dict.insert("recv_num", recvnum_tensor);
+    comm_dict.insert("communicator", communicator_tensor);
   }
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
@@ -180,7 +182,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       module
           .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
                       firstneigh_tensor, optional_tensor, fparam_tensor,
-                      aparam_tensor, do_atom_virial_tensor,comm_dict)
+                      aparam_tensor, do_atom_virial_tensor, comm_dict)
           .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");

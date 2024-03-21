@@ -1,18 +1,20 @@
-#include "custom_op.h"
-#include <cuda_runtime_api.h>
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #include <cuda.h>
-  template <typename T>
-  static MPI_Datatype get_mpi_type();
+#include <cuda_runtime_api.h>
 
-  template <>
-  MPI_Datatype get_mpi_type<float>() {
-    return MPI_FLOAT;
-  }
+#include "custom_op.h"
+template <typename T>
+static MPI_Datatype get_mpi_type();
 
-  template <>
-  MPI_Datatype get_mpi_type<double>() {
-    return MPI_DOUBLE;
-  }
+template <>
+MPI_Datatype get_mpi_type<float>() {
+  return MPI_FLOAT;
+}
+
+template <>
+MPI_Datatype get_mpi_type<double>() {
+  return MPI_DOUBLE;
+}
 
 class Border : public torch::autograd::Function<Border> {
  public:
@@ -44,8 +46,7 @@ class Border : public torch::autograd::Function<Border> {
     int ntotal = nlocal + nghost;
     torch::Tensor recv_g1_tensor = g1;
 
-    FPTYPE* recv_g1 =
-        recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
+    FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
 
     int me;
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
@@ -53,40 +54,38 @@ class Border : public torch::autograd::Function<Border> {
     unpack_communicator(communicator_tensor, world);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
-    auto int32_options = torch::TensorOptions()
-                             .dtype(torch::kInt32);
-    std::cout<<"nswap: "<<nswap<<std::endl;
+    auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
+    std::cout << "nswap: " << nswap << std::endl;
     for (int iswap = 0; iswap < nswap; ++iswap) {
-      std::cout<<"num"<<iswap<<std::endl;
+      std::cout << "num" << iswap << std::endl;
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
       torch::Tensor isendlist =
-          torch::from_blob(sendlist[iswap], {nsend}, int32_options).to(recv_g1_tensor.device());
-      torch::Tensor send_g1_tensor =
-          recv_g1_tensor.index_select(0, isendlist);
+          torch::from_blob(sendlist[iswap], {nsend}, int32_options)
+              .to(recv_g1_tensor.device());
+      torch::Tensor send_g1_tensor = recv_g1_tensor.index_select(0, isendlist);
       FPTYPE* send_g1 = send_g1_tensor.data_ptr<FPTYPE>();
       if (sendproc[iswap] != me) {
         if (nrecv) {
-          std::cout<<"recv"<<std::endl;
-          MPI_Irecv(recv_g1, nrecv * tensor_size, mpi_type,
-                    recvproc[iswap], 0, world, &request);
+          std::cout << "recv" << std::endl;
+          MPI_Irecv(recv_g1, nrecv * tensor_size, mpi_type, recvproc[iswap], 0,
+                    world, &request);
         }
         if (nsend) {
-          std::cout<<"send"<<std::endl;
-          MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap],
-                   0, world);
+          std::cout << "send" << std::endl;
+          MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
+                   world);
         }
         if (nrecv) {
-          std::cout<<"wait"<<std::endl;
+          std::cout << "wait" << std::endl;
           MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
       } else {
 #ifdef USE_CUDA
-        cudaMemcpy(recv_g1, send_g1,
-                         nsend * tensor_size * sizeof(FPTYPE), cudaMemcpyDeviceToDevice);
+        cudaMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
+                   cudaMemcpyDeviceToDevice);
 #else
-        memcpy(recv_g1, send_g1,
-               nsend * tensor_size * sizeof(FPTYPE));
+        memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
 #endif
       }
       recv_g1 += nrecv * tensor_size;
@@ -137,8 +136,7 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor recv_g1_tensor =
         torch::empty({max_recvnum, tensor_size}, options);
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>();
-    FPTYPE* send_g1 =
-        send_g1_tensor.data_ptr<FPTYPE>() + ntotal * tensor_size;
+    FPTYPE* send_g1 = send_g1_tensor.data_ptr<FPTYPE>() + ntotal * tensor_size;
 
     MPI_Comm world;
     unpack_communicator(communicator_tensor, world);
@@ -149,66 +147,56 @@ class Border : public torch::autograd::Function<Border> {
 
     std::string msg;
 
-
     int end = ntotal;
-    auto int32_options = torch::TensorOptions()
-                             .dtype(torch::kInt32);
-    std::cout<<"nswap backward"<<nswap<<std::endl;
+    auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
+    std::cout << "nswap backward" << nswap << std::endl;
     for (int iswap = nswap - 1; iswap >= 0; --iswap) {
-
-
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
 
       torch::Tensor irecvlist;
       if (nrecv) {
-        irecvlist = torch::from_blob(recvlist[iswap], {nrecv}, int32_options).to(d_local_g1_tensor.device());
+        irecvlist = torch::from_blob(recvlist[iswap], {nrecv}, int32_options)
+                        .to(d_local_g1_tensor.device());
       }
       if (nsend) {
         send_g1 -= nsend * tensor_size;
       }
       if (sendproc[iswap] != me) {
         if (nrecv) {
-          MPI_Irecv(recv_g1, nrecv * tensor_size, mpi_type,
-                    recvproc[iswap], 0, world, &request);
+          MPI_Irecv(recv_g1, nrecv * tensor_size, mpi_type, recvproc[iswap], 0,
+                    world, &request);
         }
         if (nsend) {
-
-          MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap],
-                   0, world);
+          MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
+                   world);
         }
         if (nrecv) {
-
           MPI_Wait(&request, MPI_STATUS_IGNORE);
-
         }
       } else {
         if (nrecv) {
-
 #ifdef USE_CUDA
-          cudaMemcpy(recv_g1, send_g1,
-                         nrecv * tensor_size * sizeof(FPTYPE), cudaMemcpyDeviceToDevice);
+          cudaMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
+                     cudaMemcpyDeviceToDevice);
 #else
-          memcpy(recv_g1, send_g1,
-                 nrecv * tensor_size * sizeof(FPTYPE));
+          memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
 #endif
-
         }
       }
       if (nrecv) {
-        d_local_g1_tensor.index_add_(
-            0, irecvlist, recv_g1_tensor.slice(0, 0, nrecv));
+        d_local_g1_tensor.index_add_(0, irecvlist,
+                                     recv_g1_tensor.slice(0, 0, nrecv));
       }
-
     }
 #ifdef USE_CUDA
     cudaDeviceSynchronize();
 #endif
 
-    return {torch::Tensor(),       torch::Tensor(), torch::Tensor(),
-            torch::Tensor(),       torch::Tensor(), d_local_g1_tensor,
-            torch::Tensor(), torch::Tensor(),
-            torch::Tensor(),       torch::Tensor()};
+    return {torch::Tensor(), torch::Tensor(), torch::Tensor(),
+            torch::Tensor(), torch::Tensor(), d_local_g1_tensor,
+            torch::Tensor(), torch::Tensor(), torch::Tensor(),
+            torch::Tensor()};
   }
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
@@ -226,8 +214,8 @@ std::vector<torch::Tensor> border_op(const torch::Tensor& sendlist_tensor,
                                      const torch::Tensor& nlocal_tensor,
                                      const torch::Tensor& nghost_tensor) {
   return Border::apply(sendlist_tensor, sendproc_tensor, recvproc_tensor,
-                       sendnum_tensor, recvnum_tensor, g1_tensor,communicator_tensor, nlocal_tensor,
-                       nghost_tensor);
+                       sendnum_tensor, recvnum_tensor, g1_tensor,
+                       communicator_tensor, nlocal_tensor, nghost_tensor);
 }
 
 TORCH_LIBRARY_FRAGMENT(my_ops, m) { m.def("border_op", border_op); }

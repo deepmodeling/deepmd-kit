@@ -37,7 +37,7 @@ namespace deepmd_compat = deepmd::hpp;
 #define FLOAT_PREC double
 
 namespace LAMMPS_NS {
-class CommBrickDeepMD : public CommBrick{
+class CommBrickDeepMD : public CommBrick {
   friend class PairDeepMD;
 };
 class PairDeepMD : public Pair {
@@ -141,7 +141,7 @@ class PairDeepMD : public Pair {
   tagint *tagsend, *tagrecv;
   double *stdfsend, *stdfrecv;
   std::vector<int> type_idx_map;
-  CommBrickDeepMD* commdata_;
+  CommBrickDeepMD *commdata_;
 };
 
 }  // namespace LAMMPS_NS

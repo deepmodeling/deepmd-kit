@@ -85,7 +85,12 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_compile_definitions(${libname} PUBLIC "DP_USE_CXX_API")
   endif()
   target_link_libraries(${libname} PUBLIC lammps_interface)
-  target_link_libraries(${libname}  PUBLIC -Wl,--no-as-needed "/mnt/user/zhangxiangyu/workspace/dpkit/deepmd-kit/source/op_pt/libop_pt.so" "/home/zhangxiangyu/.conda/envs/dp-cxxabi/lib/libmpi.so")
+  target_link_libraries(
+    ${libname}
+    PUBLIC
+      -Wl,--no-as-needed
+      "/mnt/user/zhangxiangyu/workspace/dpkit/deepmd-kit/source/op_pt/libop_pt.so"
+      "/home/zhangxiangyu/.conda/envs/dp-cxxabi/lib/libmpi.so")
   target_include_directories(
     ${libname}
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/..

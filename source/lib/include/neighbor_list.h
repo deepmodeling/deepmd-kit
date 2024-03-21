@@ -102,13 +102,13 @@ struct InputNlist {
              int* numneigh_,
              int** firstneigh_,
              int nswap,
-           int* sendnum,
-           int* recvnum,
-           int* firstrecv,
-           int** sendlist,
-           int* sendproc,
-           int* recvproc,
-           int world)
+             int* sendnum,
+             int* recvnum,
+             int* firstrecv,
+             int** sendlist,
+             int* sendproc,
+             int* recvproc,
+             int world)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
@@ -120,7 +120,7 @@ struct InputNlist {
         sendlist(sendlist),
         sendproc(sendproc),
         recvproc(recvproc),
-        world(world) {};
+        world(world){};
   ~InputNlist(){};
 };
 
