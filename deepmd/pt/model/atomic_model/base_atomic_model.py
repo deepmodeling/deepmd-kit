@@ -191,9 +191,22 @@ class BaseAtomicModel(BaseAtomicModel_):
         }
 
     def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
+        """
+        Modify the output bias for the atomic model.
+
+        Parameters
+        ----------
+        out_bias : torch.Tensor
+            The new bias to be applied.
+        add : bool, optional
+            Whether to add the new bias to the existing one.
+            If False, the output bias will be directly replaced by the new bias.
+            If True, the new bias will be added to the existing one.
+        """
         raise NotImplementedError
 
     def get_out_bias(self) -> torch.Tensor:
+        """Return the output bias of the atomic model."""
         raise NotImplementedError
 
     def get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
