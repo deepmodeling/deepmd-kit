@@ -148,6 +148,14 @@ class TestEnerStdLoss(unittest.TestCase):
         }
         self.label = {
             "energy": torch.from_numpy(l_energy),
+            "find_energy": 1.0,
+            "force": torch.from_numpy(l_force),
+            "find_force": 1.0,
+            "virial": torch.from_numpy(l_virial),
+            "find_virial": 1.0,
+        }
+        self.label_absent = {
+            "energy": torch.from_numpy(l_energy),
             "force": torch.from_numpy(l_force),
             "virial": torch.from_numpy(l_virial),
         }
@@ -182,14 +190,24 @@ class TestEnerStdLoss(unittest.TestCase):
             self.nloc,
             self.cur_lr,
         )
+        _, my_loss_absent, my_more_loss_absent = mine(
+            {},
+            fake_model,
+            self.label_absent,
+            self.nloc,
+            self.cur_lr,
+        )
         my_loss = my_loss.detach().cpu()
+        my_loss_absent = my_loss_absent.detach().cpu()
         self.assertTrue(np.allclose(base_loss, my_loss.numpy()))
+        self.assertTrue(np.allclose(0.0, my_loss_absent.numpy()))
         for key in ["ener", "force", "virial"]:
             self.assertTrue(
                 np.allclose(
                     base_more_loss["l2_%s_loss" % key], my_more_loss["l2_%s_loss" % key]
                 )
             )
+            self.assertTrue(np.isnan(my_more_loss_absent["l2_%s_loss" % key]))
 
 
 class TestEnerSpinLoss(unittest.TestCase):
@@ -327,6 +345,14 @@ class TestEnerSpinLoss(unittest.TestCase):
         }
         self.label = {
             "energy": torch.from_numpy(l_energy),
+            "find_energy": 1.0,
+            "force": torch.from_numpy(l_force_real).reshape(nframes, self.nloc, 3),
+            "find_force": 1.0,
+            "force_mag": torch.from_numpy(l_force_mag).reshape(nframes, self.nloc, 3),
+            "find_force_mag": 1.0,
+        }
+        self.label_absent = {
+            "energy": torch.from_numpy(l_energy),
             "force": torch.from_numpy(l_force_real).reshape(nframes, self.nloc, 3),
             "force_mag": torch.from_numpy(l_force_mag).reshape(nframes, self.nloc, 3),
         }
@@ -361,14 +387,24 @@ class TestEnerSpinLoss(unittest.TestCase):
             self.nloc_tf,  # use tf natoms pref
             self.cur_lr,
         )
+        _, my_loss_absent, my_more_loss_absent = mine(
+            {},
+            fake_model,
+            self.label_absent,
+            self.nloc_tf,  # use tf natoms pref
+            self.cur_lr,
+        )
         my_loss = my_loss.detach().cpu()
+        my_loss_absent = my_loss_absent.detach().cpu()
         self.assertTrue(np.allclose(base_loss, my_loss.numpy()))
+        self.assertTrue(np.allclose(0.0, my_loss_absent.numpy()))
         for key in ["ener", "force_r", "force_m"]:
             self.assertTrue(
                 np.allclose(
                     base_more_loss["l2_%s_loss" % key], my_more_loss["l2_%s_loss" % key]
                 )
             )
+            self.assertTrue(np.isnan(my_more_loss_absent["l2_%s_loss" % key]))
 
 
 if __name__ == "__main__":

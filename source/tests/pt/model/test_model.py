@@ -352,7 +352,9 @@ class TestEnergy(unittest.TestCase):
         }
         label = {
             "energy": batch["energy"].to(env.DEVICE),
+            "find_energy": 1.0,
             "force": batch["force"].to(env.DEVICE),
+            "find_force": 1.0,
         }
         cur_lr = my_lr.value(self.wanted_step)
         model_predict, loss, _ = my_loss(

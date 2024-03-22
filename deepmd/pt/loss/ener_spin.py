@@ -98,15 +98,21 @@ class EnergySpinLoss(TaskLoss):
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
         if self.has_e and "energy" in model_pred and "energy" in label:
+            find_energy = label.get("find_energy", 0.0)
+            pref_e = pref_e * find_energy
             if not self.use_l1_all:
                 l2_ener_loss = torch.mean(
                     torch.square(model_pred["energy"] - label["energy"])
                 )
                 if not self.inference:
-                    more_loss["l2_ener_loss"] = l2_ener_loss.detach()
+                    more_loss["l2_ener_loss"] = self.display_if_exist(
+                        l2_ener_loss.detach(), find_energy
+                    )
                 loss += atom_norm * (pref_e * l2_ener_loss)
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
-                more_loss["rmse_e"] = rmse_e.detach()
+                more_loss["rmse_e"] = self.display_if_exist(
+                    rmse_e.detach(), find_energy
+                )
                 # more_loss['log_keys'].append('rmse_e')
             else:  # use l1 and for all atoms
                 l1_ener_loss = F.l1_loss(
@@ -115,44 +121,61 @@ class EnergySpinLoss(TaskLoss):
                     reduction="sum",
                 )
                 loss += pref_e * l1_ener_loss
-                more_loss["mae_e"] = F.l1_loss(
-                    model_pred["energy"].reshape(-1),
-                    label["energy"].reshape(-1),
-                    reduction="mean",
-                ).detach()
+                more_loss["mae_e"] = self.display_if_exist(
+                    F.l1_loss(
+                        model_pred["energy"].reshape(-1),
+                        label["energy"].reshape(-1),
+                        reduction="mean",
+                    ).detach(),
+                    find_energy,
+                )
                 # more_loss['log_keys'].append('rmse_e')
             if mae:
                 mae_e = (
                     torch.mean(torch.abs(model_pred["energy"] - label["energy"]))
                     * atom_norm
                 )
-                more_loss["mae_e"] = mae_e.detach()
+                more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
                 mae_e_all = torch.mean(
                     torch.abs(model_pred["energy"] - label["energy"])
                 )
-                more_loss["mae_e_all"] = mae_e_all.detach()
+                more_loss["mae_e_all"] = self.display_if_exist(
+                    mae_e_all.detach(), find_energy
+                )
 
         if self.has_fr and "force" in model_pred and "force" in label:
+            find_force_r = label.get("find_force", 0.0)
+            pref_fr = pref_fr * find_force_r
             if not self.use_l1_all:
                 diff_fr = label["force"] - model_pred["force"]
                 l2_force_real_loss = torch.mean(torch.square(diff_fr))
                 if not self.inference:
-                    more_loss["l2_force_r_loss"] = l2_force_real_loss.detach()
+                    more_loss["l2_force_r_loss"] = self.display_if_exist(
+                        l2_force_real_loss.detach(), find_force_r
+                    )
                 loss += (pref_fr * l2_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 rmse_fr = l2_force_real_loss.sqrt()
-                more_loss["rmse_fr"] = rmse_fr.detach()
+                more_loss["rmse_fr"] = self.display_if_exist(
+                    rmse_fr.detach(), find_force_r
+                )
                 if mae:
                     mae_fr = torch.mean(torch.abs(diff_fr))
-                    more_loss["mae_fr"] = mae_fr.detach()
+                    more_loss["mae_fr"] = self.display_if_exist(
+                        mae_fr.detach(), find_force_r
+                    )
             else:
                 l1_force_real_loss = F.l1_loss(
                     label["force"], model_pred["force"], reduction="none"
                 )
-                more_loss["mae_fr"] = l1_force_real_loss.mean().detach()
+                more_loss["mae_fr"] = self.display_if_exist(
+                    l1_force_real_loss.mean().detach(), find_force_r
+                )
                 l1_force_real_loss = l1_force_real_loss.sum(-1).mean(-1).sum()
                 loss += (pref_fr * l1_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
 
         if self.has_fm and "force_mag" in model_pred and "force_mag" in label:
+            find_force_m = label.get("find_force_mag", 0.0)
+            pref_fm = pref_fm * find_force_m
             nframes = model_pred["force_mag"].shape[0]
             atomic_mask = model_pred["mask_mag"].expand([-1, -1, 3])
             label_force_mag = label["force_mag"][atomic_mask].view(nframes, -1, 3)
@@ -163,18 +186,26 @@ class EnergySpinLoss(TaskLoss):
                 diff_fm = label_force_mag - model_pred_force_mag
                 l2_force_mag_loss = torch.mean(torch.square(diff_fm))
                 if not self.inference:
-                    more_loss["l2_force_m_loss"] = l2_force_mag_loss.detach()
+                    more_loss["l2_force_m_loss"] = self.display_if_exist(
+                        l2_force_mag_loss.detach(), find_force_m
+                    )
                 loss += (pref_fm * l2_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 rmse_fm = l2_force_mag_loss.sqrt()
-                more_loss["rmse_fm"] = rmse_fm.detach()
+                more_loss["rmse_fm"] = self.display_if_exist(
+                    rmse_fm.detach(), find_force_m
+                )
                 if mae:
                     mae_fm = torch.mean(torch.abs(diff_fm))
-                    more_loss["mae_fm"] = mae_fm.detach()
+                    more_loss["mae_fm"] = self.display_if_exist(
+                        mae_fm.detach(), find_force_m
+                    )
             else:
                 l1_force_mag_loss = F.l1_loss(
                     label_force_mag, model_pred_force_mag, reduction="none"
                 )
-                more_loss["mae_fm"] = l1_force_mag_loss.mean().detach()
+                more_loss["mae_fm"] = self.display_if_exist(
+                    l1_force_mag_loss.mean().detach(), find_force_m
+                )
                 l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
                 loss += (pref_fm * l1_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
 
