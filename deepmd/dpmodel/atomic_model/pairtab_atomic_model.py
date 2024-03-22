@@ -126,6 +126,25 @@ class PairTabAtomicModel(BaseAtomicModel):
         # to match DPA1 and DPA2.
         return True
 
+    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
+        """
+        Modify the output bias for the atomic model.
+
+        Parameters
+        ----------
+        out_bias : torch.Tensor
+            The new bias to be applied.
+        add : bool, optional
+            Whether to add the new bias to the existing one.
+            If False, the output bias will be directly replaced by the new bias.
+            If True, the new bias will be added to the existing one.
+        """
+        self.bias_atom_e = out_bias + self.bias_atom_e if add else out_bias
+
+    def get_out_bias(self) -> np.ndarray:
+        """Return the output bias of the atomic model."""
+        return self.bias_atom_e
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(

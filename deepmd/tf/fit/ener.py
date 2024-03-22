@@ -793,11 +793,11 @@ class EnerFitting(Fitting):
         frozen_model,
         origin_type_map,
         full_type_map,
-        bias_shift="delta",
+        bias_adjust_mode="change-by-statistic",
         ntest=10,
     ) -> None:
         dp = None
-        if bias_shift == "delta":
+        if bias_adjust_mode == "change-by-statistic":
             # init model
             dp = DeepPotential(frozen_model)
         self.bias_atom_e = change_energy_bias_lower(
@@ -806,7 +806,7 @@ class EnerFitting(Fitting):
             origin_type_map,
             full_type_map,
             self.bias_atom_e,
-            bias_shift=bias_shift,
+            bias_adjust_mode=bias_adjust_mode,
             ntest=ntest,
         )
 

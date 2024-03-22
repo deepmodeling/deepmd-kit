@@ -408,7 +408,7 @@ class Model(ABC, make_plugin_registry("model")):
         frozen_model: str,
         origin_type_map: list,
         full_type_map: str,
-        bias_shift: str = "delta",
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the energy bias according to the input data and the pretrained model.
 
@@ -422,11 +422,11 @@ class Model(ABC, make_plugin_registry("model")):
             The original type_map in dataset, they are targets to change the energy bias.
         full_type_map : str
             The full type_map in pretrained model
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
+        bias_adjust_mode : str
+            The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on energies of target dataset,
                     and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
+            'set-by-statistic' : directly use the statistic energy bias in the target dataset.
         """
         raise RuntimeError("Not supported")
 
