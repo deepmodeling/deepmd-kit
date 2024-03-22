@@ -42,7 +42,9 @@ To represent the first-order tensorial properties (i.e. vector properties), we l
 \sum_{j=1}^{N_c}\sum_{m=1}^M (\mathcal G^i)_{jm} (\mathcal R^i)_{j,\alpha+1}
 (\mathcal F_{1}(\mathcal D^i))_m, \ \alpha=1,2,3.
 ```
+
 We let the fitting network $\mathcal F_{2}$ output an $M$-dimensional vector, and the second-order tensorial properties (matrix properties) are formulated as
+
 ```math
 (T_i^{(2)})_{\alpha\beta} =
 \frac{1}{N_c^2}
@@ -59,12 +61,14 @@ where $\mathcal{G}^i$ and $\mathcal{R}^i$ can be found in [`se_e2_a`](./train-se
 Thus, the tensor fitting network requires the descriptor to have the same or similar form as the DeepPot-SE descriptor.
 $\mathcal{F}_1$ and $\mathcal F_2$ are the neural network functions.
 The total tensor $\boldsymbol{T}$ (total dipole $\boldsymbol{T}^{(1)}$ or total polarizability $\boldsymbol{T}^{(2)}$) is the sum of the atomic tensor:
+
 ```math
     \boldsymbol{T} = \sum_i \boldsymbol{T}_i.
 ```
+
 The tensorial models can be used to calculate IR spectrum and Raman spectrum.[^1]
 
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 ## The fitting Network
 
@@ -98,15 +102,16 @@ The JSON of `polar` type should be provided like
 	},
 ```
 
--   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
--   `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in the water system, `sel_type` is `[0]` since `0` represents atom `O`. If left unset, all types of atoms will be fitted.
--   The rest arguments have the same meaning as they do in `ener` mode.
+- `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
+- `sel_type` is a list specifying which type of atoms have the quantity you want to fit. For example, in the water system, `sel_type` is `[0]` since `0` represents atom `O`. If left unset, all types of atoms will be fitted.
+- The rest arguments have the same meaning as they do in `ener` mode.
 
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 The JSON of `dipole` type should be provided like
+
 ```json
 	"atom_exclude_types": [
       1
@@ -132,14 +137,13 @@ The JSON of `polar` type should be provided like
 		"seed": 1,
 	},
 ```
--   `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
--   `atom_exclude_types` is a list specifying the which type of atoms have the quantity you want to set to zero. For example, in the water system, `atom_exclude_types` is `[1]` since `1` represents atom `H`.
--   The rest arguments have the same meaning as they do in `ener` mode.
-:::
+
+- `type` specifies which type of fitting net should be used. It should be either `dipole` or `polar`. Note that `global_polar` mode in version 1.x is already **deprecated** and is merged into `polar`. To specify whether a system is global or atomic, please see [here](train-se-e2-a.md).
+- `atom_exclude_types` is a list specifying the which type of atoms have the quantity you want to set to zero. For example, in the water system, `atom_exclude_types` is `[1]` since `1` represents atom `H`.
+- The rest arguments have the same meaning as they do in `ener` mode.
+  :::
 
 ::::
-
-
 
 ## Loss
 
@@ -161,8 +165,8 @@ The loss section should be provided like
 	},
 ```
 
--   {ref}`type <loss/type>` should be written as `tensor` as a distinction from `ener` mode.
--   {ref}`pref <loss[tensor]/pref>` and {ref}`pref_atomic <loss[tensor]/pref_atomic>` respectively specify the weight of global loss and atomic loss. It can not be left unset. If set to 0, the corresponding label will NOT be included in the training process.
+- {ref}`type <loss/type>` should be written as `tensor` as a distinction from `ener` mode.
+- {ref}`pref <loss[tensor]/pref>` and {ref}`pref_atomic <loss[tensor]/pref_atomic>` respectively specify the weight of global loss and atomic loss. It can not be left unset. If set to 0, the corresponding label will NOT be included in the training process.
 
 ## Training Data Preparation
 
@@ -185,6 +189,7 @@ The training command is the same as `ener` mode, i.e.
 ```bash
 dp train input.json
 ```
+
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -192,10 +197,10 @@ dp train input.json
 ```bash
 dp --pt train input.json
 ```
+
 :::
 
 ::::
-
 
 The detailed loss can be found in `lcurve.out`:
 
@@ -225,6 +230,7 @@ The detailed loss can be found in `lcurve.out`:
 ```
 
 One may notice that in each step, some of the local loss and global loss will be `0.0`. This is because our training data and validation data consist of the global system and atomic system, i.e.
+
 ```
 	--training_data
 		>atomic_system
@@ -233,4 +239,5 @@ One may notice that in each step, some of the local loss and global loss will be
 		>atomic_system
 		>global_system
 ```
+
 During training, at each step when the `lcurve.out` is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros.
