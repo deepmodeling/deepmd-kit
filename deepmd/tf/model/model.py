@@ -668,6 +668,7 @@ class StandardModel(Model):
                 spin=self.spin,
                 ntypes=self.descrpt.get_ntypes(),
                 dim_descrpt=self.descrpt.get_dim_out(),
+                mixed_types=type_embedding is not None or self.descrpt.explicit_ntypes,
             )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()

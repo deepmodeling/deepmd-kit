@@ -65,18 +65,6 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
         }
 
     @property
-    def skip_tf(self) -> bool:
-        (
-            resnet_dt,
-            precision,
-            mixed_types,
-            numb_fparam,
-            numb_dos,
-        ) = self.param
-        # TODO: mixed_types
-        return mixed_types or CommonTest.skip_pt
-
-    @property
     def skip_pt(self) -> bool:
         (
             resnet_dt,
