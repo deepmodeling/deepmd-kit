@@ -93,19 +93,19 @@ class PropertyLoss(TaskLoss):
                 reduction="sum",
                 beta=self.beta,
             )
-        elif self.func == "mae":
+        elif self.loss_func == "mae":
             loss += F.l1_loss(
                 (label["property"] - label_mean) / label_std,
                 model_pred["property"],
                 reduction="sum",
             )
-        elif self.func == "mse":
+        elif self.loss_func == "mse":
             loss += F.mse_loss(
                 (label["property"] - label_mean) / label_std,
                 model_pred["property"],
                 reduction="sum",
             )
-        elif self.func == "rmse":
+        elif self.loss_func == "rmse":
             loss += torch.sqrt(
                 F.mse_loss(
                     (label["property"] - label_mean) / label_std,
