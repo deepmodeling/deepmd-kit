@@ -35,6 +35,9 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -180,6 +183,8 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif "property" in model_output_type:
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 

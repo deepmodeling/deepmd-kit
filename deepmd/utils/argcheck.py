@@ -1181,6 +1181,37 @@ def fitting_dipole():
     ]
 
 
+@fitting_args_plugin.register("property", doc=doc_only_pt_supported)
+def fitting_property():
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_task_dim = "The dimension of outputs of fitting net"
+    return [
+        Argument(
+            "neuron",
+            List[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
+    ]
+
+
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
     doc_descrpt_type = "The type of the fitting. See explanation below. \n\n\
@@ -1937,6 +1968,52 @@ def loss_tensor():
             optional=False,
             default=None,
             doc=doc_local_weight,
+        ),
+    ]
+
+
+@loss_args_plugin.register("property")
+def loss_property():
+    doc_loss_func = "The loss function, such as 'mae','smooth_mae'."
+    doc_metric = "The metric such as 'mae','smooth_mae' which will be printed."
+    doc_mean = "The averge value of target."
+    doc_std = "The standard deviation of the target."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
+        ),
+        Argument(
+            "mean",
+            [float, int, list],
+            optional=True,
+            default=0,
+            doc=doc_mean,
+        ),
+        Argument(
+            "std",
+            [float, int, list],
+            optional=True,
+            default=1,
+            doc=doc_std,
+        ),
+        Argument(
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
         ),
     ]
 
