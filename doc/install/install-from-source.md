@@ -3,21 +3,26 @@
 Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
 
 Or get the DeePMD-kit source code by `git clone`
+
 ```bash
 cd /some/workspace
 git clone https://github.com/deepmodeling/deepmd-kit.git deepmd-kit
 ```
 
 For convenience, you may want to record the location of the source to a variable, saying `deepmd_source_dir` by
+
 ```bash
 cd deepmd-kit
 deepmd_source_dir=`pwd`
 ```
 
 ## Install the Python interface
+
 ### Install Backend's Python interface
+
 First, check the Python version on your machine.
 Python 3.8 or above is required.
+
 ```bash
 python --version
 ```
@@ -36,16 +41,19 @@ pip install --upgrade pip
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.2 or later is supported.
+
 ```bash
 pip install --upgrade tensorflow
 ```
 
 If one does not need the GPU support of DeePMD-kit and is concerned about package size, the CPU-only version of TensorFlow should be installed by
+
 ```bash
 pip install --upgrade tensorflow-cpu
 ```
 
 To verify the installation, run
+
 ```bash
 python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1000])))"
 ```
@@ -69,17 +77,23 @@ Follow [PyTorch documentation](https://pytorch.org/get-started/locally/) to inst
 ::::
 
 It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
+
 ```bash
 source $deepmd_venv/bin/activate
 ```
+
 if one wants to skip out of the virtual environment, he/she can do
+
 ```bash
 deactivate
 ```
+
 If one has multiple python interpreters named something like python3.x, it can be specified by, for example
+
 ```bash
 virtualenv -p python3.8 $deepmd_venv
 ```
+
 One should remember to activate the virtual environment every time he/she uses DeePMD-kit.
 
 ### Install the DeePMD-kit's python interface
@@ -103,6 +117,7 @@ Note that TensorFlow may have specific requirements for the compiler version to 
 ::::
 
 Execute
+
 ```bash
 cd $deepmd_source_dir
 pip install .
@@ -110,26 +125,31 @@ pip install .
 
 One may set the following environment variables before executing `pip`:
 
-| Environment variables | Allowed value          | Default value | Usage                      |
-| --------------------- | ---------------------- | ------------- | -------------------------- |
-| DP_VARIANT            | `cpu`, `cuda`, `rocm`  | `cpu`         | Build CPU variant or GPU variant with CUDA or ROCM support. |
-| CUDAToolkit_ROOT | Path                   | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required. |
-| ROCM_ROOT             | Path                   | Detected automatically | The path to the ROCM toolkit directory. |
-| DP_ENABLE_TENSORFLOW  | 0, 1                   | 1             | {{ tensorflow_icon }} Enable the TensorFlow backend.
-| TENSORFLOW_ROOT       | Path                   | Detected automatically | {{ tensorflow_icon }} The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.|
-| DP_ENABLE_NATIVE_OPTIMIZATION | 0, 1           | 0             | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
-| CMAKE_ARGS             | str                   | -             | Additional CMake arguments |
-| &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`)   | str            | -             | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html). |
+| Environment variables                               | Allowed value         | Default value          | Usage                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DP_VARIANT                                          | `cpu`, `cuda`, `rocm` | `cpu`                  | Build CPU variant or GPU variant with CUDA or ROCM support.                                                                                                                                                                                                                                                                                                                                                                                         |
+| CUDAToolkit_ROOT                                    | Path                  | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                                                                                                                                                                                                                                                                           |
+| ROCM_ROOT                                           | Path                  | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| DP_ENABLE_TENSORFLOW                                | 0, 1                  | 1                      | {{ tensorflow_icon }} Enable the TensorFlow backend.                                                                                                                                                                                                                                                                                                                                                                                                |
+| TENSORFLOW_ROOT                                     | Path                  | Detected automatically | {{ tensorflow_icon }} The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against. |
+| DP_ENABLE_NATIVE_OPTIMIZATION                       | 0, 1                  | 0                      | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                                                                                                                                                                                                                                                                   |
+| CMAKE_ARGS                                          | str                   | -                      | Additional CMake arguments                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str                   | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                                                                                                                                                                                                                                                                  |
 
 To test the installation, one should first jump out of the source directory
+
 ```
 cd /some/other/workspace
 ```
+
 then execute
+
 ```bash
 dp -h
 ```
+
 It will print the help information like
+
 ```text
 usage: dp [-h] {train,freeze,test} ...
 
@@ -149,12 +169,14 @@ Valid subcommands:
 ### Install horovod and mpi4py {{ tensorflow_icon }}
 
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) are used for parallel training. For better performance on GPU, please follow the tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
+
 ```bash
 # With GPU, prefer NCCL as a communicator.
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 HOROVOD_GPU_OPERATIONS=NCCL HOROVOD_NCCL_HOME=/path/to/nccl pip install horovod mpi4py
 ```
 
 If your work in a CPU environment, please prepare runtime as below:
+
 ```bash
 # By default, MPI is used as communicator.
 HOROVOD_WITHOUT_GLOO=1 HOROVOD_WITH_TENSORFLOW=1 pip install horovod mpi4py
@@ -218,6 +240,7 @@ You can also download libtorch prebuilt library from the [PyTorch website](https
 ### Install DeePMD-kit's C++ interface
 
 Now go to the source code directory of DeePMD-kit and make a building place.
+
 ```bash
 cd $deepmd_source_dir/source
 mkdir build
@@ -238,6 +261,7 @@ If you enable two or more backends, these backend libraries must be built in a c
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
+
 ```bash
 cmake -DENABLE_TENSORFLOW=TRUE -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
@@ -249,38 +273,43 @@ If you specify `-DUSE_TF_PYTHON_LIBS=FALSE`, you need to give the location where
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 I assume you have installed the PyTorch (either Python or C++ interface) to `$torch_root`, then execute CMake
+
 ```bash
 cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$torch_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
+
 :::
 
 ::::
 
 One may add the following arguments to `cmake`:
 
-| CMake Aurgements         | Allowed value       | Default value | Usage                   |
-| ------------------------ | ------------------- | ------------- | ------------------------|
-| -DENABLE_TENSORFLOW=&lt;value&gt;  | `TRUE` or `FALSE` | `FALSE`     | {{ tensorflow_icon }} Whether building the TensorFlow backend. |
-| -DENABLE_PYTORCH=&lt;value&gt;  | `TRUE` or `FALSE` | `FALSE`     | {{ pytorch_icon }} Whether building the PyTorch backend. |
-| -DTENSORFLOW_ROOT=&lt;value&gt;  | Path              | -             | {{ tensorflow_icon }} The Path to TensorFlow's C++ interface. |
-| -DCMAKE_INSTALL_PREFIX=&lt;value&gt; | Path          | -             | The Path where DeePMD-kit will be installed. |
-| -DUSE_CUDA_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with CUDA toolkit. |
-| -DCUDAToolkit_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required. |
-| -DUSE_ROCM_TOOLKIT=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | If `TRUE`, Build GPU support with ROCM toolkit. |
-| -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt; | Path         | Detected automatically | The path to the ROCM toolkit directory. |
-| -DLAMMPS_SOURCE_ROOT=&lt;value&gt; | Path         | - | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled. |
-| -DUSE_TF_PYTHON_LIBS=&lt;value&gt; | `TRUE` or `FALSE` | `FALSE`       | {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface.|
-| -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;       | `TRUE` or `FALSE` | `FALSE`       | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs. |
-| -DCMAKE_&lt;LANG&gt;_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`)   | str            | -             | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html). |
+| CMake Aurgements                                                             | Allowed value     | Default value          | Usage                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------- | ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| -DENABLE_TENSORFLOW=&lt;value&gt;                                            | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} Whether building the TensorFlow backend.                                                                                                                                    |
+| -DENABLE_PYTORCH=&lt;value&gt;                                               | `TRUE` or `FALSE` | `FALSE`                | {{ pytorch_icon }} Whether building the PyTorch backend.                                                                                                                                          |
+| -DTENSORFLOW_ROOT=&lt;value&gt;                                              | Path              | -                      | {{ tensorflow_icon }} The Path to TensorFlow's C++ interface.                                                                                                                                     |
+| -DCMAKE_INSTALL_PREFIX=&lt;value&gt;                                         | Path              | -                      | The Path where DeePMD-kit will be installed.                                                                                                                                                      |
+| -DUSE_CUDA_TOOLKIT=&lt;value&gt;                                             | `TRUE` or `FALSE` | `FALSE`                | If `TRUE`, Build GPU support with CUDA toolkit.                                                                                                                                                   |
+| -DCUDAToolkit_ROOT=&lt;value&gt;                                             | Path              | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                         |
+| -DUSE_ROCM_TOOLKIT=&lt;value&gt;                                             | `TRUE` or `FALSE` | `FALSE`                | If `TRUE`, Build GPU support with ROCM toolkit.                                                                                                                                                   |
+| -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt;                                 | Path              | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                           |
+| -DLAMMPS_SOURCE_ROOT=&lt;value&gt;                                           | Path              | -                      | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled.     |
+| -DUSE_TF_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface. |
+| -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;                                   | `TRUE` or `FALSE` | `FALSE`                | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                 |
+| -DCMAKE\_&lt;LANG&gt;\_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str               | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                |
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
+
 ```bash
 make -j4
 make install
 ```
+
 Option `-j4` means using 4 processes in parallel. You may want to use a different number according to your hardware.
 
 If everything works fine, you will have the executable and libraries installed in `$deepmd_root/bin` and `$deepmd_root/lib`
+
 ```bash
 $ ls $deepmd_root/bin
 $ ls $deepmd_root/lib
