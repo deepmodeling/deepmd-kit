@@ -95,7 +95,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
-    
+
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         return self.type_map
