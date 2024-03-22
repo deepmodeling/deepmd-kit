@@ -26,7 +26,7 @@ def change_energy_bias_lower(
     origin_type_map: List[str],
     full_type_map: List[str],
     bias_atom_e: np.ndarray,
-    bias_shift="delta",
+    bias_adjust_mode="change-by-statistic",
     ntest=10,
 ):
     """Change the energy bias according to the input data and the pretrained model.
@@ -43,11 +43,11 @@ def change_energy_bias_lower(
         The full type_map in pretrained model
     bias_atom_e : np.ndarray
         The old energy bias in the pretrained model.
-    bias_shift : str
-        The mode for changing energy bias : ['delta', 'statistic']
-        'delta' : perform predictions on energies of target dataset,
+    bias_adjust_mode : str
+        The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
+        'change-by-statistic' : perform predictions on energies of target dataset,
                 and do least sqaure on the errors to obtain the target shift as bias.
-        'statistic' : directly use the statistic energy bias in the target dataset.
+        'set-by-statistic' : directly use the statistic energy bias in the target dataset.
     ntest : int
         The number of test samples in a system to change the energy bias.
     """
@@ -88,7 +88,7 @@ def change_energy_bias_lower(
                     (numb_test, 1),
                 )
             )
-        if bias_shift == "delta":
+        if bias_adjust_mode == "change-by-statistic":
             coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
             if sys.pbc:
                 box = test_data["box"][:numb_test]
@@ -114,7 +114,7 @@ def change_energy_bias_lower(
     type_numbs = np.concatenate(type_numbs)
     energy_ground_truth = np.concatenate(energy_ground_truth)
     old_bias = bias_atom_e[idx_type_map]
-    if bias_shift == "delta":
+    if bias_adjust_mode == "change-by-statistic":
         energy_predict = np.concatenate(energy_predict)
         bias_diff = energy_ground_truth - energy_predict
         delta_bias = np.linalg.lstsq(type_numbs, bias_diff, rcond=None)[0]
@@ -129,11 +129,11 @@ def change_energy_bias_lower(
         log.info(
             f"RMSE of atomic energy after linear regression is: {rmse_ae} eV/atom."
         )
-    elif bias_shift == "statistic":
+    elif bias_adjust_mode == "set-by-statistic":
         statistic_bias = np.linalg.lstsq(type_numbs, energy_ground_truth, rcond=None)[0]
         bias_atom_e[idx_type_map] = statistic_bias.reshape(-1)
     else:
-        raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
+        raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
     log.info(
         f"Change energy bias of {origin_type_map!s} from {old_bias!s} to {bias_atom_e[idx_type_map]!s}."
     )

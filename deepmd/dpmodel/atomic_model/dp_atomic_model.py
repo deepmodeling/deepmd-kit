@@ -83,6 +83,27 @@ class DPAtomicModel(BaseAtomicModel):
         """
         return self.descriptor.mixed_types()
 
+    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
+        """
+        Modify the output bias for the atomic model.
+
+        Parameters
+        ----------
+        out_bias : np.ndarray
+            The new bias to be applied.
+        add : bool, optional
+            Whether to add the new bias to the existing one.
+            If False, the output bias will be directly replaced by the new bias.
+            If True, the new bias will be added to the existing one.
+        """
+        self.fitting["bias_atom_e"] = (
+            out_bias + self.fitting["bias_atom_e"] if add else out_bias
+        )
+
+    def get_out_bias(self) -> np.ndarray:
+        """Return the output bias of the atomic model."""
+        return self.fitting["bias_atom_e"]
+
     def forward_atomic(
         self,
         extended_coord: np.ndarray,

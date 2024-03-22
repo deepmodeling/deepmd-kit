@@ -3,16 +3,19 @@
 One can use a convenient tool [`dpdata`](https://github.com/deepmodeling/dpdata) to convert data directly from the output of first principle packages to the DeePMD-kit format.
 
 To install one can execute
+
 ```bash
 pip install dpdata
 ```
 
 An example of converting data [VASP](https://www.vasp.at/) data in `OUTCAR` format to DeePMD-kit data can be found at
+
 ```
 $deepmd_source_dir/examples/data_conv
 ```
 
 Switch to that directory, then one can convert data by using the following python script
+
 ```python
 import dpdata
 
