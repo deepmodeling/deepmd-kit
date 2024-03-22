@@ -12,10 +12,10 @@ experimentation. Full instructions for TensorBoard can be found
 
 DeePMD-kit can now use most of the interesting features enabled by TensorBoard!
 
-* **Tracking and visualizing metrics,** such as l2_loss, l2_energy_loss and l2_force_loss
-* **Visualizing the model graph** (ops and layers)
-* **Viewing histograms of weights, biases, or other tensors as they change over time.**
-* **Viewing summaries of trainable variables**
+- **Tracking and visualizing metrics,** such as l2_loss, l2_energy_loss and l2_force_loss
+- **Visualizing the model graph** (ops and layers)
+- **Viewing histograms of weights, biases, or other tensors as they change over time.**
+- **Viewing summaries of trainable variables**
 
 <!-- * **Projecting embeddings to a lower dimensional space.**
 * **Precision curves.** -->
@@ -84,6 +84,7 @@ tensorboard --logdir path/to/logs
 ![DeePMD-kit distribution](../images/tensorboard-distribution.png)
 
 ### Viewing summaries of trainable variables
+
 ![DeePMD-kit scalar](../images/tensorboard-scalar.png)
 
 ## Attention
