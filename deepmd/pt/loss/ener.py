@@ -124,15 +124,21 @@ class EnergyStdLoss(TaskLoss):
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
         if self.has_e and "energy" in model_pred and "energy" in label:
+            find_energy = label.get("find_energy", 0.0)
+            pref_e = pref_e * find_energy
             if not self.use_l1_all:
                 l2_ener_loss = torch.mean(
                     torch.square(model_pred["energy"] - label["energy"])
                 )
                 if not self.inference:
-                    more_loss["l2_ener_loss"] = l2_ener_loss.detach()
+                    more_loss["l2_ener_loss"] = self.display_if_exist(
+                        l2_ener_loss.detach(), find_energy
+                    )
                 loss += atom_norm * (pref_e * l2_ener_loss)
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
-                more_loss["rmse_e"] = rmse_e.detach()
+                more_loss["rmse_e"] = self.display_if_exist(
+                    rmse_e.detach(), find_energy
+                )
                 # more_loss['log_keys'].append('rmse_e')
             else:  # use l1 and for all atoms
                 l1_ener_loss = F.l1_loss(
@@ -141,24 +147,31 @@ class EnergyStdLoss(TaskLoss):
                     reduction="sum",
                 )
                 loss += pref_e * l1_ener_loss
-                more_loss["mae_e"] = F.l1_loss(
-                    model_pred["energy"].reshape(-1),
-                    label["energy"].reshape(-1),
-                    reduction="mean",
-                ).detach()
+                more_loss["mae_e"] = self.display_if_exist(
+                    F.l1_loss(
+                        model_pred["energy"].reshape(-1),
+                        label["energy"].reshape(-1),
+                        reduction="mean",
+                    ).detach(),
+                    find_energy,
+                )
                 # more_loss['log_keys'].append('rmse_e')
             if mae:
                 mae_e = (
                     torch.mean(torch.abs(model_pred["energy"] - label["energy"]))
                     * atom_norm
                 )
-                more_loss["mae_e"] = mae_e.detach()
+                more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
                 mae_e_all = torch.mean(
                     torch.abs(model_pred["energy"] - label["energy"])
                 )
-                more_loss["mae_e_all"] = mae_e_all.detach()
+                more_loss["mae_e_all"] = self.display_if_exist(
+                    mae_e_all.detach(), find_energy
+                )
 
         if self.has_f and "force" in model_pred and "force" in label:
+            find_force = label.get("find_force", 0.0)
+            pref_f = pref_f * find_force
             if "force_target_mask" in model_pred:
                 force_target_mask = model_pred["force_target_mask"]
             else:
@@ -174,10 +187,12 @@ class EnergyStdLoss(TaskLoss):
                     diff_f = label["force"] - model_pred["force"]
                     l2_force_loss = torch.mean(torch.square(diff_f))
                 if not self.inference:
-                    more_loss["l2_force_loss"] = l2_force_loss.detach()
+                    more_loss["l2_force_loss"] = self.display_if_exist(
+                        l2_force_loss.detach(), find_force
+                    )
                 loss += (pref_f * l2_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
                 rmse_f = l2_force_loss.sqrt()
-                more_loss["rmse_f"] = rmse_f.detach()
+                more_loss["rmse_f"] = self.display_if_exist(rmse_f.detach(), find_force)
             else:
                 l1_force_loss = F.l1_loss(
                     label["force"], model_pred["force"], reduction="none"
@@ -185,29 +200,35 @@ class EnergyStdLoss(TaskLoss):
                 if force_target_mask is not None:
                     l1_force_loss *= force_target_mask
                     force_cnt = force_target_mask.squeeze(-1).sum(-1)
-                    more_loss["mae_f"] = (
-                        l1_force_loss.mean(-1).sum(-1) / force_cnt
-                    ).mean()
+                    more_loss["mae_f"] = self.display_if_exist(
+                        (l1_force_loss.mean(-1).sum(-1) / force_cnt).mean(), find_force
+                    )
                     l1_force_loss = (l1_force_loss.sum(-1).sum(-1) / force_cnt).sum()
                 else:
-                    more_loss["mae_f"] = l1_force_loss.mean().detach()
+                    more_loss["mae_f"] = self.display_if_exist(
+                        l1_force_loss.mean().detach(), find_force
+                    )
                     l1_force_loss = l1_force_loss.sum(-1).mean(-1).sum()
                 loss += (pref_f * l1_force_loss).to(GLOBAL_PT_FLOAT_PRECISION)
             if mae:
                 mae_f = torch.mean(torch.abs(diff_f))
-                more_loss["mae_f"] = mae_f.detach()
+                more_loss["mae_f"] = self.display_if_exist(mae_f.detach(), find_force)
 
         if self.has_v and "virial" in model_pred and "virial" in label:
+            find_virial = label.get("find_virial", 0.0)
+            pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
             l2_virial_loss = torch.mean(torch.square(diff_v))
             if not self.inference:
-                more_loss["l2_virial_loss"] = l2_virial_loss.detach()
+                more_loss["l2_virial_loss"] = self.display_if_exist(
+                    l2_virial_loss.detach(), find_virial
+                )
             loss += atom_norm * (pref_v * l2_virial_loss)
             rmse_v = l2_virial_loss.sqrt() * atom_norm
-            more_loss["rmse_v"] = rmse_v.detach()
+            more_loss["rmse_v"] = self.display_if_exist(rmse_v.detach(), find_virial)
             if mae:
                 mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
-                more_loss["mae_v"] = mae_v.detach()
+                more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
         return model_pred, loss, more_loss

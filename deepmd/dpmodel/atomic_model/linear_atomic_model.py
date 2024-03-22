@@ -275,6 +275,27 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         # join all the selected types
         return list(set().union(*[model.get_sel_type() for model in self.models]))
 
+    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
+        """
+        Modify the output bias for all the models in the linear atomic model.
+
+        Parameters
+        ----------
+        out_bias : torch.Tensor
+            The new bias to be applied.
+        add : bool, optional
+            Whether to add the new bias to the existing one.
+            If False, the output bias will be directly replaced by the new bias.
+            If True, the new bias will be added to the existing one.
+        """
+        for model in self.models:
+            model.set_out_bias(out_bias, add=add)
+
+    def get_out_bias(self) -> np.ndarray:
+        """Return the weighted output bias of the linear atomic model."""
+        # TODO add get_out_bias for linear atomic model
+        raise NotImplementedError
+
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
