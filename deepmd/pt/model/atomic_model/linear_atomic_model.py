@@ -100,7 +100,6 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         """Get the type map."""
         return self.type_map
 
-    @torch.jit.export
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
