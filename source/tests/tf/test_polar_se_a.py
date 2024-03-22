@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from pathlib import (
+    Path,
+)
+
 import numpy as np
 
 from deepmd.tf.common import (
@@ -15,6 +19,9 @@ from deepmd.tf.fit import (
 )
 from deepmd.tf.model import (
     PolarModel,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .common import (
@@ -198,3 +205,54 @@ class TestModel(tf.test.TestCase):
         # make sure atomic virial sum to virial
         places = 10
         np.testing.assert_almost_equal(pv, spv, places)
+
+    def test_data_stat(self):
+        jfile = "polar_se_a.json"
+        jdata = j_loader(jfile)
+
+        systems = [
+            str(
+                Path(__file__).parent.parent
+                / "pt"
+                / "water_tensor"
+                / "polar"
+                / "global_system"
+            ),
+            str(
+                Path(__file__).parent.parent
+                / "pt"
+                / "water_tensor"
+                / "polar"
+                / "atomic_system"
+            ),
+        ]
+
+        batch_size = j_must_have(jdata, "batch_size")
+        test_size = j_must_have(jdata, "numb_test")
+        batch_size = 1
+        test_size = 1
+        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+
+        data = DeepmdDataSystem(systems, batch_size, test_size, rcut)
+        data.add(
+            "atomic_polarizability",
+            9,
+            atomic=True,
+            type_sel=jdata["model"]["fitting_net"]["sel_type"],
+        )
+        data.add(
+            "polarizability",
+            9,
+            atomic=False,
+        )
+
+        jdata["model"]["descriptor"].pop("type", None)
+        jdata["model"]["fitting_net"].pop("type", None)
+        descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["embedding_width"] = descrpt.get_dim_rot_mat_1()
+        fitting = PolarFittingSeA(**jdata["model"]["fitting_net"], uniform_seed=True)
+        model = PolarModel(descrpt, fitting)
+
+        model.data_stat(data)
