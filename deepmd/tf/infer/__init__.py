@@ -5,6 +5,10 @@ from typing import (
     TYPE_CHECKING,
 )
 
+from deepmd.infer import (
+    DeepPotential,
+)
+
 from .data_modifier import (
     DipoleChargeModifier,
 )
@@ -52,25 +56,3 @@ __all__ = [
     "EwaldRecp",
     "calc_model_devi",
 ]
-
-
-def DeepPotential(*args, **kwargs) -> "DeepEval":
-    """Factory function that forwards to DeepEval (for compatbility).
-
-    Parameters
-    ----------
-    *args
-        positional arguments
-    **kwargs
-        keyword arguments
-
-    Returns
-    -------
-    DeepEval
-        potentials
-    """
-    from deepmd.infer.deep_eval import (
-        DeepEval,
-    )
-
-    return DeepEval(*args, **kwargs)
