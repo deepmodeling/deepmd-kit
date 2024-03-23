@@ -39,7 +39,9 @@ jobs:
         HOROVOD_WITHOUT_GLOO: 1
     - run: dp --version
     - run: pytest --cov=deepmd --cov=deepmd_utils source/tests --durations=0
-    - uses: codecov/codecov-action@v3
+    - uses: codecov/codecov-action@v4
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         gcov: true
   pass:
