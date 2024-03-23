@@ -30,7 +30,7 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    DPZBLModel,
+    EnergyModel,
     get_model,
     get_zbl_model,
 )
@@ -96,6 +96,7 @@ class Trainer:
         finetune_model=None,
         force_load=False,
         shared_links=None,
+        finetune_links=None,
         init_frz_model=None,
     ):
         """Construct a DeePMD trainer.
@@ -116,9 +117,7 @@ class Trainer:
         model_params = config["model"]
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
-        self.finetune_multi_task = model_params.pop(
-            "finetune_multi_task", False
-        )  # should use pop for next finetune
+        self.finetune_links = finetune_links
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
@@ -234,23 +233,24 @@ class Trainer:
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
+
+            @functools.lru_cache
+            def get_sample():
+                sampled = make_stat_input(
+                    _training_data.systems,
+                    _training_data.dataloaders,
+                    _data_stat_nbatch,
+                )
+                return sampled
+
             if not resuming and self.rank == 0:
-
-                @functools.lru_cache
-                def get_sample():
-                    sampled = make_stat_input(
-                        _training_data.systems,
-                        _training_data.dataloaders,
-                        _data_stat_nbatch,
-                    )
-                    return sampled
-
                 _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
                 )
                 if isinstance(_stat_file_path, DPH5Path):
                     _stat_file_path.root.close()
+            return get_sample
 
         def get_single_model(
             _model_params,
@@ -355,7 +355,7 @@ class Trainer:
         # Data
         dp_random.seed(training_params["seed"])
         if not self.multi_task:
-            single_model_stat(
+            self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
@@ -385,9 +385,10 @@ class Trainer:
                 self.validation_dataloader,
                 self.validation_data,
                 self.valid_numb_batch,
-            ) = {}, {}, {}, {}, {}
+                self.get_sample_func,
+            ) = {}, {}, {}, {}, {}, {}
             for model_key in self.model_keys:
-                single_model_stat(
+                self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
@@ -486,60 +487,116 @@ class Trainer:
                         log.warning(
                             f"Force load mode allowed! These keys are not in ckpt and will re-init: {slim_keys}"
                         )
-                elif self.finetune_multi_task:
+
+                if finetune_model is not None:
                     new_state_dict = {}
-                    model_branch_chosen = model_params.pop("model_branch_chosen")
-                    new_fitting = model_params.pop("new_fitting", False)
                     target_state_dict = self.wrapper.state_dict()
-                    target_keys = [
-                        i for i in target_state_dict.keys() if i != "_extra_state"
-                    ]
-                    for item_key in target_keys:
-                        if new_fitting and ".fitting_net." in item_key:
-                            # print(f'Keep {item_key} in old model!')
-                            new_state_dict[item_key] = (
-                                target_state_dict[item_key].clone().detach()
-                            )
-                        else:
-                            new_key = item_key.replace(
-                                ".Default.", f".{model_branch_chosen}."
-                            )
-                            # print(f'Replace {item_key} with {new_key} in pretrained_model!')
-                            new_state_dict[item_key] = (
-                                state_dict[new_key].clone().detach()
+
+                    def update_single_finetune_params(
+                        _model_key,
+                        _model_key_from,
+                        _new_state_dict,
+                        _origin_state_dict,
+                        _random_state_dict,
+                        _new_fitting=False,
+                    ):
+                        target_keys = [
+                            i
+                            for i in _random_state_dict.keys()
+                            if i != "_extra_state" and f".{_model_key}." in i
+                        ]
+                        for item_key in target_keys:
+                            if _new_fitting and ".fitting_net." in item_key:
+                                # print(f'Keep {item_key} in old model!')
+                                _new_state_dict[item_key] = (
+                                    _random_state_dict[item_key].clone().detach()
+                                )
+                            else:
+                                new_key = item_key.replace(
+                                    f".{_model_key}.", f".{_model_key_from}."
+                                )
+                                # print(f'Replace {item_key} with {new_key} in pretrained_model!')
+                                _new_state_dict[item_key] = (
+                                    _origin_state_dict[new_key].clone().detach()
+                                )
+
+                    if not self.multi_task:
+                        model_key = "Default"
+                        model_key_from = self.finetune_links[model_key]
+                        new_fitting = model_params.pop("new_fitting", False)
+                        update_single_finetune_params(
+                            model_key,
+                            model_key_from,
+                            new_state_dict,
+                            state_dict,
+                            target_state_dict,
+                            _new_fitting=new_fitting,
+                        )
+                    else:
+                        for model_key in self.model_keys:
+                            if model_key in self.finetune_links:
+                                model_key_from = self.finetune_links[model_key]
+                                new_fitting = model_params["model_dict"][model_key].pop(
+                                    "new_fitting", False
+                                )
+                            else:
+                                model_key_from = model_key
+                                new_fitting = False
+                            update_single_finetune_params(
+                                model_key,
+                                model_key_from,
+                                new_state_dict,
+                                state_dict,
+                                target_state_dict,
+                                _new_fitting=new_fitting,
                             )
                     state_dict = new_state_dict
-                if finetune_model is not None:
                     state_dict["_extra_state"] = self.wrapper.state_dict()[
                         "_extra_state"
                     ]
-
                 self.wrapper.load_state_dict(state_dict)
-                # finetune
-                if finetune_model is not None and model_params["fitting_net"].get(
-                    "type", "ener"
-                ) in ["ener", "direct_force_ener", "atten_vec_lcc"]:
+
+                def single_model_finetune(
+                    _model,
+                    _model_params,
+                    _sample_func,
+                ):
                     old_type_map, new_type_map = (
-                        model_params["type_map"],
-                        model_params["new_type_map"],
+                        _model_params["type_map"],
+                        _model_params["new_type_map"],
                     )
-                    # TODO: need an interface instead of fetching fitting_net!!!!!!!!!
-                    if hasattr(self.model, "atomic_model") and hasattr(
-                        self.model.atomic_model, "fitting_net"
-                    ):
-                        self.model.atomic_model.fitting_net.change_energy_bias(
-                            config,
-                            self.model,
-                            old_type_map,
-                            new_type_map,
-                            ntest=ntest,
-                            bias_shift=model_params.get("bias_shift", "delta"),
+                    if isinstance(_model, EnergyModel):
+                        _model.change_out_bias(
+                            _sample_func,
+                            bias_adjust_mode=_model_params.get(
+                                "bias_adjust_mode", "change-by-statistic"
+                            ),
+                            origin_type_map=new_type_map,
+                            full_type_map=old_type_map,
                         )
-                    elif isinstance(self.model, DPZBLModel):
-                        # need to updated
-                        self.model.atomic_model.change_energy_bias()
                     else:
-                        raise NotImplementedError
+                        # need to updated
+                        pass
+
+                # finetune
+                if not self.multi_task:
+                    single_model_finetune(
+                        self.model, model_params, self.get_sample_func
+                    )
+                else:
+                    for model_key in self.model_keys:
+                        if model_key in self.finetune_links:
+                            log.info(
+                                f"Model branch {model_key} will be fine-tuned. This may take a long time..."
+                            )
+                            single_model_finetune(
+                                self.model[model_key],
+                                model_params["model_dict"][model_key],
+                                self.get_sample_func[model_key],
+                            )
+                        else:
+                            log.info(f"Model branch {model_key} will resume training.")
+
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())
@@ -1017,7 +1074,7 @@ class Trainer:
             if item_key in input_keys:
                 input_dict[item_key] = batch_data[item_key]
             else:
-                if item_key not in ["sid", "fid"] and "find_" not in item_key:
+                if item_key not in ["sid", "fid"]:
                     label_dict[item_key] = batch_data[item_key]
         log_dict = {}
         if "fid" in batch_data:
@@ -1052,6 +1109,7 @@ class Trainer:
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
         print_str += "   %8s\n" % "lr"
+        print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
 
