@@ -12,6 +12,7 @@ import torch
 
 from deepmd.pt.utils import (
     AtomExcludeMask,
+    env,
 )
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
@@ -22,14 +23,11 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
-    compute_stats_from_redu,
     compute_stats_from_atomic,
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.pt.utils import (
-    env,
 )
 
 log = logging.getLogger(__name__)
@@ -84,7 +82,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    keys: Optional[str] = "energy" # this is dict.keys()
+    keys: Optional[str] = "energy",  # this is dict.keys()
 ):
     if "energy" in keys:
         return compute_output_stats_global(
@@ -93,21 +91,27 @@ def compute_output_stats(
             stat_file_path=stat_file_path,
             rcond=rcond,
             atom_ener=atom_ener,
-            model_forward=model_forward
+            model_forward=model_forward,
         )
-    elif len(set("dos","atom_dos","polarizability","atomic_polarizability") and set(keys)) > 0:
+    elif (
+        len(
+            set("dos", "atom_dos", "polarizability", "atomic_polarizability")
+            and set(keys)
+        )
+        > 0
+    ):
         return compute_output_stats_atomic(
             merged=merged,
             ntypes=ntypes,
             stat_file_path=stat_file_path,
             rcond=rcond,
             atom_ener=atom_ener,
-            model_forward=model_forward
-        ) 
+            model_forward=model_forward,
+        )
     else:
-        #can add mode facade services.
+        # can add mode facade services.
         pass
-    
+
 
 def compute_output_stats_global(
     merged: Union[Callable[[], List[dict]], List[dict]],
@@ -247,7 +251,7 @@ def compute_output_stats_atomic(
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
     if stat_file_path is not None:
-            stat_file_path = stat_file_path / "bias_dos"
+        stat_file_path = stat_file_path / "bias_dos"
     if stat_file_path is not None and stat_file_path.is_file():
         bias_dos = stat_file_path.load_numpy()
     else:
@@ -270,9 +274,7 @@ def compute_output_stats_atomic(
                 )
                 for itype in range(ntypes):
                     type_mask = sampled[sys]["atype"] == itype
-                    sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
-                        force=True
-                    )
+                    sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
                 sys_bias_redu = sampled[sys]["dos"].numpy(force=True)
 
                 bias_dos = compute_stats_from_redu(
