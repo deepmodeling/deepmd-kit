@@ -23,9 +23,13 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
+    compute_stats_from_atomic,
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.pt.utils import (
+    env,
 )
 
 log = logging.getLogger(__name__)
@@ -74,6 +78,38 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 
 def compute_output_stats(
+    merged: Union[Callable[[], List[dict]], List[dict]],
+    ntypes: int,
+    stat_file_path: Optional[DPPath] = None,
+    rcond: Optional[float] = None,
+    atom_ener: Optional[List[float]] = None,
+    model_forward: Optional[Callable[..., torch.Tensor]] = None,
+    keys: Optional[str] = "energy" # this is dict.keys()
+):
+    if "energy" in keys:
+        return compute_output_stats_global(
+            merged=merged,
+            ntypes=ntypes,
+            stat_file_path=stat_file_path,
+            rcond=rcond,
+            atom_ener=atom_ener,
+            model_forward=model_forward
+        )
+    elif len(set("dos","atom_dos","polarizability","atomic_polarizability") and set(keys)) > 0:
+        return compute_output_stats_atomic(
+            merged=merged,
+            ntypes=ntypes,
+            stat_file_path=stat_file_path,
+            rcond=rcond,
+            atom_ener=atom_ener,
+            model_forward=model_forward
+        ) 
+    else:
+        #can add mode facade services.
+        pass
+    
+
+def compute_output_stats_global(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
     stat_file_path: Optional[DPPath] = None,
@@ -200,3 +236,48 @@ def compute_output_stats(
             stat_file_path.save_numpy(bias_atom_e)
     assert all(x is not None for x in [bias_atom_e])
     return to_torch_tensor(bias_atom_e)
+
+
+def compute_output_stats_atomic(
+    merged: Union[Callable[[], List[dict]], List[dict]],
+    ntypes: int,
+    stat_file_path: Optional[DPPath] = None,
+    rcond: Optional[float] = None,
+    atom_ener: Optional[List[float]] = None,
+    model_forward: Optional[Callable[..., torch.Tensor]] = None,
+):
+    if stat_file_path is not None:
+            stat_file_path = stat_file_path / "bias_dos"
+    if stat_file_path is not None and stat_file_path.is_file():
+        bias_dos = stat_file_path.load_numpy()
+    else:
+        if callable(merged):
+            # only get data for once
+            sampled = merged()
+        else:
+            sampled = merged
+        for sys in range(len(sampled)):
+            nframs = sampled[sys]["atype"].shape[0]
+
+            if "atom_dos" in sampled[sys]:
+                bias_dos = compute_stats_from_atomic(
+                    sampled[sys]["atom_dos"].numpy(force=True),
+                    sampled[sys]["atype"].numpy(force=True),
+                )[0]
+            else:
+                sys_type_count = np.zeros(
+                    (nframs, ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
+                )
+                for itype in range(ntypes):
+                    type_mask = sampled[sys]["atype"] == itype
+                    sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
+                        force=True
+                    )
+                sys_bias_redu = sampled[sys]["dos"].numpy(force=True)
+
+                bias_dos = compute_stats_from_redu(
+                    sys_bias_redu, sys_type_count, rcond=rcond
+                )[0]
+            if stat_file_path is not None:
+                stat_file_path.save_numpy(bias_dos)
+    return to_torch_tensor(bias_dos)
