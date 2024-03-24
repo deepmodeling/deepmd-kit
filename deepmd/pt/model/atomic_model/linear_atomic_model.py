@@ -205,11 +205,13 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         bias_list = []
         for idx, model in enumerate(self.models):
             bias_atom_e = model.get_out_bias()
-            
+
             ener_list[idx] += bias_atom_e[atype]
             bias_list[idx] = bias_atom_e[atype]
 
-        self.atomic_bias = torch.sum(torch.stack(bias_list) * torch.stack(weights), dim=0)
+        self.atomic_bias = torch.sum(
+            torch.stack(bias_list) * torch.stack(weights), dim=0
+        )
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
