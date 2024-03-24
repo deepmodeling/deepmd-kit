@@ -67,6 +67,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         super().__init__(**kwargs)
+        self.atomic_bias = None
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -162,7 +163,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         ]
         ener_list = []
-
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
             ener_list.append(
@@ -176,11 +176,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 )["energy"]
             )
         self.weights = self._compute_weight(extended_coord, extended_atype, nlists_)
-        self.atomic_bias = None
-        if self.atomic_bias is not None:
-            raise NotImplementedError("Need to add bias in a future PR.")
-        else:
-            fit_ret = {
+        atype = extended_atype[:, :nloc]
+        bias_list = []
+        for idx, model in enumerate(self.models):
+            bias_atom_e = model.get_out_bias()
+            
+            ener_list[idx] += bias_atom_e[atype]
+            bias_list[idx] = bias_atom_e[atype]
+
+        self.atomic_bias = np.sum(np.stack(bias_list) * np.stack(self.weights), axis=0)
+        fit_ret = {
                 "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
             }  # (nframes, nloc, 1)
         return fit_ret
@@ -293,8 +298,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def get_out_bias(self) -> np.ndarray:
         """Return the weighted output bias of the linear atomic model."""
-        # TODO add get_out_bias for linear atomic model
-        raise NotImplementedError
+        return self.atomic_bias
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).

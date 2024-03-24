@@ -202,17 +202,14 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         atype = extended_atype[:, :nloc]
+        bias_list = []
         for idx, model in enumerate(self.models):
-            # TODO: provide interfaces for atomic models to access bias_atom_e
-            if isinstance(model, DPAtomicModel):
-                bias_atom_e = model.fitting_net.bias_atom_e
-            elif isinstance(model, PairTabAtomicModel):
-                bias_atom_e = model.bias_atom_e
-            else:
-                bias_atom_e = None
-            if bias_atom_e is not None:
-                ener_list[idx] += bias_atom_e[atype]
+            bias_atom_e = model.get_out_bias()
+            
+            ener_list[idx] += bias_atom_e[atype]
+            bias_list[idx] = bias_atom_e[atype]
 
+        self.atomic_bias = torch.sum(torch.stack(bias_list) * torch.stack(weights), dim=0)
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
@@ -307,8 +304,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def get_out_bias(self) -> torch.Tensor:
         """Return the weighted output bias of the linear atomic model."""
-        # TODO add get_out_bias for linear atomic model
-        raise NotImplementedError
+        return self.atomic_bias
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
