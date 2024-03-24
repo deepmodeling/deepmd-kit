@@ -128,6 +128,8 @@ class DOSLoss(TaskLoss):
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
         if self.has_ados and "atom_dos" in model_pred and "atom_dos" in label:
+            find_local = label.get("find_atom_dos", 0.0)
+            pref_ados = pref_ados * find_local
             local_tensor_pred_dos = model_pred["atom_dos"].reshape(
                 [-1, natoms, self.numb_dos]
             )
@@ -141,11 +143,17 @@ class DOSLoss(TaskLoss):
                 diff = diff[model_pred["mask"].reshape([-1]).bool()]
             l2_local_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss["l2_local_dos_loss"] = l2_local_loss_dos.detach()
+                 more_loss["l2_local_dos_loss"] = self.display_if_exist(
+                        l2_local_loss_dos.detach(), find_local
+                    )
             loss += pref_ados * l2_local_loss_dos
             rmse_local_dos = l2_local_loss_dos.sqrt()
-            more_loss["rmse_local_dos"] = rmse_local_dos.detach()
+            more_loss["rmse_local_dos"] = self.display_if_exist(
+                    rmse_local_dos.detach(), find_local
+                )
         if self.has_acdf and "atom_dos" in model_pred and "atom_dos" in label:
+            find_local = label.get("find_atom_dos", 0.0)
+            pref_acdf = pref_acdf * find_local
             local_tensor_pred_cdf = torch.cusum(
                 model_pred["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
             )
@@ -159,11 +167,17 @@ class DOSLoss(TaskLoss):
                 diff = diff[model_pred["mask"].reshape([-1]).bool()]
             l2_local_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss["l2_local_cdf_loss"] = l2_local_loss_cdf.detach()
+                more_loss["l2_local_cdf_loss"] = self.display_if_exist(
+                        l2_local_loss_cdf.detach(), find_local
+                    )
             loss += pref_acdf * l2_local_loss_cdf
             rmse_local_cdf = l2_local_loss_cdf.sqrt()
-            more_loss["rmse_local_cdf"] = rmse_local_cdf.detach()
+            more_loss["rmse_local_cdf"] = self.display_if_exist(
+                    rmse_local_cdf.detach(), find_local
+                )
         if self.has_dos and "dos" in model_pred and "dos" in label:
+            find_global = label.get("find_dos", 0.0)
+            pref_dos = pref_dos * find_global
             global_tensor_pred_dos = model_pred["dos"].reshape([-1, self.numb_dos])
             global_tensor_label_dos = label["dos"].reshape([-1, self.numb_dos])
             diff = global_tensor_pred_dos - global_tensor_label_dos
@@ -177,11 +191,17 @@ class DOSLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss["l2_global_dos_loss"] = l2_global_loss_dos.detach()
+                more_loss["l2_global_dos_loss"] = self.display_if_exist(
+                        l2_global_loss_dos.detach(), find_global
+                    )
             loss += pref_dos * l2_global_loss_dos
             rmse_global_dos = l2_global_loss_dos.sqrt() / atom_num
-            more_loss["rmse_global_dos"] = rmse_global_dos.detach()
+            more_loss["rmse_global_dos"] = self.display_if_exist(
+                    rmse_global_dos.detach(), find_global
+                )
         if self.has_cdf and "dos" in model_pred and "dos" in label:
+            find_global = label.get("find_dos", 0.0)
+            pref_cdf = pref_cdf * find_global
             global_tensor_pred_cdf = torch.cusum(
                 model_pred["dos"].reshape([-1, self.numb_dos]), dim=-1
             )
@@ -199,10 +219,14 @@ class DOSLoss(TaskLoss):
                 atom_num = natoms
                 l2_global_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
-                more_loss["l2_global_cdf_loss"] = l2_global_loss_cdf.detach()
+                more_loss["l2_global_cdf_loss"] = self.display_if_exist(
+                        l2_global_loss_cdf.detach(), find_global
+                    )
             loss += pref_cdf * l2_global_loss_cdf
             rmse_global_dos = l2_global_loss_cdf.sqrt() / atom_num
-            more_loss["rmse_global_cdf"] = rmse_global_dos.detach()
+            more_loss["rmse_global_cdf"] = self.display_if_exist(
+                    rmse_global_dos.detach(), find_global
+                )
         return model_pred, loss, more_loss
 
     @property
