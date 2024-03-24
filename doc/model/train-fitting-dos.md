@@ -1,4 +1,8 @@
-# Fit electronic density of states (DOS)
+# Fit electronic density of states (DOS) {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
 
@@ -32,9 +36,9 @@ The JSON of `dos` type should be provided like
 	},
 ```
 
--   `type` specifies which type of fitting net should be used. It should be `dos`.
--   `numb_dos` specifies the length of output vector (density of states), which the same as the `NEDOS` set in VASP software, this argument defines the output length of the neural network. We note that the length of `dos` provided in training set should be the same.
--   The rest arguments have the same meaning as they do in `ener` mode.
+- `type` specifies which type of fitting net should be used. It should be `dos`.
+- `numb_dos` specifies the length of output vector (density of states), which the same as the `NEDOS` set in VASP software, this argument defines the output length of the neural network. We note that the length of `dos` provided in training set should be the same.
+- The rest arguments have the same meaning as they do in `ener` mode.
 
 ## Loss
 
@@ -62,12 +66,11 @@ The loss section should be provided like
 	},
 ```
 
--   {ref}`type <loss/type>` should be written as `dos` as a distinction from `ener` mode.
--   `pref_dos` and `pref_ados`, respectively specify the weight of global and atomic loss. If set to 0, the corresponding label will not be included in the training process.
--   We also provides a combination training of vector and its cumulative distribution function `cdf`, which can be defined as
+- {ref}`type <loss/type>` should be written as `dos` as a distinction from `ener` mode.
+- `pref_dos` and `pref_ados`, respectively specify the weight of global and atomic loss. If set to 0, the corresponding label will not be included in the training process.
+- We also provides a combination training of vector and its cumulative distribution function `cdf`, which can be defined as
 
 $$D(\epsilon) = \int_{e_{min}}^{\epsilon} g(\epsilon')d\epsilon'$$
-
 
 ## Training Data Preparation
 

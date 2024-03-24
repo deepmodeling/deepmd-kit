@@ -10,8 +10,10 @@ if(USE_CUDA_TOOLKIT)
   endif()
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 11)
-  add_compile_definitions(
-    "$<$<COMPILE_LANGUAGE:CUDA>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>")
+  if(DEFINED OP_CXX_ABI)
+    add_compile_definitions(
+      "$<$<COMPILE_LANGUAGE:CUDA>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>")
+  endif()
 
   find_package(CUDAToolkit REQUIRED)
 

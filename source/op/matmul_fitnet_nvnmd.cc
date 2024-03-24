@@ -160,7 +160,7 @@ class MatmulFitnetNvnmdOp : public OpKernel {
         s = floor(s * prec * precx) * div_precx;
         y[ii * K + kk] = s;
       }  // loop xx
-    }    // loop kk
+    }  // loop kk
 
   }  // Compute
 

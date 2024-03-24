@@ -7,7 +7,7 @@ dependencies:
   - python=3.9
   - pip>=20.1
   - pip:
-    - ..[docs,cpu]
-    - "exhale @ https://github.com/svenevs/exhale/archive/2759a394268307b88f5440487ae0920ee4ebf81e.zip"
-    # https://github.com/mcmtroffaes/sphinxcontrib-bibtex/issues/309
-    - docutils!=0.18.*,!=0.19.*
+      - ..[docs,cpu,torch]
+      - "exhale @ https://github.com/svenevs/exhale/archive/2759a394268307b88f5440487ae0920ee4ebf81e.zip"
+      # https://github.com/mcmtroffaes/sphinxcontrib-bibtex/issues/309
+      - docutils!=0.18.*,!=0.19.*

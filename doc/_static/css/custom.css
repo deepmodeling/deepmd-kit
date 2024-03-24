@@ -1,14 +1,22 @@
 /*
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-pre{
-	overflow: auto;
+pre {
+  overflow: auto;
 }
-.wy-side-nav-search .wy-dropdown > a img.logo, .wy-side-nav-search > a img.logo {
-    width: 275px;
+.wy-side-nav-search .wy-dropdown > a img.logo,
+.wy-side-nav-search > a img.logo {
+  width: 275px;
+}
+img.platform-icon {
+  height: 2ex;
 }
 @media (prefers-color-scheme: dark) {
-	.wy-side-nav-search .wy-dropdown > a img.logo, .wy-side-nav-search > a img.logo {
-		content: url("../logo-dark.svg");
-	}
+  .wy-side-nav-search .wy-dropdown > a img.logo,
+  .wy-side-nav-search > a img.logo {
+    content: url("../logo-dark.svg");
+  }
+  img.platform-icon {
+    filter: invert(1);
+  }
 }

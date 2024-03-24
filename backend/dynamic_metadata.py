@@ -27,13 +27,13 @@ def dynamic_metadata(
     _, _, find_libpython_requires, extra_scripts, tf_version = get_argument_from_env()
     if field == "scripts":
         return {
-            "dp": "deepmd_utils.main:main",
+            "dp": "deepmd.main:main",
             **extra_scripts,
         }
     elif field == "optional-dependencies":
         return {
             "test": [
-                "dpdata>=0.1.9",
+                "dpdata>=0.2.7",
                 "ase",
                 "pytest",
                 "pytest-cov",
@@ -46,6 +46,7 @@ def dynamic_metadata(
                 "sphinx_markdown_tables",
                 "myst-nb>=1.0.0rc0",
                 "myst-parser>=0.19.2",
+                "sphinx-design",
                 "breathe",
                 "exhale",
                 "numpydoc",
@@ -57,7 +58,7 @@ def dynamic_metadata(
                 "sphinxcontrib-bibtex",
             ],
             "lmp": [
-                "lammps~=2023.8.2.2.0",
+                "lammps~=2023.8.2.3.0",
                 *find_libpython_requires,
             ],
             "ipi": [
@@ -87,5 +88,8 @@ def dynamic_metadata(
                 "nvidia-cusparse-cu12",
                 "nvidia-cudnn-cu12",
                 "nvidia-cuda-nvcc-cu12",
+            ],
+            "torch": [
+                "torch>=2a",
             ],
         }

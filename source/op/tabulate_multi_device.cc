@@ -191,7 +191,7 @@ class TabulateFusionSeAOp : public OpKernel {
                 errors::InvalidArgument("Dim of input should be 3"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
-    descriptor_shape.AddDim(4);  // TODO: be careful here;
+    descriptor_shape.AddDim(4);  // be careful here;
     descriptor_shape.AddDim(last_layer_size);
     int context_output_index = 0;
     Tensor* descriptor_tensor = NULL;
@@ -390,7 +390,7 @@ class TabulateFusionSeAttenOp : public OpKernel {
                 errors::InvalidArgument("Dim of input should be 2"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
-    descriptor_shape.AddDim(4);  // TODO: be careful here;
+    descriptor_shape.AddDim(4);  // be careful here;
     descriptor_shape.AddDim(last_layer_size);
     int context_output_index = 0;
     Tensor* descriptor_tensor = NULL;
@@ -786,8 +786,7 @@ class TabulateFusionSeROp : public OpKernel {
                 errors::InvalidArgument("Dim of input should be 2"));
     TensorShape descriptor_shape;
     descriptor_shape.AddDim(em_tensor.shape().dim_size(0));
-    descriptor_shape.AddDim(
-        em_tensor.shape().dim_size(1));  // TODO: be careful here;
+    descriptor_shape.AddDim(em_tensor.shape().dim_size(1));  // be careful here;
     descriptor_shape.AddDim(last_layer_size);
     int context_output_index = 0;
     Tensor* descriptor_tensor = NULL;

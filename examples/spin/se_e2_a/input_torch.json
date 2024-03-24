@@ -1,0 +1,90 @@
+{
+  "model": {
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        60,
+        60
+      ],
+      "rcut_smth": 5.4,
+      "rcut": 5.6,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 16,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "fitting_net": {
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "data_stat_nbatch": 10,
+    "spin": {
+      "use_spin": [
+        true,
+        false
+      ],
+      "virtual_scale": [
+        0.3140
+      ],
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-8,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "ener_spin",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_fr": 1000,
+    "limit_pref_fr": 1,
+    "start_pref_fm": 1000,
+    "limit_pref_fm": 1,
+    "_comment": " that's all"
+  },
+  "training": {
+    "training_data": {
+      "systems": [
+        "../data_reformat/data_0",
+        "../data_reformat/data_1"
+      ],
+      "batch_size": 3,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../data_reformat/data_2"
+      ],
+      "batch_size": 1,
+      "numb_btch": 3,
+      "_comment": "that's all"
+    },
+    "numb_steps": 100000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 10000,
+    "_comment": "that's all"
+  },
+  "_comment": "that's all"
+}

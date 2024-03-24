@@ -1,4 +1,5 @@
 # Install TensorFlow's C++ interface
+
 TensorFlow's C++ interface will be compiled from the source code. Firstly one installs Bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be lanuched to use [bazel](https://github.com/bazelbuild/bazel).
 
 ```bash
@@ -8,6 +9,7 @@ export PATH=/some/workspace/bazel/bin:$PATH
 ```
 
 Firstly get the source code of the TensorFlow
+
 ```bash
 git clone https://github.com/tensorflow/tensorflow tensorflow -b v2.8.0 --depth=1
 cd tensorflow
@@ -74,23 +76,30 @@ Configuration finished
 The library path for Python should be set accordingly.
 
 Now build the shared library of TensorFlow:
+
 ```bash
 bazel build -c opt --verbose_failures //tensorflow:libtensorflow_cc.so
 ```
-You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue for your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. If you want to enable [oneDNN optimization](https://www.oneapi.io/blog/tensorflow-and-onednn-in-partnership/), add `--config=mkl`.
+
+You may want to add options `--copt=-msse4.2`, `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue for your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`. If you want to enable [oneDNN optimization](https://www.oneapi.io/blog/tensorflow-and-onednn-in-partnership/), add `--config=mkl`.
 
 Now I assume you want to install TensorFlow in directory `$tensorflow_root`. Create the directory if it does not exist
+
 ```bash
 mkdir -p $tensorflow_root
 ```
+
 Now, copy the libraries to the TensorFlow's installation directory:
+
 ```bash
 mkdir -p $tensorflow_root/lib
 cp -d bazel-bin/tensorflow/libtensorflow_cc.so* $tensorflow_root/lib/
 cp -d bazel-bin/tensorflow/libtensorflow_framework.so* $tensorflow_root/lib/
 cp -d $tensorflow_root/lib/libtensorflow_framework.so.2 $tensorflow_root/lib/libtensorflow_framework.so
 ```
+
 Then copy the headers
+
 ```bash
 mkdir -p $tensorflow_root/include/tensorflow
 rsync -avzh --exclude '_virtual_includes/' --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel-bin/ $tensorflow_root/include/
@@ -104,12 +113,15 @@ rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel
 ```
 
 If you've enabled oneDNN, also copy `libiomp5.so`:
+
 ```bash
 cp -d bazel-out/k8-opt/bin/external/llvm_openmp/libiomp5.so $tensorflow_root/lib/
 ```
 
 # Troubleshooting
+
 ```bash
 git: unknown command -C ...
 ```
+
 This may be an issue with your Git version issue. Early versions of Git do not support this command, in this case upgrading your Git to a newer version may resolve any issues.

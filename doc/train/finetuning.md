@@ -1,4 +1,8 @@
-# Finetune the pretrained model
+# Finetune the pretrained model {{ tensorflow_icon }} {{ pytorch_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+:::
 
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
 to vastly reduce the training cost, while it's not trivial in potential models.
@@ -32,6 +36,7 @@ such as {ref}`descriptor <model/descriptor>`, {ref}`fitting_net <model/fitting_n
 However, you can still set the `trainable` parameters in each part of `input.json` to control the training procedure.
 
 To obtain a more simplified script, for example, you can change the {ref}`model <model>` part in `input.json` to perform finetuning:
+
 ```json
     "model": {
         "type_map":     ["O", "H"],

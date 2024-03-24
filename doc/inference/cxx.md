@@ -1,6 +1,9 @@
 # C/C++ interface
+
 ## C++ interface
+
 The C++ interface of DeePMD-kit is also available for the model interface, which is considered faster than the Python interface. An example `infer_water.cpp` is given below:
+
 ```cpp
 #include "deepmd/DeepPot.h"
 
@@ -14,14 +17,18 @@ int main(){
   dp.compute (e, f, v, coord, atype, cell);
 }
 ```
+
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 See {cpp:class}`deepmd::DeepPot` for details.
 
 You can compile `infer_water.cpp` using `gcc`:
+
 ```sh
 gcc infer_water.cpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_cc -lstdc++ -ltensorflow_cc -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
 ```
+
 and then run the program:
+
 ```sh
 ./infer_water
 ```
@@ -31,6 +38,7 @@ and then run the program:
 Although C is harder to write, the C library will not be affected by different versions of C++ compilers.
 
 An example `infer_water.c` is given below:
+
 ```cpp
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,7 +70,7 @@ int main(){
   free(v);
   free(ae);
   free(av);
-  free(dp);
+  DP_DeleteDeepPot(dp);
 }
 ```
 
@@ -71,10 +79,13 @@ where `e`, `f` and `v` are predicted energy, force and virial of the system, res
 See {cpp:func}`DP_DeepPotCompute` for details.
 
 You can compile `infer_water.c` using `gcc`:
+
 ```sh
 gcc infer_water.c -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
 ```
+
 and then run the program:
+
 ```sh
 ./infer_water
 ```
@@ -103,10 +114,13 @@ Note that the feature of the header-only C++ library is still limited compared t
 See {cpp:class}`deepmd::hpp::DeepPot` for details.
 
 You can compile `infer_water_hpp.cpp` using `gcc`:
+
 ```sh
 gcc infer_water_hpp.cpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water_hpp
 ```
+
 and then run the program:
+
 ```sh
 ./infer_water_hpp
 ```

@@ -125,8 +125,7 @@ void GroFileManager::read(const std::string &name,
     std::cerr << "cannot open file " << name << std::endl;
     return;
   }
-  while (fgetc(fp) != '\n')
-    ;
+  while (fgetc(fp) != '\n');
   int npart;
   fscanf(fp, "%d\n", &npart);
   fclose(fp);
@@ -141,10 +140,8 @@ void GroFileManager::read(const std::string &name,
   boxsize.resize(3);
 
   fp = fopen(name.c_str(), "r");
-  while (fgetc(fp) != '\n')
-    ;
-  while (fgetc(fp) != '\n')
-    ;
+  while (fgetc(fp) != '\n');
+  while (fgetc(fp) != '\n');
   char line[1024];
   for (int i = 0; i < npart; ++i) {
     fgets(line, 1024, fp);
