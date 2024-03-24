@@ -207,7 +207,7 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             bias_atom_e = model.get_out_bias()
 
             ener_list[idx] += bias_atom_e[atype]
-            bias_list[idx] = bias_atom_e[atype]
+            bias_list.append(bias_atom_e[atype])
 
         self.atomic_bias = torch.sum(
             torch.stack(bias_list) * torch.stack(weights), dim=0

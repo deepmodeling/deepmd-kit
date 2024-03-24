@@ -182,7 +182,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             bias_atom_e = model.get_out_bias()
 
             ener_list[idx] += bias_atom_e[atype]
-            bias_list[idx] = bias_atom_e[atype]
+            bias_list.append(bias_atom_e[atype])
 
         self.atomic_bias = np.sum(np.stack(bias_list) * np.stack(self.weights), axis=0)
         fit_ret = {
