@@ -94,10 +94,7 @@ def compute_output_stats(
             model_forward=model_forward,
         )
     elif (
-        len(
-            {"dos", "atom_dos", "polarizability", "atomic_polarizability"}
-            & set(keys)
-        )
+        len({"dos", "atom_dos", "polarizability", "atomic_polarizability"} & set(keys))
         > 0
     ):
         return compute_output_stats_atomic(
