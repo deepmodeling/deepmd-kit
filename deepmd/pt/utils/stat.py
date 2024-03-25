@@ -95,7 +95,7 @@ def compute_output_stats(
         )
     elif (
         len(
-            set(["dos", "atom_dos", "polarizability", "atomic_polarizability"])
+            {"dos", "atom_dos", "polarizability", "atomic_polarizability"}
             & set(keys)
         )
         > 0
