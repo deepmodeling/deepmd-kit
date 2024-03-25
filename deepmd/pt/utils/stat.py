@@ -85,7 +85,7 @@ def compute_output_stats(
     keys: Optional[str] = "energy",  # this is dict.keys()
 ):
     if "energy" in keys:
-        return compute_output_stats_global(
+        return compute_output_stats_global_only(
             merged=merged,
             ntypes=ntypes,
             stat_file_path=stat_file_path,
@@ -97,7 +97,7 @@ def compute_output_stats(
         len({"dos", "atom_dos", "polarizability", "atomic_polarizability"} & set(keys))
         > 0
     ):
-        return compute_output_stats_atomic(
+        return compute_output_stats_with_atomic(
             merged=merged,
             ntypes=ntypes,
             keys=list(keys),
@@ -111,7 +111,7 @@ def compute_output_stats(
         pass
 
 
-def compute_output_stats_global(
+def compute_output_stats_global_only(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
     stat_file_path: Optional[DPPath] = None,
@@ -240,7 +240,7 @@ def compute_output_stats_global(
     return to_torch_tensor(bias_atom_e)
 
 
-def compute_output_stats_atomic(
+def compute_output_stats_with_atomic(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
     keys: List[str],
@@ -287,7 +287,7 @@ def compute_output_stats_atomic(
         file_label_name = "constant_matrix"
     else:
         raise NotImplementedError
-
+    
     if stat_file_path is not None:
         stat_file_path = stat_file_path / file_label_name
     if stat_file_path is not None and stat_file_path.is_file():
