@@ -242,7 +242,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
 
     def get_out_bias(self) -> torch.Tensor:
         """Return the output bias of the atomic model."""
-        return self.fitting_net["bias_atom_e"]
+        return self.fitting_net.bias_atom_e
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
