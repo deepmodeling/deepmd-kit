@@ -113,6 +113,10 @@ def compute_stats_from_atomic(
     output_std = np.zeros((ntypes, ndim))
     for type_i in range(ntypes):
         mask = atype == type_i
-        output_bias[type_i] = output[mask].mean(axis=0)
-        output_std[type_i] = output[mask].std(axis=0)
+        output_bias[type_i] = (
+            output[mask].mean(axis=0) if output[mask].size > 0 else np.nan
+        )
+        output_std[type_i] = (
+            output[mask].std(axis=0) if output[mask].size > 0 else np.nan
+        )
     return output_bias, output_std
