@@ -2,6 +2,9 @@
 from .denoise import (
     DenoiseLoss,
 )
+from .dos import (
+    DOSLoss,
+)
 from .ener import (
     EnergyStdLoss,
 )
@@ -21,4 +24,5 @@ __all__ = [
     "EnergySpinLoss",
     "TensorLoss",
     "TaskLoss",
+    "DOSLoss",
 ]
