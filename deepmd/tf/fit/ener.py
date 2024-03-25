@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    TYPE_CHECKING,
     List,
     Optional,
 )
@@ -63,8 +62,6 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
-if TYPE_CHECKING:
-    pass
 
 log = logging.getLogger(__name__)
 
