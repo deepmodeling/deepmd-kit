@@ -90,13 +90,13 @@ def get_trainer(
         dist.init_process_group(backend="nccl")
 
     ckpt = init_model if init_model is not None else restart_model
-    config["model"] = change_finetune_model_params(
-        ckpt,
-        finetune_model,
-        config["model"],
-        multi_task=multi_task,
-        model_branch=model_branch,
-    )
+    finetune_links = None
+    if finetune_model is not None:
+        config["model"], finetune_links = change_finetune_model_params(
+            finetune_model,
+            config["model"],
+            model_branch=model_branch,
+        )
     config["model"]["resuming"] = (finetune_model is not None) or (ckpt is not None)
 
     def prepare_trainer_input_single(
@@ -194,6 +194,7 @@ def get_trainer(
         finetune_model=finetune_model,
         force_load=force_load,
         shared_links=shared_links,
+        finetune_links=finetune_links,
         init_frz_model=init_frz_model,
     )
     return trainer

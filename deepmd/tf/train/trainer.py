@@ -1114,7 +1114,7 @@ class DPTrainer:
             self.ckpt_meta = ckpt_meta
 
     def _init_from_pretrained_model(
-        self, data, origin_type_map=None, bias_shift="delta"
+        self, data, origin_type_map=None, bias_adjust_mode="change-by-statistic"
     ):
         """Init the embedding net variables with the given frozen model.
 
@@ -1124,11 +1124,11 @@ class DPTrainer:
             The training data.
         origin_type_map : list
             The original type_map in dataset, they are targets to change the energy bias.
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
+        bias_adjust_mode : str
+            The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on energies of target dataset,
                     and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
+            'set-by-statistic' : directly use the statistic energy bias in the target dataset.
         """
         try:
             graph, graph_def = load_graph_def(self.run_opt.finetune)
@@ -1159,11 +1159,15 @@ class DPTrainer:
             "(this step may take long time)"
         )
         self._change_energy_bias(
-            data, self.run_opt.finetune, origin_type_map, bias_shift
+            data, self.run_opt.finetune, origin_type_map, bias_adjust_mode
         )
 
     def _change_energy_bias(
-        self, data, frozen_model, origin_type_map, bias_shift="delta"
+        self,
+        data,
+        frozen_model,
+        origin_type_map,
+        bias_adjust_mode="change-by-statistic",
     ):
         full_type_map = data.get_type_map()
         self.model.change_energy_bias(
@@ -1171,7 +1175,7 @@ class DPTrainer:
             frozen_model,
             origin_type_map,
             full_type_map,
-            bias_shift=bias_shift,
+            bias_adjust_mode=bias_adjust_mode,
         )
 
 
