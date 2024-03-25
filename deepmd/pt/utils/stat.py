@@ -95,14 +95,13 @@ def compute_output_stats(
         )
     elif (
         len(
-            set("dos", "atom_dos", "polarizability", "atomic_polarizability")
-            and set(keys)
-        )
-        > 0
+            set(["dos", "atom_dos", "polarizability", "atomic_polarizability"]) & set(keys)
+        )> 0
     ):
         return compute_output_stats_atomic(
             merged=merged,
             ntypes=ntypes,
+            keys=list(keys),
             stat_file_path=stat_file_path,
             rcond=rcond,
             atom_ener=atom_ener,
@@ -241,17 +240,56 @@ def compute_output_stats_global(
     assert all(x is not None for x in [bias_atom_e])
     return to_torch_tensor(bias_atom_e)
 
-
 def compute_output_stats_atomic(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
+    keys: List[str],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
+    
+    """
+    Compute the output statistics (e.g. dos bias) for the fitting net from packed data.
+
+    Parameters
+    ----------
+    merged : Union[Callable[[], List[dict]], List[dict]]
+        - List[dict]: A list of data samples from various data systems.
+            Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+            originating from the `i`-th data system.
+        - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            only when needed. Since the sampling process can be slow and memory-intensive,
+            the lazy function helps by only sampling once.
+    ntypes : int
+        The number of atom types.
+    keys :  List[str]
+        The fitting output keys.
+    stat_file_path : DPPath, optional
+        The path to the stat file.
+    rcond : float, optional
+        The condition number for the regression of atomic energy.
+    atom_ener : List[float], optional
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    model_forward : Callable[..., torch.Tensor], optional
+        The wrapped forward function of atomic model.
+        If not None, the model will be utilized to generate the original energy prediction,
+        which will be subtracted from the energy label of the data.
+        The difference will then be used to calculate the delta complement energy bias for each type.
+    """
+
+    if "dos" in keys or "atom_dos" in keys:
+        atomic_label_name = "atom_dos"
+        global_label_name = "dos"
+        file_label_name = "bias_dos"
+    elif "polarizability" in keys or "atomic_polarizability" in keys:
+        atomic_label_name = "atomic_polarizability"
+        global_label_name = "polarizability"
+        file_label_name = "bias_polar"
+
     if stat_file_path is not None:
-        stat_file_path = stat_file_path / "bias_dos"
+        stat_file_path = stat_file_path / file_label_name
     if stat_file_path is not None and stat_file_path.is_file():
         bias_dos = stat_file_path.load_numpy()
     else:
@@ -260,26 +298,79 @@ def compute_output_stats_atomic(
             sampled = merged()
         else:
             sampled = merged
-        for sys in range(len(sampled)):
-            nframs = sampled[sys]["atype"].shape[0]
+        if model_forward is not None:
+            auto_batch_size = AutoBatchSize()
+            property_predict = []
+            for system in sampled:
+                nframes = system["coord"].shape[0]
+                coord, atype, box, natoms = (
+                    system["coord"],
+                    system["atype"],
+                    system["box"],
+                    system["natoms"],
+                )
+                fparam = system.get("fparam", None)
+                aparam = system.get("aparam", None)
 
-            if "atom_dos" in sampled[sys]:
-                bias_dos = compute_stats_from_atomic(
-                    sampled[sys]["atom_dos"].numpy(force=True),
-                    sampled[sys]["atype"].numpy(force=True),
-                )[0]
+                def model_forward_auto_batch_size(*args, **kwargs):
+                    return auto_batch_size.execute_all(
+                        model_forward,
+                        nframes,
+                        system["atype"].shape[-1],
+                        *args,
+                        **kwargs,
+                    )
+
+                property_atomic = (
+                    model_forward_auto_batch_size(
+                        coord, atype, box, fparam=fparam, aparam=aparam
+                    )
+                    .reshape(nframes, -1)
+                )
+                property_predict.append(to_numpy_array(property_atomic).reshape([nframes, 1]))
+
+            property_predict = np.concatenate(property_predict)
+        else:
+            property_predict = None
+
+        total_bias = []
+        for idx, system in enumerate(sampled):
+            nframs = system["atype"].shape[0]
+
+            if atomic_label_name in system:
+                sys_property = system[atomic_label_name].numpy(force=True)
+                if property_predict is None:
+                    sys_bias = compute_stats_from_atomic(
+                        sys_property,
+                        system["atype"].numpy(force=True),
+                    )[0]
+                else:
+                    bias_diff = sys_property - property_predict[idx]
+                    sys_bias = compute_stats_from_atomic(
+                        bias_diff,
+                        system["atype"].numpy(force=True),
+                    )[0]
+                total_bias.append(sys_bias)
             else:
                 sys_type_count = np.zeros(
                     (nframs, ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
                 )
                 for itype in range(ntypes):
-                    type_mask = sampled[sys]["atype"] == itype
+                    type_mask = system["atype"] == itype
                     sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
-                sys_bias_redu = sampled[sys]["dos"].numpy(force=True)
+                sys_bias_redu = system["dos"].numpy(force=True)
+                if property_predict is None:
+                    sys_bias = compute_stats_from_redu(
+                        sys_bias_redu, sys_type_count, rcond=rcond
+                    )[0]
+                else:
+                    bias_diff = sys_bias_redu - property_predict[idx].sum(-1)
+                    sys_bias = compute_stats_from_redu(
+                        bias_diff, sys_type_count, rcond=rcond
+                    )[0]
+                total_bias.append(sys_bias)
 
-                bias_dos = compute_stats_from_redu(
-                    sys_bias_redu, sys_type_count, rcond=rcond
-                )[0]
-            if stat_file_path is not None:
-                stat_file_path.save_numpy(bias_dos)
-    return to_torch_tensor(bias_dos)
+        total_bias = np.stack(sys_bias).mean(axis=0)
+        if stat_file_path is not None:
+            stat_file_path.save_numpy(total_bias)
+    return to_torch_tensor(total_bias)

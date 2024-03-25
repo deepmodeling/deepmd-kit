@@ -288,12 +288,12 @@ class BaseAtomicModel(BaseAtomicModel_):
                 merged,
                 self.get_ntypes(),
                 model_forward=self.get_forward_wrapper_func(),
-                keys=self.fitting_output_def().keys,
+                keys=self.fitting_output_def().keys(),
             )
             self.set_out_bias(delta_bias, add=True)
         elif bias_adjust_mode == "set-by-statistic":
             bias_atom = compute_output_stats(
-                merged, self.get_ntypes(), keys=self.fitting_output_def().keys
+                merged, self.get_ntypes(), keys=self.fitting_output_def().keys()
             )
             self.set_out_bias(bias_atom)
         else:
