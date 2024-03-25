@@ -97,18 +97,18 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
-@unittest.skip("loss not implemented")
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = [str(Path(__file__).parent / "dos/data/")]
+        data_file = [str(Path(__file__).parent / "dos/data/atomic_system")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dos)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
+        self.not_all_grad = True
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
