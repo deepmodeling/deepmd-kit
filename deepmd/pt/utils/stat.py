@@ -66,7 +66,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
-                sys_stat[key] = torch.ones(1) * sys_stat[key]
+                sys_stat[key] = torch.tensor(sys_stat[key])
             elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
             elif isinstance(stat_data[dd], torch.Tensor):
