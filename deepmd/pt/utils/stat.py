@@ -95,8 +95,10 @@ def compute_output_stats(
         )
     elif (
         len(
-            set(["dos", "atom_dos", "polarizability", "atomic_polarizability"]) & set(keys)
-        )> 0
+            set(["dos", "atom_dos", "polarizability", "atomic_polarizability"])
+            & set(keys)
+        )
+        > 0
     ):
         return compute_output_stats_atomic(
             merged=merged,
@@ -240,6 +242,7 @@ def compute_output_stats_global(
     assert all(x is not None for x in [bias_atom_e])
     return to_torch_tensor(bias_atom_e)
 
+
 def compute_output_stats_atomic(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
@@ -249,7 +252,6 @@ def compute_output_stats_atomic(
     atom_ener: Optional[List[float]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
-    
     """
     Compute the output statistics (e.g. dos bias) for the fitting net from packed data.
 
@@ -264,7 +266,7 @@ def compute_output_stats_atomic(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
-    keys :  List[str]
+    keys : List[str]
         The fitting output keys.
     stat_file_path : DPPath, optional
         The path to the stat file.
@@ -278,7 +280,6 @@ def compute_output_stats_atomic(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-
     if "dos" in keys or "atom_dos" in keys:
         atomic_label_name = "atom_dos"
         global_label_name = "dos"
@@ -321,13 +322,12 @@ def compute_output_stats_atomic(
                         **kwargs,
                     )
 
-                property_atomic = (
-                    model_forward_auto_batch_size(
-                        coord, atype, box, fparam=fparam, aparam=aparam
-                    )
-                    .reshape(nframes, -1)
+                property_atomic = model_forward_auto_batch_size(
+                    coord, atype, box, fparam=fparam, aparam=aparam
+                ).reshape(nframes, -1)
+                property_predict.append(
+                    to_numpy_array(property_atomic).reshape([nframes, 1])
                 )
-                property_predict.append(to_numpy_array(property_atomic).reshape([nframes, 1]))
 
             property_predict = np.concatenate(property_predict)
         else:
