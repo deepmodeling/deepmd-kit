@@ -10,6 +10,7 @@ from threading import (
     Thread,
 )
 from typing import (
+    TYPE_CHECKING,
     List,
 )
 
@@ -35,14 +36,16 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
 from deepmd.utils.data_system import (
     print_summary,
     prob_sys_size_ext,
     process_sys_probs,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.data import (
+        DataRequirementItem,
+    )
 
 log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
@@ -166,7 +169,7 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: List["DataRequirementItem"]):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)

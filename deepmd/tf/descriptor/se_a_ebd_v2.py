@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
-)
-
-from deepmd.tf.utils.spin import (
-    Spin,
 )
 
 from .descriptor import (
@@ -15,6 +12,11 @@ from .descriptor import (
 from .se_a import (
     DescrptSeA,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ class DescrptSeAEbdV2(DescrptSeA):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Optional["Spin"] = None,
         **kwargs,
     ) -> None:
         DescrptSeA.__init__(

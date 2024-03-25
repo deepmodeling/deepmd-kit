@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Tuple,
@@ -32,9 +33,6 @@ from deepmd.tf.utils.network import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
-from deepmd.tf.utils.spin import (
-    Spin,
-)
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
 )
@@ -48,6 +46,11 @@ from .descriptor import (
 from .se import (
     DescrptSe,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 
 @Descriptor.register("se_e2_r")
@@ -103,7 +106,7 @@ class DescrptSeR(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         multi_task: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Optional["Spin"] = None,
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:

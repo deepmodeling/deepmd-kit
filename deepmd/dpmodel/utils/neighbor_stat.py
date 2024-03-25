@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Iterator,
     Optional,
     Tuple,
@@ -13,10 +14,12 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.nlist import (
     extend_coord_with_ghosts,
 )
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
+
+if TYPE_CHECKING:
+    from deepmd.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 class NeighborStatOP(NativeOP):
@@ -129,7 +132,7 @@ class NeighborStat(BaseNeighborStat):
         self.op = NeighborStatOP(ntypes, rcut, mixed_type)
 
     def iterator(
-        self, data: DeepmdDataSystem
+        self, data: "DeepmdDataSystem"
     ) -> Iterator[Tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 

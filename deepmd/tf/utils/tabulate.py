@@ -4,6 +4,7 @@ from functools import (
     lru_cache,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -19,9 +20,6 @@ import deepmd
 from deepmd.tf.common import (
     ACTIVATION_FN_DICT,
 )
-from deepmd.tf.descriptor import (
-    Descriptor,
-)
 from deepmd.tf.env import (
     op_module,
     tf,
@@ -30,6 +28,11 @@ from deepmd.tf.utils.graph import (
     get_embedding_net_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.descriptor import (
+        Descriptor,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +67,7 @@ class DPTabulate:
 
     def __init__(
         self,
-        descrpt: Descriptor,
+        descrpt: "Descriptor",
         neuron: List[int],
         graph: tf.Graph,
         graph_def: tf.GraphDef,

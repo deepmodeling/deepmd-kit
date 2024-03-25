@@ -3,6 +3,7 @@ import copy
 import functools
 import logging
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -10,17 +11,11 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-)
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -29,6 +24,14 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel import (
+        FittingOutputDef,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +69,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         # order matters ntypes and type_map should be initialized first.
         BaseAtomicModel.__init__(self, **kwargs)
 
-    def fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> "FittingOutputDef":
         """Get the output def of the fitting net."""
         return (
             self.fitting_net.output_def()
@@ -184,7 +187,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ):
         """
         Compute or load the statistics parameters of the model,

@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
 )
@@ -19,15 +20,17 @@ from deepmd.tf.env import (
     FITTING_NET_PATTERN,
     tf,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.utils import (
     PluginVariant,
 )
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 class Fitting(PluginVariant, make_plugin_registry("fitting")):
@@ -68,7 +71,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         )
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr) -> "Loss":
         """Get the loss function.
 
         Parameters

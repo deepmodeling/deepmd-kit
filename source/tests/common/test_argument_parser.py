@@ -3,9 +3,6 @@
 
 import re
 import unittest
-from argparse import (
-    Namespace,
-)
 from contextlib import (
     redirect_stderr,
 )
@@ -27,6 +24,10 @@ from deepmd.main import (
 )
 
 if TYPE_CHECKING:
+    from argparse import (
+        Namespace,
+    )
+
     try:
         from typing import TypedDict  # python==3.8
     except ImportError:
@@ -73,7 +74,11 @@ class TestParserOutput(unittest.TestCase):
     """Test if parser correctly parses supplied arguments."""
 
     def attr_and_type_check(
-        self, namespace: Namespace, mapping: "TEST_DICT", command: str, test_value: bool
+        self,
+        namespace: "Namespace",
+        mapping: "TEST_DICT",
+        command: str,
+        test_value: bool,
     ):
         """Check attributes of `argparse.Manespace` types and values are as expected.
 

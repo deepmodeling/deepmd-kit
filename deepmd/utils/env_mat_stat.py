@@ -8,6 +8,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
+    TYPE_CHECKING,
     Dict,
     Iterator,
     List,
@@ -16,9 +17,10 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.path import (
-    DPPath,
-)
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -127,7 +129,7 @@ class EnvMatStat(ABC):
             The statistics of the environment matrix.
         """
 
-    def save_stats(self, path: DPPath) -> None:
+    def save_stats(self, path: "DPPath") -> None:
         """Save the statistics of the environment matrix.
 
         Parameters
@@ -141,7 +143,7 @@ class EnvMatStat(ABC):
             path.mkdir(parents=True, exist_ok=True)
             (path / kk).save_numpy(np.array([vv.number, vv.sum, vv.squared_sum]))
 
-    def load_stats(self, path: DPPath) -> None:
+    def load_stats(self, path: "DPPath") -> None:
         """Load the statistics of the environment matrix.
 
         Parameters
@@ -160,7 +162,7 @@ class EnvMatStat(ABC):
             )
 
     def load_or_compute_stats(
-        self, data: List[Dict[str, np.ndarray]], path: Optional[DPPath] = None
+        self, data: List[Dict[str, np.ndarray]], path: Optional["DPPath"] = None
     ) -> None:
         """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
 

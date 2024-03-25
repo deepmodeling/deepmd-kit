@@ -2,13 +2,12 @@
 import copy
 import logging
 from typing import (
+    TYPE_CHECKING,
     Callable,
     List,
     Optional,
     Union,
 )
-
-import torch
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -27,12 +26,16 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.stat import (
     compute_output_stats,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    import torch
+
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -90,7 +93,7 @@ class InvarFitting(GeneralFitting):
         dim_descrpt: int,
         dim_out: int,
         neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: Optional["torch.Tensor"] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -146,7 +149,7 @@ class InvarFitting(GeneralFitting):
     def compute_output_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -184,13 +187,13 @@ class InvarFitting(GeneralFitting):
 
     def forward(
         self,
-        descriptor: torch.Tensor,
-        atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        descriptor: "torch.Tensor",
+        atype: "torch.Tensor",
+        gr: Optional["torch.Tensor"] = None,
+        g2: Optional["torch.Tensor"] = None,
+        h2: Optional["torch.Tensor"] = None,
+        fparam: Optional["torch.Tensor"] = None,
+        aparam: Optional["torch.Tensor"] = None,
     ):
         """Based on embedding net output, alculate total energy.
 

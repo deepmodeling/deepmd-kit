@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -31,16 +32,18 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.utils import (
     get_activation_fn,
 )
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 
 from .repformer_layer import (
     RepformerLayer,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.env_mat_stat import (
+        StatItem,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 mydtype = env.GLOBAL_PT_FLOAT_PRECISION
 mydev = env.DEVICE
@@ -300,7 +303,7 @@ class DescrptBlockRepformers(DescriptorBlock):
     def compute_input_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        path: Optional["DPPath"] = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -336,7 +339,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> Dict[str, "StatItem"]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(

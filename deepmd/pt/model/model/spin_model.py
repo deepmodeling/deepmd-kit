@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -11,9 +12,6 @@ import torch
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -21,6 +19,11 @@ from deepmd.utils.spin import (
 from .dp_model import (
     DPModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 class SpinModel(torch.nn.Module):
@@ -319,7 +322,7 @@ class SpinModel(torch.nn.Module):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ):
         """
         Compute or load the statistics parameters of the model,

@@ -5,6 +5,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -23,15 +24,17 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.env_mat_stat import (
+        StatItem,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +94,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
     def compute_input_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        path: Optional["DPPath"] = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -111,7 +114,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """
         raise NotImplementedError
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> Dict[str, "StatItem"]:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 

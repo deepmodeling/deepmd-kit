@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     Callable,
     List,
     Optional,
@@ -24,9 +25,11 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
-    stat_file_path: Optional[DPPath] = None,
+    stat_file_path: Optional["DPPath"] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,

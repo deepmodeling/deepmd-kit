@@ -2,10 +2,8 @@
 import json
 import os
 import tempfile
-from enum import (
-    Enum,
-)
 from typing import (
+    TYPE_CHECKING,
     Optional,
     Union,
 )
@@ -21,14 +19,8 @@ from deepmd.tf.env import (
     MODEL_VERSION,
     tf,
 )
-from deepmd.tf.fit.fitting import (
-    Fitting,
-)
 from deepmd.tf.infer import (
     DeepPotential,
-)
-from deepmd.tf.loss.loss import (
-    Loss,
 )
 from deepmd.tf.utils.graph import (
     get_tensor_by_name_from_graph,
@@ -38,6 +30,18 @@ from deepmd.tf.utils.graph import (
 from .model import (
     Model,
 )
+
+if TYPE_CHECKING:
+    from enum import (
+        Enum,
+    )
+
+    from deepmd.tf.fit.fitting import (
+        Fitting,
+    )
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 @Model.register("frozen")
@@ -79,7 +83,7 @@ class FrozenModel(Model):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: Optional[Union[bool, "Enum"]] = None,
     ) -> dict:
         """Build the model.
 
@@ -178,11 +182,11 @@ class FrozenModel(Model):
                 "Contribution is welcome!"
             )
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Union["Fitting", dict]:
         """Get the fitting(s)."""
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Optional[Union["Loss", dict]]:
         """Get the loss function(s)."""
         # loss should be never used for a frozen model
         return

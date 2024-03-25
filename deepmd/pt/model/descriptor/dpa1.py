@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Callable,
     List,
     Optional,
@@ -15,9 +16,6 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 
 from .base_descriptor import (
     BaseDescriptor,
@@ -25,6 +23,11 @@ from .base_descriptor import (
 from .se_atten import (
     DescrptBlockSeAtten,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("dpa1")
@@ -184,7 +187,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def compute_input_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        path: Optional["DPPath"] = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

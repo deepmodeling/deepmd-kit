@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Dict,
@@ -27,12 +28,14 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("hybrid")
@@ -157,7 +160,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional["DPPath"] = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
@@ -414,7 +417,7 @@ class DescrptBlockHybrid(DescriptorBlock):
     def compute_input_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        path: Optional["DPPath"] = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

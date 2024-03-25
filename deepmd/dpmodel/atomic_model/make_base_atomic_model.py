@@ -4,18 +4,21 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
 )
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 def make_base_atomic_model(
@@ -38,11 +41,11 @@ def make_base_atomic_model(
         """Base Atomic Model provides the interfaces of an atomic model."""
 
         @abstractmethod
-        def fitting_output_def(self) -> FittingOutputDef:
+        def fitting_output_def(self) -> "FittingOutputDef":
             """Get the output def of developer implemented atomic models."""
             pass
 
-        def atomic_output_def(self) -> FittingOutputDef:
+        def atomic_output_def(self) -> "FittingOutputDef":
             """Get the output def of the atomic model.
 
             By default it is the same as FittingOutputDef, but it

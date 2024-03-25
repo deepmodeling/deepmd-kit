@@ -4,10 +4,8 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from enum import (
-    Enum,
-)
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -39,14 +37,8 @@ from deepmd.tf.fit.fitting import (
 from deepmd.tf.fit.polar import (
     PolarFittingSeA,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.utils.argcheck import (
     type_embedding_args,
-)
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
 )
 from deepmd.tf.utils.graph import (
     load_graph_def,
@@ -66,6 +58,18 @@ from deepmd.utils.plugin import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from enum import (
+        Enum,
+    )
+
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 class Model(ABC, make_plugin_registry("model")):
@@ -166,7 +170,7 @@ class Model(ABC, make_plugin_registry("model")):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: Optional[Union[bool, "Enum"]] = None,
     ):
         """Build the model.
 
@@ -234,7 +238,7 @@ class Model(ABC, make_plugin_registry("model")):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: Optional[Union[bool, "Enum"]] = None,
     ):
         """Build the descriptor part of the model.
 
@@ -322,7 +326,7 @@ class Model(ABC, make_plugin_registry("model")):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: Optional[Union[bool, "Enum"]] = None,
     ) -> tf.Tensor:
         """Build the type embedding part of the model.
 
@@ -404,7 +408,7 @@ class Model(ABC, make_plugin_registry("model")):
 
     def change_energy_bias(
         self,
-        data: DeepmdDataSystem,
+        data: "DeepmdDataSystem",
         frozen_model: str,
         origin_type_map: list,
         full_type_map: str,
@@ -457,7 +461,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Optional[Union["Loss", dict]]:
         """Get the loss function(s)."""
 
     @abstractmethod
@@ -734,7 +738,7 @@ class StandardModel(Model):
         """Get the fitting(s)."""
         return self.fitting
 
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Union["Loss", dict]:
         """Get the loss function(s)."""
         return self.fitting.get_loss(loss, lr)
 

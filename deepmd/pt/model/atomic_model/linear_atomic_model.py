@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -21,9 +22,6 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -37,6 +35,11 @@ from .dp_atomic_model import (
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
@@ -391,7 +394,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ):
         """
         Compute or load the statistics parameters of the model,

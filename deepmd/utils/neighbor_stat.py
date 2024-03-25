@@ -6,15 +6,17 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Iterator,
     Tuple,
 )
 
 import numpy as np
 
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
+if TYPE_CHECKING:
+    from deepmd.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +48,7 @@ class NeighborStat(ABC):
         self.ntypes = ntypes
         self.mixed_type = mixed_type
 
-    def get_stat(self, data: DeepmdDataSystem) -> Tuple[float, np.ndarray]:
+    def get_stat(self, data: "DeepmdDataSystem") -> Tuple[float, np.ndarray]:
         """Get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
 
         Parameters
@@ -89,7 +91,7 @@ class NeighborStat(ABC):
 
     @abstractmethod
     def iterator(
-        self, data: DeepmdDataSystem
+        self, data: "DeepmdDataSystem"
     ) -> Iterator[Tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 

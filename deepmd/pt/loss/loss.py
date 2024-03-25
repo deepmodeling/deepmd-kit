@@ -4,14 +4,16 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     List,
 )
 
 import torch
 
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
+if TYPE_CHECKING:
+    from deepmd.utils.data import (
+        DataRequirementItem,
+    )
 
 
 class TaskLoss(torch.nn.Module, ABC):
@@ -25,7 +27,7 @@ class TaskLoss(torch.nn.Module, ABC):
 
     @property
     @abstractmethod
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> List["DataRequirementItem"]:
         """Return data label requirements needed for this loss calculation."""
         pass
 

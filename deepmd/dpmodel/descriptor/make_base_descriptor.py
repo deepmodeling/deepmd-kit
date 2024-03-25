@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
     List,
     Optional,
@@ -13,13 +14,15 @@ from typing import (
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 def make_base_descriptor(
@@ -98,7 +101,7 @@ def make_base_descriptor(
         def compute_input_stats(
             self,
             merged: Union[Callable[[], List[dict]], List[dict]],
-            path: Optional[DPPath] = None,
+            path: Optional["DPPath"] = None,
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError

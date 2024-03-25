@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
 )
@@ -22,9 +23,6 @@ from deepmd.tf.fit.fitting import (
 )
 from deepmd.tf.loss.dos import (
     DOSLoss,
-)
-from deepmd.tf.loss.loss import (
-    Loss,
 )
 from deepmd.tf.nvnmd.fit.ener import (
     one_layer_nvnmd,
@@ -49,6 +47,11 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -642,7 +645,7 @@ class DOSFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr) -> "Loss":
         """Get the loss function.
 
         Parameters

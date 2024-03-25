@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Iterator,
     Optional,
     Tuple,
@@ -17,10 +18,12 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.nlist import (
     extend_coord_with_ghosts,
 )
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
+
+if TYPE_CHECKING:
+    from deepmd.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 class NeighborStatOP(torch.nn.Module):
@@ -138,7 +141,7 @@ class NeighborStat(BaseNeighborStat):
         self.auto_batch_size = AutoBatchSize()
 
     def iterator(
-        self, data: DeepmdDataSystem
+        self, data: "DeepmdDataSystem"
     ) -> Iterator[Tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 

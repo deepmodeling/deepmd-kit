@@ -4,15 +4,18 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Type,
 )
 
 from deepmd.utils.data_system import (
     get_data,
 )
-from deepmd.utils.neighbor_stat import (
-    NeighborStat,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.neighbor_stat import (
+        NeighborStat,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -158,7 +161,7 @@ class BaseUpdateSel:
 
     @property
     @abstractmethod
-    def neighbor_stat(self) -> Type[NeighborStat]:
+    def neighbor_stat(self) -> Type["NeighborStat"]:
         pass
 
     @abstractmethod

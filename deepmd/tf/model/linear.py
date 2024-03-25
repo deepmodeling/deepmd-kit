@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from enum import (
-    Enum,
-)
 from functools import (
     lru_cache,
 )
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Union,
@@ -16,16 +14,22 @@ from deepmd.tf.env import (
     MODEL_VERSION,
     tf,
 )
-from deepmd.tf.fit.fitting import (
-    Fitting,
-)
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 
 from .model import (
     Model,
 )
+
+if TYPE_CHECKING:
+    from enum import (
+        Enum,
+    )
+
+    from deepmd.tf.fit.fitting import (
+        Fitting,
+    )
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 class LinearModel(Model):
@@ -57,13 +61,13 @@ class LinearModel(Model):
         else:
             raise ValueError(f"Invalid weights {weights}")
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Union["Fitting", dict]:
         """Get the fitting(s)."""
         return {
             f"model{ii}": model.get_fitting() for ii, model in enumerate(self.models)
         }
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Optional[Union["Loss", dict]]:
         """Get the loss function(s)."""
         # the first model that is not None, or None if all models are None
         for model in self.models:
@@ -163,7 +167,7 @@ class LinearEnergyModel(LinearModel):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: Optional[Union[bool, "Enum"]] = None,
     ) -> dict:
         """Build the model.
 

@@ -23,12 +23,13 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
 )
-from deepmd.utils.batch_size import (
-    AutoBatchSize,
-)
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+    from deepmd.utils.batch_size import (
+        AutoBatchSize,
+    )
 
 
 class DeepEvalBackend(ABC):
@@ -83,7 +84,7 @@ class DeepEvalBackend(ABC):
         model_file: str,
         output_def: ModelOutputDef,
         *args: List[Any],
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: Union[bool, int, "AutoBatchSize"] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Dict[str, Any],
     ) -> None:
@@ -317,7 +318,7 @@ class DeepEval(ABC):
         self,
         model_file: str,
         *args: List[Any],
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: Union[bool, int, "AutoBatchSize"] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Dict[str, Any],
     ) -> None:

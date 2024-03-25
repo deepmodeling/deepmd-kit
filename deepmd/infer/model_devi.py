@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Optional,
     Tuple,
     overload,
@@ -17,10 +18,15 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
+if TYPE_CHECKING:
+    from typing_extensions import (
+        Literal,
+    )
+
 try:
     from typing import Literal  # python >=3.8
 except ImportError:
-    from typing_extensions import Literal  # type: ignore
+    pass  # type: ignore
 
 
 @overload
@@ -28,7 +34,7 @@ def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    atomic: Literal[False] = False,
+    atomic: "Literal[False]" = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
@@ -38,7 +44,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     *,
-    atomic: Literal[True],
+    atomic: "Literal[True]",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
 
 
