@@ -63,6 +63,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
                         sys_stat[dd].append(stat_data[dd])
                     elif isinstance(stat_data[dd], np.float32):
                         sys_stat[dd] = stat_data[dd]
+                    else:
+                        pass
 
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
