@@ -81,6 +81,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         else:
             self.tab_info, self.tab_data = None, None
 
+        self.bias_atom_e = np.zeros(
+            (self.ntypes, 1), dtype=np.float64
+        )
+
         if isinstance(sel, int):
             self.sel = sel
         elif isinstance(sel, list):
