@@ -194,7 +194,7 @@ class PolarFittingNet(GeneralFitting):
                 ),
             ]
         )
-    
+
     # need to remove this and update UT test_polar_stat.py
     def compute_output_stats(
         self,

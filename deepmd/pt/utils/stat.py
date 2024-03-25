@@ -287,7 +287,7 @@ def compute_output_stats_with_atomic(
         file_label_name = "constant_matrix"
     else:
         raise NotImplementedError
-    
+
     if stat_file_path is not None:
         stat_file_path = stat_file_path / file_label_name
     if stat_file_path is not None and stat_file_path.is_file():
