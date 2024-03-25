@@ -187,7 +187,6 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # self.assertEqual(md3.get_type_map(), ["foo", "bar"])
 
 
-
 class TestRemmapMethod(unittest.TestCase):
     def test_valid(self):
         atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)

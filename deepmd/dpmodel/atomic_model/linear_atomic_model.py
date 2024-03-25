@@ -68,9 +68,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         ntypes = len(self.type_map)
         # a placeholder for storing weighted bias.
-        self.atomic_bias = np.zeros((ntypes, 1),dtype=np.float64)
+        self.atomic_bias = np.zeros((ntypes, 1), dtype=np.float64)
         super().__init__(**kwargs)
-
 
     def mixed_types(self) -> bool:
         """If true, the model
