@@ -227,8 +227,6 @@ class TestModel(tf.test.TestCase):
             ),
         ]
 
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
