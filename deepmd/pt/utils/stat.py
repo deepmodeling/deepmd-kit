@@ -61,12 +61,15 @@ def make_stat_input(datasets, dataloaders, nbatches):
                         if dd not in sys_stat:
                             sys_stat[dd] = []
                         sys_stat[dd].append(stat_data[dd])
-                    else:
-                        pass
+                    elif isinstance(stat_data[dd], np.float32):
+                        sys_stat[dd] = stat_data[dd]
+
         for key in sys_stat:
-            if sys_stat[key] is None or sys_stat[key][0] is None:
+            if isinstance(sys_stat[key], np.float32):
+                sys_stat[key] = torch.ones(1) * sys_stat[key]
+            elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
-            else:
+            elif isinstance(stat_data[dd], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
