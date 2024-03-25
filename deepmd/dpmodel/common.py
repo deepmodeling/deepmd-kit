@@ -6,6 +6,9 @@ from abc import (
 
 import numpy as np
 
+from deepmd.common import (
+    VALID_PRECISION,
+)
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -21,7 +24,11 @@ PRECISION_DICT = {
     "int32": np.int32,
     "int64": np.int64,
     "default": GLOBAL_NP_FLOAT_PRECISION,
+    # NumPy doesn't have bfloat16 (and does't plan to add). Use float32 as a substitute.
+    "bfloat16": np.float32,
 }
+assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
+
 RESERVED_PRECISON_DICT = {
     np.float16: "float16",
     np.float32: "float32",
@@ -29,6 +36,7 @@ RESERVED_PRECISON_DICT = {
     np.int32: "int32",
     np.int64: "int64",
 }
+assert set(RESERVED_PRECISON_DICT.keys()) == set(PRECISION_DICT.values())
 DEFAULT_PRECISION = "float64"
 
 
