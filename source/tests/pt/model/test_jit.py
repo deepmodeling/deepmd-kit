@@ -20,6 +20,7 @@ from deepmd.pt.infer import (
 )
 
 from .test_permutation import (
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
@@ -42,6 +43,8 @@ class JITTest:
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+            if f in ["checkpoint"]:
+                os.remove(f)
 
 
 class TestEnergyModelSeA(unittest.TestCase, JITTest):
@@ -53,6 +56,22 @@ class TestEnergyModelSeA(unittest.TestCase, JITTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 10
+        self.config["training"]["save_freq"] = 10
+
+    def tearDown(self):
+        JITTest.tearDown(self)
+
+
+class TestDOSModelSeA(unittest.TestCase, JITTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent.parent / "dos/input.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent.parent / "dos/data/global_system")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dos)
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
