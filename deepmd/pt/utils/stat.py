@@ -284,14 +284,14 @@ def compute_output_stats_atomic(
     elif "polarizability" in keys or "atomic_polarizability" in keys:
         atomic_label_name = "atomic_polarizability"
         global_label_name = "polarizability"
-        file_label_name = "bias_polar"
+        file_label_name = "constant_matrix"
     else:
         raise NotImplementedError
     
     if stat_file_path is not None:
         stat_file_path = stat_file_path / file_label_name
     if stat_file_path is not None and stat_file_path.is_file():
-        bias_dos = stat_file_path.load_numpy()
+        total_bias = stat_file_path.load_numpy()
     else:
         if callable(merged):
             # only get data for once
@@ -349,8 +349,9 @@ def compute_output_stats_atomic(
                         bias_diff,
                         system["atype"].numpy(force=True),
                     )[0]
-                total_bias.append(sys_bias)
             else:
+                if not system["find_" + global_label_name] > 0.0:
+                    continue
                 sys_type_count = np.zeros(
                     (nframs, ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
                 )
@@ -367,9 +368,23 @@ def compute_output_stats_atomic(
                     sys_bias = compute_stats_from_redu(
                         bias_diff, sys_type_count, rcond=rcond
                     )[0]
-                total_bias.append(sys_bias)
 
-        total_bias = np.stack(sys_bias).mean(axis=0)
+            if global_label_name == "dos":
+                total_bias.append(sys_bias)
+            elif global_label_name == "polarizability":
+                cur_constant_matrix = np.zeros(
+                    ntypes, dtype=env.GLOBAL_NP_FLOAT_PRECISION
+                )
+
+                for itype in range(ntypes):
+                    cur_constant_matrix[itype] = np.mean(
+                        np.diagonal(sys_bias[itype].reshape(3, 3))
+                    )
+                total_bias.append(cur_constant_matrix)
+            else:
+                raise NotImplementedError
+        total_bias = np.stack(total_bias).mean(axis=0)
+        total_bias = np.nan_to_num(total_bias)
         if stat_file_path is not None:
             stat_file_path.save_numpy(total_bias)
     return to_torch_tensor(total_bias)
