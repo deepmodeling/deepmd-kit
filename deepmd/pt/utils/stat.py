@@ -285,7 +285,9 @@ def compute_output_stats_atomic(
         atomic_label_name = "atomic_polarizability"
         global_label_name = "polarizability"
         file_label_name = "bias_polar"
-
+    else:
+        raise NotImplementedError
+    
     if stat_file_path is not None:
         stat_file_path = stat_file_path / file_label_name
     if stat_file_path is not None and stat_file_path.is_file():
