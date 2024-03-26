@@ -14,6 +14,10 @@ from dargs import (
     dargs,
 )
 
+from deepmd.common import (
+    VALID_ACTIVATION,
+    VALID_PRECISION,
+)
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
@@ -24,26 +28,8 @@ from deepmd.utils.plugin import (
 log = logging.getLogger(__name__)
 
 
-# TODO: import from a module outside tf/pt
-ACTIVATION_FN_DICT = {
-    "relu": None,
-    "relu6": None,
-    "softplus": None,
-    "sigmoid": None,
-    "tanh": None,
-    "gelu": None,
-    "gelu_tf": None,
-    "None": None,
-    "none": None,
-}
-# TODO: import from a module outside tf/pt
-PRECISION_DICT = {
-    "default": None,
-    "float16": None,
-    "float32": None,
-    "float64": None,
-    "bfloat16": None,
-}
+ACTIVATION_FN_DICT = dict.fromkeys(VALID_ACTIVATION)
+PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
