@@ -116,6 +116,10 @@ def dict_to_device(sample_dict):
     for key in sample_dict:
         if isinstance(sample_dict[key], list):
             sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]
+        if isinstance(sample_dict[key], np.float32):
+            sample_dict[key] = (
+                torch.ones(1, dtype=torch.float32, device=DEVICE) * sample_dict[key]
+            )
         else:
             if sample_dict[key] is not None:
                 sample_dict[key] = sample_dict[key].to(DEVICE)
