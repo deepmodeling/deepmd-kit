@@ -24,7 +24,10 @@ PRECISION_DICT = {
     "int32": np.int32,
     "int64": np.int64,
     "default": GLOBAL_NP_FLOAT_PRECISION,
-    # NumPy doesn't have bfloat16 (and does't plan to add). Use float32 as a substitute.
+    # NumPy doesn't have bfloat16 (and does't plan to add)
+    # ml_dtypes is a solution, but it seems not supporting np.save/np.load
+    # hdf5 hasn't supported bfloat16 as well (see https://forum.hdfgroup.org/t/11975)
+    # Use float32 as a substitute.
     "bfloat16": np.float32,
 }
 assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
