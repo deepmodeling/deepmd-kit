@@ -51,6 +51,11 @@ class DOSModel(DPModel):
         return model_predict
 
     @torch.jit.export
+    def get_numb_dos(self) -> int:
+        """Get the number of  DOS for DOSFittingNet."""
+        return self.get_fitting_net().dim_out
+
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,

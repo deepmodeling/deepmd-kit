@@ -86,7 +86,7 @@ class TensorModel(StandardModel):
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection=self.data_stat_protect)
-        self._compute_output_stat(all_stat)
+        self._compute_output_stat(m_all_stat)
 
     def _compute_input_stat(self, all_stat, protection=1e-2):
         self.descrpt.compute_input_stats(

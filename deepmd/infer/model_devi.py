@@ -303,7 +303,7 @@ def calc_model_devi(
     energies = []
     forces = []
     virials = []
-    natom = atype.shape[-1]
+    natom = np.array(atype).shape[-1]
     for dp in models:
         ret = dp.eval(
             coord,
