@@ -86,6 +86,8 @@ def to_numpy_array(
     prec = NP_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    if xx.dtype == torch.bfloat16:
+        xx = xx.float()
     return xx.detach().cpu().numpy().astype(prec)
 
 

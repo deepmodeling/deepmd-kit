@@ -30,6 +30,7 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.utils import (
     ActivationFn,
+    to_numpy_array,
 )
 
 try:
@@ -151,9 +152,9 @@ class MLPLayer(nn.Module):
             precision=self.precision,
         )
         nl.w, nl.b, nl.idt = (
-            self.matrix.detach().cpu().numpy(),
-            self.bias.detach().cpu().numpy() if self.bias is not None else None,
-            self.idt.detach().cpu().numpy() if self.idt is not None else None,
+            to_numpy_array(self.matrix),
+            to_numpy_array(self.bias),
+            to_numpy_array(self.idt),
         )
         return nl.serialize()
 
