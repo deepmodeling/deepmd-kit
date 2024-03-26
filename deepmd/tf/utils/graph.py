@@ -190,11 +190,10 @@ def get_embedding_net_variables_from_graph_def(
     Dict
         The embedding net variables within the given tf.GraphDef object
     """
-    embedding_net_variables = {}
     embedding_net_nodes = get_embedding_net_nodes_from_graph_def(
         graph_def, suffix=suffix
     )
-    return convert_tensor_to_ndarray_in_dict(embedding_net_variables)
+    return convert_tensor_to_ndarray_in_dict(embedding_net_nodes)
 
 
 def get_extra_embedding_net_suffix(type_one_side: bool):
