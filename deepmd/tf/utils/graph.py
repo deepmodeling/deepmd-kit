@@ -98,30 +98,6 @@ def get_tensor_by_name(model_file: str, tensor_name: str) -> tf.Tensor:
     return get_tensor_by_name_from_graph(graph, tensor_name)
 
 
-def get_tensor_by_type(node, data_type: np.dtype) -> tf.Tensor:
-    """Get the tensor value within the given node according to the input data_type.
-
-    Parameters
-    ----------
-    node
-        The given tensorflow graph node
-    data_type
-        The data type of the node
-
-    Returns
-    -------
-    tf.Tensor
-        The tensor value of the given node
-    """
-    if data_type == np.float64:
-        tensor = np.array(node.double_val)
-    elif data_type == np.float32:
-        tensor = np.array(node.float_val)
-    else:
-        raise RuntimeError("model compression does not support the half precision")
-    return tensor
-
-
 def get_pattern_nodes_from_graph_def(graph_def: tf.GraphDef, pattern: str) -> Dict:
     """Get the pattern nodes with the given tf.GraphDef object.
 
@@ -214,22 +190,10 @@ def get_embedding_net_variables_from_graph_def(
     Dict
         The embedding net variables within the given tf.GraphDef object
     """
-    embedding_net_variables = {}
     embedding_net_nodes = get_embedding_net_nodes_from_graph_def(
         graph_def, suffix=suffix
     )
-    for item in embedding_net_nodes:
-        node = embedding_net_nodes[item]
-        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(
-                node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
-            )
-        else:
-            tensor_value = get_tensor_by_type(node, dtype)
-        embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
-    return embedding_net_variables
+    return convert_tensor_to_ndarray_in_dict(embedding_net_nodes)
 
 
 def get_extra_embedding_net_suffix(type_one_side: bool):
@@ -268,16 +232,7 @@ def get_variables_from_graph_def_as_numpy_array(graph_def: tf.GraphDef, pattern:
         The numpy array of the variable
     """
     node = get_pattern_nodes_from_graph_def(graph_def, pattern)[pattern]
-    dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-    tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-    if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-        tensor_value = np.frombuffer(
-            node.tensor_content,
-            dtype=tf.as_dtype(node.dtype).as_numpy_dtype,
-        )
-    else:
-        tensor_value = get_tensor_by_type(node, dtype)
-    return np.reshape(tensor_value, tensor_shape)
+    return tf.make_ndarray(node)
 
 
 def get_extra_embedding_net_variables_from_graph_def(
@@ -403,20 +358,8 @@ def get_fitting_net_variables_from_graph_def(
     Dict
         The fitting net variables within the given tf.GraphDef object
     """
-    fitting_net_variables = {}
     fitting_net_nodes = get_fitting_net_nodes_from_graph_def(graph_def, suffix=suffix)
-    for item in fitting_net_nodes:
-        node = fitting_net_nodes[item]
-        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(
-                node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
-            )
-        else:
-            tensor_value = get_tensor_by_type(node, dtype)
-        fitting_net_variables[item] = np.reshape(tensor_value, tensor_shape)
-    return fitting_net_variables
+    return convert_tensor_to_ndarray_in_dict(fitting_net_nodes)
 
 
 def get_fitting_net_variables(model_file: str, suffix: str = "") -> Dict:
@@ -487,22 +430,10 @@ def get_type_embedding_net_variables_from_graph_def(
     Dict
         The embedding net variables within the given tf.GraphDef object
     """
-    type_embedding_net_variables = {}
     type_embedding_net_nodes = get_type_embedding_net_nodes_from_graph_def(
         graph_def, suffix=suffix
     )
-    for item in type_embedding_net_nodes:
-        node = type_embedding_net_nodes[item]
-        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(
-                node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
-            )
-        else:
-            tensor_value = get_tensor_by_type(node, dtype)
-        type_embedding_net_variables[item] = np.reshape(tensor_value, tensor_shape)
-    return type_embedding_net_variables
+    return convert_tensor_to_ndarray_in_dict(type_embedding_net_nodes)
 
 
 def get_attention_layer_nodes_from_graph_def(
@@ -556,19 +487,27 @@ def get_attention_layer_variables_from_graph_def(
     Dict
         The attention layer variables within the given tf.GraphDef object
     """
-    attention_layer_variables = {}
     attention_layer_net_nodes = get_attention_layer_nodes_from_graph_def(
         graph_def, suffix=suffix
     )
-    for item in attention_layer_net_nodes:
-        node = attention_layer_net_nodes[item]
-        dtype = tf.as_dtype(node.dtype).as_numpy_dtype
-        tensor_shape = tf.TensorShape(node.tensor_shape).as_list()
-        if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-            tensor_value = np.frombuffer(
-                node.tensor_content, dtype=tf.as_dtype(node.dtype).as_numpy_dtype
-            )
-        else:
-            tensor_value = get_tensor_by_type(node, dtype)
-        attention_layer_variables[item] = np.reshape(tensor_value, tensor_shape)
-    return attention_layer_variables
+    return convert_tensor_to_ndarray_in_dict(attention_layer_net_nodes)
+
+
+def convert_tensor_to_ndarray_in_dict(
+    tensor_dict: Dict[str, tf.Tensor],
+) -> Dict[str, np.ndarray]:
+    """Convert tensor to ndarray in dict.
+
+    Parameters
+    ----------
+    tensor_dict : Dict[str, tf.Tensor]
+        The input tensor dict
+
+    Returns
+    -------
+    Dict[str, np.ndarray]
+        The converted tensor dict
+    """
+    for key in tensor_dict:
+        tensor_dict[key] = tf.make_ndarray(tensor_dict[key])
+    return tensor_dict
