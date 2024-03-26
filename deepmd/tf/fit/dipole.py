@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
 )
@@ -17,9 +18,6 @@ from deepmd.tf.env import (
 from deepmd.tf.fit.fitting import (
     Fitting,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.loss.tensor import (
     TensorLoss,
 )
@@ -33,6 +31,11 @@ from deepmd.tf.utils.network import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 @Fitting.register("dipole")
@@ -327,7 +330,7 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr) -> "Loss":
         """Get the loss function.
 
         Parameters

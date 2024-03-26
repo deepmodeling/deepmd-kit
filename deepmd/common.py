@@ -24,7 +24,7 @@ from typing import (
 try:
     from typing import Literal  # python >=3.8
 except ImportError:
-    from typing_extensions import Literal  # type: ignore
+    pass  # type: ignore
 
 import numpy as np
 import yaml
@@ -49,6 +49,10 @@ __all__ = [
 
 
 if TYPE_CHECKING:
+    from typing_extensions import (
+        Literal,
+    )
+
     _DICT_VAL = TypeVar("_DICT_VAL")
     _PRECISION = Literal["default", "float16", "float32", "float64"]
     _ACTIVATION = Literal[

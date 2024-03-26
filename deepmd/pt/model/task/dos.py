@@ -2,6 +2,7 @@
 import copy
 import logging
 from typing import (
+    TYPE_CHECKING,
     Callable,
     List,
     Optional,
@@ -34,12 +35,14 @@ from deepmd.utils.out_stat import (
     compute_stats_from_atomic,
     compute_stats_from_redu,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -108,7 +111,7 @@ class DOSFittingNet(InvarFitting):
     def compute_output_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ) -> None:
         """
         Compute the output statistics (e.g. dos bias) for the fitting net from packed data.

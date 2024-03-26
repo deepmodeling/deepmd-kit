@@ -34,9 +34,6 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
-from deepmd.infer.deep_wfc import (
-    DeepWFC,
-)
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DeepmdData,
@@ -46,15 +43,11 @@ from deepmd.utils.weight_avg import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.tf.infer import (
-        DeepDipole,
-        DeepDOS,
-        DeepPolar,
-        DeepPot,
-        DeepWFC,
-    )
-    from deepmd.tf.infer.deep_tensor import (
+    from deepmd.infer.deep_tensor import (
         DeepTensor,
+    )
+    from deepmd.infer.deep_wfc import (
+        DeepWFC,
     )
 
 __all__ = ["test"]

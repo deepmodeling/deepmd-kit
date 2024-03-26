@@ -9,9 +9,6 @@ from deepmd.dpmodel.utils.update_sel import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -23,6 +20,7 @@ except ImportError:
 
 import copy
 from typing import (
+    TYPE_CHECKING,
     Any,
     List,
     Optional,
@@ -44,6 +42,11 @@ from deepmd.dpmodel.utils import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("se_e2_a")
@@ -261,7 +264,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: List[dict], path: Optional["DPPath"] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 

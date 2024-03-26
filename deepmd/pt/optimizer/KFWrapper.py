@@ -1,20 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from torch.optim.optimizer import (
-    Optimizer,
-)
+
+if TYPE_CHECKING:
+    from torch.optim.optimizer import (
+        Optimizer,
+    )
 
 
 class KFOptimizerWrapper:
     def __init__(
         self,
         model: nn.Module,
-        optimizer: Optimizer,
+        optimizer: "Optimizer",
         atoms_selected: int,
         atoms_per_group: int,
         is_distributed: bool = False,

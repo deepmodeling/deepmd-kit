@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
 )
@@ -50,9 +51,6 @@ from deepmd.tf.model.model import (
     Model,
 )
 from deepmd.tf.utils import random as dp_random
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.tf.utils.errors import (
     GraphTooLargeError,
     GraphWithoutTensorError,
@@ -74,6 +72,11 @@ log = logging.getLogger(__name__)
 from deepmd.tf.nvnmd.utils.config import (
     nvnmd_cfg,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 def _is_subdir(path, directory):
@@ -1199,7 +1202,7 @@ class DatasetLoader:
     >>> data_dict = loader.get_data_dict(data_list)
     """
 
-    def __init__(self, train_data: DeepmdDataSystem):
+    def __init__(self, train_data: "DeepmdDataSystem"):
         self.train_data = train_data
         # get the keys of the data
         batch_data = self.train_data.get_batch()

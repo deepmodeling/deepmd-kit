@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Optional,
     overload,
 )
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -15,6 +15,9 @@ from .env import (
     DEVICE,
 )
 from .env import PRECISION_DICT as PT_PRECISION_DICT
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 def get_activation_fn(activation: str) -> Callable:
@@ -65,7 +68,7 @@ class ActivationFn(torch.nn.Module):
 
 
 @overload
-def to_numpy_array(xx: torch.Tensor) -> np.ndarray: ...
+def to_numpy_array(xx: torch.Tensor) -> "np.ndarray": ...
 
 
 @overload
@@ -89,7 +92,7 @@ def to_numpy_array(
 
 
 @overload
-def to_torch_tensor(xx: np.ndarray) -> torch.Tensor: ...
+def to_torch_tensor(xx: "np.ndarray") -> torch.Tensor: ...
 
 
 @overload

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -16,17 +17,11 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.model.model import (
     Model,
 )
 from deepmd.tf.utils.graph import (
     load_graph_def,
-)
-from deepmd.tf.utils.spin import (
-    Spin,
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
@@ -34,6 +29,14 @@ from deepmd.tf.utils.type_embed import (
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 
 @Model.register("pairwise_dprc")
@@ -55,7 +58,7 @@ class PairwiseDPRc(Model):
         smin_alpha: Optional[float] = None,
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
-        spin: Optional[Spin] = None,
+        spin: Optional["Spin"] = None,
         compress: Optional[dict] = None,
         **kwargs,
     ) -> None:
@@ -303,7 +306,7 @@ class PairwiseDPRc(Model):
             "qmmm": self.qmmm_model.get_fitting(),
         }
 
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Union["Loss", dict]:
         """Get the loss function(s)."""
         return self.qm_model.get_loss(loss, lr)
 

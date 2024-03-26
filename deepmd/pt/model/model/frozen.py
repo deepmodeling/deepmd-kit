@@ -2,6 +2,7 @@
 import json
 import tempfile
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -9,15 +10,17 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.entrypoints.convert_backend import (
     convert_backend,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 @BaseModel.register("frozen")
@@ -42,7 +45,7 @@ class FrozenModel(BaseModel):
                 self.model = torch.jit.load(f.name)
 
     @torch.jit.export
-    def fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> "FittingOutputDef":
         """Get the output def of developer implemented atomic models."""
         return self.model.fitting_output_def()
 

@@ -3,6 +3,7 @@
 
 import logging
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -33,9 +34,11 @@ from deepmd.pt.utils.stat import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -227,7 +230,7 @@ class BaseAtomicModel(BaseAtomicModel_):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ):
         """
         Compute or load the statistics parameters of the model,

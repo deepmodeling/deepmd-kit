@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -14,9 +15,6 @@ from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
 )
-from deepmd.tf.utils.spin import (
-    Spin,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -30,6 +28,11 @@ from deepmd.utils.version import (
 from .descriptor import (
     Descriptor,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 
 @Descriptor.register("hybrid")
@@ -48,7 +51,7 @@ class DescrptHybrid(Descriptor):
         list: List[Union[Descriptor, Dict[str, Any]]],
         multi_task: bool = False,
         ntypes: Optional[int] = None,
-        spin: Optional[Spin] = None,
+        spin: Optional["Spin"] = None,
         **kwargs,
     ) -> None:
         """Constructor."""

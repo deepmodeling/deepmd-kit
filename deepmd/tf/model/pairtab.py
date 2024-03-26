@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from enum import (
-    Enum,
-)
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Union,
@@ -17,12 +15,6 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.tf.fit.fitting import (
-    Fitting,
-)
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.model.model import (
     Model,
 )
@@ -32,6 +24,18 @@ from deepmd.tf.utils.pair_tab import (
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
+
+if TYPE_CHECKING:
+    from enum import (
+        Enum,
+    )
+
+    from deepmd.tf.fit.fitting import (
+        Fitting,
+    )
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 @Model.register("pairtab")
@@ -87,7 +91,7 @@ class PairTabModel(Model):
         frz_model: Optional[str] = None,
         ckpt_meta: Optional[str] = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: Optional[Union[bool, "Enum"]] = None,
     ):
         """Build the model.
 
@@ -232,12 +236,12 @@ class PairTabModel(Model):
         """
         # skip. table can be initialized from the file
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Union["Fitting", dict]:
         """Get the fitting(s)."""
         # nothing needs to do
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Optional[Union["Loss", dict]]:
         """Get the loss function(s)."""
         # nothing nees to do
         return

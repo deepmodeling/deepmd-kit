@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -9,9 +10,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.atomic_model.base_atomic_model import (
-    BaseAtomicModel,
-)
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -41,8 +39,13 @@ from .transform_output import (
     fit_output_to_model_output,
 )
 
+if TYPE_CHECKING:
+    from deepmd.dpmodel.atomic_model.base_atomic_model import (
+        BaseAtomicModel,
+    )
 
-def make_model(T_AtomicModel: Type[BaseAtomicModel]):
+
+def make_model(T_AtomicModel: Type["BaseAtomicModel"]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.

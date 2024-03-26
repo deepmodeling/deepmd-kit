@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Union,
@@ -9,9 +10,6 @@ from deepmd.tf.env import (
     MODEL_VERSION,
     tf,
 )
-from deepmd.tf.utils.type_embed import (
-    TypeEmbedNet,
-)
 
 from .model import (
     StandardModel,
@@ -20,6 +18,11 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.type_embed import (
+        TypeEmbedNet,
+    )
 
 
 class TensorModel(StandardModel):
@@ -49,7 +52,7 @@ class TensorModel(StandardModel):
         tensor_name: str,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
+        type_embedding: Optional[Union[dict, "TypeEmbedNet"]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,

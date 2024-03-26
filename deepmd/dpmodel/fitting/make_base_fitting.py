@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Dict,
     Optional,
 )
@@ -11,13 +12,15 @@ from typing import (
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 def make_base_fitting(
@@ -45,7 +48,7 @@ def make_base_fitting(
             return super().__new__(cls)
 
         @abstractmethod
-        def output_def(self) -> FittingOutputDef:
+        def output_def(self) -> "FittingOutputDef":
             """Returns the output def of the fitting net."""
             pass
 

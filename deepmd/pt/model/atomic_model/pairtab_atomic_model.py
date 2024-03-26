@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    TYPE_CHECKING,
     Callable,
     Dict,
     List,
@@ -23,9 +24,6 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.pair_tab import (
     PairTab,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -33,6 +31,11 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseAtomicModel.register("pairtab")
@@ -209,7 +212,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     def compute_or_load_stat(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: Optional["DPPath"] = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.

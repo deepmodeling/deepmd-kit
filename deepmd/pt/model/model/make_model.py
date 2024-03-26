@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -18,9 +19,6 @@ from deepmd.dpmodel.output_def import (
     OutputVariableOperation,
     check_operation_applied,
 )
-from deepmd.pt.model.atomic_model.base_atomic_model import (
-    BaseAtomicModel,
-)
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
@@ -38,12 +36,17 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from deepmd.pt.model.atomic_model.base_atomic_model import (
+        BaseAtomicModel,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
-def make_model(T_AtomicModel: Type[BaseAtomicModel]):
+def make_model(T_AtomicModel: Type["BaseAtomicModel"]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -511,7 +514,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def compute_or_load_stat(
             self,
             sampled_func,
-            stat_file_path: Optional[DPPath] = None,
+            stat_file_path: Optional["DPPath"] = None,
         ):
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)

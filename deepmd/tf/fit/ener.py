@@ -30,9 +30,6 @@ from deepmd.tf.loss.ener import (
     EnerSpinLoss,
     EnerStdLoss,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.nvnmd.fit.ener import (
     one_layer_nvnmd,
 )
@@ -50,9 +47,6 @@ from deepmd.tf.utils.network import one_layer as one_layer_deepmd
 from deepmd.tf.utils.network import (
     one_layer_rand_seed_shift,
 )
-from deepmd.tf.utils.spin import (
-    Spin,
-)
 from deepmd.utils.finetune import (
     change_energy_bias_lower,
 )
@@ -64,7 +58,13 @@ from deepmd.utils.version import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
+
 
 log = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ class EnerFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Optional["Spin"] = None,
         mixed_types: bool = False,
         **kwargs,
     ) -> None:
@@ -833,7 +833,7 @@ class EnerFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr) -> "Loss":
         """Get the loss function.
 
         Parameters

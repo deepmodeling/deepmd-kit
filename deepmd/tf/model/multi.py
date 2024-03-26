@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -27,9 +28,6 @@ from deepmd.tf.fit import (
 from deepmd.tf.fit.fitting import (
     Fitting,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.utils.argcheck import (
     type_embedding_args,
 )
@@ -53,6 +51,11 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 @Model.register("multi")
@@ -648,7 +651,7 @@ class MultiModel(Model):
         """Get the fitting(s)."""
         return self.fitting_dict.copy()
 
-    def get_loss(self, loss: dict, lr: dict) -> Dict[str, Loss]:
+    def get_loss(self, loss: dict, lr: dict) -> Dict[str, "Loss"]:
         loss_dict = {}
         for fitting_key in self.fitting_dict:
             loss_param = loss.get(fitting_key, {})

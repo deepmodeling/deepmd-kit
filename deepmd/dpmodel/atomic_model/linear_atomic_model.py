@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -26,12 +27,14 @@ from ..output_def import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .dp_atomic_model import (
-    DPAtomicModel,
-)
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from .dp_atomic_model import (
+        DPAtomicModel,
+    )
 
 
 class LinearEnergyAtomicModel(BaseAtomicModel):
@@ -327,7 +330,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
     def __init__(
         self,
-        dp_model: DPAtomicModel,
+        dp_model: "DPAtomicModel",
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,

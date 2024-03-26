@@ -1,15 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Union,
 )
 
-import numpy as np
-
 from deepmd.infer.deep_tensor import (
     DeepTensor,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class DeepPolar(DeepTensor):
@@ -43,15 +45,15 @@ class DeepGlobalPolar(DeepTensor):
 
     def eval(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        coords: "np.ndarray",
+        cells: Optional["np.ndarray"],
+        atom_types: Union[List[int], "np.ndarray"],
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: Optional["np.ndarray"] = None,
+        aparam: Optional["np.ndarray"] = None,
         mixed_type: bool = False,
         **kwargs: dict,
-    ) -> np.ndarray:
+    ) -> "np.ndarray":
         """Evaluate the model.
 
         Parameters

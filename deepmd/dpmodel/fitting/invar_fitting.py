@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     List,
     Optional,
 )
-
-import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
@@ -24,6 +23,9 @@ from deepmd.utils.version import (
 from .general_fitting import (
     GeneralFitting,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 @GeneralFitting.register("invar")
@@ -119,7 +121,7 @@ class InvarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        bias_atom: Optional[np.ndarray] = None,
+        bias_atom: Optional["np.ndarray"] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
@@ -206,14 +208,14 @@ class InvarFitting(GeneralFitting):
 
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        descriptor: "np.ndarray",
+        atype: "np.ndarray",
+        gr: Optional["np.ndarray"] = None,
+        g2: Optional["np.ndarray"] = None,
+        h2: Optional["np.ndarray"] = None,
+        fparam: Optional["np.ndarray"] = None,
+        aparam: Optional["np.ndarray"] = None,
+    ) -> Dict[str, "np.ndarray"]:
         """Calculate the fitting.
 
         Parameters

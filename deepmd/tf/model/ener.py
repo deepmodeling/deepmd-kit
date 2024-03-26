@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Union,
@@ -13,15 +14,6 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.tf.utils.spin import (
-    Spin,
-)
-from deepmd.tf.utils.type_embed import (
-    TypeEmbedNet,
-)
 
 from .model import (
     StandardModel,
@@ -30,6 +22,17 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
+    from deepmd.tf.utils.type_embed import (
+        TypeEmbedNet,
+    )
 
 
 class EnerModel(StandardModel):
@@ -72,7 +75,7 @@ class EnerModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
+        type_embedding: Optional[Union[dict, "TypeEmbedNet"]] = None,
         type_map: Optional[List[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
@@ -81,7 +84,7 @@ class EnerModel(StandardModel):
         sw_rmin: Optional[float] = None,
         sw_rmax: Optional[float] = None,
         srtab_add_bias: bool = True,
-        spin: Optional[Spin] = None,
+        spin: Optional["Spin"] = None,
         data_bias_nsample: int = 10,
         **kwargs,
     ) -> None:
@@ -482,7 +485,7 @@ class EnerModel(StandardModel):
 
     def change_energy_bias(
         self,
-        data: DeepmdDataSystem,
+        data: "DeepmdDataSystem",
         frozen_model: str,
         origin_type_map: list,
         full_type_map: str,

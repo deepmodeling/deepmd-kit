@@ -3,13 +3,12 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     List,
     Optional,
     Tuple,
     Union,
 )
-
-import numpy as np
 
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -19,6 +18,9 @@ from deepmd.dpmodel.output_def import (
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class DeepTensor(DeepEval):
@@ -42,15 +44,15 @@ class DeepTensor(DeepEval):
 
     def eval(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        coords: "np.ndarray",
+        cells: Optional["np.ndarray"],
+        atom_types: Union[List[int], "np.ndarray"],
         atomic: bool = True,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: Optional["np.ndarray"] = None,
+        aparam: Optional["np.ndarray"] = None,
         mixed_type: bool = False,
         **kwargs: dict,
-    ) -> np.ndarray:
+    ) -> "np.ndarray":
         """Evaluate the model.
 
         Parameters
@@ -111,15 +113,15 @@ class DeepTensor(DeepEval):
 
     def eval_full(
         self,
-        coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: np.ndarray,
+        coords: "np.ndarray",
+        cells: Optional["np.ndarray"],
+        atom_types: "np.ndarray",
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: Optional["np.ndarray"] = None,
+        aparam: Optional["np.ndarray"] = None,
         mixed_type: bool = False,
         **kwargs: dict,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> Tuple["np.ndarray", ...]:
         """Evaluate the model with interface similar to the energy model.
         Will return global tensor, component-wise force and virial
         and optionally atomic tensor and atomic virial.

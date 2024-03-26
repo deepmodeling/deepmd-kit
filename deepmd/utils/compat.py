@@ -3,10 +3,8 @@
 
 import json
 import warnings
-from pathlib import (
-    Path,
-)
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     Optional,
@@ -20,9 +18,16 @@ from deepmd.common import (
     j_must_have,
 )
 
+if TYPE_CHECKING:
+    from pathlib import (
+        Path,
+    )
+
 
 def convert_input_v0_v1(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: Dict[str, Any],
+    warning: bool = True,
+    dump: Optional[Union[str, "Path"]] = None,
 ) -> Dict[str, Any]:
     """Convert input from v0 format to v1.
 
@@ -53,7 +58,7 @@ def convert_input_v0_v1(
     return output
 
 
-def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
+def _warning_input_v0_v1(fname: Optional[Union[str, "Path"]]):
     msg = (
         "It seems that you are using a deepmd-kit input of version 0.x.x, "
         "which is deprecated. we have converted the input to >2.0.0 compatible"
@@ -286,7 +291,9 @@ def remove_decay_rate(jdata: Dict[str, Any]):
 
 
 def convert_input_v1_v2(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: Dict[str, Any],
+    warning: bool = True,
+    dump: Optional[Union[str, "Path"]] = None,
 ) -> Dict[str, Any]:
     tr_cfg = jdata["training"]
     tr_data_keys = {
@@ -322,7 +329,7 @@ def convert_input_v1_v2(
     return jdata
 
 
-def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
+def _warning_input_v1_v2(fname: Optional[Union[str, "Path"]]):
     msg = (
         "It seems that you are using a deepmd-kit input of version 1.x.x, "
         "which is deprecated. we have converted the input to >2.0.0 compatible"
@@ -333,7 +340,9 @@ def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
 
 
 def deprecate_numb_test(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: Dict[str, Any],
+    warning: bool = True,
+    dump: Optional[Union[str, "Path"]] = None,
 ) -> Dict[str, Any]:
     """Deprecate `numb_test` since v2.1. It has taken no effect since v2.0.
 
@@ -371,7 +380,9 @@ def deprecate_numb_test(
 
 
 def update_deepmd_input(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: Dict[str, Any],
+    warning: bool = True,
+    dump: Optional[Union[str, "Path"]] = None,
 ) -> Dict[str, Any]:
     def is_deepmd_v0_input(jdata):
         return "model" not in jdata.keys()

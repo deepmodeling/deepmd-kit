@@ -1,21 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
 )
-
-import numpy as np
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
-)
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -24,6 +20,13 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 @BaseAtomicModel.register("standard")
@@ -55,7 +58,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.type_map = type_map
         super().__init__(**kwargs)
 
-    def fitting_output_def(self) -> FittingOutputDef:
+    def fitting_output_def(self) -> "FittingOutputDef":
         """Get the output def of the fitting net."""
         return self.fitting.output_def()
 
@@ -83,7 +86,7 @@ class DPAtomicModel(BaseAtomicModel):
         """
         return self.descriptor.mixed_types()
 
-    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
+    def set_out_bias(self, out_bias: "np.ndarray", add=False) -> None:
         """
         Modify the output bias for the atomic model.
 
@@ -100,19 +103,19 @@ class DPAtomicModel(BaseAtomicModel):
             out_bias + self.fitting["bias_atom_e"] if add else out_bias
         )
 
-    def get_out_bias(self) -> np.ndarray:
+    def get_out_bias(self) -> "np.ndarray":
         """Return the output bias of the atomic model."""
         return self.fitting["bias_atom_e"]
 
     def forward_atomic(
         self,
-        extended_coord: np.ndarray,
-        extended_atype: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        extended_coord: "np.ndarray",
+        extended_atype: "np.ndarray",
+        nlist: "np.ndarray",
+        mapping: Optional["np.ndarray"] = None,
+        fparam: Optional["np.ndarray"] = None,
+        aparam: Optional["np.ndarray"] = None,
+    ) -> Dict[str, "np.ndarray"]:
         """Models' atomic predictions.
 
         Parameters

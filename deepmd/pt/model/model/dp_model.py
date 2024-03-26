@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Dict,
     Optional,
 )
-
-import torch
 
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
@@ -32,6 +31,9 @@ from deepmd.pt.model.task.polarizability import (
 from .make_model import (
     make_model,
 )
+
+if TYPE_CHECKING:
+    import torch
 
 
 @BaseModel.register("standard")
@@ -108,11 +110,11 @@ class DPModel(make_model(DPAtomicModel)):
         self,
         coord,
         atype,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: Optional["torch.Tensor"] = None,
+        fparam: Optional["torch.Tensor"] = None,
+        aparam: Optional["torch.Tensor"] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, "torch.Tensor"]:
         # directly call the forward_common method when no specific transform rule
         return self.forward_common(
             coord,

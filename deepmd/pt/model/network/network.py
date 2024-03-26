@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Optional,
 )
 
@@ -17,7 +18,7 @@ try:
         Final,
     )
 except ImportError:
-    from torch.jit import Final
+    pass
 
 from functools import (
     partial,
@@ -29,6 +30,11 @@ from deepmd.pt.utils.utils import (
     ActivationFn,
     get_activation_fn,
 )
+
+if TYPE_CHECKING:
+    from torch.jit import (
+        Final,
+    )
 
 
 def Tensor(*shape):
@@ -122,7 +128,7 @@ def checkpoint_sequential(
 
 
 class ResidualLinear(nn.Module):
-    resnet: Final[int]
+    resnet: "Final[int]"
 
     def __init__(self, num_in, num_out, bavg=0.0, stddev=1.0, resnet_dt=False):
         """Construct a residual linear layer.
@@ -160,8 +166,8 @@ class ResidualLinear(nn.Module):
 
 
 class TypeFilter(nn.Module):
-    use_tebd: Final[bool]
-    tebd_mode: Final[str]
+    use_tebd: "Final[bool]"
+    tebd_mode: "Final[str]"
 
     def __init__(
         self,
@@ -277,7 +283,7 @@ class TypeFilter(nn.Module):
 
 
 class SimpleLinear(nn.Module):
-    use_timestep: Final[bool]
+    use_timestep: "Final[bool]"
 
     def __init__(
         self,
@@ -772,7 +778,7 @@ class NeighborWiseAttention(nn.Module):
 
 
 class NeighborWiseAttentionLayer(nn.Module):
-    ffn: Final[bool]
+    ffn: "Final[bool]"
 
     def __init__(
         self,

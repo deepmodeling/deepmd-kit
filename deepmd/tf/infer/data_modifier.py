@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 from typing import (
+    TYPE_CHECKING,
     List,
     Tuple,
 )
@@ -21,12 +22,14 @@ from deepmd.tf.infer.deep_dipole import DeepDipoleOld as DeepDipole
 from deepmd.tf.infer.ewald_recp import (
     EwaldRecp,
 )
-from deepmd.tf.utils.data import (
-    DeepmdData,
-)
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data import (
+        DeepmdData,
+    )
 
 
 class DipoleChargeModifier(DeepDipole):
@@ -400,7 +403,7 @@ class DipoleChargeModifier(DeepDipole):
 
         return all_coord, all_charge, dipole
 
-    def modify_data(self, data: dict, data_sys: DeepmdData) -> None:
+    def modify_data(self, data: dict, data_sys: "DeepmdData") -> None:
         """Modify data.
 
         Parameters
