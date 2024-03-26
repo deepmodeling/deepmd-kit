@@ -5,6 +5,7 @@ from typing import (
     Tuple,
 )
 
+import ml_dtypes
 import numpy as np
 
 from deepmd.tf.env import (
@@ -117,8 +118,12 @@ def get_tensor_by_type(node, data_type: np.dtype) -> tf.Tensor:
         tensor = np.array(node.double_val)
     elif data_type == np.float32:
         tensor = np.array(node.float_val)
+    elif data_type in (np.float16, ml_dtypes.bfloat16):
+        # https://github.com/tensorflow/tensorflow/blob/4c65498c773375c306640e3ccb80722aef72481a/tensorflow/python/framework/tensor_util.py#L681
+        tensor = np.fromiter(node.half_val, dtype=np.uint16)
+        tensor.dtype = data_type
     else:
-        raise RuntimeError("model compression does not support the half precision")
+        raise RuntimeError("Precision not supported!")
     return tensor
 
 
