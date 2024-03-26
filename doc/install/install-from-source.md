@@ -52,6 +52,8 @@ If one does not need the GPU support of DeePMD-kit and is concerned about packag
 pip install --upgrade tensorflow-cpu
 ```
 
+One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
+
 To verify the installation, run
 
 ```bash
@@ -71,6 +73,8 @@ pip install torch
 ```
 
 Follow [PyTorch documentation](https://pytorch.org/get-started/locally/) to install PyTorch built against different CUDA versions or without CUDA.
+
+One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
 
 :::
 
@@ -255,6 +259,7 @@ pip install -U cmake
 
 You must enable at least one backend.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
+We recommend using [conda pacakges](https://docs.deepmodeling.org/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
 
@@ -278,6 +283,13 @@ I assume you have installed the PyTorch (either Python or C++ interface) to `$to
 cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$torch_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 
+You can specify `-DUSE_PT_PYTHON_LIBS=TRUE` to use libtorch from the Python installation,
+but you need to be careful that [PyTorch PyPI packages are still built using `_GLIBCXX_USE_CXX11_ABI=0`](https://github.com/pytorch/pytorch/issues/51039), which may be not compatible with other libraries.
+
+```bash
+cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+
 :::
 
 ::::
@@ -296,6 +308,7 @@ One may add the following arguments to `cmake`:
 | -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt;                                 | Path              | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                           |
 | -DLAMMPS_SOURCE_ROOT=&lt;value&gt;                                           | Path              | -                      | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled.     |
 | -DUSE_TF_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface. |
+| -DUSE_PT_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required). And there's no need for downloading PyTorch's C++ libraries.          |
 | -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;                                   | `TRUE` or `FALSE` | `FALSE`                | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                 |
 | -DCMAKE\_&lt;LANG&gt;\_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str               | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                |
 
