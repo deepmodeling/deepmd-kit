@@ -40,7 +40,7 @@ from deepmd.utils.argcheck import (
 
 @parameterized(
     (True, False),  # resnet_dt
-    ("bfloat16",),  # precision
+    ("float64", "float32", "bfloat16"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
     ([], [-12345.6, None]),  # atom_ener
