@@ -11,7 +11,6 @@ import torch
 import torch.nn.functional as F
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
-from deepmd.dpmodel.common import RESERVED_PRECISON_DICT as NP_RESERVED_PRECISON_DICT
 
 from .env import (
     DEVICE,
@@ -108,9 +107,7 @@ def to_torch_tensor(
         return None
     assert xx is not None
     # Create a reverse mapping of NP_PRECISION_DICT
-    # unsafe considering bfloat16:
-    # reverse_precision_dict = {v: k for k, v in NP_PRECISION_DICT.items()}
-    reverse_precision_dict = NP_RESERVED_PRECISON_DICT
+    reverse_precision_dict = {v: k for k, v in NP_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value
     prec = reverse_precision_dict.get(xx.dtype.type, None)
     prec = PT_PRECISION_DICT.get(prec, None)
