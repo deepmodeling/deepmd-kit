@@ -88,6 +88,7 @@ def to_numpy_array(
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
     if xx.dtype == torch.bfloat16:
+        # https://github.com/pytorch/pytorch/issues/109873
         xx = xx.float()
     return xx.detach().cpu().numpy().astype(prec)
 
@@ -116,6 +117,7 @@ def to_torch_tensor(
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
     if xx.dtype == ml_dtypes.bfloat16:
+        # https://github.com/pytorch/pytorch/issues/109873
         xx = xx.astype(np.float32)
     return torch.tensor(xx, dtype=prec, device=DEVICE)
 
