@@ -146,7 +146,9 @@ def change_finetune_model_params(finetune_model, model_config, model_branch=""):
             model_branch_from=model_branch,
         )
         finetune_links["Default"] = (
-            model_branch if finetune_from_multi_task else "Default"
+            model_config["model_branch_chosen"]
+            if finetune_from_multi_task
+            else "Default"
         )
     else:
         assert model_branch == "", (
