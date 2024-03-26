@@ -31,6 +31,7 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     ActivationFn,
     to_numpy_array,
+    to_torch_tensor,
 )
 
 try:
@@ -181,7 +182,7 @@ class MLPLayer(nn.Module):
 
         def check_load_param(ss):
             return (
-                nn.Parameter(data=torch.tensor(nl[ss], dtype=prec, device=device))
+                nn.Parameter(data=to_torch_tensor(nl[ss]))
                 if nl[ss] is not None
                 else None
             )

@@ -5,6 +5,7 @@ from typing import (
     overload,
 )
 
+import ml_dtypes
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -114,6 +115,8 @@ def to_torch_tensor(
     prec = PT_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    if xx.dtype == ml_dtypes.bfloat16:
+        xx = xx.astype(np.float32)
     return torch.tensor(xx, dtype=prec, device=DEVICE)
 
 

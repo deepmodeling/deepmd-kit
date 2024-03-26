@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 
+import ml_dtypes
 import numpy as np
 
 from deepmd.common import (
@@ -27,8 +28,7 @@ PRECISION_DICT = {
     # NumPy doesn't have bfloat16 (and does't plan to add)
     # ml_dtypes is a solution, but it seems not supporting np.save/np.load
     # hdf5 hasn't supported bfloat16 as well (see https://forum.hdfgroup.org/t/11975)
-    # Use float32 as a substitute.
-    "bfloat16": np.float32,
+    "bfloat16": ml_dtypes.bfloat16,
 }
 assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
 
@@ -38,6 +38,7 @@ RESERVED_PRECISON_DICT = {
     np.float64: "float64",
     np.int32: "int32",
     np.int64: "int64",
+    ml_dtypes.bfloat16: "bfloat16",
 }
 assert set(RESERVED_PRECISON_DICT.keys()) == set(PRECISION_DICT.values())
 DEFAULT_PRECISION = "float64"
