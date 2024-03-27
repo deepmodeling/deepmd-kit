@@ -160,27 +160,6 @@ maxm = 2 * maxl + 1
 type_map = dpdata.periodic_table.ELEMENTS
 
 
-def make_element_embedding_matrix(
-    ename: str,
-) -> np.ndarray:
-    """Compute the embedding of one element."""
-    ret = np.zeros([maxn, maxl, maxm], dtype=np.int32)
-    ele = element(ename)
-    ec = ele.ec
-    occ = ec.spin_occupations()
-    for kk, vv in occ.items():
-        nn = kk[0] - 1
-        ll = lett_to_ln[kk[1]]
-        assert nn < maxn and ll < maxl
-        for ip in range(vv["pairs"]):
-            assert ip < maxm
-            ret[nn, ll, ip] = 2
-        for iu in range(vv["pairs"], vv["pairs"] + vv["unpaired"]):
-            assert iu < maxm
-            ret[nn, ll, iu] = 1
-    return ret
-
-
 def make_empty_list_vec():
     ret = {}
     for kk in conf_keys:
