@@ -47,13 +47,11 @@ void DeepPotPT::init(const std::string& model,
     std::cout << "load model from: " << model << " to gpu " << gpu_rank
               << std::endl;
   }
-   int gpu_num = -1;
+  int gpu_num = -1;
   DPGetDeviceCount(gpu_num);
-  if(gpu_id > gpu_num)
-  {
+  if (gpu_id > gpu_num) {
     throw deepmd::deepmd_exception(
-        "current rank" + gpu_id +
-        "is larger than the number of gpu" + gpu_num);
+        "current rank" + gpu_id + "is larger than the number of gpu" + gpu_num);
   }
   module = torch::jit::load(model, device);
 
