@@ -5,6 +5,7 @@ from typing import (
     overload,
 )
 
+import ml_dtypes
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -85,6 +86,9 @@ def to_numpy_array(
     prec = NP_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    if xx.dtype == torch.bfloat16:
+        # https://github.com/pytorch/pytorch/issues/109873
+        xx = xx.float()
     return xx.detach().cpu().numpy().astype(prec)
 
 
@@ -109,6 +113,9 @@ def to_torch_tensor(
     prec = PT_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    if xx.dtype == ml_dtypes.bfloat16:
+        # https://github.com/pytorch/pytorch/issues/109873
+        xx = xx.astype(np.float32)
     return torch.tensor(xx, dtype=prec, device=DEVICE)
 
 
@@ -116,6 +123,10 @@ def dict_to_device(sample_dict):
     for key in sample_dict:
         if isinstance(sample_dict[key], list):
             sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]
+        if isinstance(sample_dict[key], np.float32):
+            sample_dict[key] = (
+                torch.ones(1, dtype=torch.float32, device=DEVICE) * sample_dict[key]
+            )
         else:
             if sample_dict[key] is not None:
                 sample_dict[key] = sample_dict[key].to(DEVICE)

@@ -17,8 +17,10 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     TypeVar,
     Union,
+    get_args,
 )
 
 try:
@@ -45,23 +47,28 @@ __all__ = [
     "j_loader",
     "expand_sys_str",
     "get_np_precision",
+    "VALID_PRECISION",
+    "VALID_ACTIVATION",
 ]
 
+_PRECISION = Literal["default", "float16", "float32", "float64"]
+_ACTIVATION = Literal[
+    "relu",
+    "relu6",
+    "softplus",
+    "sigmoid",
+    "tanh",
+    "gelu",
+    "gelu_tf",
+    "none",
+    "linear",
+]
+# get_args is new in py38
+VALID_PRECISION: Set[_PRECISION] = set(get_args(_PRECISION))
+VALID_ACTIVATION: Set[_ACTIVATION] = set(get_args(_ACTIVATION))
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
-    _PRECISION = Literal["default", "float16", "float32", "float64"]
-    _ACTIVATION = Literal[
-        "relu",
-        "relu6",
-        "softplus",
-        "sigmoid",
-        "tanh",
-        "gelu",
-        "gelu_tf",
-        "none",
-        "linear",
-    ]
     __all__.extend(
         [
             "_DICT_VAL",

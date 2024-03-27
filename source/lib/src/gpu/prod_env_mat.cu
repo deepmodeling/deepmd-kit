@@ -486,7 +486,6 @@ __global__ void compute_env_mat_a(FPTYPE* em,
             std[type[bid] * ndescrpt + idx_value + ii];
       }
     } else {
-      // TODO: move it to the memset.
       row_descript[idx_value] -= avg[type[bid] * ndescrpt + idx_value] /
                                  std[type[bid] * ndescrpt + idx_value];
     }
@@ -562,7 +561,6 @@ __global__ void compute_env_mat_r(FPTYPE* em,
       row_em[idx_value] = (dd - avg[type[bid] * ndescrpt + idx_value]) /
                           std[type[bid] * ndescrpt + idx_value];
     } else {
-      // TODO: move it to the memset.
       row_em[idx_value] -= avg[type[bid] * ndescrpt + idx_value] /
                            std[type[bid] * ndescrpt + idx_value];
     }
