@@ -76,7 +76,7 @@ def dynamic_metadata(
                 "nvidia-curand-cu11",
                 "nvidia-cusolver-cu11",
                 "nvidia-cusparse-cu11",
-                "nvidia-cudnn-cu11",
+                "nvidia-cudnn-cu11<9",
                 "nvidia-cuda-nvcc-cu11",
             ],
             "cu12": [
@@ -86,7 +86,7 @@ def dynamic_metadata(
                 "nvidia-curand-cu12",
                 "nvidia-cusolver-cu12",
                 "nvidia-cusparse-cu12",
-                "nvidia-cudnn-cu12",
+                "nvidia-cudnn-cu12<9",
                 "nvidia-cuda-nvcc-cu12",
             ],
             "torch": [

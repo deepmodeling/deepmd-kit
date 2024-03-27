@@ -4,6 +4,9 @@ import os
 import numpy as np
 import torch
 
+from deepmd.common import (
+    VALID_PRECISION,
+)
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -40,12 +43,14 @@ PRECISION_DICT = {
     "double": torch.float64,
     "int32": torch.int32,
     "int64": torch.int64,
+    "bfloat16": torch.bfloat16,
 }
 GLOBAL_PT_FLOAT_PRECISION = PRECISION_DICT[np.dtype(GLOBAL_NP_FLOAT_PRECISION).name]
 GLOBAL_PT_ENER_FLOAT_PRECISION = PRECISION_DICT[
     np.dtype(GLOBAL_ENER_FLOAT_PRECISION).name
 ]
 PRECISION_DICT["default"] = GLOBAL_PT_FLOAT_PRECISION
+assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
 # cannot automatically generated
 RESERVED_PRECISON_DICT = {
     torch.float16: "float16",
@@ -53,7 +58,9 @@ RESERVED_PRECISON_DICT = {
     torch.float64: "float64",
     torch.int32: "int32",
     torch.int64: "int64",
+    torch.bfloat16: "bfloat16",
 }
+assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISON_DICT.keys())
 DEFAULT_PRECISION = "float64"
 
 # throw warnings if threads not set

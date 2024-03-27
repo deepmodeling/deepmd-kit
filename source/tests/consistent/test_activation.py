@@ -3,6 +3,9 @@ import unittest
 
 import numpy as np
 
+from deepmd.common import (
+    VALID_ACTIVATION,
+)
 from deepmd.dpmodel.utils.network import get_activation_fn as get_activation_fn_dp
 
 from .common import (
@@ -25,17 +28,7 @@ if INSTALLED_TF:
 
 
 @parameterized(
-    (
-        "Relu",
-        "Relu6",
-        "Softplus",
-        "Sigmoid",
-        "Tanh",
-        "Gelu",
-        "Gelu_tf",
-        "Linear",
-        "None",
-    ),
+    tuple([x.capitalize() for x in VALID_ACTIVATION]),
 )
 class TestActivationFunctionConsistent(unittest.TestCase):
     def setUp(self):
