@@ -62,12 +62,6 @@ Homepage = "https://github.com/deepmodeling/deepmd-kit"
 documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
 
-[project.optional-dependencies]
-test = [
-     'dpdata',
-     'mendeleev',
-]
-
 [tool.setuptools_scm]
 
 [tool.scikit-build]
