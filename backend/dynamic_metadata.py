@@ -39,6 +39,7 @@ def dynamic_metadata(
                 "pytest-cov",
                 "pytest-sugar",
                 "dpgui",
+                "mendeleev",
             ],
             "docs": [
                 "sphinx>=3.1.1",
