@@ -3,6 +3,7 @@
 #include "DeepPotPT.h"
 
 #include "common.h"
+#include "device.h"
 using namespace deepmd;
 torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
   std::vector<torch::Tensor> row_tensors;
@@ -36,7 +37,9 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
     return;
   }
-  gpu_id = gpu_rank;
+  int gpu_num = -1;
+  DPGetDeviceCount(gpu_num);
+  gpu_id = gpu_rank % gpu_num;
   torch::Device device(torch::kCUDA, gpu_rank);
   gpu_enabled = torch::cuda::is_available();
   if (!gpu_enabled) {
@@ -46,12 +49,6 @@ void DeepPotPT::init(const std::string& model,
   } else {
     std::cout << "load model from: " << model << " to gpu " << gpu_rank
               << std::endl;
-  }
-  int gpu_num = -1;
-  DPGetDeviceCount(gpu_num);
-  if (gpu_id > gpu_num) {
-    throw deepmd::deepmd_exception(
-        "current rank" + gpu_id + "is larger than the number of gpu" + gpu_num);
   }
   module = torch::jit::load(model, device);
 
@@ -275,8 +272,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   if (natoms == 0) {
     // no backward map needed
     // dforce of size nall * 3
-    force_.resize(static_cast<size_t>(nframes) * natoms * 3);
-    fill(force_.begin(), force_.end(), (VALUETYPE)0.0);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    fill(force.begin(), force.end(), (VALUETYPE)0.0);
     // dvirial of size 9
     virial.resize(static_cast<size_t>(nframes) * 9);
     fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
