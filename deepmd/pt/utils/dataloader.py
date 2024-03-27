@@ -14,10 +14,10 @@ from typing import (
 )
 
 import h5py
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.multiprocessing
-import numpy as np
 from torch.utils.data import (
     DataLoader,
     Dataset,
