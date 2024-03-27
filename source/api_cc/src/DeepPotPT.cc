@@ -37,8 +37,7 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
     return;
   }
-  int gpu_num = -1;
-  DPGetDeviceCount(gpu_num);
+  int gpu_num = torch::cuda::device_count();
   gpu_id = gpu_rank % gpu_num;
   torch::Device device(torch::kCUDA, gpu_rank);
   gpu_enabled = torch::cuda::is_available();
