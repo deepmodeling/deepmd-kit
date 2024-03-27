@@ -45,9 +45,8 @@ class BaseModel(torch.nn.Module, make_base_model()):
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         return self.model_def_script
-    
+
     @torch.jit.export
     def get_ntypes(self):
         """Returns the number of element types."""
         return len(self.get_type_map())
-      
