@@ -168,11 +168,14 @@ FITTING_NET_PATTERN = str(
     r"share_.+/idt|"
 )[:-1]
 
+# subpatterns:
+# \1: weight name
+# \2: layer index
 TYPE_EMBEDDING_PATTERN = str(
-    r"type_embed_net+/matrix_\d+|"
-    r"type_embed_net+/bias_\d+|"
-    r"type_embed_net+/idt_\d+|"
-)
+    r"type_embed_net/(matrix)_(\d+)|"
+    r"type_embed_net/(bias)_(\d+)|"
+    r"type_embed_net/(idt)_(\d+)|"
+)[:-1]
 
 ATTENTION_LAYER_PATTERN = str(
     r"attention_layer_\d+/c_query/matrix|"

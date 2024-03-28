@@ -72,6 +72,7 @@ class TestModel(tf.test.TestCase):
         fitting = DipoleFittingSeA(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             resnet_dt=typeebd_param["resnet_dt"],
             seed=typeebd_param["seed"],

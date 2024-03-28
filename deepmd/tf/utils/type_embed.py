@@ -1,15 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import re
 from typing import (
     List,
     Optional,
     Union,
 )
 
+from deepmd.dpmodel.utils.network import (
+    EmbeddingNet,
+)
 from deepmd.tf.common import (
     get_activation_func,
     get_precision,
 )
 from deepmd.tf.env import (
+    TYPE_EMBEDDING_PATTERN,
     tf,
 )
 from deepmd.tf.nvnmd.utils.config import (
@@ -20,6 +25,9 @@ from deepmd.tf.utils.graph import (
 )
 from deepmd.tf.utils.network import (
     embedding_net,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 
@@ -68,6 +76,8 @@ class TypeEmbedNet:
 
     Parameters
     ----------
+    ntypes : int
+        Number of atom types
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net
     resnet_dt
@@ -89,7 +99,9 @@ class TypeEmbedNet:
 
     def __init__(
         self,
-        neuron: List[int] = [],
+        *,
+        ntypes: int,
+        neuron: List[int],
         resnet_dt: bool = False,
         activation_function: Union[str, None] = "tanh",
         precision: str = "default",
@@ -100,10 +112,12 @@ class TypeEmbedNet:
         **kwargs,
     ) -> None:
         """Constructor."""
+        self.ntypes = ntypes
         self.neuron = neuron
         self.seed = seed
         self.filter_resnet_dt = resnet_dt
         self.filter_precision = get_precision(precision)
+        self.filter_activation_fn_name = str(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
         self.trainable = trainable
         self.uniform_seed = uniform_seed
@@ -133,6 +147,7 @@ class TypeEmbedNet:
         embedded_types
             The computational graph for embedded types
         """
+        assert ntypes == self.ntypes
         types = tf.convert_to_tensor(list(range(ntypes)), dtype=tf.int32)
         ebd_type = tf.cast(
             tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntypes)),
@@ -189,3 +204,98 @@ class TypeEmbedNet:
         self.type_embedding_net_variables = (
             get_type_embedding_net_variables_from_graph_def(graph_def, suffix=suffix)
         )
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data_cls = data.pop("@class")
+        assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
+
+        embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))
+        embedding_net_variables = {}
+        for layer_idx, layer in enumerate(embedding_net.layers):
+            embedding_net_variables[
+                f"type_embed_net{suffix}/matrix_{layer_idx + 1}"
+            ] = layer.w
+            embedding_net_variables[f"type_embed_net{suffix}/bias_{layer_idx + 1}"] = (
+                layer.b
+            )
+            if layer.idt is not None:
+                embedding_net_variables[
+                    f"type_embed_net{suffix}/idt_{layer_idx + 1}"
+                ] = layer.idt.reshape(1, -1)
+            else:
+                # prevent keyError
+                embedding_net_variables[
+                    f"type_embed_net{suffix}/idt_{layer_idx + 1}"
+                ] = 0.0
+
+        type_embedding_net = cls(**data)
+        type_embedding_net.type_embedding_net_variables = embedding_net_variables
+        return type_embedding_net
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        if suffix != "":
+            type_embedding_pattern = (
+                TYPE_EMBEDDING_PATTERN.replace("/(idt)", suffix + "/(idt)")
+                .replace("/(bias)", suffix + "/(bias)")
+                .replace("/(matrix)", suffix + "/(matrix)")
+            )
+        else:
+            type_embedding_pattern = TYPE_EMBEDDING_PATTERN
+        assert self.type_embedding_net_variables is not None
+        embedding_net = EmbeddingNet(
+            in_dim=self.ntypes,
+            neuron=self.neuron,
+            activation_function=self.filter_activation_fn_name,
+            resnet_dt=self.filter_resnet_dt,
+            precision=self.filter_precision.name,
+        )
+        for key, value in self.type_embedding_net_variables.items():
+            m = re.search(type_embedding_pattern, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            layer_idx = int(m[1]) - 1
+            weight_name = m[0]
+            if weight_name == "idt":
+                value = value.ravel()
+            embedding_net[layer_idx][weight_name] = value
+
+        return {
+            "@class": "TypeEmbedNet",
+            "@version": 1,
+            "ntypes": self.ntypes,
+            "neuron": self.neuron,
+            "resnet_dt": self.filter_resnet_dt,
+            "precision": self.filter_precision.name,
+            "activation_function": self.filter_activation_fn_name,
+            "trainable": self.trainable,
+            "padding": self.padding,
+            "embedding": embedding_net.serialize(),
+        }
