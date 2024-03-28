@@ -47,7 +47,7 @@ void DeepPotPT::init(const std::string& model,
   gpu_enabled = torch::cuda::is_available();
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
-    std::cout << "load model from: " << model << " to cpu " << gpu_id
+    std::cout << "load model from: " << model << " to cpu " 
               << std::endl;
   } else {
     std::cout << "load model from: " << model << " to gpu " << gpu_id
