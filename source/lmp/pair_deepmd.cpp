@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <string.h>
 
+#include <cassert>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -471,6 +472,19 @@ void PairDeepMD::compute(int eflag, int vflag) {
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
 
+  // for dpa2 communication
+  // deepmd_compat::CommData* commdata = new deepmd_compat::CommData();
+  // commdata->nswap = cb->nswap;
+  // commdata->sendnum = cb->sendnum; // dim: nswap
+  // commdata->recvnum = cb->recvnum; // dim: nswap
+  // commdata->firstrecv = cb->firstrecv; // dim: nswap
+  // commdata->sendlist = cb->sendlist; // dim: nswap x sendnum[nswap]
+  // commdata->sendproc = cb->sendproc; // dim: nswap
+  // commdata->recvproc = cb->recvproc; // dim: nswap
+  assert(sizeof(MPI_Comm) == sizeof(int));
+  // std::cout<<"world:"<<world<<std::endl;
+  int world_int = world;
+  double *prd = domain->prd;
   vector<double> dspin(nall * 3, 0.);
   vector<double> dfm(nall * 3, 0.);
   double **sp = atom->sp;
@@ -550,8 +564,15 @@ void PairDeepMD::compute(int eflag, int vflag) {
   multi_models_mod_devi =
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                       list->firstneigh);
+    deepmd_compat::InputNlist lmp_list(
+        list->inum, list->ilist, list->numneigh, list->firstneigh,
+        commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
+        commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
+        commdata_->recvproc, world_int);
+    // else
+    // deepmd_compat::InputNlist lmp_list(list->inum, list->ilist,
+    // list->numneigh,
+    //                                    list->firstneigh);
     deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
@@ -1275,11 +1296,16 @@ void PairDeepMD::coeff(int narg, char **arg) {
       }
     }
   }
+
+  // dpa2 communication
+  commdata_ = (CommBrickDeepMD *)comm;
 }
 
 void PairDeepMD::init_style() {
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
+  atom->map_user = 2;
+  atom->map_init(1);
 #else
   int irequest = neighbor->request(this, instance_me);
   neighbor->requests[irequest]->half = 0;

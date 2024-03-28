@@ -502,6 +502,20 @@ inline double *_DP_Get_Energy_Pointer(double &vec, const int nframes) {
 
 namespace deepmd {
 namespace hpp {
+//     struct CommData {
+//     int nswap;
+//     int* sendnum;
+//     int* recvnum;
+//     int* firstrecv;
+//     int** sendlist;
+//     int* sendproc;
+//     int* recvproc;
+//     long int* world;
+
+//     CommData() : nswap(0), sendnum(nullptr), recvnum(nullptr),
+//                  firstrecv(nullptr), sendlist(nullptr),
+//                  sendproc(nullptr), recvproc(nullptr),world(nullptr) {}
+// };
 /**
  * @brief Neighbor list.
  **/
@@ -522,6 +536,36 @@ struct InputNlist {
         nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
+  InputNlist(int inum_,
+             int *ilist_,
+             int *numneigh_,
+             int **firstneigh_,
+             int nswap,
+             int *sendnum,
+             int *recvnum,
+             int *firstrecv,
+             int **sendlist,
+             int *sendproc,
+             int *recvproc,
+             int world)
+      : inum(inum_),
+        ilist(ilist_),
+        numneigh(numneigh_),
+        firstneigh(firstneigh_),
+        nl(DP_NewNlist_comm(inum_,
+                            ilist_,
+                            numneigh_,
+                            firstneigh_,
+                            nswap,
+                            sendnum,
+                            recvnum,
+                            firstrecv,
+                            sendlist,
+                            sendproc,
+                            recvproc,
+                            world)){
+            // DP_CHECK_OK(DP_NlistCheckOK, nl);
+        };
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist *nl;
@@ -798,7 +842,6 @@ class DeepPot {
                        aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr);
@@ -2117,6 +2160,5 @@ void select_map(std::vector<VT> &out,
   out.resize(static_cast<size_t>(nall2) * stride);
   DP_SelectMapInt(&in[0], &fwd_map[0], stride, nall1, nall2, &out[0]);
 };
-
 }  // namespace hpp
 }  // namespace deepmd

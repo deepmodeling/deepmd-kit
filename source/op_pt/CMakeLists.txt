@@ -1,0 +1,23 @@
+# libop
+cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
+project(op)
+set(GLIBCXX_USE_CXX11_ABI 1)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+find_package(Python REQUIRED COMPONENTS Development)
+find_package(Torch REQUIRED)
+# find_package(MPI REQUIRED)
+find_package(CUDA REQUIRED)
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES 80)
+endif()
+option(USE_CUDA "GPU_SUPPORT" ON)
+if(USE_CUDA)
+  add_definitions(-DUSE_CUDA)
+endif()
+
+add_library(op_pt SHARED comm.cc)
+target_include_directories(op_pt PRIVATE ${Python_INCLUDE_DIRS})
+target_link_libraries(op_pt "${TORCH_LIBRARIES}" "${Python_LIBRARIES}"
+                      "/home/zhangxiangyu/.conda/envs/dp-cxxabi/lib/libmpi.so")

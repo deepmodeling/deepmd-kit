@@ -134,6 +134,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -163,10 +164,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping=mapping,
+            extended_coord, extended_atype, nlist, mapping=mapping, comm_dict=comm_dict
         )
         assert descriptor is not None
         # energy, force

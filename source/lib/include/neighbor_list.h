@@ -11,6 +11,42 @@
 #include "utilities.h"
 
 namespace deepmd {
+// struct CommData {
+//   int nswap;
+//   int* sendnum;
+//   int* recvnum;
+//   int* firstrecv;
+//   int** sendlist;
+//   int* sendproc;
+//   int* recvproc;
+//   long int world;
+
+//   CommData()
+//       : nswap(0),
+//         sendnum(nullptr),
+//         recvnum(nullptr),
+//         firstrecv(nullptr),
+//         sendlist(nullptr),
+//         sendproc(nullptr),
+//         recvproc(nullptr),
+//         world(0){};
+//   CommData(int nswap,
+//            int* sendnum,
+//            int* recvnum,
+//            int* firstrecv,
+//            int** sendlist,
+//            int* sendproc,
+//            int* recvproc,
+//            long int world)
+//       : nswap(nswap),
+//         sendnum(sendnum),
+//         recvnum(recvnum),
+//         firstrecv(firstrecv),
+//         sendlist(sendlist),
+//         sendproc(sendproc),
+//         recvproc(recvproc),
+//         world(world) {}
+// };
 
 /**
  * @brief             Construct InputNlist with the input LAMMPS nbor list info.
@@ -26,12 +62,65 @@ struct InputNlist {
   int* numneigh;
   /// Array stores the core region atom's neighbor index
   int** firstneigh;
-  InputNlist() : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL){};
+
+  int nswap;
+  int* sendnum;
+  int* recvnum;
+  int* firstrecv;
+  int** sendlist;
+  int* sendproc;
+  int* recvproc;
+  int world;
+  InputNlist()
+      : inum(0),
+        ilist(NULL),
+        numneigh(NULL),
+        firstneigh(NULL),
+        nswap(0),
+        sendnum(nullptr),
+        recvnum(nullptr),
+        firstrecv(nullptr),
+        sendlist(nullptr),
+        sendproc(nullptr),
+        recvproc(nullptr),
+        world(0){};
   InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
-        firstneigh(firstneigh_){};
+        firstneigh(firstneigh_),
+        nswap(0),
+        sendnum(nullptr),
+        recvnum(nullptr),
+        firstrecv(nullptr),
+        sendlist(nullptr),
+        sendproc(nullptr),
+        recvproc(nullptr),
+        world(0){};
+  InputNlist(int inum_,
+             int* ilist_,
+             int* numneigh_,
+             int** firstneigh_,
+             int nswap,
+             int* sendnum,
+             int* recvnum,
+             int* firstrecv,
+             int** sendlist,
+             int* sendproc,
+             int* recvproc,
+             int world)
+      : inum(inum_),
+        ilist(ilist_),
+        numneigh(numneigh_),
+        firstneigh(firstneigh_),
+        nswap(nswap),
+        sendnum(sendnum),
+        recvnum(recvnum),
+        firstrecv(firstrecv),
+        sendlist(sendlist),
+        sendproc(sendproc),
+        recvproc(recvproc),
+        world(world){};
   ~InputNlist(){};
 };
 

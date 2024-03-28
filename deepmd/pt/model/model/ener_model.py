@@ -6,6 +6,7 @@ from typing import (
 
 import torch
 
+
 from .dp_model import (
     DPModel,
 )
@@ -69,6 +70,7 @@ class EnergyModel(DPModel):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -78,6 +80,7 @@ class EnergyModel(DPModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

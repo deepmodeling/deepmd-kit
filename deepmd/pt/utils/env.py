@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
@@ -87,3 +90,12 @@ __all__ = [
     "ENERGY_BIAS_TRAINABLE",
     "LOCAL_RANK",
 ]
+
+
+def load_op():
+    torch.ops.load_library(
+        "/mnt/user/zhangxiangyu/workspace/dpkit/deepmd-kit/source/op_pt/libop_pt.so"
+    )
+
+
+op_module: Any = torch.ops.my_ops
