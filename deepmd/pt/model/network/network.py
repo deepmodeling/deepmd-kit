@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    List,
     Optional,
 )
 
@@ -8,8 +9,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from deepmd.pt.model.network.mlp import (
+    EmbeddingNet,
+)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 try:
@@ -553,12 +560,12 @@ class TypeEmbedNet(nn.Module):
     def __init__(self, type_nums, embed_dim, bavg=0.0, stddev=1.0):
         """Construct a type embedding net."""
         super().__init__()
-        self.embedding = nn.Embedding(
-            type_nums + 1,
-            embed_dim,
-            padding_idx=type_nums,
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-            device=env.DEVICE,
+        self.embedding = TypeEmbedNetConsistent(
+            ntypes=type_nums,
+            neuron=[embed_dim],
+            padding=True,
+            activation_function="Linear",
+            precision="default",
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
@@ -572,7 +579,7 @@ class TypeEmbedNet(nn.Module):
         type_embedding:
 
         """
-        return self.embedding(atype)
+        return self.embedding(atype.device)[atype]
 
     def share_params(self, base_class, shared_level, resume=False):
         """
@@ -589,6 +596,126 @@ class TypeEmbedNet(nn.Module):
                 self._modules[item] = base_class._modules[item]
         else:
             raise NotImplementedError
+
+
+class TypeEmbedNetConsistent(nn.Module):
+    r"""Type embedding network that is consistent with other backends.
+
+    Parameters
+    ----------
+    ntypes : int
+        Number of atom types
+    neuron : list[int]
+        Number of neurons in each hidden layers of the embedding net
+    resnet_dt
+        Time-step `dt` in the resnet construction: y = x + dt * \phi (Wx + b)
+    activation_function
+        The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision
+        The precision of the embedding net parameters. Supported options are |PRECISION|
+    trainable
+        If the weights of embedding net are trainable.
+    seed
+        Random seed for initializing the network parameters.
+    padding
+        Concat the zero padding to the output, as the default embedding of empty type.
+    """
+
+    def __init__(
+        self,
+        *,
+        ntypes: int,
+        neuron: List[int] = [],
+        resnet_dt: bool = False,
+        activation_function: str = "tanh",
+        precision: str = "default",
+        trainable: bool = True,
+        seed: Optional[int] = None,
+        padding: bool = False,
+    ):
+        """Construct a type embedding net."""
+        super().__init__()
+        self.ntypes = ntypes
+        self.neuron = neuron
+        self.seed = seed
+        self.resnet_dt = resnet_dt
+        self.precision = precision
+        self.prec = env.PRECISION_DICT[self.precision]
+        self.activation_function = str(activation_function)
+        self.trainable = trainable
+        self.padding = padding
+        # no way to pass seed?
+        self.embedding_net = EmbeddingNet(
+            ntypes,
+            self.neuron,
+            self.activation_function,
+            self.resnet_dt,
+            self.precision,
+        )
+        for param in self.parameters():
+            param.requires_grad = trainable
+
+    def forward(self, device: torch.device):
+        """Caulate type embedding network.
+
+        Returns
+        -------
+        type_embedding: torch.Tensor
+            Type embedding network.
+        """
+        embed = self.embedding_net(
+            torch.eye(self.ntypes, dtype=self.prec, device=device)
+        )
+        if self.padding:
+            embed = torch.cat(
+                [embed, torch.zeros(1, embed.shape[1], dtype=self.prec, device=device)]
+            )
+        return embed
+
+    @classmethod
+    def deserialize(cls, data: dict):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        TypeEmbedNetConsistent
+            The deserialized model
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data_cls = data.pop("@class")
+        assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
+
+        embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))
+        type_embedding_net = cls(**data)
+        type_embedding_net.embedding_net = embedding_net
+        return type_embedding_net
+
+    def serialize(self) -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        return {
+            "@class": "TypeEmbedNet",
+            "@version": 1,
+            "ntypes": self.ntypes,
+            "neuron": self.neuron,
+            "resnet_dt": self.resnet_dt,
+            "precision": self.precision,
+            "activation_function": self.activation_function,
+            "trainable": self.trainable,
+            "padding": self.padding,
+            "embedding": self.embedding_net.serialize(),
+        }
 
 
 @torch.jit.script
