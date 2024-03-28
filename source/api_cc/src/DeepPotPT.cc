@@ -121,6 +121,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   int nframes = 1;
   if (nloc == 0) {
     // no backward map needed
+    ener.resize(nframes);
     // dforce of size nall * 3
     force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
     fill(force.begin(), force.end(), (VALUETYPE)0.0);
@@ -270,6 +271,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   int nframes = 1;
   if (natoms == 0) {
     // no backward map needed
+    ener.resize(nframes);
     // dforce of size nall * 3
     force.resize(static_cast<size_t>(nframes) * natoms * 3);
     fill(force.begin(), force.end(), (VALUETYPE)0.0);
