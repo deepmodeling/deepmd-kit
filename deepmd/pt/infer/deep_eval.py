@@ -55,6 +55,7 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
 )
 from deepmd.pt.utils.utils import (
+    to_numpy_array,
     to_torch_tensor,
 )
 
@@ -525,6 +526,30 @@ class DeepEval(DeepEvalBackend):
             return [nframes, natoms, *odef.shape, 1]
         else:
             raise RuntimeError("unknown category")
+
+    def eval_typeebd(self) -> np.ndarray:
+        """Evaluate output of type embedding network by using this model.
+
+        Returns
+        -------
+        np.ndarray
+            The output of type embedding network. The shape is [ntypes + 1, o_size],
+            where ntypes is the number of types, and o_size is the number of nodes
+            in the output layer.
+
+        Raises
+        ------
+        KeyError
+            If the model does not enable type embedding.
+        """
+        model = self.dp.model["Default"]
+        tebd = None
+        for item in model.named_parameters():
+            if "type_embedding.embedding.weight" in item[0]:
+                tebd = to_numpy_array(item[1])
+        if tebd is None:
+            raise KeyError("Model has no type embedding!")
+        return tebd
 
 
 # For tests only
