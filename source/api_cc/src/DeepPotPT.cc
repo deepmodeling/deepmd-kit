@@ -38,7 +38,10 @@ void DeepPotPT::init(const std::string& model,
     return;
   }
   int gpu_num = torch::cuda::device_count();
-  gpu_id = gpu_rank % gpu_num;
+  if(gpu_num > 0)
+    gpu_id = gpu_rank % gpu_num;
+  else
+    gpu_id = 0;
   torch::Device device(torch::kCUDA, gpu_id);
   gpu_enabled = torch::cuda::is_available();
   if (!gpu_enabled) {
@@ -268,24 +271,24 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     floatType = torch::kFloat32;
   }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
-  // int nframes = 1;
-  // if (natoms == 0) {
-  //   // no backward map needed
-  //   ener.resize(nframes);
-  //   // dforce of size nall * 3
-  //   force.resize(static_cast<size_t>(nframes) * natoms * 3);
-  //   fill(force.begin(), force.end(), (VALUETYPE)0.0);
-  //   // dvirial of size 9
-  //   virial.resize(static_cast<size_t>(nframes) * 9);
-  //   fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
-  //   // datom_energy_ of size nall
-  //   atom_energy.resize(static_cast<size_t>(nframes) * natoms);
-  //   fill(atom_energy.begin(), atom_energy.end(), (VALUETYPE)0.0);
-  //   // datom_virial_ of size nall * 9
-  //   atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
-  //   fill(atom_virial.begin(), atom_virial.end(), (VALUETYPE)0.0);
-  //   return;
-  // }
+  int nframes = 1;
+  if (natoms == 0) {
+    // no backward map needed
+    ener.resize(nframes);
+    // dforce of size nall * 3
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    fill(force.begin(), force.end(), (VALUETYPE)0.0);
+    // dvirial of size 9
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
+    // datom_energy_ of size nall
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    fill(atom_energy.begin(), atom_energy.end(), (VALUETYPE)0.0);
+    // datom_virial_ of size nall * 9
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
+    fill(atom_virial.begin(), atom_virial.end(), (VALUETYPE)0.0);
+    return;
+  }
   std::vector<torch::jit::IValue> inputs;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, natoms, 3}, options)
