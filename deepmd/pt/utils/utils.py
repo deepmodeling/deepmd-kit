@@ -23,7 +23,12 @@ def get_activation_fn(activation: str) -> Callable:
     if activation.lower() == "relu":
         return F.relu
     elif activation.lower() == "gelu" or activation.lower() == "gelu_tf":
-        return lambda x: F.gelu(x, approximate="tanh")
+
+        @torch.jit.script
+        def gelu_tanh(x):
+            return F.gelu(x, approximate="tanh")
+
+        return gelu_tanh
     elif activation.lower() == "tanh":
         return torch.tanh
     elif activation.lower() == "relu6":
