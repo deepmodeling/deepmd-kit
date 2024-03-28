@@ -15,7 +15,7 @@ from .common import (
 )
 
 if INSTALLED_PT:
-    from deepmd.pt.utils.utils import get_activation_fn as get_activation_fn_pt
+    from deepmd.pt.utils.utils import ActivationFn as ActivationFn_pt
     from deepmd.pt.utils.utils import (
         to_numpy_array,
         to_torch_tensor,
@@ -49,8 +49,6 @@ class TestActivationFunctionConsistent(unittest.TestCase):
     def test_pt_consistent_with_ref(self):
         if INSTALLED_PT:
             test = to_numpy_array(
-                get_activation_fn_pt(self.activation)(
-                    to_torch_tensor(self.random_input)
-                )
+                ActivationFn_pt(self.activation)(to_torch_tensor(self.random_input))
             )
             np.testing.assert_allclose(self.ref, test, atol=1e-10)

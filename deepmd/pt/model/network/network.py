@@ -27,7 +27,6 @@ import torch.utils.checkpoint
 
 from deepmd.pt.utils.utils import (
     ActivationFn,
-    get_activation_fn,
 )
 
 
@@ -470,7 +469,7 @@ class MaskLMHead(nn.Module):
     def __init__(self, embed_dim, output_dim, activation_fn, weight=None):
         super().__init__()
         self.dense = SimpleLinear(embed_dim, embed_dim)
-        self.activation_fn = get_activation_fn(activation_fn)
+        self.activation_fn = ActivationFn(activation_fn)
         self.layer_norm = nn.LayerNorm(embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
 
         if weight is None:
@@ -818,7 +817,7 @@ class NeighborWiseAttentionLayer(nn.Module):
             self.fc1 = nn.Linear(
                 self.embed_dim, self.ffn_embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION
             )
-            self.activation_fn = get_activation_fn(activation)
+            self.activation_fn = ActivationFn(activation)
             self.fc2 = nn.Linear(
                 self.ffn_embed_dim, self.embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION
             )
@@ -1387,7 +1386,7 @@ class EvoformerEncoderLayer(nn.Module):
         self.ffn_dim = ffn_dim
         self.attn_head = attn_head
         self.activation_fn = (
-            get_activation_fn(activation_fn) if activation_fn is not None else None
+            ActivationFn(activation_fn) if activation_fn is not None else None
         )
         self.post_ln = post_ln
         self.self_attn_layer_norm = nn.LayerNorm(
