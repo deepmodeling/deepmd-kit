@@ -45,7 +45,7 @@ class TypeEmbedNet(NativeOP):
         self,
         *,
         ntypes: int,
-        neuron: List[int] = [],
+        neuron: List[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",

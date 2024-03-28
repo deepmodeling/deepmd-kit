@@ -101,7 +101,7 @@ class TypeEmbedNet:
         self,
         *,
         ntypes: int,
-        neuron: List[int] = [],
+        neuron: List[int],
         resnet_dt: bool = False,
         activation_function: Union[str, None] = "tanh",
         precision: str = "default",
