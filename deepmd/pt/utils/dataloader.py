@@ -125,6 +125,7 @@ class DpLoaderSet(Dataset):
             self.batch_sizes = batch_size
         else:
             self.batch_sizes = batch_size * np.ones(len(systems), dtype=int)
+        assert len(self.systems) == len(self.batch_sizes)
         for system, batch_size in zip(self.systems, self.batch_sizes):
             if dist.is_initialized():
                 system_sampler = DistributedSampler(system)
