@@ -60,7 +60,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["type_embedding"]["seed"] = 1
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
-            ntypes=len(jdata["model"]["descriptor"]["type_map"]),
+            ntypes=len(jdata["model"]["descriptor"]["sel"]),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],

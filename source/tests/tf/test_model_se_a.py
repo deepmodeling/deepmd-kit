@@ -300,7 +300,7 @@ class TestModel(tf.test.TestCase):
         numb_test = 1
 
         typeebd = TypeEmbedNet(
-            ntypes=len(jdata["model"]["descriptor"]["type_map"]),
+            ntypes=len(jdata["model"]["descriptor"]["sel"]),
             **jdata["model"]["type_embeding"],
         )
         jdata["model"]["descriptor"].pop("type", None)
