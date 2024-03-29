@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Callable,
     Optional,
     overload,
 )
@@ -16,26 +15,6 @@ from .env import (
     DEVICE,
 )
 from .env import PRECISION_DICT as PT_PRECISION_DICT
-
-
-def get_activation_fn(activation: str) -> Callable:
-    """Returns the activation function corresponding to `activation`."""
-    if activation.lower() == "relu":
-        return F.relu
-    elif activation.lower() == "gelu" or activation.lower() == "gelu_tf":
-        return lambda x: F.gelu(x, approximate="tanh")
-    elif activation.lower() == "tanh":
-        return torch.tanh
-    elif activation.lower() == "relu6":
-        return F.relu6
-    elif activation.lower() == "softplus":
-        return F.softplus
-    elif activation.lower() == "sigmoid":
-        return torch.sigmoid
-    elif activation.lower() == "linear" or activation.lower() == "none":
-        return lambda x: x
-    else:
-        raise RuntimeError(f"activation function {activation} not supported")
 
 
 class ActivationFn(torch.nn.Module):
