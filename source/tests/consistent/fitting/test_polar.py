@@ -94,7 +94,6 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             "ntypes": self.ntypes,
             "dim_descrpt": self.inputs.shape[-1],
             "mixed_types": mixed_types,
-            "var_name": "polar",
             "embedding_width": 30,
         }
 
