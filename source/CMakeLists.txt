@@ -303,7 +303,7 @@ endif()
 
 if(NOT DEEPMD_C_ROOT)
   if(ENABLE_TENSORFLOW)
-    add_subdirectory(op/)
+    add_subdirectory(op/tf/)
   endif()
   add_subdirectory(lib/)
 endif()
