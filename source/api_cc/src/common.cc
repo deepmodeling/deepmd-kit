@@ -377,14 +377,12 @@ void deepmd::get_env_nthreads(int& num_intra_nthreads,
   }
 }
 
-void deepmd::load_op_library() {
-#ifdef BUILD_TENSORFLOW
-  tensorflow::Env* env = tensorflow::Env::Default();
+static inline void _load_single_op_library(std::string library_name) {
 #if defined(_WIN32)
-  std::string dso_path = "deepmd_op.dll";
+  std::string dso_path = library_name + ".dll";
   void* dso_handle = LoadLibrary(dso_path.c_str());
 #else
-  std::string dso_path = "libdeepmd_op.so";
+  std::string dso_path = "lib" + library_name + ".so";
   void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
   if (!dso_handle) {
@@ -392,6 +390,14 @@ void deepmd::load_op_library() {
         dso_path +
         " is not found! You can add the library directory to LD_LIBRARY_PATH");
   }
+}
+
+void deepmd::load_op_library() {
+#ifdef BUILD_TENSORFLOW
+  _load_single_op_library("deepmd_op");
+#endif
+#ifdef BUILD_PYTORCH
+  _load_single_op_library("deepmd_op_pt");
 #endif
 }
 

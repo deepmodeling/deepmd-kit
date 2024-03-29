@@ -37,6 +37,7 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
     return;
   }
+  deepmd::load_op_library();
   int gpu_num = torch::cuda::device_count();
   if (gpu_num > 0) {
     gpu_id = gpu_rank % gpu_num;
