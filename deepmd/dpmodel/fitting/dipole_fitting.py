@@ -36,8 +36,6 @@ class DipoleFitting(GeneralFitting):
 
     Parameters
     ----------
-    var_name
-            The name of the output variable.
     ntypes
             The number of atom types.
     dim_descrpt
@@ -86,7 +84,6 @@ class DipoleFitting(GeneralFitting):
 
     def __init__(
         self,
-        var_name: str,
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
@@ -124,7 +121,7 @@ class DipoleFitting(GeneralFitting):
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         super().__init__(
-            var_name=var_name,
+            var_name="dipole",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,

@@ -39,8 +39,6 @@ class PolarFitting(GeneralFitting):
 
     Parameters
     ----------
-    var_name
-            The name of the output variable.
     ntypes
             The number of atom types.
     dim_descrpt
@@ -88,7 +86,6 @@ class PolarFitting(GeneralFitting):
 
     def __init__(
         self,
-        var_name: str,
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
@@ -145,7 +142,7 @@ class PolarFitting(GeneralFitting):
         self.shift_diag = shift_diag
         self.constant_matrix = np.zeros(ntypes, dtype=GLOBAL_NP_FLOAT_PRECISION)
         super().__init__(
-            var_name=var_name,
+            var_name="polar",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,

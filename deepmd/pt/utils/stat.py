@@ -83,37 +83,43 @@ def make_stat_input(datasets, dataloaders, nbatches):
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
+    keys: List[str],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    keys: Optional[str] = "energy",  # this is dict.keys()
+    
 ):
-    if "energy" in keys:
-        return compute_output_stats_global_only(
-            merged=merged,
-            ntypes=ntypes,
-            stat_file_path=stat_file_path,
-            rcond=rcond,
-            atom_ener=atom_ener,
-            model_forward=model_forward,
-        )
-    elif (
-        len({"dos", "atom_dos", "polarizability", "atomic_polarizability"} & set(keys))
-        > 0
-    ):
-        return compute_output_stats_with_atomic(
-            merged=merged,
-            ntypes=ntypes,
-            keys=list(keys),
-            stat_file_path=stat_file_path,
-            rcond=rcond,
-            atom_ener=atom_ener,
-            model_forward=model_forward,
-        )
-    else:
-        # can add mode facade services.
-        pass
+    key_mapping = {
+        "polar":"polarizability",
+        "energy": "energy",
+        "dos": "dos",
+        "dipole": "dipole",
+    }
+
+    for out_put in keys:
+        if out_put == "energy":
+            return compute_output_stats_global_only(
+                merged=merged,
+                ntypes=ntypes,
+                stat_file_path=stat_file_path,
+                rcond=rcond,
+                atom_ener=atom_ener,
+                model_forward=model_forward,
+            )
+        elif out_put in ["dos", "polar"]:
+            return compute_output_stats_with_atomic(
+                merged=merged,
+                ntypes=ntypes,
+                key=key_mapping[out_put],
+                stat_file_path=stat_file_path,
+                rcond=rcond,
+                atom_ener=atom_ener,
+                model_forward=model_forward,
+            )
+        else:
+            # can add mode facade services.
+            pass
 
 
 def compute_output_stats_global_only(
@@ -248,7 +254,7 @@ def compute_output_stats_global_only(
 def compute_output_stats_with_atomic(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
-    keys: List[str],
+    key: str,
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
@@ -268,8 +274,8 @@ def compute_output_stats_with_atomic(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
-    keys : List[str]
-        The fitting output keys.
+    key : str
+        The var_name of the fitting net.
     stat_file_path : DPPath, optional
         The path to the stat file.
     rcond : float, optional
@@ -282,19 +288,11 @@ def compute_output_stats_with_atomic(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    if "dos" in keys or "atom_dos" in keys:
-        atomic_label_name = "atom_dos"
-        global_label_name = "dos"
-        file_label_name = "bias_dos"
-    elif "polarizability" in keys or "atomic_polarizability" in keys:
-        atomic_label_name = "atomic_polarizability"
-        global_label_name = "polarizability"
-        file_label_name = "constant_matrix"
-    else:
-        raise NotImplementedError
+
+    atomic_label_name, global_label_name = "atom_" + key, key
 
     if stat_file_path is not None:
-        stat_file_path = stat_file_path / file_label_name
+        stat_file_path = stat_file_path / "atomic_bias"
     if stat_file_path is not None and stat_file_path.is_file():
         total_bias = stat_file_path.load_numpy()
     else:
@@ -363,7 +361,7 @@ def compute_output_stats_with_atomic(
                 for itype in range(ntypes):
                     type_mask = system["atype"] == itype
                     sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
-                sys_bias_redu = system["dos"].numpy(force=True)
+                sys_bias_redu = system[global_label_name].numpy(force=True)
                 if property_predict is None:
                     sys_bias = compute_stats_from_redu(
                         sys_bias_redu, sys_type_count, rcond=rcond
@@ -374,20 +372,8 @@ def compute_output_stats_with_atomic(
                         bias_diff, sys_type_count, rcond=rcond
                     )[0]
 
-            if global_label_name == "dos":
-                total_bias.append(sys_bias)
-            elif global_label_name == "polarizability":
-                cur_constant_matrix = np.zeros(
-                    ntypes, dtype=env.GLOBAL_NP_FLOAT_PRECISION
-                )
-
-                for itype in range(ntypes):
-                    cur_constant_matrix[itype] = np.mean(
-                        np.diagonal(sys_bias[itype].reshape(3, 3))
-                    )
-                total_bias.append(cur_constant_matrix)
-            else:
-                raise NotImplementedError
+            total_bias.append(sys_bias)
+            # need to take care shift diag and add atom_ener
         total_bias = np.stack(total_bias).mean(axis=0)
         total_bias = np.nan_to_num(total_bias)
         if stat_file_path is not None:

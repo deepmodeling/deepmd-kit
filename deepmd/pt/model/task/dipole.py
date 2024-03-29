@@ -39,8 +39,6 @@ class DipoleFittingNet(GeneralFitting):
 
     Parameters
     ----------
-    var_name : str
-        The atomic property to fit, 'dipole'.
     ntypes : int
         Element count.
     dim_descrpt : int
@@ -97,7 +95,7 @@ class DipoleFittingNet(GeneralFitting):
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         super().__init__(
-            var_name=kwargs.pop("var_name", "dipole"),
+            var_name="dipole",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,

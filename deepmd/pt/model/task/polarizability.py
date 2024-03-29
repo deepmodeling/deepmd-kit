@@ -47,8 +47,6 @@ class PolarFittingNet(GeneralFitting):
 
     Parameters
     ----------
-    var_name : str
-        The atomic property to fit, 'polar'.
     ntypes : int
         Element count.
     dim_descrpt : int
@@ -127,7 +125,7 @@ class PolarFittingNet(GeneralFitting):
             ntypes, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         )
         super().__init__(
-            var_name=kwargs.pop("var_name", "polar"),
+            var_name="polar",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -233,9 +231,9 @@ class PolarFittingNet(GeneralFitting):
                 for sys in range(len(sampled)):
                     nframs = sampled[sys]["atype"].shape[0]
 
-                    if sampled[sys]["find_atomic_polarizability"] > 0.0:
+                    if sampled[sys]["find_atom_polarizability"] > 0.0:
                         sys_atom_polar = compute_stats_from_atomic(
-                            sampled[sys]["atomic_polarizability"].numpy(force=True),
+                            sampled[sys]["atom_polarizability"].numpy(force=True),
                             sampled[sys]["atype"].numpy(force=True),
                         )[0]
                     else:
