@@ -118,6 +118,16 @@ Note that TensorFlow may have specific requirements for the compiler version to 
 
 :::
 
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
+Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
+
+The customized C++ OPs are not enabled by default because TensorFlow and PyTorch packages from the PyPI use different `_GLIBCXX_USE_CXX11_ABI` flags.
+We recommend conda-forge packages in this case.
+
+:::
+
 ::::
 
 Execute
@@ -135,6 +145,7 @@ One may set the following environment variables before executing `pip`:
 | CUDAToolkit_ROOT                                    | Path                  | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                                                                                                                                                                                                                                                                           |
 | ROCM_ROOT                                           | Path                  | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                                                                                                                                                                                                                                                                             |
 | DP_ENABLE_TENSORFLOW                                | 0, 1                  | 1                      | {{ tensorflow_icon }} Enable the TensorFlow backend.                                                                                                                                                                                                                                                                                                                                                                                                |
+| DP_ENABLE_PYTORCH                                   | 0, 1                  | 0                      | {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.                                                                                                                                                                                                                                                                                               |
 | TENSORFLOW_ROOT                                     | Path                  | Detected automatically | {{ tensorflow_icon }} The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against. |
 | DP_ENABLE_NATIVE_OPTIMIZATION                       | 0, 1                  | 0                      | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                                                                                                                                                                                                                                                                   |
 | CMAKE_ARGS                                          | str                   | -                      | Additional CMake arguments                                                                                                                                                                                                                                                                                                                                                                                                                          |
