@@ -88,10 +88,9 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    
 ):
     key_mapping = {
-        "polar":"polarizability",
+        "polar": "polarizability",
         "energy": "energy",
         "dos": "dos",
         "dipole": "dipole",
@@ -288,7 +287,6 @@ def compute_output_stats_with_atomic(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-
     atomic_label_name, global_label_name = "atom_" + key, key
 
     if stat_file_path is not None:
