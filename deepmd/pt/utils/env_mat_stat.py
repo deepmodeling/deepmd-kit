@@ -146,6 +146,9 @@ class EnvMatStatSe(EnvMatStat):
                 radial_only,
                 protection=self.descriptor.env_protection,
             )
+            # apply excluded_types
+            exclude_mask = self.descriptor.emask(nlist, extended_atype)
+            env_mat *= exclude_mask.unsqueeze(-1)
             # reshape to nframes * nloc at the atom level,
             # so nframes/mixed_type do not matter
             env_mat = env_mat.view(

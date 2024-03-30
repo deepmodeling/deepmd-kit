@@ -199,7 +199,7 @@ class DescrptSeR(DescrptSe):
             if len(self.exclude_types):
                 # exclude types applied to data stat
                 mask = self.build_type_exclude_mask(
-                    list(self.exclude_types),
+                    self.exclude_types,
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,

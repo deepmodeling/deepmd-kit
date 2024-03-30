@@ -4,6 +4,7 @@ import warnings
 from typing import (
     List,
     Optional,
+    Set,
     Tuple,
 )
 
@@ -285,7 +286,7 @@ class DescrptSeAtten(DescrptSeA):
             if len(self.exclude_types):
                 # exclude types applied to data stat
                 mask = self.build_type_exclude_mask(
-                    list(self.exclude_types),
+                    self.exclude_types,
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,
@@ -1372,7 +1373,7 @@ class DescrptSeAtten(DescrptSeA):
 
     def build_type_exclude_mask(
         self,
-        exclude_types: List[Tuple[int, int]],
+        exclude_types: Set[Tuple[int, int]],
         ntypes: int,
         sel: List[int],
         ndescrpt: int,
