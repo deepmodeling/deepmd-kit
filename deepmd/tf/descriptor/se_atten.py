@@ -285,7 +285,7 @@ class DescrptSeAtten(DescrptSeA):
             )
             if len(self.exclude_types):
                 # exclude types applied to data stat
-                mask = self.build_type_exclude_mask(
+                mask = self.build_type_exclude_mask_mixed(
                     self.exclude_types,
                     self.ntypes,
                     self.sel_a,
@@ -686,7 +686,7 @@ class DescrptSeAtten(DescrptSeA):
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
         if len(self.exclude_types):
-            mask = self.build_type_exclude_mask(
+            mask = self.build_type_exclude_mask_mixed(
                 self.exclude_types,
                 self.ntypes,
                 self.sel_a,
@@ -1371,7 +1371,7 @@ class DescrptSeAtten(DescrptSeA):
                 )
             )
 
-    def build_type_exclude_mask(
+    def build_type_exclude_mask_mixed(
         self,
         exclude_types: Set[Tuple[int, int]],
         ntypes: int,
