@@ -31,7 +31,7 @@ class DescrptSeAEbdV2(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[str],
+        sel: List[int],
         neuron: List[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
