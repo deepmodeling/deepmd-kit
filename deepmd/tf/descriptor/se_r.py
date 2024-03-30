@@ -201,7 +201,7 @@ class DescrptSeR(DescrptSe):
                 mask = self.build_type_exclude_mask(
                     self.exclude_types,
                     self.ntypes,
-                    self.sel_a,
+                    self.sel_r,
                     self.ndescrpt,
                     # for data stat, nloc == nall
                     self.place_holders["type"],
