@@ -285,7 +285,7 @@ class DescrptSeAtten(DescrptSeA):
             if len(self.exclude_types):
                 # exclude types applied to data stat
                 mask = self.build_type_exclude_mask(
-                    self.exclude_types,
+                    list(self.exclude_types),
                     self.ntypes,
                     self.sel_a,
                     self.ndescrpt,
