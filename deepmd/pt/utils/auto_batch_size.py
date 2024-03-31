@@ -21,8 +21,6 @@ class AutoBatchSize(AutoBatchSizeBase):
         is not set
     factor : float, default: 2.
         increased factor
-    returned_dict:
-        if the batched method returns a dict of arrays.
 
     """
 
@@ -30,13 +28,11 @@ class AutoBatchSize(AutoBatchSizeBase):
         self,
         initial_batch_size: int = 1024,
         factor: float = 2.0,
-        returned_dict: bool = False,
     ):
         super().__init__(
             initial_batch_size=initial_batch_size,
             factor=factor,
         )
-        self.returned_dict = returned_dict
 
     def is_gpu_available(self) -> bool:
         """Check if GPU is available.
@@ -105,9 +101,13 @@ class AutoBatchSize(AutoBatchSizeBase):
 
         index = 0
         results = None
+        returned_dict = None
         while index < total_size:
             n_batch, result = self.execute(execute_with_batch_size, index, natoms)
-            if not self.returned_dict:
+            returned_dict = (
+                isinstance(result, dict) if returned_dict is None else returned_dict
+            )
+            if not returned_dict:
                 result = (result,) if not isinstance(result, tuple) else result
             index += n_batch
 
@@ -116,7 +116,7 @@ class AutoBatchSize(AutoBatchSizeBase):
                     res_list.append(res)
                 return res_list
 
-            if not self.returned_dict:
+            if not returned_dict:
                 results = [] if results is None else results
                 results = append_to_list(results, result)
             else:
@@ -126,6 +126,8 @@ class AutoBatchSize(AutoBatchSizeBase):
                 results = {
                     kk: append_to_list(results[kk], result[kk]) for kk in result.keys()
                 }
+        assert results is not None
+        assert returned_dict is not None
 
         def concate_result(r):
             if isinstance(r[0], np.ndarray):
@@ -136,7 +138,7 @@ class AutoBatchSize(AutoBatchSizeBase):
                 raise RuntimeError(f"Unexpected result type {type(r[0])}")
             return ret
 
-        if not self.returned_dict:
+        if not returned_dict:
             r_list = [concate_result(r) for r in zip(*results)]
             r = tuple(r_list)
             if len(r) == 1:

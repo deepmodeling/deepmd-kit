@@ -24,7 +24,7 @@ class TestAutoBatchSize(unittest.TestCase):
     def test_execute_all_dict(self):
         dd0 = np.zeros((10000, 2, 1, 3, 4))
         dd1 = np.ones((10000, 2, 1, 3, 4))
-        auto_batch_size = AutoBatchSize(256, 2.0, returned_dict=True)
+        auto_batch_size = AutoBatchSize(256, 2.0)
 
         def func(dd1):
             return {
