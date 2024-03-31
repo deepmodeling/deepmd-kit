@@ -361,10 +361,12 @@ def translate_se_atten_and_type_embd_dicts_to_dpa1(
         tk = "se_atten." + kk
         record[all_keys.index(tk)] = True
         target_dict[tk] = vv
-    assert len(type_embd_dict.keys()) == 1
-    kk = next(iter(type_embd_dict.keys()))
-    tk = "type_embedding." + kk
-    record[all_keys.index(tk)] = True
-    target_dict[tk] = type_embd_dict[kk]
+    assert len(type_embd_dict.keys()) == 2
+    it = iter(type_embd_dict.keys())
+    for _ in range(2):
+        kk = next(it)
+        tk = "type_embedding." + kk
+        record[all_keys.index(tk)] = True
+        target_dict[tk] = type_embd_dict[kk]
     assert all(record)
     return target_dict

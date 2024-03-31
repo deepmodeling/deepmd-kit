@@ -678,6 +678,7 @@ class StandardModel(Model):
             self.typeebd = type_embedding
         elif type_embedding is not None:
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **type_embedding,
                 padding=self.descrpt.explicit_ntypes,
             )
@@ -686,6 +687,7 @@ class StandardModel(Model):
             default_args_dict = {i.name: i.default for i in default_args}
             default_args_dict["activation_function"] = None
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **default_args_dict,
                 padding=True,
             )
