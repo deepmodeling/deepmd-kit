@@ -400,9 +400,9 @@ def get_type_embedding_net_nodes_from_graph_def(
     """
     if suffix != "":
         type_embedding_net_pattern = (
-            TYPE_EMBEDDING_PATTERN.replace("/idt", suffix + "/idt")
-            .replace("/bias", suffix + "/bias")
-            .replace("/matrix", suffix + "/matrix")
+            TYPE_EMBEDDING_PATTERN.replace("/(idt)", suffix + "/(idt)")
+            .replace("/(bias)", suffix + "/(bias)")
+            .replace("/(matrix)", suffix + "/(matrix)")
         )
     else:
         type_embedding_net_pattern = TYPE_EMBEDDING_PATTERN

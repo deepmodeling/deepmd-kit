@@ -63,7 +63,7 @@ class DescrptSeR(DescrptSe):
             The cut-off radius
     rcut_smth
             From where the environment matrix should be smoothed
-    sel : list[str]
+    sel : list[int]
             sel[i] specifies the maxmum number of type i atoms in the cut-off radius
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net
@@ -91,7 +91,7 @@ class DescrptSeR(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[str],
+        sel: List[int],
         neuron: List[int] = [24, 48, 96],
         resnet_dt: bool = False,
         trainable: bool = True,
