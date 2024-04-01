@@ -101,7 +101,7 @@ class TestSaveLoadDPA1(unittest.TestCase):
         model_config = copy.deepcopy(self.config["model"])
         model_config["resuming"] = read
         model_config["stat_file_dir"] = "stat_files"
-        model_config["stat_file"] = "stat.npz"
+        model_config["stat_file"] = "stat.hdf5"
         model_config["stat_file_path"] = os.path.join(
             model_config["stat_file_dir"], model_config["stat_file"]
         )

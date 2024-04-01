@@ -123,13 +123,12 @@ def get_trainer(
         if rank != 0:
             stat_file_path_single = None
         elif stat_file_path_single is not None:
-            if Path(stat_file_path_single).is_dir():
-                raise ValueError(
-                    f"stat_file should be a file, not a directory: {stat_file_path_single}"
-                )
-            if not Path(stat_file_path_single).is_file():
-                with h5py.File(stat_file_path_single, "w") as f:
-                    pass
+            if not Path(stat_file_path_single).exists():
+                if stat_file_path_single.endswith((".h5", ".hdf5")):
+                    with h5py.File(stat_file_path_single, "w") as f:
+                        pass
+                else:
+                    Path(stat_file_path_single).mkdir()
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data

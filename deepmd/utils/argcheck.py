@@ -2179,7 +2179,9 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_stat_file = (
         "The file path for saving the data statistics results. "
         "If set, the results will be saved and directly loaded during the next training session, "
-        "avoiding the need to recalculate the statistics"
+        "avoiding the need to recalculate the statistics. "
+        "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
+        "otherwise, a directory containing NumPy binary files are used."
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."
