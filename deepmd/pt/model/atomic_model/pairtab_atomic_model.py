@@ -228,7 +228,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         """
         bias_atom_e = compute_output_stats(
-            merged, self.ntypes, stat_file_path, self.rcond, self.atom_ener
+            merged, self.ntypes, ["energy"], stat_file_path, self.rcond, self.atom_ener
         )
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])

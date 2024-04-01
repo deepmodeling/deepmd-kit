@@ -41,6 +41,8 @@ class TestConsistency(unittest.TestCase):
             k: [v.numpy(force=True)] for d in self.sampled for k, v in d.items()
         }
         self.all_stat["type"] = self.all_stat.pop("atype")
+        self.all_stat["find_atomic_polarizability"] = self.all_stat.pop("find_atom_polarizability")
+        self.all_stat["atomic_polarizability"] = self.all_stat.pop("atom_polarizability")
         self.tfpolar = PolarFittingSeA(
             ntypes=ntypes,
             dim_descrpt=1,
@@ -65,9 +67,9 @@ class TestConsistency(unittest.TestCase):
         self.sampled[0]["polarizability"] = self.sampled[0]["atom_polarizability"].sum(
             dim=1
         )
-        self.all_stat["find_atom_polarizability"] = [-1]
+        self.all_stat["find_atomic_polarizability"] = [-1]
         self.all_stat["polarizability"] = [
-            self.all_stat["atom_polarizability"][0].sum(axis=1)
+            self.all_stat["atomic_polarizability"][0].sum(axis=1)
         ]
         self.tfpolar.compute_output_stats(self.all_stat)
         tfbias = self.tfpolar.constant_matrix
