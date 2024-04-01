@@ -686,7 +686,9 @@ class DescrptSeAtten(DescrptSeA):
                     tf.cast(mask, tf.bool),
                     inputs_i,
                     # (nframes * nloc, 1) -> (nframes * nloc, ndescrpt)
-                    tf.tile(tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]),
+                    tf.tile(
+                        tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]
+                    ),
                 )
             else:
                 inputs_i *= mask
