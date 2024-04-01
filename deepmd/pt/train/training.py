@@ -178,14 +178,14 @@ class Trainer:
                         _data_buffered = BufferedIterator(iter(_dataloader))
                 else:
                     _dataloader = DataLoader(
-                    _data,
-                    sampler=_sampler,
-                    batch_size=None,
-                    num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    drop_last=False,
-                    pin_memory=True,
+                        _data,
+                        sampler=_sampler,
+                        batch_size=None,
+                        num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                        drop_last=False,
+                        pin_memory=True,
                     )
-                
+
                     _data_buffered = _dataloader
                 return _dataloader, _data_buffered
 
