@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from pathlib import (
-    Path,
-)
 from typing import (
     Callable,
     List,
@@ -82,32 +79,32 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 
 def restore_from_file(
-    stat_file_path: Path,
+    stat_file_path: DPPath,
     keys: List[str] = ["energy"],
 ) -> Optional[dict]:
     if stat_file_path is None:
         return None
-    stat_files = [stat_file_path / f"bias_atom_{kk}.npy" for kk in keys]
+    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
     if any(not (ii.is_file()) for ii in stat_files):
         return None
     ret = {}
 
     for kk in keys:
-        fp = stat_file_path / f"bias_atom_{kk}.npy"
+        fp = stat_file_path / f"bias_atom_{kk}"
         assert fp.is_file()
-        ret[kk] = np.load(fp)
+        ret[kk] = fp.load_numpy()
     return ret
 
 
 def save_to_file(
-    stat_file_path: Path,
+    stat_file_path: DPPath,
     results: dict,
 ):
     assert stat_file_path is not None
     stat_file_path.mkdir(exist_ok=True, parents=True)
     for kk, vv in results.items():
-        fp = stat_file_path / f"bias_atom_{kk}.npy"
-        np.save(fp, vv)
+        fp = stat_file_path / f"bias_atom_{kk}"
+        fp.save_numpy(vv)
 
 
 def compute_output_stats(

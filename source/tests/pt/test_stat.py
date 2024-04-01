@@ -55,6 +55,9 @@ from deepmd.tf.utils.data_system import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 CUR_DIR = os.path.dirname(__file__)
 
@@ -348,12 +351,13 @@ class TestOutputStat(unittest.TestCase):
             self.data.dataloaders,
             nbatches=1,
         )
-        stat_file_path = Path("my_output_stat")
-        stat_file_path.mkdir(exist_ok=True)
+        stat_file_name = "my_output_stat"
+        if os.path.isdir(stat_file_name):
+            shutil.rmtree(stat_file_name)
+        Path(stat_file_name).mkdir(exist_ok=True)
+        stat_file_path = DPPath(stat_file_name, "a")
         atom_ener = np.array([3.0, 5.0]).reshape(2, 1)
 
-        if stat_file_path.is_dir():
-            shutil.rmtree(stat_file_path)
         # compute from sample
         ret0 = compute_output_stats(
             self.sampled,
@@ -394,7 +398,7 @@ class TestOutputStat(unittest.TestCase):
         np.testing.assert_almost_equal(
             to_numpy_array(ret0["energy"]), to_numpy_array(ret1["energy"]), decimal=10
         )
-        shutil.rmtree(stat_file_path)
+        shutil.rmtree(stat_file_name)
 
         # from assigned atom_ener
         ret2 = compute_output_stats(
@@ -408,7 +412,7 @@ class TestOutputStat(unittest.TestCase):
         np.testing.assert_almost_equal(
             to_numpy_array(ret2["energy"]), atom_ener, decimal=10
         )
-        shutil.rmtree(stat_file_path)
+        shutil.rmtree(stat_file_name)
 
 
 if __name__ == "__main__":
