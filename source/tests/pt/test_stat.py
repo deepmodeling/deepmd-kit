@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
-import shutil
 import unittest
 from abc import (
     ABC,
@@ -56,7 +55,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 from deepmd.utils.path import (
-    DPPath,
+    DPH5Path,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -352,10 +351,10 @@ class TestOutputStat(unittest.TestCase):
             nbatches=1,
         )
         stat_file_name = "my_output_stat"
-        if os.path.isdir(stat_file_name):
-            shutil.rmtree(stat_file_name)
-        Path(stat_file_name).mkdir(exist_ok=True)
-        stat_file_path = DPPath(stat_file_name, "a")
+        if os.path.isfile(stat_file_name):
+            os.remove(stat_file_name)
+        # Path(stat_file_name).mkdir(exist_ok=True)
+        stat_file_path = DPH5Path(stat_file_name, "a")
         atom_ener = np.array([3.0, 5.0]).reshape(2, 1)
 
         # compute from sample
@@ -398,7 +397,7 @@ class TestOutputStat(unittest.TestCase):
         np.testing.assert_almost_equal(
             to_numpy_array(ret0["energy"]), to_numpy_array(ret1["energy"]), decimal=10
         )
-        shutil.rmtree(stat_file_name)
+        os.remove(stat_file_name)
 
         # from assigned atom_ener
         ret2 = compute_output_stats(
@@ -412,7 +411,7 @@ class TestOutputStat(unittest.TestCase):
         np.testing.assert_almost_equal(
             to_numpy_array(ret2["energy"]), atom_ener, decimal=10
         )
-        shutil.rmtree(stat_file_name)
+        os.remove(stat_file_name)
 
 
 if __name__ == "__main__":
