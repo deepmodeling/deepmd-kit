@@ -165,7 +165,7 @@ class Trainer:
                     log.warning(
                         "Sampler not specified!"
                     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-                if not self.multitask:
+                if not self.multi_task:
                     _dataloader = DataLoader(
                         _data,
                         sampler=_sampler,
