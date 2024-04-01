@@ -165,7 +165,7 @@ class InvarFitting(GeneralFitting):
 
         """
         bias_atom_e = compute_output_stats(
-            merged, self.ntypes, stat_file_path, self.rcond, self.atom_ener
+            merged, self.ntypes, [self.var_name], stat_file_path, self.rcond, self.atom_ener
         )
         self.bias_atom_e.copy_(bias_atom_e.view([self.ntypes, self.dim_out]))
 

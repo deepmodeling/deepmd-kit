@@ -224,7 +224,7 @@ class TestDPTestDipole(unittest.TestCase, TestDPTest):
             ]
         )
         self.expected_global_d = np.sum(self.expected_d.reshape(1, -1, 3), axis=1)
-        np.save(Path(self.test_data) / "set.000" / "atomic_dipole.npy", self.expected_d)
+        np.save(Path(self.test_data) / "set.000" / "atom_dipole.npy", self.expected_d)
         np.save(Path(self.test_data) / "set.000" / "dipole.npy", self.expected_global_d)
 
     def test_1frame(self):
@@ -296,7 +296,7 @@ class TestDPTestPolar(unittest.TestCase, TestDPTest):
         )
         self.expected_global_d = np.sum(self.expected_d.reshape(1, -1, 9), axis=1)
         np.save(
-            Path(self.test_data) / "set.000" / "atomic_polarizability.npy",
+            Path(self.test_data) / "set.000" / "atom_polarizability.npy",
             self.expected_d,
         )
         np.save(
