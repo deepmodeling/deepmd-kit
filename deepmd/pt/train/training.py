@@ -185,7 +185,8 @@ class Trainer:
                         drop_last=False,
                         pin_memory=True,
                     )
-                    _data_buffered = _dataloader
+                    with torch.device("cpu"):
+                        _data_buffered = _dataloader
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
