@@ -682,7 +682,9 @@ class DescrptSeAtten(DescrptSeA):
                 self.nei_type_vec,  # extra input for atten
             )
             if self.smooth:
-                inputs_i = tf.where(tf.cast(mask, tf.bool), inputs_i, self.avg_looked_up)
+                inputs_i = tf.where(
+                    tf.cast(mask, tf.bool), inputs_i, self.avg_looked_up
+                )
             else:
                 inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
