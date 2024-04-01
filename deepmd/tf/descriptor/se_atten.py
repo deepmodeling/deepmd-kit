@@ -685,8 +685,9 @@ class DescrptSeAtten(DescrptSeA):
                 inputs_i = tf.where(
                     tf.cast(mask, tf.bool),
                     inputs_i,
+                    # broadcast is available: (nframes * nloc, 1) -> (nframes * nloc, ndescrpt)
                     tf.reshape(
-                        tf.tile(self.avg_looked_up, [1, 1, 4]), tf.shape(inputs_i)
+                        self.avg_looked_up, [-1, 1]
                     ),
                 )
             else:
