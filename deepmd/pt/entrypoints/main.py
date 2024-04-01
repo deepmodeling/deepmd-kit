@@ -32,6 +32,9 @@ from deepmd.loggers.loggers import (
 from deepmd.main import (
     parse_args,
 )
+from deepmd.pt.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+)
 from deepmd.pt.infer import (
     inference,
 )
@@ -224,6 +227,7 @@ class SummaryPrinter(BaseSummaryPrinter):
         return {
             "Backend": "PyTorch",
             "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+            "Enable custom OP": ENABLE_CUSTOMIZED_OP,
         }
 
 

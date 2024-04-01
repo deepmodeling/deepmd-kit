@@ -82,7 +82,7 @@ class DescrptSeAtten(DescrptSeA):
             The cut-off radius :math:`r_c`
     rcut_smth
             From where the environment matrix should be smoothed :math:`r_s`
-    sel : list[str]
+    sel : int
             sel[i] specifies the maxmum number of type i atoms in the cut-off radius
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`

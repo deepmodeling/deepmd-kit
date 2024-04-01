@@ -35,11 +35,11 @@ class DescrptLocFrame(Descriptor):
     ----------
     rcut
             The cut-off radius
-    sel_a : list[str]
+    sel_a : list[int]
             The length of the list should be the same as the number of atom types in the system.
             `sel_a[i]` gives the selected number of type-i neighbors.
             The full relative coordinates of the neighbors are used by the descriptor.
-    sel_r : list[str]
+    sel_r : list[int]
             The length of the list should be the same as the number of atom types in the system.
             `sel_r[i]` gives the selected number of type-i neighbors.
             Only relative distance of the neighbors are used by the descriptor.

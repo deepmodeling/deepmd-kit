@@ -146,11 +146,13 @@ class MultiModel(Model):
                     dim_descrpt=self.descrpt.get_dim_out(),
                 )
 
+        self.ntypes = self.descrpt.get_ntypes()
         # type embedding
         if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
             self.typeebd = type_embedding
         elif type_embedding is not None:
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **type_embedding,
                 padding=self.descrpt.explicit_ntypes,
             )
@@ -159,6 +161,7 @@ class MultiModel(Model):
             default_args_dict = {i.name: i.default for i in default_args}
             default_args_dict["activation_function"] = None
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **default_args_dict,
                 padding=True,
             )
@@ -167,7 +170,6 @@ class MultiModel(Model):
 
         # descriptor
         self.rcut = self.descrpt.get_rcut()
-        self.ntypes = self.descrpt.get_ntypes()
         # fitting
         self.fitting_dict = fitting_dict
         self.numb_fparam_dict = {
