@@ -681,7 +681,10 @@ class DescrptSeAtten(DescrptSeA):
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )
-            inputs_i *= mask
+            if self.smooth:
+                inputs_i = tf.where(mask, inputs_i, self.avg_looked_up)
+            else:
+                inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
             inputs_i = descrpt2r4(inputs_i, atype)
         layer, qmat = self._filter(
