@@ -165,16 +165,27 @@ class Trainer:
                     log.warning(
                         "Sampler not specified!"
                     )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-                _dataloader = DataLoader(
-                    _data,
-                    sampler=_sampler,
-                    batch_size=None,
-                    num_workers=NUM_WORKERS,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    drop_last=False,
-                    pin_memory=True,
-                )
-                with torch.device("cpu"):
-                    _data_buffered = BufferedIterator(iter(_dataloader))
+                if not self.multitask:
+                    _dataloader = DataLoader(
+                        _data,
+                        sampler=_sampler,
+                        batch_size=None,
+                        num_workers=NUM_WORKERS,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                        drop_last=False,
+                        pin_memory=True,
+                    )
+                    with torch.device("cpu"):
+                        _data_buffered = BufferedIterator(iter(_dataloader))
+                else:
+                    _dataloader = DataLoader(
+                        _data,
+                        sampler=_sampler,
+                        batch_size=None,
+                        num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                        drop_last=False,
+                        pin_memory=True,
+                    )
+                    _data_buffered = _dataloader
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
@@ -1039,9 +1050,7 @@ class Trainer:
                     batch_data = next(iter(self.training_data[task_key]))
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
-                    self.training_data[task_key] = BufferedIterator(
-                        iter(self.training_dataloader[task_key])
-                    )
+                    self.training_data[task_key] = self.training_dataloader[task_key]
                     batch_data = next(iter(self.training_data[task_key]))
             else:
                 if self.validation_data[task_key] is None:
@@ -1049,9 +1058,7 @@ class Trainer:
                 try:
                     batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:
-                    self.validation_data[task_key] = BufferedIterator(
-                        iter(self.validation_dataloader[task_key])
-                    )
+                    self.validation_data[task_key] = self.validation_dataloader[task_key]
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
