@@ -178,15 +178,15 @@ class Trainer:
                         _data_buffered = BufferedIterator(iter(_dataloader))
                 else:
                     _dataloader = DataLoader(
-                        _data,
-                        sampler=_sampler,
-                        batch_size=None,
-                        num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                        drop_last=False,
-                        pin_memory=True,
+                    _data,
+                    sampler=_sampler,
+                    batch_size=None,
+                    num_workers=0,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                    drop_last=False,
+                    pin_memory=True,
                     )
-                    with torch.device("cpu"):
-                        _data_buffered = _dataloader
+                
+                    _data_buffered = _dataloader
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
@@ -1048,7 +1048,8 @@ class Trainer:
         else:
             if is_train:
                 try:
-                    batch_data = next(iter(self.training_data[task_key]))
+                    with torch.device("cpu"):
+                        batch_data = next(iter(self.training_data[task_key]))
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
                     with torch.device("cpu"):
@@ -1058,7 +1059,8 @@ class Trainer:
                 if self.validation_data[task_key] is None:
                     return {}, {}, {}
                 try:
-                    batch_data = next(iter(self.validation_data[task_key]))
+                    with torch.device("cpu"):
+                        batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:
                     self.validation_data[task_key] = self.validation_dataloader[
                         task_key
