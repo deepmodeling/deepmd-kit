@@ -1058,7 +1058,9 @@ class Trainer:
                 try:
                     batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:
-                    self.validation_data[task_key] = self.validation_dataloader[task_key]
+                    self.validation_data[task_key] = self.validation_dataloader[
+                        task_key
+                    ]
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
