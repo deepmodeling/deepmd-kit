@@ -683,7 +683,7 @@ class DescrptSeAtten(DescrptSeA):
             )
             if self.smooth:
                 inputs_i = tf.where(
-                    tf.cast(mask, tf.bool), inputs_i, self.avg_looked_up
+                    tf.cast(mask, tf.bool), inputs_i, tf.reshape(tf.tile(self.avg_looked_up, [1, 1, 4]), tf.shape(inputs_i))
                 )
             else:
                 inputs_i *= mask
