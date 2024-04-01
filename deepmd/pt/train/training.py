@@ -1053,7 +1053,9 @@ class Trainer:
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
                     with torch.device("cpu"):
-                        self.training_data[task_key] = self.training_dataloader[task_key]
+                        self.training_data[task_key] = self.training_dataloader[
+                            task_key
+                        ]
                     batch_data = next(iter(self.training_data[task_key]))
             else:
                 if self.validation_data[task_key] is None:
