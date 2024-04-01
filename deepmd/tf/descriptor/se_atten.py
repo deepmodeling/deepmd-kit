@@ -686,9 +686,7 @@ class DescrptSeAtten(DescrptSeA):
                     tf.cast(mask, tf.bool),
                     inputs_i,
                     # broadcast is available: (nframes * nloc, 1) -> (nframes * nloc, ndescrpt)
-                    tf.reshape(
-                        self.avg_looked_up, [-1, 1]
-                    ),
+                    tf.reshape(self.avg_looked_up, [-1, 1]),
                 )
             else:
                 inputs_i *= mask
