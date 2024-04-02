@@ -62,6 +62,23 @@ from deepmd.utils.path import (
 
 CUR_DIR = os.path.dirname(__file__)
 
+dos_data_requirement = [
+    DataRequirementItem(
+        "dos",
+        ndof=250,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "atom_dos",
+        ndof=250,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+]
+
 energy_data_requirement = [
     DataRequirementItem(
         "energy",

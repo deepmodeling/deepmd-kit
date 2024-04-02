@@ -285,14 +285,14 @@ class BaseAtomicModel(BaseAtomicModel_):
                 self.get_ntypes(),
                 keys=list(self.fitting_output_def().keys()),
                 model_forward=self.get_forward_wrapper_func(),
-            )[list(self.fitting_output_def().keys())[0]]
+            )
             self.set_out_bias(delta_bias, add=True)
         elif bias_adjust_mode == "set-by-statistic":
             bias_atom = compute_output_stats(
                 merged,
                 self.get_ntypes(),
                 keys=list(self.fitting_output_def().keys()),
-            )[list(self.fitting_output_def().keys())[0]]
+            )
             self.set_out_bias(bias_atom)
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)

@@ -31,9 +31,11 @@ from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
     model_zbl,
+    model_dos,
 )
 from .test_stat import (
     energy_data_requirement,
+    dos_data_requirement,
 )
 
 
@@ -44,7 +46,7 @@ class FinetuneTest:
         fitting_net = model.get_fitting_net()
         fitting_net["bias_atom_e"] = torch.rand_like(fitting_net["bias_atom_e"])
         energy_bias_before = deepcopy(
-            to_numpy_array(fitting_net["bias_atom_e"]).reshape(-1)
+            to_numpy_array(fitting_net["bias_atom_e"])
         )
 
         # prepare original model for test
@@ -63,7 +65,7 @@ class FinetuneTest:
             full_type_map=full_type_map,
         )
         energy_bias_after = deepcopy(
-            to_numpy_array(fitting_net["bias_atom_e"]).reshape(-1)
+            to_numpy_array(fitting_net["bias_atom_e"])
         )
 
         # get ground-truth energy bias change
@@ -81,16 +83,32 @@ class FinetuneTest:
             to_numpy_array(self.sampled[0]["box"][:ntest]),
             to_numpy_array(self.sampled[0]["atype"][0]),
         )[0]
-        energy_diff = to_numpy_array(self.sampled[0]["energy"][:ntest]) - energy
+        energy_diff = to_numpy_array(self.sampled[0][self.var_name][:ntest]) - energy
         finetune_shift = (
             energy_bias_after[idx_type_map] - energy_bias_before[idx_type_map]
         )
         ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
             0
-        ].reshape(-1)
-
+        ]
         # check values
         np.testing.assert_almost_equal(finetune_shift, ground_truth_shift, decimal=10)
+
+class TestDOSModelSeA(unittest.TestCase, FinetuneTest):
+    def setUp(self):
+        self.data_file = [str(Path(__file__).parent / "dos/data/global_system")]
+        self.model_config = model_dos
+        self.data = DpLoaderSet(
+            self.data_file,
+            batch_size=1,
+            type_map=self.model_config["type_map"],
+        )
+        self.data.add_data_requirement(dos_data_requirement)
+        self.sampled = make_stat_input(
+            self.data.systems,
+            self.data.dataloaders,
+            nbatches=1,
+        )
+        self.var_name = "dos"
 
 
 class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
@@ -108,6 +126,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
             self.data.dataloaders,
             nbatches=1,
         )
+        self.var_name = "energy"
 
 
 @unittest.skip("change bias not implemented yet.")
@@ -126,6 +145,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
             self.data.dataloaders,
             nbatches=1,
         )
+        self.var_name = "energy"
 
 
 class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):
@@ -143,6 +163,7 @@ class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):
             self.data.dataloaders,
             nbatches=1,
         )
+        self.var_name = "energy"
 
 
 if __name__ == "__main__":

@@ -96,14 +96,14 @@ def make_base_atomic_model(
             """
 
         @abstractmethod
-        def set_out_bias(self, out_bias: t_tensor, add=False) -> None:
+        def set_out_bias(self, out_bias: Dict[str,t_tensor], add=False) -> None:
             """
             Modify the output bias for the atomic model.
 
             Parameters
             ----------
-            out_bias : t_tensor
-                The new bias to be applied.
+            out_bias : Dict[str, t_tensor]
+                The new bias to be applied for multiple output properties.
             add : bool, optional
                 Whether to add the new bias to the existing one.
                 If False, the output bias will be directly replaced by the new bias.

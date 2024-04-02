@@ -37,10 +37,10 @@ model_se_e2_a = {
 }
 
 model_dos = {
-    "type_map": ["O", "H", "B"],
+    "type_map": ["O", "H"],
     "descriptor": {
         "type": "se_e2_a",
-        "sel": [46, 92, 4],
+        "sel": [46, 92],
         "rcut_smth": 0.50,
         "rcut": 4.00,
         "neuron": [25, 50, 100],

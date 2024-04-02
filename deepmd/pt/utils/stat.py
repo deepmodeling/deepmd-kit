@@ -423,7 +423,7 @@ def compute_output_stats_with_atomic(
                             sys_bias_redu, sys_type_count, rcond=rcond
                         )[0]
                     else:
-                        bias_diff = sys_bias_redu - model_predict[kk][idx].sum(-1)
+                        bias_diff = sys_bias_redu - model_predict[kk][idx].sum(axis=0)
                         sys_bias = compute_stats_from_redu(
                             bias_diff, sys_type_count, rcond=rcond
                         )[0]
