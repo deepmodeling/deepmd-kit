@@ -125,7 +125,9 @@ def compute_output_stats(
         "dipole": "dipole",
     }
 
-    if "energy" in keys: # this is the energy fitting which may have keys ['energy', 'dforce']
+    if (
+        "energy" in keys
+    ):  # this is the energy fitting which may have keys ['energy', 'dforce']
         return compute_output_stats_global_only(
             merged=merged,
             ntypes=ntypes,
@@ -135,7 +137,9 @@ def compute_output_stats(
             atom_ener=atom_ener,
             model_forward=model_forward,
         )
-    elif  ["dos", "polar"] in keys: # this is the polar fitting or dos fitting which may have keys ['polar'] or ['dos']
+    elif (
+        ["dos", "polar"] in keys
+    ):  # this is the polar fitting or dos fitting which may have keys ['polar'] or ['dos']
         return compute_output_stats_with_atomic(
             merged=merged,
             ntypes=ntypes,
@@ -174,7 +178,7 @@ def compute_output_stats_global_only(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
-    keys   : List[int]
+    keys : List[int]
         The output variable names of a given atomic model, can be found in `fitting_output_def` of the model.
     stat_file_path : DPPath, optional
         The path to the stat file.
@@ -323,7 +327,7 @@ def compute_output_stats_with_atomic(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
-    key : str
+    keys : str
         The var_name of the fitting net.
     stat_file_path : DPPath, optional
         The path to the stat file.
@@ -337,7 +341,6 @@ def compute_output_stats_with_atomic(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    
     atom_bias = restore_from_file(stat_file_path, keys)
 
     if atom_bias is None:
@@ -377,13 +380,13 @@ def compute_output_stats_with_atomic(
                 for kk in keys:
                     model_predict[kk].append(
                         to_numpy_array(
-                            sample_predict[kk] # nf x nloc x odims
+                            sample_predict[kk]  # nf x nloc x odims
                         )
                     )
 
             # this stores all atomic predictions.
             model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
-               
+
         else:
             model_predict = {}
 
@@ -394,7 +397,7 @@ def compute_output_stats_with_atomic(
             for kk in keys:
                 if "find_atom_" + kk > 0.0:
                     sys_property = system["atom_" + kk].numpy(force=True)
-                    if not kk in model_predict:
+                    if kk not in model_predict:
                         sys_bias = compute_stats_from_atomic(
                             sys_property,
                             system["atype"].numpy(force=True),
@@ -413,9 +416,11 @@ def compute_output_stats_with_atomic(
                     )
                     for itype in range(ntypes):
                         type_mask = system["atype"] == itype
-                        sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
+                        sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
+                            force=True
+                        )
                     sys_bias_redu = system[kk].numpy(force=True)
-                    if not kk in model_predict:
+                    if kk not in model_predict:
                         sys_bias = compute_stats_from_redu(
                             sys_bias_redu, sys_type_count, rcond=rcond
                         )[0]
@@ -427,7 +432,9 @@ def compute_output_stats_with_atomic(
 
             atom_bias[kk].append(sys_bias)
             # need to take care shift diag and add atom_ener
-        atom_bias = {kk: np.nan_to_num(np.stack(vv).mean(axis=0)) for kk, vv in atom_bias.items()}
+        atom_bias = {
+            kk: np.nan_to_num(np.stack(vv).mean(axis=0)) for kk, vv in atom_bias.items()
+        }
         if stat_file_path is not None:
             save_to_file(stat_file_path, atom_bias)
     ret = {kk: to_torch_tensor(atom_bias[kk]) for kk in keys}
