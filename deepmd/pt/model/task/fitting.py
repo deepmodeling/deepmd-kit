@@ -326,7 +326,7 @@ class GeneralFitting(Fitting):
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
             if isinstance(value, dict):
-                #TODO: need to update to handle multiple properties
+                # TODO: need to update to handle multiple properties
                 value = list(value.values())[0].view([self.ntypes, self._net_out_dim()])
             else:
                 value = value.view([self.ntypes, self._net_out_dim()])
