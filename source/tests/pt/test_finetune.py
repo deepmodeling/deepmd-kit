@@ -28,10 +28,10 @@ from deepmd.pt.utils.utils import (
 )
 
 from .model.test_permutation import (
-    model_dos,
     model_dpa2,
     model_se_e2_a,
     model_zbl,
+    model_dos_bias,
 )
 from .test_stat import (
     dos_data_requirement,
@@ -91,7 +91,7 @@ class FinetuneTest:
 class TestDOSModelSeA(unittest.TestCase, FinetuneTest):
     def setUp(self):
         self.data_file = [str(Path(__file__).parent / "dos/data/global_system")]
-        self.model_config = model_dos
+        self.model_config = model_dos_bias
         self.data = DpLoaderSet(
             self.data_file,
             batch_size=1,
