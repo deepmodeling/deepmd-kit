@@ -283,7 +283,7 @@ class BaseAtomicModel(BaseAtomicModel_):
             delta_bias = compute_output_stats(
                 merged,
                 self.get_ntypes(),
-                keys=["energy"],
+                keys=self.get_output_keys(),
                 model_forward=self.get_forward_wrapper_func(),
             )["energy"]
             self.set_out_bias(delta_bias, add=True)
@@ -291,7 +291,7 @@ class BaseAtomicModel(BaseAtomicModel_):
             bias_atom = compute_output_stats(
                 merged,
                 self.get_ntypes(),
-                keys=["energy"],
+                keys=self.get_output_keys(),
             )["energy"]
             self.set_out_bias(bias_atom)
         else:
