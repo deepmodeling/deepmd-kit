@@ -143,7 +143,7 @@ def compute_output_stats(
         return compute_output_stats_with_atomic(
             merged=merged,
             ntypes=ntypes,
-            key=[key_mapping[k] for k in keys],
+            keys=[key_mapping[k] for k in keys],
             stat_file_path=stat_file_path,
             rcond=rcond,
             atom_ener=atom_ener,
@@ -165,7 +165,6 @@ def compute_output_stats_global_only(
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
-    Support multiple outputs from a given atomic model
 
     Parameters
     ----------
