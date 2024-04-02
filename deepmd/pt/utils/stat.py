@@ -182,23 +182,20 @@ def compute_output_stats(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    # only get data for once
-    sampled = merged() if callable(merged) else merged
-    # remove the keys that are not in the sample
-    new_keys = []
-    keys = [keys] if isinstance(keys, str) else keys
-    assert isinstance(keys, list)
-    for ii in keys:
-        if ii in sampled[0].keys():
-            new_keys.append(ii)
-    del keys
-    keys = new_keys
-
     # try to restore the bias from stat file
     bias_atom_e = _restore_from_file(stat_file_path, keys)
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
+        # only get data for once
+        sampled = merged() if callable(merged) else merged
+        # remove the keys that are not in the sample
+        keys = [keys] if isinstance(keys, str) else keys
+        assert isinstance(keys, list)
+        new_keys = [ii for ii in keys if ii in sampled[0].keys()]
+        del keys
+        keys = new_keys
+        # get label dict from sample
         outputs = {kk: [item[kk] for item in sampled] for kk in keys}
         data_mixed_type = "real_natoms_vec" in sampled[0]
         natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
