@@ -337,7 +337,6 @@ class TestDatasetMixed(DatasetTest, unittest.TestCase):
         )
 
 
-
 class TestExcludeTypes(DatasetTest, unittest.TestCase):
     def setup_data(self):
         original_data = str(Path(__file__).parent / "water/data/data_0")
@@ -375,8 +374,7 @@ class TestExcludeTypes(DatasetTest, unittest.TestCase):
         box = self.dp_merged["box"]
         self.dp_d.compute_input_stats(coord, box, atype, natoms, self.dp_mesh, {})
 
-        
-        
+
 class TestOutputStat(unittest.TestCase):
     def setUp(self):
         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
@@ -463,7 +461,6 @@ class TestOutputStat(unittest.TestCase):
         np.testing.assert_almost_equal(
             to_numpy_array(ret2["energy"]), atom_ener, decimal=10
         )
-
 
 
 if __name__ == "__main__":
