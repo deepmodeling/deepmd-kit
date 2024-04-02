@@ -12,6 +12,28 @@ from deepmd.utils.batch_size import AutoBatchSize as AutoBatchSizeBase
 
 
 class AutoBatchSize(AutoBatchSizeBase):
+    """Auto batch size.
+
+    Parameters
+    ----------
+    initial_batch_size : int, default: 1024
+        initial batch size (number of total atoms) when DP_INFER_BATCH_SIZE
+        is not set
+    factor : float, default: 2.
+        increased factor
+
+    """
+
+    def __init__(
+        self,
+        initial_batch_size: int = 1024,
+        factor: float = 2.0,
+    ):
+        super().__init__(
+            initial_batch_size=initial_batch_size,
+            factor=factor,
+        )
+
     def is_gpu_available(self) -> bool:
         """Check if GPU is available.
 
@@ -78,26 +100,50 @@ class AutoBatchSize(AutoBatchSizeBase):
             )
 
         index = 0
-        results = []
+        results = None
+        returned_dict = None
         while index < total_size:
             n_batch, result = self.execute(execute_with_batch_size, index, natoms)
-            if not isinstance(result, tuple):
-                result = (result,)
+            returned_dict = (
+                isinstance(result, dict) if returned_dict is None else returned_dict
+            )
+            if not returned_dict:
+                result = (result,) if not isinstance(result, tuple) else result
             index += n_batch
-            if n_batch:
-                for rr in result:
-                    rr.reshape((n_batch, -1))
-                results.append(result)
-        r_list = []
-        for r in zip(*results):
+
+            def append_to_list(res_list, res):
+                if n_batch:
+                    res_list.append(res)
+                return res_list
+
+            if not returned_dict:
+                results = [] if results is None else results
+                results = append_to_list(results, result)
+            else:
+                results = (
+                    {kk: [] for kk in result.keys()} if results is None else results
+                )
+                results = {
+                    kk: append_to_list(results[kk], result[kk]) for kk in result.keys()
+                }
+        assert results is not None
+        assert returned_dict is not None
+
+        def concate_result(r):
             if isinstance(r[0], np.ndarray):
-                r_list.append(np.concatenate(r, axis=0))
+                ret = np.concatenate(r, axis=0)
             elif isinstance(r[0], torch.Tensor):
-                r_list.append(torch.cat(r, dim=0))
+                ret = torch.cat(r, dim=0)
             else:
                 raise RuntimeError(f"Unexpected result type {type(r[0])}")
-        r = tuple(r_list)
-        if len(r) == 1:
-            # avoid returning tuple if callable doesn't return tuple
-            r = r[0]
+            return ret
+
+        if not returned_dict:
+            r_list = [concate_result(r) for r in zip(*results)]
+            r = tuple(r_list)
+            if len(r) == 1:
+                # avoid returning tuple if callable doesn't return tuple
+                r = r[0]
+        else:
+            r = {kk: concate_result(vv) for kk, vv in results.items()}
         return r

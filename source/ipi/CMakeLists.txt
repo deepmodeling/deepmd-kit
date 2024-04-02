@@ -44,13 +44,13 @@ if(APPLE)
     ${ipiname}
     PROPERTIES LINK_FLAGS "${extra_link_flags}"
                INSTALL_RPATH
-               "@loader_path/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}")
+               "@loader_path/../${LIB_DIR};${BACKEND_LIBRARY_PATH}")
 else()
   set_target_properties(
     ${ipiname}
     PROPERTIES LINK_FLAGS
                "-Wl,-rpath,'$ORIGIN'/../${LIB_DIR} ${extra_link_flags}"
-               INSTALL_RPATH "$ORIGIN/../${LIB_DIR}:${TensorFlow_LIBRARY_PATH}")
+               INSTALL_RPATH "$ORIGIN/../${LIB_DIR};${BACKEND_LIBRARY_PATH}")
 endif()
 
 if(CMAKE_TESTING_ENABLED)

@@ -11,6 +11,8 @@ from pathlib import (
     Path,
 )
 from typing import (
+    ClassVar,
+    Dict,
     List,
     Optional,
 )
@@ -200,7 +202,8 @@ class DPOSPath(DPPath):
         """
         if self.mode == "r":
             raise ValueError("Cannot save to read-only path")
-        np.save(str(self.path), arr)
+        with self.path.open("wb") as f:
+            np.save(f, arr)
 
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
@@ -354,6 +357,7 @@ class DPH5Path(DPPath):
             del self.root[self._name]
         self.root.create_dataset(self._name, data=arr)
         self.root.flush()
+        self._new_keys.append(self._name)
 
     def glob(self, pattern: str) -> List["DPPath"]:
         """Search path using the glob pattern.
@@ -396,6 +400,14 @@ class DPH5Path(DPPath):
         """Walk all groups and dataset."""
         return self._file_keys(self.root)
 
+    __file_new_keys: ClassVar[Dict[h5py.File, List[str]]] = {}
+
+    @property
+    def _new_keys(self):
+        """New keys that haven't been cached."""
+        self.__file_new_keys.setdefault(self.root, [])
+        return self.__file_new_keys[self.root]
+
     @classmethod
     @lru_cache(None)
     def _file_keys(cls, file: h5py.File) -> List[str]:
@@ -406,7 +418,7 @@ class DPH5Path(DPPath):
 
     def is_file(self) -> bool:
         """Check if self is file."""
-        if self._name not in self._keys:
+        if self._name not in self._keys and self._name not in self._new_keys:
             return False
         return isinstance(self.root[self._name], h5py.Dataset)
 
@@ -414,7 +426,7 @@ class DPH5Path(DPPath):
         """Check if self is directory."""
         if self._name == "/":
             return True
-        if self._name not in self._keys:
+        if self._name not in self._keys and self._name not in self._new_keys:
             return False
         return isinstance(self.root[self._name], h5py.Group)
 
@@ -461,3 +473,4 @@ class DPH5Path(DPPath):
             self.root.require_group(self._name)
         else:
             self.root.create_group(self._name)
+        self._new_keys.append(self._name)

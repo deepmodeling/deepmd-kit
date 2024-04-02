@@ -4,7 +4,7 @@ project(deepmd_api_c_test)
 file(GLOB TEST_SRC test_*.cc)
 
 set_target_properties(
-  ${LIB_DEEPMD_C} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
+  ${LIB_DEEPMD_C} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}")
 
 add_executable(runUnitTests_c ${TEST_SRC})
 target_link_libraries(runUnitTests_c PRIVATE GTest::gtest_main ${LIB_DEEPMD_C}

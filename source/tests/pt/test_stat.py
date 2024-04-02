@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
+import tempfile
 import unittest
 from abc import (
     ABC,
@@ -11,6 +12,7 @@ from pathlib import (
 )
 
 import dpdata
+import h5py
 import numpy as np
 import torch
 
@@ -29,7 +31,14 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+)
+from deepmd.pt.utils.stat import make_stat_input
 from deepmd.pt.utils.stat import make_stat_input as my_make
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 from deepmd.tf.common import (
     expand_sys_str,
 )
@@ -46,6 +55,9 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -325,6 +337,7 @@ class TestDatasetMixed(DatasetTest, unittest.TestCase):
         )
 
 
+
 class TestExcludeTypes(DatasetTest, unittest.TestCase):
     def setup_data(self):
         original_data = str(Path(__file__).parent / "water/data/data_0")
@@ -361,6 +374,96 @@ class TestExcludeTypes(DatasetTest, unittest.TestCase):
         natoms = self.dp_merged["natoms_vec"]
         box = self.dp_merged["box"]
         self.dp_d.compute_input_stats(coord, box, atype, natoms, self.dp_mesh, {})
+
+        
+        
+class TestOutputStat(unittest.TestCase):
+    def setUp(self):
+        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.type_map = ["O", "H"]  # by dataset
+        self.data = DpLoaderSet(
+            self.data_file,
+            batch_size=1,
+            type_map=self.type_map,
+        )
+        self.data.add_data_requirement(energy_data_requirement)
+        self.sampled = make_stat_input(
+            self.data.systems,
+            self.data.dataloaders,
+            nbatches=1,
+        )
+        self.tempdir = tempfile.TemporaryDirectory()
+        h5file = str((Path(self.tempdir.name) / "testcase.h5").resolve())
+        with h5py.File(h5file, "w") as f:
+            pass
+        self.stat_file_path = DPPath(h5file, "a")
+
+    def tearDown(self):
+        self.tempdir.cleanup()
+
+    def test_calc_and_load(self):
+        stat_file_path = self.stat_file_path
+        type_map = self.type_map
+
+        # compute from sample
+        ret0 = compute_output_stats(
+            self.sampled,
+            len(type_map),
+            keys=["energy"],
+            stat_file_path=stat_file_path,
+            atom_ener=None,
+            model_forward=None,
+        )
+        # ground truth
+        ntest = 1
+        atom_nums = np.tile(
+            np.bincount(to_numpy_array(self.sampled[0]["atype"][0])),
+            (ntest, 1),
+        )
+        energy_diff = to_numpy_array(self.sampled[0]["energy"][:ntest])
+        ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[0]
+
+        # check values
+        np.testing.assert_almost_equal(
+            to_numpy_array(ret0["energy"]), ground_truth_shift, decimal=10
+        )
+        # self.assertTrue(stat_file_path.is_dir())
+
+        def raise_error():
+            raise RuntimeError
+
+        # hack!!!
+        # suppose to load stat from file, if from sample, an error will raise.
+        ret1 = compute_output_stats(
+            raise_error,
+            len(type_map),
+            keys=["energy"],
+            stat_file_path=stat_file_path,
+            atom_ener=None,
+            model_forward=None,
+        )
+        np.testing.assert_almost_equal(
+            to_numpy_array(ret0["energy"]), to_numpy_array(ret1["energy"]), decimal=10
+        )
+
+    def test_assigned(self):
+        atom_ener = np.array([3.0, 5.0]).reshape(2, 1)
+        stat_file_path = self.stat_file_path
+        type_map = self.type_map
+
+        # from assigned atom_ener
+        ret2 = compute_output_stats(
+            self.sampled,
+            len(type_map),
+            keys=["energy"],
+            stat_file_path=stat_file_path,
+            atom_ener=atom_ener,
+            model_forward=None,
+        )
+        np.testing.assert_almost_equal(
+            to_numpy_array(ret2["energy"]), atom_ener, decimal=10
+        )
+
 
 
 if __name__ == "__main__":

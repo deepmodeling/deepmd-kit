@@ -60,6 +60,7 @@ class TestModel(tf.test.TestCase):
 
         # init models
         typeebd = TypeEmbedNet(
+            ntypes=ntypes,
             neuron=typeebd_param["neuron"],
             resnet_dt=typeebd_param["resnet_dt"],
             seed=typeebd_param["seed"],
@@ -224,6 +225,7 @@ class TestModel(tf.test.TestCase):
 
         # init models
         typeebd = TypeEmbedNet(
+            ntypes=ntypes,
             neuron=typeebd_param["neuron"],
             resnet_dt=typeebd_param["resnet_dt"],
             seed=typeebd_param["seed"],

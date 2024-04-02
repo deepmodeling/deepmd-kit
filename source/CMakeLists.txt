@@ -151,6 +151,8 @@ endif()
 # find tensorflow, I need tf abi info
 if(ENABLE_TENSORFLOW AND NOT DEEPMD_C_ROOT)
   find_package(tensorflow REQUIRED)
+  list(APPEND BACKEND_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH})
+  list(APPEND BACKEND_INCLUDE_DIRS ${TENSORFLOW_INCLUDE_DIRS})
 endif()
 if(BUILD_CPP_IF
    AND USE_PT_PYTHON_LIBS
@@ -174,7 +176,10 @@ if(BUILD_CPP_IF
         "Cannot determine PyTorch CMake prefix path, error code: $PYTORCH_CMAKE_PREFIX_PATH_RESULT_VAR}, error message: ${PYTORCH_CMAKE_PREFIX_PATH_ERROR_VAR}"
     )
   endif()
-  list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_CMAKE_PREFIX_PATH})
+  list(APPEND BACKEND_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH})
+  if(Protobuf_LIBRARY_DIRECTORY)
+    list(APPEND BACKEND_LIBRARY_PATH ${Protobuf_LIBRARY_DIRECTORY})
+  endif()
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
@@ -194,6 +199,10 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     endif()
   endif()
+  # get torch directory
+  set(PyTorch_LIBRARY_PATH ${TORCH_INCLUDE_DIRS}/../lib)
+  list(APPEND BACKEND_LIBRARY_PATH ${PyTorch_LIBRARY_PATH})
+  list(APPEND BACKEND_INCLUDE_DIRS ${TORCH_INCLUDE_DIRS})
 endif()
 # log enabled backends
 if(NOT DEEPMD_C_ROOT)
@@ -297,7 +306,9 @@ if(DEEPMD_C_ROOT)
   # use variable for TF path to set deepmd_c path
   set(TENSORFLOW_ROOT "${DEEPMD_C_ROOT}")
   set(TensorFlow_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
+  set(BACKEND_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
   set(TENSORFLOW_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
+  set(BACKEND_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
   set(TORCH_LIBRARIES "${DEEPMD_C_ROOT}/lib/libtorch.so")
 endif()
 
