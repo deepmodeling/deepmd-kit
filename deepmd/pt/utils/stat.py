@@ -125,29 +125,29 @@ def compute_output_stats(
         "dipole": "dipole",
     }
 
-    for out_put in keys:
-        if out_put == "energy":
-            return compute_output_stats_global_only(
-                merged=merged,
-                ntypes=ntypes,
-                stat_file_path=stat_file_path,
-                rcond=rcond,
-                atom_ener=atom_ener,
-                model_forward=model_forward,
-            )
-        elif out_put in ["dos", "polar"]:
-            return compute_output_stats_with_atomic(
-                merged=merged,
-                ntypes=ntypes,
-                key=key_mapping[out_put],
-                stat_file_path=stat_file_path,
-                rcond=rcond,
-                atom_ener=atom_ener,
-                model_forward=model_forward,
-            )
-        else:
-            # can add mode facade services.
-            pass
+    if "energy" in keys: # this is the energy fitting which may have keys ['energy', 'dforce']
+        return compute_output_stats_global_only(
+            merged=merged,
+            ntypes=ntypes,
+            keys=[key_mapping[k] for k in keys],
+            stat_file_path=stat_file_path,
+            rcond=rcond,
+            atom_ener=atom_ener,
+            model_forward=model_forward,
+        )
+    elif  ["dos", "polar"] in keys: # this is the polar fitting or dos fitting which may have keys ['polar'] or ['dos']
+        return compute_output_stats_with_atomic(
+            merged=merged,
+            ntypes=ntypes,
+            key=[key_mapping[k] for k in keys],
+            stat_file_path=stat_file_path,
+            rcond=rcond,
+            atom_ener=atom_ener,
+            model_forward=model_forward,
+        )
+    else:
+        # can add mode facade services.
+        pass
 
 
 def compute_output_stats_global_only(
@@ -161,6 +161,7 @@ def compute_output_stats_global_only(
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+    Support multiple outputs from a given atomic model
 
     Parameters
     ----------
@@ -173,6 +174,8 @@ def compute_output_stats_global_only(
             the lazy function helps by only sampling once.
     ntypes : int
         The number of atom types.
+    keys   : List[int]
+        The output variable names of a given atomic model, can be found in `fitting_output_def` of the model.
     stat_file_path : DPPath, optional
         The path to the stat file.
     rcond : float, optional
@@ -300,7 +303,7 @@ def compute_output_stats_global_only(
 def compute_output_stats_with_atomic(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
-    key: str,
+    keys: List[str],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
@@ -334,13 +337,10 @@ def compute_output_stats_with_atomic(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    atomic_label_name, global_label_name = "atom_" + key, key
+    
+    atom_bias = restore_from_file(stat_file_path, keys)
 
-    if stat_file_path is not None:
-        stat_file_path = stat_file_path / "atomic_bias"
-    if stat_file_path is not None and stat_file_path.is_file():
-        total_bias = stat_file_path.load_numpy()
-    else:
+    if atom_bias is None:
         if callable(merged):
             # only get data for once
             sampled = merged()
@@ -348,7 +348,8 @@ def compute_output_stats_with_atomic(
             sampled = merged
         if model_forward is not None:
             auto_batch_size = AutoBatchSize()
-            property_predict = []
+            model_predict = {kk: [] for kk in keys}
+
             for system in sampled:
                 nframes = system["coord"].shape[0]
                 coord, atype, box, natoms = (
@@ -369,58 +370,66 @@ def compute_output_stats_with_atomic(
                         **kwargs,
                     )
 
-                property_atomic = model_forward_auto_batch_size(
+                # need to check outputs
+                sample_predict = model_forward_auto_batch_size(
                     coord, atype, box, fparam=fparam, aparam=aparam
-                ).reshape(nframes, -1)
-                property_predict.append(
-                    to_numpy_array(property_atomic).reshape([nframes, 1])
                 )
+                for kk in keys:
+                    model_predict[kk].append(
+                        to_numpy_array(
+                            sample_predict[kk] # nf x nloc x odims
+                        )
+                    )
 
-            property_predict = np.concatenate(property_predict)
+            # this stores all atomic predictions.
+            model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
+               
         else:
-            property_predict = None
+            model_predict = {}
 
-        total_bias = []
+        atom_bias = {kk: [] for kk in keys}
         for idx, system in enumerate(sampled):
             nframs = system["atype"].shape[0]
 
-            if atomic_label_name in system:
-                sys_property = system[atomic_label_name].numpy(force=True)
-                if property_predict is None:
-                    sys_bias = compute_stats_from_atomic(
-                        sys_property,
-                        system["atype"].numpy(force=True),
-                    )[0]
+            for kk in keys:
+                if "find_atom_" + kk > 0.0:
+                    sys_property = system["atom_" + kk].numpy(force=True)
+                    if not kk in model_predict:
+                        sys_bias = compute_stats_from_atomic(
+                            sys_property,
+                            system["atype"].numpy(force=True),
+                        )[0]
+                    else:
+                        bias_diff = sys_property - model_predict[kk][idx]
+                        sys_bias = compute_stats_from_atomic(
+                            bias_diff,
+                            system["atype"].numpy(force=True),
+                        )[0]
                 else:
-                    bias_diff = sys_property - property_predict[idx]
-                    sys_bias = compute_stats_from_atomic(
-                        bias_diff,
-                        system["atype"].numpy(force=True),
-                    )[0]
-            else:
-                if not system["find_" + global_label_name] > 0.0:
-                    continue
-                sys_type_count = np.zeros(
-                    (nframs, ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
-                )
-                for itype in range(ntypes):
-                    type_mask = system["atype"] == itype
-                    sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
-                sys_bias_redu = system[global_label_name].numpy(force=True)
-                if property_predict is None:
-                    sys_bias = compute_stats_from_redu(
-                        sys_bias_redu, sys_type_count, rcond=rcond
-                    )[0]
-                else:
-                    bias_diff = sys_bias_redu - property_predict[idx].sum(-1)
-                    sys_bias = compute_stats_from_redu(
-                        bias_diff, sys_type_count, rcond=rcond
-                    )[0]
+                    if not system["find_" + kk] > 0.0:
+                        continue
+                    sys_type_count = np.zeros(
+                        (nframs, ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
+                    )
+                    for itype in range(ntypes):
+                        type_mask = system["atype"] == itype
+                        sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(force=True)
+                    sys_bias_redu = system[kk].numpy(force=True)
+                    if not kk in model_predict:
+                        sys_bias = compute_stats_from_redu(
+                            sys_bias_redu, sys_type_count, rcond=rcond
+                        )[0]
+                    else:
+                        bias_diff = sys_bias_redu - model_predict[kk][idx].sum(-1)
+                        sys_bias = compute_stats_from_redu(
+                            bias_diff, sys_type_count, rcond=rcond
+                        )[0]
 
-            total_bias.append(sys_bias)
+            atom_bias[kk].append(sys_bias)
             # need to take care shift diag and add atom_ener
-        total_bias = np.stack(total_bias).mean(axis=0)
-        total_bias = np.nan_to_num(total_bias)
+        atom_bias = {kk: np.nan_to_num(np.stack(vv).mean(axis=0)) for kk, vv in atom_bias.items()}
         if stat_file_path is not None:
-            stat_file_path.save_numpy(total_bias)
-    return to_torch_tensor(total_bias)
+            save_to_file(stat_file_path, atom_bias)
+    ret = {kk: to_torch_tensor(atom_bias[kk]) for kk in keys}
+
+    return ret
