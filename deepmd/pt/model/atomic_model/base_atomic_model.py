@@ -192,10 +192,6 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
-        model_output_type = list(self.atomic_output_def().keys())
-        if "mask" in model_output_type:
-            model_output_type.pop(model_output_type.index("mask"))
-        out_name = model_output_type[0]
 
         def model_forward(coord, atype, box, fparam=None, aparam=None):
             with torch.no_grad():  # it's essential for pure torch forward function to use auto_batchsize
@@ -220,7 +216,7 @@ class BaseAtomicModel(BaseAtomicModel_):
                     fparam=fparam,
                     aparam=aparam,
                 )
-                return atomic_ret[out_name].detach()
+                return {kk: vv.detach() for kk, vv in atomic_ret.items()}
 
         return model_forward
 
@@ -287,14 +283,16 @@ class BaseAtomicModel(BaseAtomicModel_):
             delta_bias = compute_output_stats(
                 merged,
                 self.get_ntypes(),
+                keys=["energy"],
                 model_forward=self.get_forward_wrapper_func(),
-                keys=self.fitting_output_def().keys(),
-            )
+            )["energy"]
             self.set_out_bias(delta_bias, add=True)
         elif bias_adjust_mode == "set-by-statistic":
             bias_atom = compute_output_stats(
-                merged, self.get_ntypes(), keys=self.fitting_output_def().keys()
-            )
+                merged,
+                self.get_ntypes(),
+                keys=["energy"],
+            )["energy"]
             self.set_out_bias(bias_atom)
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
