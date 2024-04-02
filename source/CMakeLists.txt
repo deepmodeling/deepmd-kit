@@ -194,6 +194,10 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     endif()
   endif()
+  # get torch directory
+  set(PyTorch_LIBRARY_PATH ${TORCH_INCLUDE_DIRS}/../lib)
+  # trick: use TensorFlow_LIBRARY_PATH as general backend library paths
+  list(APPEND TensorFlow_LIBRARY_PATH ${PyTorch_LIBRARY_PATH})
 endif()
 # log enabled backends
 if(NOT DEEPMD_C_ROOT)
