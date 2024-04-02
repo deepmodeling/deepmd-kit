@@ -34,7 +34,7 @@ endif()
 
 set_target_properties(
   ${libname}
-  PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+  PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}"
              INSTALL_RPATH_USE_LINK_PATH TRUE
              BUILD_RPATH "$ORIGIN/../op/tf;$ORIGIN/../op/pt")
 target_compile_definitions(${libname} PRIVATE TF_PRIVATE)
