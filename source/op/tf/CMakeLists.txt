@@ -62,11 +62,10 @@ endif()
 if(APPLE)
   set_target_properties(
     ${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH
-                                "@loader_path;${TensorFlow_LIBRARY_PATH}")
+                                "@loader_path;${BACKEND_LIBRARY_PATH}")
 else()
   set_target_properties(
-    ${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH
-                                "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
+    ${LIB_DEEPMD_OP} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}")
 endif()
 if(CMAKE_TESTING_ENABLED)
   target_link_libraries(${LIB_DEEPMD_OP} PRIVATE coverage_config)
