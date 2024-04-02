@@ -28,10 +28,10 @@ from deepmd.pt.utils.utils import (
 )
 
 from .model.test_permutation import (
+    model_dos_bias,
     model_dpa2,
     model_se_e2_a,
     model_zbl,
-    model_dos_bias,
 )
 from .test_stat import (
     dos_data_requirement,
