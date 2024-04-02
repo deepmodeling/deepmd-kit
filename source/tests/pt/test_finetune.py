@@ -28,14 +28,14 @@ from deepmd.pt.utils.utils import (
 )
 
 from .model.test_permutation import (
+    model_dos,
     model_dpa2,
     model_se_e2_a,
     model_zbl,
-    model_dos,
 )
 from .test_stat import (
-    energy_data_requirement,
     dos_data_requirement,
+    energy_data_requirement,
 )
 
 
@@ -45,9 +45,7 @@ class FinetuneTest:
         model = get_model(self.model_config)
         fitting_net = model.get_fitting_net()
         fitting_net["bias_atom_e"] = torch.rand_like(fitting_net["bias_atom_e"])
-        energy_bias_before = deepcopy(
-            to_numpy_array(fitting_net["bias_atom_e"])
-        )
+        energy_bias_before = deepcopy(to_numpy_array(fitting_net["bias_atom_e"]))
 
         # prepare original model for test
         dp = torch.jit.script(model)
@@ -64,9 +62,7 @@ class FinetuneTest:
             origin_type_map=origin_type_map,
             full_type_map=full_type_map,
         )
-        energy_bias_after = deepcopy(
-            to_numpy_array(fitting_net["bias_atom_e"])
-        )
+        energy_bias_after = deepcopy(to_numpy_array(fitting_net["bias_atom_e"]))
 
         # get ground-truth energy bias change
         sorter = np.argsort(full_type_map)
@@ -87,11 +83,10 @@ class FinetuneTest:
         finetune_shift = (
             energy_bias_after[idx_type_map] - energy_bias_before[idx_type_map]
         )
-        ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
-            0
-        ]
+        ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[0]
         # check values
         np.testing.assert_almost_equal(finetune_shift, ground_truth_shift, decimal=10)
+
 
 class TestDOSModelSeA(unittest.TestCase, FinetuneTest):
     def setUp(self):

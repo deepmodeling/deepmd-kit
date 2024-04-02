@@ -236,10 +236,12 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             If False, the output bias will be directly replaced by the new bias.
             If True, the new bias will be added to the existing one.
         """
-        #TODO: refactor for multiple properties
+        # TODO: refactor for multiple properties
         bias_keys = list(self.fitting_output_def().keys())
         self.fitting_net["bias_atom_e"] = (
-            out_bias[bias_keys[0]] + self.fitting_net["bias_atom_e"] if add else out_bias
+            out_bias[bias_keys[0]] + self.fitting_net["bias_atom_e"]
+            if add
+            else out_bias
         )
 
     def get_out_bias(self) -> torch.Tensor:

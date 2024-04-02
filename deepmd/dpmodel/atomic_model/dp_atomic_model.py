@@ -96,7 +96,7 @@ class DPAtomicModel(BaseAtomicModel):
             If False, the output bias will be directly replaced by the new bias.
             If True, the new bias will be added to the existing one.
         """
-        #TODO: refactor for multiple properties
+        # TODO: refactor for multiple properties
         bias_keys = list(self.fitting_output_def().keys())
         self.fitting["bias_atom_e"] = (
             out_bias[bias_keys[0]] + self.fitting["bias_atom_e"] if add else out_bias
