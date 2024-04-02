@@ -138,7 +138,7 @@ def compute_output_stats(
             model_forward=model_forward,
         )
     elif (
-        ["dos", "polar"] in keys
+        "dos" in keys or "polar" in keys
     ):  # this is the polar fitting or dos fitting which may have keys ['polar'] or ['dos']
         return compute_output_stats_with_atomic(
             merged=merged,
@@ -192,7 +192,6 @@ def compute_output_stats_global_only(
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
     bias_atom_e = restore_from_file(stat_file_path, keys)
-
     if bias_atom_e is None:
         if callable(merged):
             # only get data for once
@@ -394,7 +393,7 @@ def compute_output_stats_with_atomic(
             nframs = system["atype"].shape[0]
 
             for kk in keys:
-                if "find_atom_" + kk > 0.0:
+                if system["find_atom_" + kk] > 0.0:
                     sys_property = system["atom_" + kk].numpy(force=True)
                     if kk not in model_predict:
                         sys_bias = compute_stats_from_atomic(
@@ -437,5 +436,4 @@ def compute_output_stats_with_atomic(
         if stat_file_path is not None:
             save_to_file(stat_file_path, atom_bias)
     ret = {kk: to_torch_tensor(atom_bias[kk]) for kk in keys}
-
     return ret
