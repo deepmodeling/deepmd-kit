@@ -95,7 +95,7 @@
     },
     "data_dict": {
       "model_1": {
-        "stat_file": "./stat_files/model_1",
+        "stat_file": "./stat_files/model_1.hdf5",
         "training_data": {
           "systems": [
             "pt/water/data/data_0"
@@ -112,7 +112,7 @@
         }
       },
       "model_2": {
-        "stat_file": "./stat_files/model_2",
+        "stat_file": "./stat_files/model_2.hdf5",
         "training_data": {
           "systems": [
             "pt/water/data/data_0"
