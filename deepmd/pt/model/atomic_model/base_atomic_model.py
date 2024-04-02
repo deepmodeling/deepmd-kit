@@ -8,9 +8,9 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel.atomic_model import (
@@ -29,9 +29,6 @@ from deepmd.pt.utils.nlist import (
 )
 from deepmd.pt.utils.stat import (
     compute_output_stats,
-)
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -190,7 +187,70 @@ class BaseAtomicModel(BaseAtomicModel_):
             "pair_exclude_types": self.pair_exclude_types,
         }
 
-    def get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
+    def compute_or_load_stat(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        raise NotImplementedError
+
+    def change_out_bias(
+        self,
+        sample_merged,
+        bias_adjust_mode="change-by-statistic",
+    ) -> None:
+        """Change the output bias according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        bias_adjust_mode : str
+            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on labels of target dataset,
+                    and do least square on the errors to obtain the target shift as bias.
+            'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        """
+        if bias_adjust_mode == "change-by-statistic":
+            delta_bias = compute_output_stats(
+                sample_merged,
+                self.get_ntypes(),
+                keys=self.get_output_keys(),
+                model_forward=self._get_forward_wrapper_func(),
+            )["energy"]
+            self.set_out_bias(delta_bias, add=True)
+        elif bias_adjust_mode == "set-by-statistic":
+            bias_atom = compute_output_stats(
+                sample_merged,
+                self.get_ntypes(),
+                keys=self.get_output_keys(),
+            )["energy"]
+            self.set_out_bias(bias_atom)
+        else:
+            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+
+    def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(coord, atype, box, fparam=None, aparam=None):
@@ -219,86 +279,3 @@ class BaseAtomicModel(BaseAtomicModel_):
                 return {kk: vv.detach() for kk, vv in atomic_ret.items()}
 
         return model_forward
-
-    def compute_or_load_stat(
-        self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
-    ):
-        """
-        Compute or load the statistics parameters of the model,
-        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
-        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
-        and saved in the `stat_file_path`(s).
-        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
-        and load the calculated statistics parameters.
-
-        Parameters
-        ----------
-        sampled_func
-            The sampled data frames from different data systems.
-        stat_file_path
-            The path to the statistics files.
-        """
-        raise NotImplementedError
-
-    def change_out_bias(
-        self,
-        merged,
-        origin_type_map,
-        full_type_map,
-        bias_adjust_mode="change-by-statistic",
-    ) -> None:
-        """Change the output bias according to the input data and the pretrained model.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        origin_type_map : List[str]
-            The original type_map in dataset, they are targets to change the output bias.
-        full_type_map : List[str]
-            The full type_map in pre-trained model
-        bias_adjust_mode : str
-            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
-            'change-by-statistic' : perform predictions on labels of target dataset,
-                    and do least square on the errors to obtain the target shift as bias.
-            'set-by-statistic' : directly use the statistic output bias in the target dataset.
-        """
-        sorter = np.argsort(full_type_map)
-        missing_types = [t for t in origin_type_map if t not in full_type_map]
-        assert (
-            not missing_types
-        ), f"Some types are not in the pre-trained model: {list(missing_types)} !"
-        idx_type_map = sorter[
-            np.searchsorted(full_type_map, origin_type_map, sorter=sorter)
-        ]
-        original_bias = self.get_out_bias()
-        if bias_adjust_mode == "change-by-statistic":
-            delta_bias = compute_output_stats(
-                merged,
-                self.get_ntypes(),
-                keys=self.get_output_keys(),
-                model_forward=self.get_forward_wrapper_func(),
-            )["energy"]
-            self.set_out_bias(delta_bias, add=True)
-        elif bias_adjust_mode == "set-by-statistic":
-            bias_atom = compute_output_stats(
-                merged,
-                self.get_ntypes(),
-                keys=self.get_output_keys(),
-            )["energy"]
-            self.set_out_bias(bias_atom)
-        else:
-            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
-        bias_atom = self.get_out_bias()
-        log.info(
-            f"Change output bias of {origin_type_map!s} "
-            f"from {to_numpy_array(original_bias[idx_type_map]).reshape(-1)!s} "
-            f"to {to_numpy_array(bias_atom[idx_type_map]).reshape(-1)!s}."
-        )

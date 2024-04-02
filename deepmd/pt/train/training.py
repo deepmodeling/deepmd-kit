@@ -570,13 +570,8 @@ class Trainer:
                             _model_params["new_type_map"],
                         )
                         if isinstance(_model, EnergyModel):
-                            _model.change_out_bias(
-                                _sample_func,
-                                bias_adjust_mode=_model_params.get(
-                                    "bias_adjust_mode", "change-by-statistic"
-                                ),
-                                origin_type_map=new_type_map,
-                                full_type_map=old_type_map,
+                            _model = _model_change_out_bias(
+                                _model, new_type_map, _sample_func, _model_params
                             )
                         else:
                             # need to updated
@@ -1148,3 +1143,31 @@ class Trainer:
         print_str += "   %8.1e\n" % cur_lr
         fout.write(print_str)
         fout.flush()
+
+
+def _model_change_out_bias(
+    _model,
+    new_type_map,
+    _sample_func,
+    _model_params,
+):
+    old_bias = _model.get_out_bias()
+    _model.change_out_bias(
+        _sample_func,
+        bias_adjust_mode=_model_params.get("bias_adjust_mode", "change-by-statistic"),
+    )
+    new_bias = _model.get_out_bias()
+
+    model_type_map = _model.get_type_map()
+    sorter = np.argsort(model_type_map)
+    missing_types = [t for t in new_type_map if t not in model_type_map]
+    assert (
+        not missing_types
+    ), f"Some types are not in the pre-trained model: {list(missing_types)} !"
+    idx_type_map = sorter[np.searchsorted(model_type_map, new_type_map, sorter=sorter)]
+    log.info(
+        f"Change output bias of {new_type_map!s} "
+        f"from {to_numpy_array(old_bias[idx_type_map]).reshape(-1)!s} "
+        f"to {to_numpy_array(new_bias[idx_type_map]).reshape(-1)!s}."
+    )
+    return _model

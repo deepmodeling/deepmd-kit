@@ -150,7 +150,7 @@ def _compute_model_predict(
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
-    keys: List[str] = ["energy"],
+    keys: Union[str, List[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
@@ -186,6 +186,8 @@ def compute_output_stats(
     sampled = merged() if callable(merged) else merged
     # remove the keys that are not in the sample
     new_keys = []
+    keys = [keys] if isinstance(keys, str) else keys
+    assert isinstance(keys, list)
     for ii in keys:
         if ii in sampled[0].keys():
             new_keys.append(ii)
