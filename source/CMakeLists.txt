@@ -145,6 +145,8 @@ endif(USE_TF_PYTHON_LIBS)
 # find tensorflow, I need tf abi info
 if(NOT DEEPMD_C_ROOT)
   find_package(tensorflow REQUIRED)
+  list(APPEND BACKEND_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH})
+  list(APPEND BACKEND_INCLUDE_DIRS ${TENSORFLOW_INCLUDE_DIRS})
 endif()
 
 # find threads
@@ -233,7 +235,9 @@ if(DEEPMD_C_ROOT)
   # use variable for TF path to set deepmd_c path
   set(TENSORFLOW_ROOT "${DEEPMD_C_ROOT}")
   set(TensorFlow_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
+  set(BACKEND_LIBRARY_PATH "${DEEPMD_C_ROOT}/lib")
   set(TENSORFLOW_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
+  set(BACKEND_INCLUDE_DIRS "${DEEPMD_C_ROOT}/include")
 endif()
 
 if(NOT DEEPMD_C_ROOT)
