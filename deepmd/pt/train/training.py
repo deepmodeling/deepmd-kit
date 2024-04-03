@@ -576,10 +576,11 @@ class Trainer:
                         else:
                             # need to updated
                             pass
+                        return _model
 
                     # finetune
                     if not self.multi_task:
-                        single_model_finetune(
+                        self.model = single_model_finetune(
                             self.model, model_params, self.get_sample_func
                         )
                     else:
@@ -588,7 +589,7 @@ class Trainer:
                                 log.info(
                                     f"Model branch {model_key} will be fine-tuned. This may take a long time..."
                                 )
-                                single_model_finetune(
+                                self.model[model_key] = single_model_finetune(
                                     self.model[model_key],
                                     model_params["model_dict"][model_key],
                                     self.get_sample_func[model_key],
