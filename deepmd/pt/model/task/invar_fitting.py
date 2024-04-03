@@ -164,6 +164,7 @@ class InvarFitting(GeneralFitting):
             The path to the stat file.
 
         """
+        # [0] to get the mean (bias)
         bias_atom_e = compute_output_stats(
             merged,
             self.ntypes,
@@ -171,7 +172,7 @@ class InvarFitting(GeneralFitting):
             stat_file_path=stat_file_path,
             rcond=self.rcond,
             atom_ener=self.atom_ener,
-        )[self.var_name]
+        )[0][self.var_name]
         self.bias_atom_e.copy_(bias_atom_e.view([self.ntypes, self.dim_out]))
 
     def output_def(self) -> FittingOutputDef:

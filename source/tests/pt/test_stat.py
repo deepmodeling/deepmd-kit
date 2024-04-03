@@ -366,7 +366,7 @@ class TestOutputStat(unittest.TestCase):
         type_map = self.type_map
 
         # compute from sample
-        ret0 = compute_output_stats(
+        ret0, _ = compute_output_stats(
             self.sampled,
             len(type_map),
             keys=["energy"],
@@ -394,7 +394,7 @@ class TestOutputStat(unittest.TestCase):
 
         # hack!!!
         # suppose to load stat from file, if from sample, an error will raise.
-        ret1 = compute_output_stats(
+        ret1, _ = compute_output_stats(
             raise_error,
             len(type_map),
             keys=["energy"],
@@ -412,7 +412,7 @@ class TestOutputStat(unittest.TestCase):
         type_map = self.type_map
 
         # from assigned atom_ener
-        ret2 = compute_output_stats(
+        ret2, _ = compute_output_stats(
             self.sampled,
             len(type_map),
             keys=["energy"],

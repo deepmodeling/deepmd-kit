@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 
 
 @BaseAtomicModel.register("standard")
-class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
+class DPAtomicModel(BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
     Parameters
@@ -55,7 +55,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
-        torch.nn.Module.__init__(self)
+        super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes
@@ -63,9 +63,9 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
-        # order matters ntypes and type_map should be initialized first.
-        BaseAtomicModel.__init__(self, **kwargs)
+        super().init_out_stat()
 
+    @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return (
@@ -78,11 +78,6 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
-
-    @torch.jit.export
-    def get_type_map(self) -> List[str]:
-        """Get the type map."""
-        return self.type_map
 
     def get_sel(self) -> List[int]:
         """Get the neighbor selection."""

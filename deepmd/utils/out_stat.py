@@ -23,11 +23,11 @@ def compute_stats_from_redu(
     Parameters
     ----------
     output_redu
-        The reduced output value, shape is [nframes, ndim].
+        The reduced output value, shape is [nframes, *(odim0, odim1, ...)].
     natoms
         The number of atoms for each atom, shape is [nframes, ntypes].
     assigned_bias
-        The assigned output bias, shape is [ntypes, ndim]. Set to nan
+        The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)]. Set to nan
         if not assigned.
     rcond
         Cut-off ratio for small singular values of a.
@@ -35,12 +35,15 @@ def compute_stats_from_redu(
     Returns
     -------
     np.ndarray
-        The computed output bias, shape is [ntypes, ndim].
+        The computed output bias, shape is [ntypes, *(odim0, odim1, ...)].
     np.ndarray
-        The computed output std, shape is [ntypes, ndim].
+        The computed output std, shape is [*(odim0, odim1, ...)].
     """
-    output_redu = np.array(output_redu)
     natoms = np.array(natoms)
+    nf, _ = natoms.shape
+    output_redu = np.array(output_redu)
+    var_shape = list(output_redu.shape[1:])
+    output_redu = output_redu.reshape(nf, -1)
     # check shape
     assert output_redu.ndim == 2
     assert natoms.ndim == 2
@@ -74,6 +77,8 @@ def compute_stats_from_redu(
     # rest_redu: nframes, ndim
     rest_redu = output_redu - np.einsum("ij,jk->ik", natoms, computed_output_bias)
     output_std = rest_redu.std(axis=0)
+    computed_output_bias = computed_output_bias.reshape([natoms.shape[1]] + var_shape)  # noqa: RUF005
+    output_std = output_std.reshape(var_shape)
     return computed_output_bias, output_std
 
 
