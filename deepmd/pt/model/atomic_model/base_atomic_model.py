@@ -324,7 +324,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 rcond=self.rcond,
                 atom_ener=self.atom_ener,
             )
-            self.set_out_bias(delta_bias, add=True)
+            # self.set_out_bias(delta_bias, add=True)
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
             bias_out, std_out = compute_output_stats(
@@ -335,7 +335,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 rcond=self.rcond,
                 atom_ener=self.atom_ener,
             )
-            self.set_out_bias(bias_out)
+            # self.set_out_bias(bias_out)
             self._store_out_stat(bias_out, std_out)
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
