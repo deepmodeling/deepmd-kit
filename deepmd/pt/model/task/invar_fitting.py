@@ -167,11 +167,11 @@ class InvarFitting(GeneralFitting):
         bias_atom_e = compute_output_stats(
             merged,
             self.ntypes,
-            keys=["energy"],
+            keys=[self.var_name],
             stat_file_path=stat_file_path,
             rcond=self.rcond,
             atom_ener=self.atom_ener,
-        )["energy"]
+        )[self.var_name]
         self.bias_atom_e.copy_(bias_atom_e.view([self.ntypes, self.dim_out]))
 
     def output_def(self) -> FittingOutputDef:

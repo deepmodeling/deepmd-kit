@@ -78,7 +78,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
     return lst
 
 
-def restore_from_file(
+def _restore_from_file(
     stat_file_path: DPPath,
     keys: List[str] = ["energy"],
 ) -> Optional[dict]:
@@ -96,7 +96,7 @@ def restore_from_file(
     return ret
 
 
-def save_to_file(
+def _save_to_file(
     stat_file_path: DPPath,
     results: dict,
 ):
@@ -107,10 +107,50 @@ def save_to_file(
         fp.save_numpy(vv)
 
 
+def _compute_model_predict(
+    sampled: Union[Callable[[], List[dict]], List[dict]],
+    keys: List[str],
+    model_forward: Callable[..., torch.Tensor],
+):
+    auto_batch_size = AutoBatchSize()
+    model_predict = {kk: [] for kk in keys}
+    for system in sampled:
+        nframes = system["coord"].shape[0]
+        coord, atype, box, natoms = (
+            system["coord"],
+            system["atype"],
+            system["box"],
+            system["natoms"],
+        )
+        fparam = system.get("fparam", None)
+        aparam = system.get("aparam", None)
+
+        def model_forward_auto_batch_size(*args, **kwargs):
+            return auto_batch_size.execute_all(
+                model_forward,
+                nframes,
+                system["atype"].shape[-1],
+                *args,
+                **kwargs,
+            )
+
+        sample_predict = model_forward_auto_batch_size(
+            coord, atype, box, fparam=fparam, aparam=aparam
+        )
+        for kk in keys:
+            model_predict[kk].append(
+                to_numpy_array(
+                    torch.sum(sample_predict[kk], dim=1)  # nf x nloc x odims
+                )
+            )
+    model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
+    return model_predict
+
+
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
-    keys: List[str] = ["energy"],
+    keys: Union[str, List[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
@@ -142,14 +182,20 @@ def compute_output_stats(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    bias_atom_e = restore_from_file(stat_file_path, keys)
+    # try to restore the bias from stat file
+    bias_atom_e = _restore_from_file(stat_file_path, keys)
 
+    # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
-        if callable(merged):
-            # only get data for once
-            sampled = merged()
-        else:
-            sampled = merged
+        # only get data for once
+        sampled = merged() if callable(merged) else merged
+        # remove the keys that are not in the sample
+        keys = [keys] if isinstance(keys, str) else keys
+        assert isinstance(keys, list)
+        new_keys = [ii for ii in keys if ii in sampled[0].keys()]
+        del keys
+        keys = new_keys
+        # get label dict from sample
         outputs = {kk: [item[kk] for item in sampled] for kk in keys}
         data_mixed_type = "real_natoms_vec" in sampled[0]
         natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
@@ -170,84 +216,46 @@ def compute_output_stats(
             )
         else:
             assigned_atom_ener = None
+
         if model_forward is None:
-            # only use statistics result
-            # [0]: take the first otuput (mean) of compute_stats_from_redu
-            bias_atom_e = {
-                kk: compute_stats_from_redu(
-                    merged_output[kk],
-                    merged_natoms,
-                    assigned_bias=assigned_atom_ener,
-                    rcond=rcond,
-                )[0]
-                for kk in keys
-            }
+            stats_input = merged_output
         else:
             # subtract the model bias and output the delta bias
-            auto_batch_size = AutoBatchSize()
-            model_predict = {kk: [] for kk in keys}
-            for system in sampled:
-                nframes = system["coord"].shape[0]
-                coord, atype, box, natoms = (
-                    system["coord"],
-                    system["atype"],
-                    system["box"],
-                    system["natoms"],
-                )
-                fparam = system.get("fparam", None)
-                aparam = system.get("aparam", None)
+            model_predict = _compute_model_predict(sampled, keys, model_forward)
+            stats_input = {kk: merged_output[kk] - model_predict[kk] for kk in keys}
 
-                def model_forward_auto_batch_size(*args, **kwargs):
-                    return auto_batch_size.execute_all(
-                        model_forward,
-                        nframes,
-                        system["atype"].shape[-1],
-                        *args,
-                        **kwargs,
-                    )
+        # [0]: take the first otuput (mean) of compute_stats_from_redu
+        bias_atom_e = {
+            kk: compute_stats_from_redu(
+                stats_input[kk],
+                merged_natoms,
+                assigned_bias=assigned_atom_ener,
+                rcond=rcond,
+            )[0]
+            for kk in keys
+        }
 
-                sample_predict = model_forward_auto_batch_size(
-                    coord, atype, box, fparam=fparam, aparam=aparam
-                )
-
-                for kk in keys:
-                    model_predict[kk].append(
-                        to_numpy_array(
-                            torch.sum(sample_predict[kk], dim=1)  # nf x nloc x odims
-                        )
-                    )
-
-            model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
-
-            bias_diff = {kk: merged_output[kk] - model_predict[kk] for kk in keys}
-            bias_atom_e = {
-                kk: compute_stats_from_redu(
-                    bias_diff[kk],
-                    merged_natoms,
-                    assigned_bias=assigned_atom_ener,
-                    rcond=rcond,
-                )[0]
-                for kk in keys
-            }
+        if model_forward is None:
+            unbias_e = {kk: merged_natoms @ bias_atom_e[kk] for kk in keys}
+        else:
             unbias_e = {
                 kk: model_predict[kk] + merged_natoms @ bias_atom_e[kk] for kk in keys
             }
-            atom_numbs = merged_natoms.sum(-1)
-            for kk in keys:
-                rmse_ae = np.sqrt(
-                    np.mean(
-                        np.square(
-                            (unbias_e[kk].ravel() - merged_output[kk].ravel())
-                            / atom_numbs
-                        )
+        atom_numbs = merged_natoms.sum(-1)
+        for kk in keys:
+            rmse_ae = np.sqrt(
+                np.mean(
+                    np.square(
+                        (unbias_e[kk].ravel() - merged_output[kk].ravel()) / atom_numbs
                     )
                 )
-                log.info(
-                    f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
-                )
+            )
+            log.info(
+                f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
+            )
 
         if stat_file_path is not None:
-            save_to_file(stat_file_path, bias_atom_e)
+            _save_to_file(stat_file_path, bias_atom_e)
 
     ret = {kk: to_torch_tensor(bias_atom_e[kk]) for kk in keys}
 

@@ -172,11 +172,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
+        def get_out_bias(self) -> torch.Tensor:
+            return self.atomic_model.get_out_bias()
+
         def change_out_bias(
             self,
             merged,
-            origin_type_map,
-            full_type_map,
             bias_adjust_mode="change-by-statistic",
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
@@ -190,10 +191,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
                     only when needed. Since the sampling process can be slow and memory-intensive,
                     the lazy function helps by only sampling once.
-            origin_type_map : List[str]
-                The original type_map in dataset, they are targets to change the output bias.
-            full_type_map : List[str]
-                The full type_map in pre-trained model
             bias_adjust_mode : str
                 The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
                 'change-by-statistic' : perform predictions on labels of target dataset,
@@ -202,8 +199,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             self.atomic_model.change_out_bias(
                 merged,
-                origin_type_map,
-                full_type_map,
                 bias_adjust_mode=bias_adjust_mode,
             )
 

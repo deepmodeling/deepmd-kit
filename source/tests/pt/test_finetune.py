@@ -59,8 +59,6 @@ class FinetuneTest:
         model.atomic_model.change_out_bias(
             self.sampled,
             bias_adjust_mode="change-by-statistic",
-            origin_type_map=origin_type_map,
-            full_type_map=full_type_map,
         )
         energy_bias_after = deepcopy(
             to_numpy_array(fitting_net["bias_atom_e"]).reshape(-1)
