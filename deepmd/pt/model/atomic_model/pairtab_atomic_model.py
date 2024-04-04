@@ -17,9 +17,6 @@ from deepmd.dpmodel import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
 from deepmd.utils.pair_tab import (
     PairTab,
 )
@@ -227,18 +224,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             The path to the stat file.
 
         """
-        # [0] to get the mean (bias)
-        bias_atom_e = compute_output_stats(
-            merged,
-            self.ntypes,
-            keys=["energy"],
-            stat_file_path=stat_file_path,
-            rcond=self.rcond,
-            atom_ener=self.atom_ener,
-        )[0]["energy"]
-        self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])
-        )
+        self.compute_or_load_out_stat(merged, stat_file_path)
 
     def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
         """

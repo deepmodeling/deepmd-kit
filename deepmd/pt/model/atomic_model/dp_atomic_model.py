@@ -215,8 +215,7 @@ class DPAtomicModel(BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        if self.fitting_net is not None:
-            self.fitting_net.compute_output_stats(wrapped_sampler, stat_file_path)
+        self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
         """

@@ -65,14 +65,30 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
         self.n_out = len(self.bias_keys)
-        self.out_bias_data = torch.zeros(
+        out_bias_data = torch.zeros(
             [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
         )
-        self.out_std_data = torch.ones(
+        out_std_data = torch.ones(
             [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
         )
-        self.register_buffer("out_bias", self.out_bias_data)
-        self.register_buffer("out_std", self.out_std_data)
+        self.register_buffer("out_bias", out_bias_data)
+        self.register_buffer("out_std", out_std_data)
+
+    def __setitem__(self, key, value):
+        if key in ["out_bias"]:
+            self.out_bias = value
+        elif key in ["out_std"]:
+            self.out_std = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ["out_bias"]:
+            return self.out_bias
+        elif key in ["out_std"]:
+            return self.out_std
+        else:
+            raise KeyError(key)
 
     @torch.jit.export
     def get_type_map(self) -> List[str]:

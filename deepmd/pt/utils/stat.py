@@ -273,7 +273,7 @@ def compute_output_stats(
             }
         else:
             unbias_e = {
-                kk: model_predict[kk].reshape(ntypes, -1)
+                kk: model_predict[kk].reshape(nf, -1)
                 + merged_natoms @ bias_atom_e[kk].reshape(ntypes, -1)
                 for kk in keys
             }
