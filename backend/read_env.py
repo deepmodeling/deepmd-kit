@@ -13,6 +13,9 @@ from packaging.version import (
     Version,
 )
 
+from .find_pytorch import (
+    find_pytorch,
+)
 from .find_tensorflow import (
     find_tensorflow,
     get_tf_version,
@@ -98,6 +101,19 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         find_libpython_requires = []
         cmake_args.append("-DENABLE_TENSORFLOW=OFF")
         tf_version = None
+
+    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
+        pt_install_dir = find_pytorch()
+        if pt_install_dir is None:
+            raise RuntimeError("Cannot find installed PyTorch.")
+        cmake_args.extend(
+            [
+                "-DENABLE_PYTORCH=ON",
+                f"-DCMAKE_PREFIX_PATH={pt_install_dir}",
+            ]
+        )
+    else:
+        cmake_args.append("-DENABLE_PYTORCH=OFF")
 
     cmake_args = [
         "-DBUILD_PY_IF:BOOL=TRUE",

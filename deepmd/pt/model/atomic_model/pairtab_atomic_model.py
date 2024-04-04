@@ -228,15 +228,35 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         """
         bias_atom_e = compute_output_stats(
-            merged, self.ntypes, stat_file_path, self.rcond, self.atom_ener
-        )
+            merged,
+            self.ntypes,
+            keys=["energy"],
+            stat_file_path=stat_file_path,
+            rcond=self.rcond,
+            atom_ener=self.atom_ener,
+        )["energy"]
         self.bias_atom_e.copy_(
             torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])
         )
 
-    def change_energy_bias(self) -> None:
-        # need to implement
-        pass
+    def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
+        """
+        Modify the output bias for the atomic model.
+
+        Parameters
+        ----------
+        out_bias : torch.Tensor
+            The new bias to be applied.
+        add : bool, optional
+            Whether to add the new bias to the existing one.
+            If False, the output bias will be directly replaced by the new bias.
+            If True, the new bias will be added to the existing one.
+        """
+        self.bias_atom_e = out_bias + self.bias_atom_e if add else out_bias
+
+    def get_out_bias(self) -> torch.Tensor:
+        """Return the output bias of the atomic model."""
+        return self.bias_atom_e
 
     def forward_atomic(
         self,
@@ -415,20 +435,28 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         # (nframes, nloc, nnei)
         expanded_i_type = i_type.unsqueeze(-1).expand(-1, -1, j_type.shape[-1])
 
-        # (nframes, nloc, nnei, nspline, 4)
-        expanded_tab_data = tab_data[expanded_i_type, j_type]
-
-        # (nframes, nloc, nnei, 1, 4)
-        expanded_idx = idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, -1, 4)
-
         # handle the case where idx is beyond the number of splines
-        clipped_indices = torch.clamp(expanded_idx, 0, nspline - 1).to(torch.int64)
+        clipped_indices = torch.clamp(idx, 0, nspline - 1).to(torch.int64)
 
+        nframes = i_type.shape[0]
+        nloc = i_type.shape[1]
+        nnei = j_type.shape[2]
+        ntypes = tab_data.shape[0]
+        # tab_data_idx: (nframes, nloc, nnei)
+        tab_data_idx = (
+            expanded_i_type * ntypes * nspline + j_type * nspline + clipped_indices
+        )
+        # tab_data: (ntype, ntype, nspline, 4)
+        tab_data = tab_data.view(ntypes * ntypes * nspline, 4)
+        # tab_data_idx: (nframes * nloc * nnei, 4)
+        tab_data_idx = tab_data_idx.view(nframes * nloc * nnei, 1).expand(-1, 4)
         # (nframes, nloc, nnei, 4)
-        final_coef = torch.gather(expanded_tab_data, 3, clipped_indices).squeeze()
+        final_coef = torch.gather(tab_data, 0, tab_data_idx).view(
+            nframes, nloc, nnei, 4
+        )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
-        final_coef[expanded_idx.squeeze() > nspline] = 0
+        final_coef[idx > nspline] = 0
         return final_coef
 
     @staticmethod

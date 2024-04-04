@@ -24,6 +24,35 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
 
+    def test_methods(self):
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        )
+        type_map = ["foo", "bar"]
+
+        md0 = DPAtomicModel(ds, ft, type_map=type_map)
+
+        self.assertEqual(md0.get_output_keys(), ["energy", "mask"])
+        self.assertEqual(md0.get_type_map(), ["foo", "bar"])
+        self.assertEqual(md0.get_ntypes(), 2)
+        self.assertAlmostEqual(md0.get_rcut(), self.rcut)
+        self.assertEqual(md0.get_sel(), self.sel)
+        self.assertEqual(md0.get_nsel(), sum(self.sel))
+        self.assertEqual(md0.get_nnei(), sum(self.sel))
+        self.assertEqual(md0.get_dim_fparam(), 0)
+        self.assertEqual(md0.get_dim_aparam(), 0)
+        self.assertEqual(md0.mixed_types(), ds.mixed_types())
+        self.assertEqual(md0.get_sel_type(), [0, 1])
+
     def test_self_consistency(
         self,
     ):

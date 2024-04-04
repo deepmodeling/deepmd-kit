@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
+import logging
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import torch
@@ -21,9 +24,17 @@ from deepmd.pt.utils import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
+from deepmd.pt.utils.stat import (
+    compute_output_stats,
+)
 from deepmd.utils.path import (
     DPPath,
 )
+
+log = logging.getLogger(__name__)
 
 BaseAtomicModel_ = make_base_atomic_model(torch.Tensor)
 
@@ -178,22 +189,93 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        sampled_func,
+        merged: Union[Callable[[], List[dict]], List[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
-        Compute or load the statistics parameters of the model,
-        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
-        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
-        and saved in the `stat_file_path`(s).
-        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
-        and load the calculated statistics parameters.
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
         Parameters
         ----------
-        sampled_func
-            The sampled data frames from different data systems.
-        stat_file_path
-            The path to the statistics files.
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
         """
         raise NotImplementedError
+
+    def change_out_bias(
+        self,
+        sample_merged,
+        bias_adjust_mode="change-by-statistic",
+    ) -> None:
+        """Change the output bias according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        bias_adjust_mode : str
+            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on labels of target dataset,
+                    and do least square on the errors to obtain the target shift as bias.
+            'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        """
+        if bias_adjust_mode == "change-by-statistic":
+            delta_bias = compute_output_stats(
+                sample_merged,
+                self.get_ntypes(),
+                keys=self.get_output_keys(),
+                model_forward=self._get_forward_wrapper_func(),
+            )["energy"]
+            self.set_out_bias(delta_bias, add=True)
+        elif bias_adjust_mode == "set-by-statistic":
+            bias_atom = compute_output_stats(
+                sample_merged,
+                self.get_ntypes(),
+                keys=self.get_output_keys(),
+            )["energy"]
+            self.set_out_bias(bias_atom)
+        else:
+            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+
+    def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
+        """Get a forward wrapper of the atomic model for output bias calculation."""
+
+        def model_forward(coord, atype, box, fparam=None, aparam=None):
+            with torch.no_grad():  # it's essential for pure torch forward function to use auto_batchsize
+                (
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    coord,
+                    atype,
+                    self.get_rcut(),
+                    self.get_sel(),
+                    mixed_types=self.mixed_types(),
+                    box=box,
+                )
+                atomic_ret = self.forward_common_atomic(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                )
+                return {kk: vv.detach() for kk, vv in atomic_ret.items()}
+
+        return model_forward

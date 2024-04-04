@@ -132,7 +132,7 @@ class EnvMatStat(ABC):
 
         Parameters
         ----------
-        path : DPH5Path
+        path : DPPath
             The path to save the statistics of the environment matrix.
         """
         if len(self.stats) == 0:
@@ -146,7 +146,7 @@ class EnvMatStat(ABC):
 
         Parameters
         ----------
-        path : DPH5Path
+        path : DPPath
             The path to load the statistics of the environment matrix.
         """
         if len(self.stats) > 0:
@@ -166,7 +166,7 @@ class EnvMatStat(ABC):
 
         Parameters
         ----------
-        path : DPH5Path
+        path : DPPath
             The path to load the statistics of the environment matrix.
         data : List[Dict[str, np.ndarray]]
             The environment matrix.

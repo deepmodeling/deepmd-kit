@@ -1,9 +1,10 @@
 [build-system]
 requires = [
+    # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    # TODO: unpin the upper bound when it is stable
     "scikit-build-core>=0.5,<0.9,!=0.6.0",
     "packaging",
+    'tomli >= 1.1.0 ; python_version < "3.11"',
 ]
 build-backend = "backend.dp_backend"
 backend-path = ["."]
@@ -44,6 +45,7 @@ dependencies = [
     'h5py',
     'wcmatch',
     'packaging',
+    'ml_dtypes',
 ]
 requires-python = ">=3.8"
 keywords = ["deepmd"]
@@ -61,6 +63,71 @@ deepmd_driver = "deepmd.driver:DPDriver"
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
 documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
+
+# Metadata below is dynamic. However, it still has static parts,
+# which can be read by the build backend.
+[tool.deepmd_build_backend.optional-dependencies]
+test = [
+    "dpdata>=0.2.7",
+    "ase",
+    "pytest",
+    "pytest-cov",
+    "pytest-sugar",
+    "dpgui",
+    "mendeleev",
+]
+docs = [
+    "sphinx>=3.1.1",
+    "sphinx_rtd_theme>=1.0.0rc1",
+    "sphinx_markdown_tables",
+    "myst-nb>=1.0.0rc0",
+    "myst-parser>=0.19.2",
+    "sphinx-design",
+    "breathe",
+    "exhale",
+    "numpydoc",
+    "ase",
+    "deepmodeling-sphinx>=0.1.0",
+    "dargs>=0.3.4",
+    "sphinx-argparse",
+    "pygments-lammps",
+    "sphinxcontrib-bibtex",
+]
+lmp = [
+    "lammps~=2023.8.2.3.0",
+]
+ipi = [
+    "i-PI",
+]
+gui = [
+    "dpgui",
+]
+cu11 = [
+    "nvidia-cuda-runtime-cu11",
+    "nvidia-cublas-cu11",
+    "nvidia-cufft-cu11",
+    "nvidia-curand-cu11",
+    "nvidia-cusolver-cu11",
+    "nvidia-cusparse-cu11",
+    "nvidia-cudnn-cu11<9",
+    "nvidia-cuda-nvcc-cu11",
+]
+cu12 = [
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cublas-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-cudnn-cu12<9",
+    "nvidia-cuda-nvcc-cu12",
+]
+torch = [
+    "torch>=2a",
+]
+
+[tool.deepmd_build_backend.scripts]
+dp = "deepmd.main:main"
 
 [tool.setuptools_scm]
 
@@ -134,7 +201,7 @@ test-command = [
 test-extras = ["cpu", "test", "lmp", "ipi"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
-# TODO: uncomment when CUDA 11 is deprecated
+# TODO: uncomment to use the latest image when CUDA 11 is deprecated
 # manylinux-x86_64-image = "manylinux_2_28"
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "manylinux_2_28"

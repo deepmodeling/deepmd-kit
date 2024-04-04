@@ -14,6 +14,10 @@ from dargs import (
     dargs,
 )
 
+from deepmd.common import (
+    VALID_ACTIVATION,
+    VALID_PRECISION,
+)
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
@@ -24,26 +28,8 @@ from deepmd.utils.plugin import (
 log = logging.getLogger(__name__)
 
 
-# TODO: import from a module outside tf/pt
-ACTIVATION_FN_DICT = {
-    "relu": None,
-    "relu6": None,
-    "softplus": None,
-    "sigmoid": None,
-    "tanh": None,
-    "gelu": None,
-    "gelu_tf": None,
-    "None": None,
-    "none": None,
-}
-# TODO: import from a module outside tf/pt
-PRECISION_DICT = {
-    "default": None,
-    "float16": None,
-    "float32": None,
-    "float64": None,
-    "bfloat16": None,
-}
+ACTIVATION_FN_DICT = dict.fromkeys(VALID_ACTIVATION)
+PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
@@ -93,7 +79,12 @@ def type_embedding_args():
 
 
 def spin_args():
-    doc_use_spin = "Whether to use atomic spin model for each atom type"
+    doc_use_spin = (
+        "Whether to use atomic spin model for each atom type. "
+        "List of boolean values with the shape of [ntypes] to specify which types use spin, "
+        f"or a list of integer values {doc_only_pt_supported} "
+        "to indicate the index of the type that uses spin."
+    )
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
     doc_virtual_scale = (
@@ -106,7 +97,7 @@ def spin_args():
     )
 
     return [
-        Argument("use_spin", List[bool], doc=doc_use_spin),
+        Argument("use_spin", [List[bool], List[int]], doc=doc_use_spin),
         Argument(
             "spin_norm",
             List[float],
@@ -121,7 +112,7 @@ def spin_args():
         ),
         Argument(
             "virtual_scale",
-            List[float],
+            [List[float], float],
             optional=True,
             doc=doc_only_pt_supported + doc_virtual_scale,
         ),
@@ -1517,15 +1508,32 @@ def linear_ener_model_args() -> Argument:
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
     doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_stop_lr = (
+        "The desired learning rate at the end of the training. "
+        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
+        "this value will serve as the minimum learning rate during training. "
+        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
+    )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
+    )
+    doc_decay_rate = (
+        "The decay rate for the learning rate. "
+        "If this is provided, it will be used directly as the decay rate for learning rate "
+        "instead of calculating it through interpolation between start_lr and stop_lr."
     )
 
     args = [
         Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
         Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
+        Argument(
+            "decay_rate",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_decay_rate,
+        ),
     ]
     return args
 
@@ -2171,7 +2179,9 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_stat_file = (
         "The file path for saving the data statistics results. "
         "If set, the results will be saved and directly loaded during the next training session, "
-        "avoiding the need to recalculate the statistics"
+        "avoiding the need to recalculate the statistics. "
+        "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
+        "otherwise, a directory containing NumPy binary files are used."
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."

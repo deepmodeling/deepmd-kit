@@ -32,6 +32,9 @@ from deepmd.loggers.loggers import (
 from deepmd.main import (
     parse_args,
 )
+from deepmd.pt.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+)
 from deepmd.pt.infer import (
     inference,
 )
@@ -90,13 +93,13 @@ def get_trainer(
         dist.init_process_group(backend="nccl")
 
     ckpt = init_model if init_model is not None else restart_model
-    config["model"] = change_finetune_model_params(
-        ckpt,
-        finetune_model,
-        config["model"],
-        multi_task=multi_task,
-        model_branch=model_branch,
-    )
+    finetune_links = None
+    if finetune_model is not None:
+        config["model"], finetune_links = change_finetune_model_params(
+            finetune_model,
+            config["model"],
+            model_branch=model_branch,
+        )
     config["model"]["resuming"] = (finetune_model is not None) or (ckpt is not None)
 
     def prepare_trainer_input_single(
@@ -120,13 +123,12 @@ def get_trainer(
         if rank != 0:
             stat_file_path_single = None
         elif stat_file_path_single is not None:
-            if Path(stat_file_path_single).is_dir():
-                raise ValueError(
-                    f"stat_file should be a file, not a directory: {stat_file_path_single}"
-                )
-            if not Path(stat_file_path_single).is_file():
-                with h5py.File(stat_file_path_single, "w") as f:
-                    pass
+            if not Path(stat_file_path_single).exists():
+                if stat_file_path_single.endswith((".h5", ".hdf5")):
+                    with h5py.File(stat_file_path_single, "w") as f:
+                        pass
+                else:
+                    Path(stat_file_path_single).mkdir()
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
@@ -194,6 +196,7 @@ def get_trainer(
         finetune_model=finetune_model,
         force_load=force_load,
         shared_links=shared_links,
+        finetune_links=finetune_links,
         init_frz_model=init_frz_model,
     )
     return trainer
@@ -223,6 +226,7 @@ class SummaryPrinter(BaseSummaryPrinter):
         return {
             "Backend": "PyTorch",
             "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+            "Enable custom OP": ENABLE_CUSTOMIZED_OP,
         }
 
 
@@ -285,9 +289,7 @@ def freeze(FLAGS):
     torch.jit.save(
         model,
         FLAGS.output,
-        {
-            # TODO: _extra_files
-        },
+        {},
     )
 
 

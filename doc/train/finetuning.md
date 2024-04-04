@@ -36,6 +36,7 @@ such as {ref}`descriptor <model/descriptor>`, {ref}`fitting_net <model/fitting_n
 However, you can still set the `trainable` parameters in each part of `input.json` to control the training procedure.
 
 To obtain a more simplified script, for example, you can change the {ref}`model <model>` part in `input.json` to perform finetuning:
+
 ```json
     "model": {
         "type_map":     ["O", "H"],

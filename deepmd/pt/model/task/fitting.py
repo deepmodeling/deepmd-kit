@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-import os
-import tempfile
 from abc import (
     abstractmethod,
 )
@@ -15,9 +13,6 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.infer.deep_eval import (
-    DeepEval,
-)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -33,7 +28,6 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
-    DEVICE,
     PRECISION_DICT,
 )
 from deepmd.pt.utils.exclude_mask import (
@@ -42,12 +36,6 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
-)
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.utils.finetune import (
-    change_energy_bias_lower,
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -87,72 +75,6 @@ class Fitting(torch.nn.Module, BaseFitting):
                 self._modules[item] = base_class._modules[item]
         else:
             raise NotImplementedError
-
-    def change_energy_bias(
-        self,
-        config,
-        model,
-        old_type_map: List[str],
-        new_type_map: List[str],
-        bias_shift="delta",
-        ntest=10,
-    ):
-        """Change the energy bias according to the input data and the pretrained model.
-
-        Parameters
-        ----------
-        config : Dict
-            The configuration.
-        model : EnergyModel
-            Energy model loaded pre-trained model.
-        new_type_map : List[str]
-            The original type_map in dataset, they are targets to change the energy bias.
-        old_type_map : List[str]
-            The full type_map in pretrained model
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
-        ntest : int
-            The number of test samples in a system to change the energy bias.
-        """
-        log.info(
-            f"Changing energy bias in pretrained model for types {new_type_map!s}... "
-            "(this step may take long time)"
-        )
-        # data
-        systems = config["training"]["training_data"]["systems"]
-        finetune_data = DeepmdDataSystem(
-            systems=systems,
-            batch_size=config["training"]["training_data"].get("batch_size", "auto"),
-            test_size=1,
-        )
-        finetune_data.add("energy", ndof=1, atomic=False, must=True, high_prec=True)
-        model = torch.jit.script(model)
-        if model.get_dim_fparam() > 0:
-            finetune_data.add("fparam", model.get_dim_fparam(), atomic=False, must=True)
-        if model.get_dim_aparam() > 0:
-            finetune_data.add("aparam", model.get_dim_aparam(), atomic=True, must=True)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
-        dp = DeepEval(tmp_model.name)
-        os.unlink(tmp_model.name)
-        bias = change_energy_bias_lower(
-            finetune_data,
-            dp,
-            new_type_map,
-            old_type_map,
-            self.bias_atom_e.detach().cpu().numpy().reshape(-1),
-            bias_shift=bias_shift,
-            ntest=ntest,
-        )
-        self.bias_atom_e = (
-            torch.from_numpy(bias)
-            .type_as(self.bias_atom_e)
-            .reshape(self.bias_atom_e.shape)
-            .to(DEVICE)
-        )
 
 
 class GeneralFitting(Fitting):
@@ -457,7 +379,8 @@ class GeneralFitting(Fitting):
     ):
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
-            # TODO: Idealy, the input for vaccum should be computed;
+            # TODO: compute the input for vaccm when remove_vaccum_contribution is set
+            # Idealy, the input for vaccum should be computed;
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
             # descriptor.

@@ -172,6 +172,36 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
+        def get_out_bias(self) -> torch.Tensor:
+            return self.atomic_model.get_out_bias()
+
+        def change_out_bias(
+            self,
+            merged,
+            bias_adjust_mode="change-by-statistic",
+        ) -> None:
+            """Change the output bias of atomic model according to the input data and the pretrained model.
+
+            Parameters
+            ----------
+            merged : Union[Callable[[], List[dict]], List[dict]]
+                - List[dict]: A list of data samples from various data systems.
+                    Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                    originating from the `i`-th data system.
+                - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                    only when needed. Since the sampling process can be slow and memory-intensive,
+                    the lazy function helps by only sampling once.
+            bias_adjust_mode : str
+                The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+                'change-by-statistic' : perform predictions on labels of target dataset,
+                        and do least square on the errors to obtain the target shift as bias.
+                'set-by-statistic' : directly use the statistic output bias in the target dataset.
+            """
+            self.atomic_model.change_out_bias(
+                merged,
+                bias_adjust_mode=bias_adjust_mode,
+            )
+
         def forward_common_lower(
             self,
             extended_coord,

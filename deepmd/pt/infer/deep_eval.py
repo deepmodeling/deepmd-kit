@@ -90,6 +90,7 @@ class DeepEval(DeepEvalBackend):
         *args: List[Any],
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        head: Optional[str] = None,
         **kwargs: Dict[str, Any],
     ):
         self.output_def = output_def
@@ -99,9 +100,24 @@ class DeepEval(DeepEvalBackend):
             if "model" in state_dict:
                 state_dict = state_dict["model"]
             self.input_param = state_dict["_extra_state"]["model_params"]
-            self.input_param["resuming"] = True
             self.multi_task = "model_dict" in self.input_param
-            assert not self.multi_task, "multitask mode currently not supported!"
+            if self.multi_task:
+                model_keys = list(self.input_param["model_dict"].keys())
+                assert (
+                    head is not None
+                ), f"Head must be set for multitask model! Available heads are: {model_keys}"
+                assert (
+                    head in model_keys
+                ), f"No head named {head} in model! Available heads are: {model_keys}"
+                self.input_param = self.input_param["model_dict"][head]
+                state_dict_head = {"_extra_state": state_dict["_extra_state"]}
+                for item in state_dict:
+                    if f"model.{head}." in item:
+                        state_dict_head[
+                            item.replace(f"model.{head}.", "model.Default.")
+                        ] = state_dict[item].clone()
+                state_dict = state_dict_head
+            self.input_param["resuming"] = True
             model = get_model(self.input_param).to(DEVICE)
             model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
@@ -178,7 +194,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
-        return 0
+        return self.dp.model["Default"].get_numb_dos()
 
     def get_has_efield(self):
         """Check if the model has efield."""
@@ -388,7 +404,7 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_input = None
         do_atomic_virial = any(
-            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
         batch_output = model(
             coord_input,

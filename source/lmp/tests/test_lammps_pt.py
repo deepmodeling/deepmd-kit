@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import os
+import shutil
 import subprocess as sp
 import sys
+import tempfile
 from pathlib import (
     Path,
 )
@@ -667,3 +670,52 @@ def test_pair_deepmd_si(lammps_si):
             expected_f[lammps_si.atoms[ii].id - 1] * constants.force_metal2si
         )
     lammps_si.run(1)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.parametrize(
+    ("balance_args",),
+    [(["--balance"],), ([],)],
+)
+def test_pair_deepmd_mpi(balance_args: list):
+    with tempfile.NamedTemporaryFile() as f:
+        sp.check_call(
+            [
+                "mpirun",
+                "-n",
+                "2",
+                sys.executable,
+                Path(__file__).parent / "run_mpi_pair_deepmd.py",
+                data_file,
+                pb_file,
+                pb_file2,
+                md_file,
+                f.name,
+                *balance_args,
+            ]
+        )
+        arr = np.loadtxt(f.name, ndmin=1)
+    pe = arr[0]
+
+    relative = 1.0
+    assert pe == pytest.approx(expected_e)
+    # load model devi
+    md = np.loadtxt(md_file.resolve())
+    norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
+    expected_md_f /= norm + relative
+    assert md[7:] == pytest.approx(expected_md_f)
+    assert md[4] == pytest.approx(np.max(expected_md_f))
+    assert md[5] == pytest.approx(np.min(expected_md_f))
+    assert md[6] == pytest.approx(np.mean(expected_md_f))
+    expected_md_v = (
+        np.std([np.sum(expected_v, axis=0), np.sum(expected_v2, axis=0)], axis=0) / 6
+    )
+    assert md[1] == pytest.approx(np.max(expected_md_v))
+    assert md[2] == pytest.approx(np.min(expected_md_v))
+    assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))

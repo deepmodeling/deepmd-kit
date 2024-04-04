@@ -54,7 +54,6 @@ class LinearModel(Model):
             self.weights = [1 / len(models) for _ in range(len(models))]
         elif weights == "sum":
             self.weights = [1 for _ in range(len(models))]
-        # TODO: add more weights, for example, so-called committee models
         else:
             raise ValueError(f"Invalid weights {weights}")
 

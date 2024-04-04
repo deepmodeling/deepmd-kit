@@ -99,7 +99,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
                                                 "-Wl,-undefined,dynamic_lookup")
   else()
     set_target_properties(
-      ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
+      ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}"
                             LINK_FLAGS "-rdynamic")
   endif()
   target_compile_definitions(

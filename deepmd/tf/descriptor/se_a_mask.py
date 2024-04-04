@@ -82,7 +82,7 @@ class DescrptSeAMask(DescrptSeA):
 
     Parameters
     ----------
-    sel : list[str]
+    sel : list[int]
             sel[i] specifies the maxmum number of type i atoms in the neighbor list.
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
@@ -117,7 +117,7 @@ class DescrptSeAMask(DescrptSeA):
 
     def __init__(
         self,
-        sel: List[str],
+        sel: List[int],
         neuron: List[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
@@ -249,10 +249,9 @@ class DescrptSeAMask(DescrptSeA):
         **kwargs
             Additional keyword arguments.
         """
-        """
-        TODO: Since not all input atoms are real in se_a_mask,
-        statistics should be reimplemented for se_a_mask descriptor.
-        """
+        # TODO: implement compute_input_stats for DescrptSeAMask
+        # Since not all input atoms are real in se_a_mask,
+        # statistics should be reimplemented for se_a_mask descriptor.
 
         self.davg = None
         self.dstd = None

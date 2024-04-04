@@ -12,11 +12,14 @@ import torch
 
 from deepmd.pt.utils import (
     AtomExcludeMask,
-    env,
+)
+from deepmd.pt.utils.auto_batch_size import (
+    AutoBatchSize,
 )
 from deepmd.pt.utils.utils import (
     dict_to_device,
     to_numpy_array,
+    to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
@@ -58,24 +61,100 @@ def make_stat_input(datasets, dataloaders, nbatches):
                         if dd not in sys_stat:
                             sys_stat[dd] = []
                         sys_stat[dd].append(stat_data[dd])
+                    elif isinstance(stat_data[dd], np.float32):
+                        sys_stat[dd] = stat_data[dd]
                     else:
                         pass
+
         for key in sys_stat:
-            if sys_stat[key] is None or sys_stat[key][0] is None:
+            if isinstance(sys_stat[key], np.float32):
+                pass
+            elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
-            else:
+            elif isinstance(stat_data[dd], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
 
 
+def _restore_from_file(
+    stat_file_path: DPPath,
+    keys: List[str] = ["energy"],
+) -> Optional[dict]:
+    if stat_file_path is None:
+        return None
+    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
+    if any(not (ii.is_file()) for ii in stat_files):
+        return None
+    ret = {}
+
+    for kk in keys:
+        fp = stat_file_path / f"bias_atom_{kk}"
+        assert fp.is_file()
+        ret[kk] = fp.load_numpy()
+    return ret
+
+
+def _save_to_file(
+    stat_file_path: DPPath,
+    results: dict,
+):
+    assert stat_file_path is not None
+    stat_file_path.mkdir(exist_ok=True, parents=True)
+    for kk, vv in results.items():
+        fp = stat_file_path / f"bias_atom_{kk}"
+        fp.save_numpy(vv)
+
+
+def _compute_model_predict(
+    sampled: Union[Callable[[], List[dict]], List[dict]],
+    keys: List[str],
+    model_forward: Callable[..., torch.Tensor],
+):
+    auto_batch_size = AutoBatchSize()
+    model_predict = {kk: [] for kk in keys}
+    for system in sampled:
+        nframes = system["coord"].shape[0]
+        coord, atype, box, natoms = (
+            system["coord"],
+            system["atype"],
+            system["box"],
+            system["natoms"],
+        )
+        fparam = system.get("fparam", None)
+        aparam = system.get("aparam", None)
+
+        def model_forward_auto_batch_size(*args, **kwargs):
+            return auto_batch_size.execute_all(
+                model_forward,
+                nframes,
+                system["atype"].shape[-1],
+                *args,
+                **kwargs,
+            )
+
+        sample_predict = model_forward_auto_batch_size(
+            coord, atype, box, fparam=fparam, aparam=aparam
+        )
+        for kk in keys:
+            model_predict[kk].append(
+                to_numpy_array(
+                    torch.sum(sample_predict[kk], dim=1)  # nf x nloc x odims
+                )
+            )
+    model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
+    return model_predict
+
+
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
+    keys: Union[str, List[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
     atom_ener: Optional[List[float]] = None,
+    model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -97,19 +176,27 @@ def compute_output_stats(
         The condition number for the regression of atomic energy.
     atom_ener : List[float], optional
         Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
-
+    model_forward : Callable[..., torch.Tensor], optional
+        The wrapped forward function of atomic model.
+        If not None, the model will be utilized to generate the original energy prediction,
+        which will be subtracted from the energy label of the data.
+        The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    if stat_file_path is not None:
-        stat_file_path = stat_file_path / "bias_atom_e"
-    if stat_file_path is not None and stat_file_path.is_file():
-        bias_atom_e = stat_file_path.load_numpy()
-    else:
-        if callable(merged):
-            # only get data for once
-            sampled = merged()
-        else:
-            sampled = merged
-        energy = [item["energy"] for item in sampled]
+    # try to restore the bias from stat file
+    bias_atom_e = _restore_from_file(stat_file_path, keys)
+
+    # failed to restore the bias from stat file. compute
+    if bias_atom_e is None:
+        # only get data for once
+        sampled = merged() if callable(merged) else merged
+        # remove the keys that are not in the sample
+        keys = [keys] if isinstance(keys, str) else keys
+        assert isinstance(keys, list)
+        new_keys = [ii for ii in keys if ii in sampled[0].keys()]
+        del keys
+        keys = new_keys
+        # get label dict from sample
+        outputs = {kk: [item[kk] for item in sampled] for kk in keys}
         data_mixed_type = "real_natoms_vec" in sampled[0]
         natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
         for system in sampled:
@@ -120,7 +207,7 @@ def compute_output_stats(
                 system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
         input_natoms = [item[natoms_key] for item in sampled]
         # shape: (nframes, ndim)
-        merged_energy = to_numpy_array(torch.cat(energy))
+        merged_output = {kk: to_numpy_array(torch.cat(outputs[kk])) for kk in keys}
         # shape: (nframes, ntypes)
         merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
         if atom_ener is not None and len(atom_ener) > 0:
@@ -129,13 +216,47 @@ def compute_output_stats(
             )
         else:
             assigned_atom_ener = None
-        bias_atom_e, _ = compute_stats_from_redu(
-            merged_energy,
-            merged_natoms,
-            assigned_bias=assigned_atom_ener,
-            rcond=rcond,
-        )
+
+        if model_forward is None:
+            stats_input = merged_output
+        else:
+            # subtract the model bias and output the delta bias
+            model_predict = _compute_model_predict(sampled, keys, model_forward)
+            stats_input = {kk: merged_output[kk] - model_predict[kk] for kk in keys}
+
+        # [0]: take the first otuput (mean) of compute_stats_from_redu
+        bias_atom_e = {
+            kk: compute_stats_from_redu(
+                stats_input[kk],
+                merged_natoms,
+                assigned_bias=assigned_atom_ener,
+                rcond=rcond,
+            )[0]
+            for kk in keys
+        }
+
+        if model_forward is None:
+            unbias_e = {kk: merged_natoms @ bias_atom_e[kk] for kk in keys}
+        else:
+            unbias_e = {
+                kk: model_predict[kk] + merged_natoms @ bias_atom_e[kk] for kk in keys
+            }
+        atom_numbs = merged_natoms.sum(-1)
+        for kk in keys:
+            rmse_ae = np.sqrt(
+                np.mean(
+                    np.square(
+                        (unbias_e[kk].ravel() - merged_output[kk].ravel()) / atom_numbs
+                    )
+                )
+            )
+            log.info(
+                f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
+            )
+
         if stat_file_path is not None:
-            stat_file_path.save_numpy(bias_atom_e)
-    assert all(x is not None for x in [bias_atom_e])
-    return torch.tensor(bias_atom_e, device=env.DEVICE)
+            _save_to_file(stat_file_path, bias_atom_e)
+
+    ret = {kk: to_torch_tensor(bias_atom_e[kk]) for kk in keys}
+
+    return ret

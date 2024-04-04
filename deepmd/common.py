@@ -17,8 +17,10 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     TypeVar,
     Union,
+    get_args,
 )
 
 try:
@@ -45,23 +47,28 @@ __all__ = [
     "j_loader",
     "expand_sys_str",
     "get_np_precision",
+    "VALID_PRECISION",
+    "VALID_ACTIVATION",
 ]
 
+_PRECISION = Literal["default", "float16", "float32", "float64"]
+_ACTIVATION = Literal[
+    "relu",
+    "relu6",
+    "softplus",
+    "sigmoid",
+    "tanh",
+    "gelu",
+    "gelu_tf",
+    "none",
+    "linear",
+]
+# get_args is new in py38
+VALID_PRECISION: Set[_PRECISION] = set(get_args(_PRECISION))
+VALID_ACTIVATION: Set[_ACTIVATION] = set(get_args(_ACTIVATION))
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
-    _PRECISION = Literal["default", "float16", "float32", "float64"]
-    _ACTIVATION = Literal[
-        "relu",
-        "relu6",
-        "softplus",
-        "sigmoid",
-        "tanh",
-        "gelu",
-        "gelu_tf",
-        "none",
-        "linear",
-    ]
     __all__.extend(
         [
             "_DICT_VAL",
@@ -71,8 +78,9 @@ if TYPE_CHECKING:
     )
 
 
-# TODO this is not a good way to do things. This is some global variable to which
-# TODO anyone can write and there is no good way to keep track of the changes
+# TODO: refactor data_requirement to make it not a global variable
+# this is not a good way to do things. This is some global variable to which
+# anyone can write and there is no good way to keep track of the changes
 data_requirement = {}
 
 
@@ -180,9 +188,10 @@ def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
     return default_mesh
 
 
-# TODO maybe rename this to j_deprecated and only warn about deprecated keys,
-# TODO if the deprecated_key argument is left empty function puppose is only custom
-# TODO error since dict[key] already raises KeyError when the key is missing
+# TODO: rename j_must_have to j_deprecated and only warn about deprecated keys
+# maybe rename this to j_deprecated and only warn about deprecated keys,
+# if the deprecated_key argument is left empty function puppose is only custom
+# error since dict[key] already raises KeyError when the key is missing
 def j_must_have(
     jdata: Dict[str, "_DICT_VAL"], key: str, deprecated_key: List[str] = []
 ) -> "_DICT_VAL":
@@ -238,7 +247,7 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
         raise TypeError("config file must be json, or yaml/yml")
 
 
-# TODO port completely to pathlib when all callers are ported
+# TODO port expand_sys_str completely to pathlib when all callers are ported
 def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     """Recursively iterate over directories taking those that contain `type.raw` file.
 

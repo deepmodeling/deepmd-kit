@@ -157,7 +157,8 @@ FITTING_NET_PATTERN = str(
     r"(final)_layer_type_(\d+)/(matrix)|"
     r"(final)_layer/(bias)|"
     r"(final)_layer_type_(\d+)/(bias)|"
-    # TODO: not sure how to parse for shared layers...
+    # TODO: supporting extracting parameters for shared layers
+    # not sure how to parse for shared layers...
     # layer_name
     r"share_.+_type_\d/matrix|"
     r"share_.+_type_\d/bias|"
@@ -167,11 +168,14 @@ FITTING_NET_PATTERN = str(
     r"share_.+/idt|"
 )[:-1]
 
+# subpatterns:
+# \1: weight name
+# \2: layer index
 TYPE_EMBEDDING_PATTERN = str(
-    r"type_embed_net+/matrix_\d+|"
-    r"type_embed_net+/bias_\d+|"
-    r"type_embed_net+/idt_\d+|"
-)
+    r"type_embed_net/(matrix)_(\d+)|"
+    r"type_embed_net/(bias)_(\d+)|"
+    r"type_embed_net/(idt)_(\d+)|"
+)[:-1]
 
 ATTENTION_LAYER_PATTERN = str(
     r"attention_layer_\d+/c_query/matrix|"

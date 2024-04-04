@@ -164,7 +164,7 @@ def replace_model_params_with_frz_multi_model(
 def _change_sub_config(jdata: Dict[str, Any], src_jdata: Dict[str, Any], sub_key: str):
     target_para = src_jdata[sub_key]
     cur_para = jdata[sub_key]
-    # keep some params that are irrelevant to model structures (need to discuss) TODO
+    # TODO: keep some params that are irrelevant to model structures (need to discuss)
     if "trainable" in cur_para.keys():
         target_para["trainable"] = cur_para["trainable"]
     log.info(f"Change the '{sub_key}' from {cur_para!s} to {target_para!s}.")

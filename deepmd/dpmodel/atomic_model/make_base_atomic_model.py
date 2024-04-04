@@ -51,6 +51,9 @@ def make_base_atomic_model(
             """
             return self.fitting_output_def()
 
+        def get_output_keys(self) -> List[str]:
+            return list(self.atomic_output_def().keys())
+
         @abstractmethod
         def get_rcut(self) -> float:
             """Get the cut-off radius."""
@@ -94,6 +97,25 @@ def make_base_atomic_model(
             to the result of the model.
             If returning an empty list, all atom types are selected.
             """
+
+        @abstractmethod
+        def set_out_bias(self, out_bias: t_tensor, add=False) -> None:
+            """
+            Modify the output bias for the atomic model.
+
+            Parameters
+            ----------
+            out_bias : t_tensor
+                The new bias to be applied.
+            add : bool, optional
+                Whether to add the new bias to the existing one.
+                If False, the output bias will be directly replaced by the new bias.
+                If True, the new bias will be added to the existing one.
+            """
+
+        @abstractmethod
+        def get_out_bias(self) -> t_tensor:
+            """Return the output bias of the atomic model."""
 
         @abstractmethod
         def is_aparam_nall(self) -> bool:

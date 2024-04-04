@@ -126,7 +126,7 @@ class DescrptSeA(DescrptSe):
             The cut-off radius :math:`r_c`
     rcut_smth
             From where the environment matrix should be smoothed :math:`r_s`
-    sel : list[str]
+    sel : list[int]
             sel[i] specifies the maxmum number of type i atoms in the cut-off radius
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
@@ -169,7 +169,7 @@ class DescrptSeA(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[str],
+        sel: List[int],
         neuron: List[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
@@ -1426,7 +1426,8 @@ class DescrptSeA(DescrptSe):
             raise NotImplementedError("spin is unsupported")
         assert self.davg is not None
         assert self.dstd is not None
-        # TODO: not sure how to handle type embedding - type embedding is not a model parameter,
+        # TODO: tf: handle type embedding in DescrptSeA.serialize
+        # not sure how to handle type embedding - type embedding is not a model parameter,
         # but instead a part of the input data. Maybe the interface should be refactored...
 
         return {
