@@ -61,7 +61,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(type_map, **kwargs)
         self.tab_file = tab_file
         self.rcut = rcut
         self.type_map = type_map

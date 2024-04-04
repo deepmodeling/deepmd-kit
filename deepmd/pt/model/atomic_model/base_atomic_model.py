@@ -45,7 +45,7 @@ BaseAtomicModel_ = make_base_atomic_model(torch.Tensor)
 class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def __init__(
         self,
-        type_map,
+        type_map: List[str],
         atom_exclude_types: List[int] = [],
         pair_exclude_types: List[Tuple[int, int]] = [],
     ):

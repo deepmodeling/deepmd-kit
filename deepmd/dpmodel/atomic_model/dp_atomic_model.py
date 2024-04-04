@@ -53,7 +53,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.descriptor = descriptor
         self.fitting = fitting
         self.type_map = type_map
-        super().__init__(**kwargs)
+        super().__init__(type_map, **kwargs)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -66,10 +66,6 @@ class DPAtomicModel(BaseAtomicModel):
     def get_sel(self) -> List[int]:
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
-
-    def get_type_map(self) -> List[str]:
-        """Get the type map."""
-        return self.type_map
 
     def mixed_types(self) -> bool:
         """If true, the model
