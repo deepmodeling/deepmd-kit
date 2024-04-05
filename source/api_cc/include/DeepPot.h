@@ -629,7 +629,7 @@ class DeepPotModelDevi {
             const std::vector<std::string>& file_contents =
                 std::vector<std::string>());
 
-/**
+  /**
    * @brief Evaluate the energy, force and virial by using these DP models.
    * @param[out] all_ener The system energies of all models.
    * @param[out] all_force The forces on each atom of all models.
@@ -658,7 +658,7 @@ class DeepPotModelDevi {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
-  
+
   /**
    * @brief Evaluate the energy, force and virial by using these DP models.
    * @param[out] all_ener The system energies of all models.
