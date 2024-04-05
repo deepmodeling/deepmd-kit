@@ -128,17 +128,17 @@ class MultiTaskTrainTest:
                     multi_state_dict[state_key],
                     multi_state_dict_finetuned[state_key],
                 )
-            elif "model_2" in state_key and "bias_atom_e" not in state_key:
+            elif "model_2" in state_key and "out_bias" not in state_key:
                 torch.testing.assert_close(
                     multi_state_dict[state_key],
                     multi_state_dict_finetuned[state_key],
                 )
-            elif "model_3" in state_key and "bias_atom_e" not in state_key:
+            elif "model_3" in state_key and "out_bias" not in state_key:
                 torch.testing.assert_close(
                     multi_state_dict[state_key.replace("model_3", "model_2")],
                     multi_state_dict_finetuned[state_key],
                 )
-            elif "model_4" in state_key and "fitting_net" not in state_key:
+            elif "model_4" in state_key and "atomic_model" not in state_key:
                 torch.testing.assert_close(
                     multi_state_dict[state_key.replace("model_4", "model_2")],
                     multi_state_dict_finetuned[state_key],
