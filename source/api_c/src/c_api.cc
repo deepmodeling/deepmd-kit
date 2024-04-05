@@ -494,20 +494,19 @@ template void DP_DeepPotModelDeviCompute_variant<double>(
     double* atomic_energy,
     double* atomic_virial);
 
-template void DP_DeepPotModelDeviCompute_variant<float>(
-    DP_DeepPotModelDevi* dp,
-    const int nframes,
-    const int natoms,
-    const float* coord,
-    const int* atype,
-    const float* cell,
-    const float* fparam,
-    const float* aparam,
-    double* energy,
-    float* force,
-    float* virial,
-    float* atomic_energy,
-    float* atomic_virial);
+template void DP_DeepPotModelDeviCompute_variant<float>(DP_DeepPotModelDevi* dp,
+                                                        const int nframes,
+                                                        const int natoms,
+                                                        const float* coord,
+                                                        const int* atype,
+                                                        const float* cell,
+                                                        const float* fparam,
+                                                        const float* aparam,
+                                                        double* energy,
+                                                        float* force,
+                                                        float* virial,
+                                                        float* atomic_energy,
+                                                        float* atomic_virial);
 
 template <typename VALUETYPE>
 void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
@@ -1159,9 +1158,9 @@ void DP_DeepPotModelDeviCompute(DP_DeepPotModelDevi* dp,
                                 double* virial,
                                 double* atomic_energy,
                                 double* atomic_virial) {
-  DP_DeepPotModelDeviCompute_variant<double>(
-      dp, 1, natoms, coord, atype, cell, NULL, NULL, energy,
-      force, virial, atomic_energy, atomic_virial);
+  DP_DeepPotModelDeviCompute_variant<double>(dp, 1, natoms, coord, atype, cell,
+                                             NULL, NULL, energy, force, virial,
+                                             atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputef(DP_DeepPotModelDevi* dp,
@@ -1174,9 +1173,9 @@ void DP_DeepPotModelDeviComputef(DP_DeepPotModelDevi* dp,
                                  float* virial,
                                  float* atomic_energy,
                                  float* atomic_virial) {
-  DP_DeepPotModelDeviCompute_variant<float>(
-      dp, 1, natoms, coord, atype, cell, NULL, NULL, energy,
-      force, virial, atomic_energy, atomic_virial);
+  DP_DeepPotModelDeviCompute_variant<float>(dp, 1, natoms, coord, atype, cell,
+                                            NULL, NULL, energy, force, virial,
+                                            atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviCompute2(DP_DeepPotModelDevi* dp,
@@ -1193,26 +1192,26 @@ void DP_DeepPotModelDeviCompute2(DP_DeepPotModelDevi* dp,
                                  double* atomic_energy,
                                  double* atomic_virial) {
   DP_DeepPotModelDeviCompute_variant<double>(
-      dp, nframes, natoms, coord, atype, cell, fparam,
-      aparam, energy, force, virial, atomic_energy, atomic_virial);
+      dp, nframes, natoms, coord, atype, cell, fparam, aparam, energy, force,
+      virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputef2(DP_DeepPotModelDevi* dp,
-                                       const int nframes,
-                                       const int natoms,
-                                       const float* coord,
-                                       const int* atype,
-                                       const float* cell,
-                                       const float* fparam,
-                                       const float* aparam,
-                                       double* energy,
-                                       float* force,
-                                       float* virial,
-                                       float* atomic_energy,
-                                       float* atomic_virial) {
+                                  const int nframes,
+                                  const int natoms,
+                                  const float* coord,
+                                  const int* atype,
+                                  const float* cell,
+                                  const float* fparam,
+                                  const float* aparam,
+                                  double* energy,
+                                  float* force,
+                                  float* virial,
+                                  float* atomic_energy,
+                                  float* atomic_virial) {
   DP_DeepPotModelDeviCompute_variant<float>(
-      dp, nframes, natoms, coord, atype, cell, fparam,
-      aparam, energy, force, virial, atomic_energy, atomic_virial);
+      dp, nframes, natoms, coord, atype, cell, fparam, aparam, energy, force,
+      virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,
