@@ -237,26 +237,26 @@ inline void _DP_DeepPotModelDeviCompute<double>(DP_DeepPotModelDevi *dp,
                                                 double *virial,
                                                 double *atomic_energy,
                                                 double *atomic_virial) {
-  DP_DeepPotModelDeviCompute2(dp, 1, natom, coord, atype, cell, fparam, 
-                              aparam, energy, force, virial, atomic_energy, 
+  DP_DeepPotModelDeviCompute2(dp, 1, natom, coord, atype, cell, fparam, aparam,
+                              energy, force, virial, atomic_energy,
                               atomic_virial);
 }
 
 template <>
 inline void _DP_DeepPotModelDeviCompute<float>(DP_DeepPotModelDevi *dp,
-                                                    const int natom,
-                                                    const float *coord,
-                                                    const int *atype,
-                                                    const float *cell,
-                                                    const float *fparam,
-                                                    const float *aparam,
-                                                    double *energy,
-                                                    float *force,
-                                                    float *virial,
-                                                    float *atomic_energy,
-                                                    float *atomic_virial) {
-  DP_DeepPotModelDeviComputef2(dp, 1, natom, coord, atype, cell, fparam, 
-                               aparam, energy, force, virial, atomic_energy, 
+                                               const int natom,
+                                               const float *coord,
+                                               const int *atype,
+                                               const float *cell,
+                                               const float *fparam,
+                                               const float *aparam,
+                                               double *energy,
+                                               float *force,
+                                               float *virial,
+                                               float *atomic_energy,
+                                               float *atomic_virial) {
+  DP_DeepPotModelDeviComputef2(dp, 1, natom, coord, atype, cell, fparam, aparam,
+                               energy, force, virial, atomic_energy,
                                atomic_virial);
 }
 
@@ -1266,16 +1266,16 @@ class DeepPotModelDevi {
     double *ener_ = &energy_flat[0];
     VALUETYPE *force_ = &force_flat[0];
     VALUETYPE *virial_ = &virial_flat[0];
-    std::vector<VALUETYPE> fparam_, aparam_;    
+    std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
-    _DP_DeepPotModelDeviCompute<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, fparam__,
-        aparam__, ener_, force_, virial_, nullptr, nullptr);
+    _DP_DeepPotModelDeviCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_,
+                                           fparam__, aparam__, ener_, force_,
+                                           virial_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
@@ -1359,8 +1359,8 @@ class DeepPotModelDevi {
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
     _DP_DeepPotModelDeviCompute<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, fparam__,
-        aparam__, ener_, force_, virial_, atomic_ener_, atomic_virial_);
+        dp, natoms, coord_, atype_, box_, fparam__, aparam__, ener_, force_,
+        virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
