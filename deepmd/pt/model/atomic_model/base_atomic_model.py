@@ -79,7 +79,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
-        self.atom_ener = preset_out_bias
+        self.preset_out_bias = preset_out_bias
 
     def init_out_stat(self):
         """Initialize the output bias."""
@@ -235,7 +235,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
         )
-        ret_dict = self.apply_out_bias(ret_dict, atype)
+        ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
         atom_mask = ext_atom_mask[:, :nloc].to(torch.int32)
@@ -308,12 +308,12 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             bias_adjust_mode="set-by-statistic",
         )
 
-    def apply_out_bias(
+    def apply_out_stat(
         self,
         ret: Dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
-        """Apply the bias to each atomic output.
+        """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
         to the atomic output of the model.
 
@@ -362,7 +362,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
-                preset_bias=self.atom_ener,
+                preset_bias=self.preset_out_bias,
             )
             # self.set_out_bias(delta_bias, add=True)
             self._store_out_stat(delta_bias, out_std, add=True)
@@ -373,7 +373,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 keys=list(self.atomic_output_def().keys()),
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
-                preset_bias=self.atom_ener,
+                preset_bias=self.preset_out_bias,
             )
             # self.set_out_bias(bias_out)
             self._store_out_stat(bias_out, std_out)
