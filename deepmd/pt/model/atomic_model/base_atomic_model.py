@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-
+import copy
 import logging
 from typing import (
     Callable,
@@ -30,6 +30,10 @@ from deepmd.pt.utils.nlist import (
 )
 from deepmd.pt.utils.stat import (
     compute_output_stats,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -254,9 +258,25 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def serialize(self) -> dict:
         return {
+            "type_map": self.type_map,
             "atom_exclude_types": self.atom_exclude_types,
             "pair_exclude_types": self.pair_exclude_types,
+            "rcond": self.rcond,
+            "preset_out_bias": self.preset_out_bias,
+            "@variables": {
+                "out_bias": to_numpy_array(self.out_bias),
+                "out_std": to_numpy_array(self.out_std),
+            },
         }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "BaseAtomicModel":
+        data = copy.deepcopy(data)
+        variables = data.pop("@variables")
+        obj = cls(**data)
+        for kk in variables.keys():
+            obj[kk] = to_torch_tensor(variables[kk])
+        return obj
 
     def compute_or_load_stat(
         self,

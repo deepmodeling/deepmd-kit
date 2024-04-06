@@ -49,11 +49,12 @@ class DPAtomicModel(BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
+        super().__init__(type_map, **kwargs)
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
         self.type_map = type_map
-        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -157,7 +158,7 @@ class DPAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "type": "standard",
-                "@version": 1,
+                "@version": 2,
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
                 "fitting": self.fitting.serialize(),
@@ -168,13 +169,14 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 2), 2, 2)
         data.pop("@class")
         data.pop("type")
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map")
-        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
+        data["descriptor"] = descriptor_obj
+        data["fitting"] = fitting_obj
+        obj = super().deserialize(data)
         return obj
 
     def get_dim_fparam(self) -> int:
