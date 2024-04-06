@@ -103,11 +103,11 @@ def exhale_environment_ready(app):
         app.config.exhale_args["containmentFolder"] = os.path.realpath(
             app.config.exhale_args["containmentFolder"]
         )
-        print("=" * 75)
-        print(project)
-        print("-" * 50)
-        pprint(app.config.exhale_args)
-        print("=" * 75)
+        print("=" * 75)  # noqa: T201
+        print(project)  # noqa: T201
+        print("-" * 50)  # noqa: T201
+        pprint(app.config.exhale_args)  # noqa: T203
+        print("=" * 75)  # noqa: T201
 
         # First, setup the extension and verify all of the configurations.
         exhale.configs.apply_sphinx_configurations(app)

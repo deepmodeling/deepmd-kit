@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
-import subprocess as sp
 import unittest
 
 import numpy as np
@@ -43,17 +42,6 @@ def _file_delete(file):
         os.rmdir(file)
     elif os.path.isfile(file):
         os.remove(file)
-
-
-def _subprocess_run(command):
-    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
-    for line in iter(popen.stdout.readline, b""):
-        if hasattr(line, "decode"):
-            line = line.decode("utf-8")
-        line = line.rstrip()
-        print(line)
-    popen.wait()
-    return popen.returncode
 
 
 def _init_models(setup_model, i):
