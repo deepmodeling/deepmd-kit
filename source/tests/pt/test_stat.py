@@ -371,7 +371,7 @@ class TestOutputStat(unittest.TestCase):
             len(type_map),
             keys=["energy"],
             stat_file_path=stat_file_path,
-            atom_ener=None,
+            preset_bias=None,
             model_forward=None,
         )
         # ground truth
@@ -399,7 +399,7 @@ class TestOutputStat(unittest.TestCase):
             len(type_map),
             keys=["energy"],
             stat_file_path=stat_file_path,
-            atom_ener=None,
+            preset_bias=None,
             model_forward=None,
         )
         np.testing.assert_almost_equal(
@@ -407,7 +407,7 @@ class TestOutputStat(unittest.TestCase):
         )
 
     def test_assigned(self):
-        atom_ener = np.array([3.0, 5.0]).reshape(2, 1)
+        atom_ener = {"energy": np.array([3.0, 5.0]).reshape(2, 1)}
         stat_file_path = self.stat_file_path
         type_map = self.type_map
 
@@ -417,11 +417,11 @@ class TestOutputStat(unittest.TestCase):
             len(type_map),
             keys=["energy"],
             stat_file_path=stat_file_path,
-            atom_ener=atom_ener,
+            preset_bias=atom_ener,
             model_forward=None,
         )
         np.testing.assert_almost_equal(
-            to_numpy_array(ret2["energy"]), atom_ener, decimal=10
+            to_numpy_array(ret2["energy"]), atom_ener["energy"], decimal=10
         )
 
 
