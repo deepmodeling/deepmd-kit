@@ -353,6 +353,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
         """
         if bias_adjust_mode == "change-by-statistic":
             delta_bias, out_std = compute_output_stats(
