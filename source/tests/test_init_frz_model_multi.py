@@ -63,12 +63,12 @@ def _init_models():
     jdata["training"]["data_dict"]["water_ener"] = {}
     jdata["training"]["data_dict"]["water_ener"]["training_data"] = training_data_config
     jdata["training"]["data_dict"]["water_ener"]["training_data"]["systems"] = data_file
-    jdata["training"]["data_dict"]["water_ener"][
-        "validation_data"
-    ] = validation_data_config
-    jdata["training"]["data_dict"]["water_ener"]["validation_data"][
-        "systems"
-    ] = data_file
+    jdata["training"]["data_dict"]["water_ener"]["validation_data"] = (
+        validation_data_config
+    )
+    jdata["training"]["data_dict"]["water_ener"]["validation_data"]["systems"] = (
+        data_file
+    )
     jdata["training"]["save_ckpt"] = ckpt
     jdata["model"]["fitting_net_dict"] = {}
     jdata["model"]["fitting_net_dict"]["water_ener"] = fitting_config
@@ -97,18 +97,18 @@ def _init_models():
     jdata["learning_rate_dict"]["water_ener_new"] = learning_rate_config
     jdata["training"]["data_dict"] = {}
     jdata["training"]["data_dict"]["water_ener_new"] = {}
-    jdata["training"]["data_dict"]["water_ener_new"][
-        "training_data"
-    ] = training_data_config
-    jdata["training"]["data_dict"]["water_ener_new"]["training_data"][
-        "systems"
-    ] = data_file
-    jdata["training"]["data_dict"]["water_ener_new"][
-        "validation_data"
-    ] = validation_data_config
-    jdata["training"]["data_dict"]["water_ener_new"]["validation_data"][
-        "systems"
-    ] = data_file
+    jdata["training"]["data_dict"]["water_ener_new"]["training_data"] = (
+        training_data_config
+    )
+    jdata["training"]["data_dict"]["water_ener_new"]["training_data"]["systems"] = (
+        data_file
+    )
+    jdata["training"]["data_dict"]["water_ener_new"]["validation_data"] = (
+        validation_data_config
+    )
+    jdata["training"]["data_dict"]["water_ener_new"]["validation_data"]["systems"] = (
+        data_file
+    )
     jdata["training"].pop("fitting_weight")
 
     jdata = replace_model_params_with_frz_multi_model(jdata, frozen_model)

@@ -18,8 +18,8 @@ class TestInferEwald : public ::testing::Test {
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
   std::vector<VALUETYPE> charge = {-2, 1, 1, -2, 1, 1};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
-  void SetUp() override{};
-  void TearDown() override{};
+  void SetUp() override {};
+  void TearDown() override {};
 };
 
 TYPED_TEST_SUITE(TestInferEwald, ValueTypes);

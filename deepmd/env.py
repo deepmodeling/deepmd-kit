@@ -423,20 +423,14 @@ def get_module(module_name: str) -> "ModuleType":
             if TF_VERSION != tf_py_version:
                 raise RuntimeError(
                     "The version of TensorFlow used to compile this "
-                    "deepmd-kit package is {}, but the version of TensorFlow "
-                    "runtime you are using is {}. These two versions are "
-                    "incompatible and thus an error is raised when loading {}. "
-                    "You need to install TensorFlow {}, or rebuild deepmd-kit "
-                    "against TensorFlow {}.\nIf you are using a wheel from "
+                    f"deepmd-kit package is {TF_VERSION}, but the version of TensorFlow "
+                    f"runtime you are using is {tf_py_version}. These two versions are "
+                    f"incompatible and thus an error is raised when loading {module_name}. "
+                    f"You need to install TensorFlow {TF_VERSION}, or rebuild deepmd-kit "
+                    f"against TensorFlow {tf_py_version}.\nIf you are using a wheel from "
                     "pypi, you may consider to install deepmd-kit execuating "
                     "`pip install deepmd-kit --no-binary deepmd-kit` "
-                    "instead.".format(
-                        TF_VERSION,
-                        tf_py_version,
-                        module_name,
-                        TF_VERSION,
-                        tf_py_version,
-                    )
+                    "instead."
                 ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "

@@ -38,11 +38,9 @@ double PiecewisePoly::value_periodic(const double& xx_) const {
   double xx(xx_);
   double T = x.back() - x.front();
   if (xx < x.front()) {
-    while ((xx += T) < x.front())
-      ;
+    while ((xx += T) < x.front());
   } else if (xx >= x.back()) {
-    while ((xx -= T) >= x.back())
-      ;
+    while ((xx -= T) >= x.back());
   }
   unsigned begin = 0;
   unsigned end = x.size() - 1;
@@ -126,11 +124,9 @@ void PiecewisePoly::value_periodic(const std::vector<double>& r,
     presentStart = presentEnd;
     double shift = 0;
     if (r[presentStart] < x.front()) {
-      while (r[presentStart] + (shift += T) < x.front())
-        ;
+      while (r[presentStart] + (shift += T) < x.front());
     } else if (r[presentStart] >= x.back()) {
-      while (r[presentStart] + (shift -= T) >= x.back())
-        ;
+      while (r[presentStart] + (shift -= T) >= x.back());
     }
     while (presentEnd < r.size() && r[presentEnd] + shift >= x.front() &&
            r[presentEnd] + shift < x.back()) {

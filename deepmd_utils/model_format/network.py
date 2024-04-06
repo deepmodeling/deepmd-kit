@@ -3,6 +3,7 @@
 
 See issue #2982 for more information.
 """
+
 import copy
 import itertools
 import json

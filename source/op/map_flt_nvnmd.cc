@@ -141,10 +141,10 @@ class MapFltNvnmdOp : public OpKernel {
           add_flt_nvnmd(ytmp, d, ytmp);
           y[ii * M + jj] = ytmp;
         }  // jj
-      }    // ii
-    }      // ss
-  }        // Compute
-};         // MapFltNvnmdOp
+      }  // ii
+    }  // ss
+  }  // Compute
+};  // MapFltNvnmdOp
 
 #define REGISTER_CPU(T)                                              \
   REGISTER_KERNEL_BUILDER(                                           \
