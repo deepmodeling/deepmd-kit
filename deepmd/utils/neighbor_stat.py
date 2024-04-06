@@ -179,7 +179,9 @@ class NeighborStat:
         one_type: bool = False,
     ) -> None:
         """Constructor."""
-        super().__init__(ntypes, rcut, one_type)
+        self.ntypes = ntypes
+        self.rcut = rcut
+        self.mixed_type = one_type
         self.auto_batch_size = AutoBatchSize()
         self.neighbor_stat = NeighborStatOP(ntypes, rcut, not one_type)
         self.place_holders = {}
