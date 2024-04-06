@@ -230,6 +230,7 @@ select = [
     "C4", # flake8-comprehensions
     "RUF", # ruff
     "NPY", # numpy
+    "T20", # ban print
 ]
 
 ignore = [
@@ -251,6 +252,9 @@ ignore-init-module-imports = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.ruff.lint.extend-per-file-ignores]
+"**/*.ipynb" = ["T20"]  # printing in a nb file is expected
 
 [tool.pytest.ini_options]
 markers = "run"

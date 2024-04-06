@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import subprocess as sp
 import unittest
 
 import numpy as np
@@ -28,17 +27,6 @@ else:
 def _file_delete(file):
     if os.path.exists(file):
         os.remove(file)
-
-
-def _subprocess_run(command):
-    popen = sp.Popen(command.split(), shell=False, stdout=sp.PIPE, stderr=sp.STDOUT)
-    for line in iter(popen.stdout.readline, b""):
-        if hasattr(line, "decode"):
-            line = line.decode("utf-8")
-        line = line.rstrip()
-        print(line)
-    popen.wait()
-    return popen.returncode
 
 
 class TestTransform(unittest.TestCase):
