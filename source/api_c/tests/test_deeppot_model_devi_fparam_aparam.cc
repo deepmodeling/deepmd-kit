@@ -18,7 +18,7 @@ class TestInferDeepPotModeDeviFparamAparam : public ::testing::Test {
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
-  std::vector<int> atype = {0, 1, 1, 0, 1, 1};
+  std::vector<int> atype = {0, 0, 0, 0, 0, 0};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
   std::vector<VALUETYPE> fparam = {0.25852028};
   std::vector<VALUETYPE> aparam = {0.25852028, 0.25852028, 0.25852028,
