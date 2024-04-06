@@ -895,9 +895,7 @@ class EnerFitting(Fitting):
         else:
             raise RuntimeError("Unknown bias_shift mode: " + bias_shift)
         log.info(
-            "Change energy bias of {} from {} to {}.".format(
-                str(origin_type_map), str(old_bias), str(self.bias_atom_e[idx_type_map])
-            )
+            f"Change energy bias of {origin_type_map!s} from {old_bias!s} to {self.bias_atom_e[idx_type_map]!s}."
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:

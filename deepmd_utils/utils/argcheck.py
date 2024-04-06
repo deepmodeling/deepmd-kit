@@ -1870,10 +1870,10 @@ def normalize_multi_task(data):
                 data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
             )
         elif single_learning_rate:
-            data[
-                "learning_rate_dict"
-            ] = normalize_learning_rate_dict_with_single_learning_rate(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+            data["learning_rate_dict"] = (
+                normalize_learning_rate_dict_with_single_learning_rate(
+                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+                )
             )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
@@ -1916,11 +1916,7 @@ def normalize_data_dict(data_dict):
 def normalize_loss_dict(fitting_keys, loss_dict):
     # check the loss dict
     failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
-    assert (
-        not failed_loss_keys
-    ), "Loss dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_loss_keys), str(list(fitting_keys))
-    )
+    assert not failed_loss_keys, f"Loss dict key(s) {failed_loss_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     new_dict = {}
     base = Argument("base", dict, [], [loss_variant_type_args()], doc="")
     for item in loss_dict:
@@ -1935,9 +1931,7 @@ def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
     failed_learning_rate_keys = [
         item for item in learning_rate_dict if item not in fitting_keys
     ]
-    assert not failed_learning_rate_keys, "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_learning_rate_keys), str(list(fitting_keys))
-    )
+    assert not failed_learning_rate_keys, f"Learning rate dict key(s) {failed_learning_rate_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     new_dict = {}
     base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
     for item in learning_rate_dict:
@@ -1960,11 +1954,7 @@ def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learnin
 def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
     # check the mapping
     failed_data_keys = [item for item in data_keys if item not in fitting_keys]
-    assert (
-        not failed_data_keys
-    ), "Data dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_data_keys), str(list(fitting_keys))
-    )
+    assert not failed_data_keys, f"Data dict key(s) {failed_data_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     empty_fitting_keys = []
     valid_fitting_keys = []
     for item in fitting_keys:
@@ -1974,9 +1964,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
             valid_fitting_keys.append(item)
     if empty_fitting_keys:
         log.warning(
-            "Fitting net(s) {} have no data and will not be used in training.".format(
-                str(empty_fitting_keys)
-            )
+            f"Fitting net(s) {empty_fitting_keys!s} have no data and will not be used in training."
         )
     num_pair = len(valid_fitting_keys)
     assert num_pair > 0, "No valid training data systems for fitting nets!"
@@ -1991,9 +1979,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
         failed_weight_keys = [
             item for item in fitting_weight if item not in fitting_keys
         ]
-        assert not failed_weight_keys, "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
-            str(failed_weight_keys), str(list(fitting_keys))
-        )
+        assert not failed_weight_keys, f"Fitting weight key(s) {failed_weight_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
         sum_prob = 0.0
         for item in fitting_keys:
             if item in valid_fitting_keys:

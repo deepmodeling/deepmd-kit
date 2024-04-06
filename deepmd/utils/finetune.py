@@ -63,9 +63,7 @@ def replace_model_params_with_pretrained_model(
     )
     if cur_type_map != pretrained_type_map:
         log.info(
-            "Change the type_map from {} to {}.".format(
-                str(cur_type_map), str(pretrained_type_map)
-            )
+            f"Change the type_map from {cur_type_map!s} to {pretrained_type_map!s}."
         )
         jdata["model"]["type_map"] = pretrained_type_map
 

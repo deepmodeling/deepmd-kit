@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test LAMMPS fparam and aparam input."""
+
 import os
 import subprocess as sp
 import sys
@@ -134,11 +135,7 @@ type_OH = np.array([1, 1, 1, 1, 1, 1])
 
 
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        pbtxt_file.resolve(),
-        pb_file.resolve(),
-    ).split()
+    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
 )
 
 
