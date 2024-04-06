@@ -43,19 +43,43 @@ BaseAtomicModel_ = make_base_atomic_model(torch.Tensor)
 
 
 class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
+    """The base of atomic model.
+
+    Parameters
+    ----------
+    type_map
+        Mapping atom type to the name (str) of the type.
+        For example `type_map[1]` gives the name of the type 1.
+    atom_exclude_types
+        Exclude the atomic contribution of the given types
+    pair_exclude_types
+        Exclude the pair of atoms of the given types from computing the output
+        of the atomic model. Implemented by removing the pairs from the nlist.
+    rcond : float, optional
+        The condition number for the regression of atomic energy.
+    preset_out_bias : Dict[str, List[Optional[torch.Tensor]]], optional
+        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
+        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The `set_davg_zero` key in the descrptor should be set.
+
+    """
+
     def __init__(
         self,
         type_map: List[str],
         atom_exclude_types: List[int] = [],
         pair_exclude_types: List[Tuple[int, int]] = [],
+        rcond: Optional[float] = None,
+        preset_out_bias: Optional[Dict[str, torch.Tensor]] = None,
     ):
         torch.nn.Module.__init__(self)
         BaseAtomicModel_.__init__(self)
         self.type_map = type_map
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
-        self.rcond = None
-        self.atom_ener = None
+        self.rcond = rcond
+        self.atom_ener = preset_out_bias
 
     def init_out_stat(self):
         """Initialize the output bias."""
@@ -338,7 +362,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
-                atom_ener=self.atom_ener,
+                preset_bias=self.atom_ener,
             )
             # self.set_out_bias(delta_bias, add=True)
             self._store_out_stat(delta_bias, out_std, add=True)
@@ -349,7 +373,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 keys=list(self.atomic_output_def().keys()),
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
-                atom_ener=self.atom_ener,
+                preset_bias=self.atom_ener,
             )
             # self.set_out_bias(bias_out)
             self._store_out_stat(bias_out, std_out)

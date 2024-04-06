@@ -252,3 +252,173 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix"]:
             np.testing.assert_almost_equal(to_numpy_array(ret3[kk]), expected_ret3[kk])
         # bar is too complicated to be manually computed.
+
+    def test_preset_bias(self):
+        nf, nloc, nnei = self.nlist.shape
+        ds = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            sum(self.sel),
+            self.nt,
+        ).to(env.DEVICE)
+        ft = FooFitting().to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        preset_out_bias = {
+            # "foo": np.array(3.0, 2.0]).reshape(2, 1),
+            "foo": [None, 2],
+            "bar": np.array([7.0, 5.0, 13.0, 11.0]).reshape(2, 1, 2),
+        }
+        md0 = DPAtomicModel(
+            ds,
+            ft,
+            type_map=type_map,
+            preset_out_bias=preset_out_bias,
+        ).to(env.DEVICE)
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        # nf x nloc
+        at = self.atype_ext[:, :nloc]
+
+        # 1. test run without bias
+        # nf x na x odim
+        ret0 = md0.forward_common_atomic(*args)
+        expected_ret0 = {}
+        expected_ret0["foo"] = np.array(
+            [
+                [1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
+            ]
+        ).reshape([nf, nloc] + md0.fitting_output_def()["foo"].shape)  # noqa: RUF005
+        expected_ret0["pix"] = np.array(
+            [
+                [3.0, 2.0, 1.0],
+                [6.0, 5.0, 4.0],
+            ]
+        ).reshape([nf, nloc] + md0.fitting_output_def()["pix"].shape)  # noqa: RUF005
+        expected_ret0["bar"] = np.array(
+            [
+                [1.0, 2.0, 3.0, 7.0, 8.0, 9.0],
+                [4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
+            ]
+        ).reshape([nf, nloc] + md0.fitting_output_def()["bar"].shape)  # noqa: RUF005
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(to_numpy_array(ret0[kk]), expected_ret0[kk])
+
+        # 2. test bias is applied
+        md0.compute_or_load_out_stat(
+            self.merged_output_stat, stat_file_path=self.stat_file_path
+        )
+        ret1 = md0.forward_common_atomic(*args)
+        # foo sums: [5, 7],
+        # given bias of type 1 being 2, the bias left for type 0 is [5-2*1, 7-2*2] = [3,3]
+        # the solution of type 0 is 1.8
+        foo_bias = np.array([1.8, preset_out_bias["foo"][1]]).reshape(2, 1)
+        bar_bias = preset_out_bias["bar"]
+        expected_ret1 = {}
+        expected_ret1["foo"] = ret0["foo"] + foo_bias[at]
+        expected_ret1["pix"] = ret0["pix"]
+        expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(to_numpy_array(ret1[kk]), expected_ret1[kk])
+
+        # 3. test bias load from file
+        def raise_error():
+            raise RuntimeError
+
+        md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
+        ret2 = md0.forward_common_atomic(*args)
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(to_numpy_array(ret1[kk]), ret2[kk])
+
+        # 4. test change bias
+        BaseAtomicModel.change_out_bias(
+            md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        args = [
+            to_torch_tensor(ii)
+            for ii in [
+                self.coord_ext,
+                to_numpy_array(self.merged_output_stat[0]["atype_ext"]),
+                self.nlist,
+            ]
+        ]
+        ret3 = md0.forward_common_atomic(*args)
+        ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
+        ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
+        ## fit bias is [-7, 2] (2 is assigned. -7 is fit to [-8.6, -17.8])
+        ## old bias[1.8,2] + fit bias[-7, 2] = [-5.2, 4]
+        ## new model output is [[-4.2, -3.2, 7], [-1.2, 9, 10]]
+        expected_ret3 = {}
+        expected_ret3["foo"] = np.array([[-4.2, -3.2, 7.0], [-1.2, 9.0, 10.0]]).reshape(
+            2, 3, 1
+        )
+        expected_ret3["pix"] = ret0["pix"]
+        for kk in ["foo", "pix"]:
+            np.testing.assert_almost_equal(to_numpy_array(ret3[kk]), expected_ret3[kk])
+        # bar is too complicated to be manually computed.
+
+    def test_preset_bias_all_none(self):
+        nf, nloc, nnei = self.nlist.shape
+        ds = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            sum(self.sel),
+            self.nt,
+        ).to(env.DEVICE)
+        ft = FooFitting().to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        preset_out_bias = {
+            "foo": [None, None],
+        }
+        md0 = DPAtomicModel(
+            ds,
+            ft,
+            type_map=type_map,
+            preset_out_bias=preset_out_bias,
+        ).to(env.DEVICE)
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        # nf x nloc
+        at = self.atype_ext[:, :nloc]
+
+        # 1. test run without bias
+        # nf x na x odim
+        ret0 = md0.forward_common_atomic(*args)
+        expected_ret0 = {}
+        expected_ret0["foo"] = np.array(
+            [
+                [1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
+            ]
+        ).reshape([nf, nloc] + md0.fitting_output_def()["foo"].shape)  # noqa: RUF005
+        expected_ret0["pix"] = np.array(
+            [
+                [3.0, 2.0, 1.0],
+                [6.0, 5.0, 4.0],
+            ]
+        ).reshape([nf, nloc] + md0.fitting_output_def()["pix"].shape)  # noqa: RUF005
+        expected_ret0["bar"] = np.array(
+            [
+                [1.0, 2.0, 3.0, 7.0, 8.0, 9.0],
+                [4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
+            ]
+        ).reshape([nf, nloc] + md0.fitting_output_def()["bar"].shape)  # noqa: RUF005
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(to_numpy_array(ret0[kk]), expected_ret0[kk])
+
+        # 2. test bias is applied
+        md0.compute_or_load_out_stat(
+            self.merged_output_stat, stat_file_path=self.stat_file_path
+        )
+        ret1 = md0.forward_common_atomic(*args)
+        # nt x odim
+        foo_bias = np.array([1.0, 3.0]).reshape(2, 1)
+        bar_bias = np.array([1.0, 5.0, 3.0, 2.0]).reshape(2, 1, 2)
+        expected_ret1 = {}
+        expected_ret1["foo"] = ret0["foo"] + foo_bias[at]
+        expected_ret1["pix"] = ret0["pix"]
+        expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(to_numpy_array(ret1[kk]), expected_ret1[kk])

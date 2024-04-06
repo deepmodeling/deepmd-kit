@@ -2,6 +2,7 @@
 import logging
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Union,
@@ -177,13 +178,38 @@ def _compute_model_predict(
     return model_predict
 
 
+def _make_preset_out_bias(
+    ntypes: int,
+    ibias: List[Optional[np.array]],
+) -> Optional[np.array]:
+    """Make preset out bias.
+
+    output:
+        a np array of shape [ntypes, *(odim0, odim1, ...)] is any item is not None
+        None if all items are None.
+    """
+    if len(ibias) != ntypes:
+        raise ValueError("the length of preset bias list should be ntypes")
+    if all(ii is None for ii in ibias):
+        return None
+    for refb in ibias:
+        if refb is not None:
+            break
+    refb = np.array(refb)
+    nbias = [
+        np.full_like(refb, np.nan, dtype=np.float64) if ii is None else ii
+        for ii in ibias
+    ]
+    return np.array(nbias)
+
+
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
     keys: Union[str, List[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
-    atom_ener: Optional[List[float]] = None,
+    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
     """
@@ -204,8 +230,11 @@ def compute_output_stats(
         The path to the stat file.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    atom_ener : List[float], optional
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    preset_bias : Dict[str, List[Optional[torch.Tensor]]], optional
+        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
+        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The `set_davg_zero` key in the descrptor should be set.
     model_forward : Callable[..., torch.Tensor], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,
@@ -241,12 +270,15 @@ def compute_output_stats(
         # shape: (nframes, ntypes)
         merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
         nf = merged_natoms.shape[0]
-        if atom_ener is not None and len(atom_ener) > 0:
-            assigned_atom_ener = np.array(
-                [ee if ee is not None else np.nan for ee in atom_ener]
-            )
+        if preset_bias is not None:
+            assigned_atom_ener = {
+                kk: _make_preset_out_bias(ntypes, preset_bias[kk])
+                if kk in preset_bias.keys()
+                else None
+                for kk in keys
+            }
         else:
-            assigned_atom_ener = None
+            assigned_atom_ener = {kk: None for kk in keys}
 
         if model_forward is None:
             stats_input = merged_output
@@ -261,7 +293,7 @@ def compute_output_stats(
             bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                 stats_input[kk],
                 merged_natoms,
-                assigned_bias=assigned_atom_ener,
+                assigned_bias=assigned_atom_ener[kk],
                 rcond=rcond,
             )
         bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)

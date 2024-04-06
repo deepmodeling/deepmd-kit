@@ -27,8 +27,9 @@ def compute_stats_from_redu(
     natoms
         The number of atoms for each atom, shape is [nframes, ntypes].
     assigned_bias
-        The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)]. Set to nan
-        if not assigned.
+        The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
+        Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
+        of the type is not assigned.
     rcond
         Cut-off ratio for small singular values of a.
 
