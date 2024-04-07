@@ -159,7 +159,7 @@ def get_trainer(
             stat_file_path_single,
         )
 
-    rank = dist.get_rank() if dist.is_initialized() else 0
+    rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
     if not multi_task:
         (
             train_data,
