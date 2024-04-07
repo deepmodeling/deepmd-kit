@@ -112,7 +112,7 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 2), 2, 2)
+        check_version_compatibility(data.pop("@version", 2), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))

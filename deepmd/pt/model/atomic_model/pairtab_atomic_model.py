@@ -175,7 +175,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 2)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)
         data.pop("type", None)

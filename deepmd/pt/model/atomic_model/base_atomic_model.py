@@ -93,12 +93,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
         self.n_out = len(self.bias_keys)
-        out_bias_data = torch.zeros(
-            [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
-        )
-        out_std_data = torch.ones(
-            [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
-        )
+        out_bias_data = self._default_bias()
+        out_std_data = self._default_std()
         self.register_buffer("out_bias", out_bias_data)
         self.register_buffer("out_std", out_std_data)
 
@@ -272,10 +268,21 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     @classmethod
     def deserialize(cls, data: dict) -> "BaseAtomicModel":
         data = copy.deepcopy(data)
-        variables = data.pop("@variables")
+        variables = data.pop("@variables", None)
+        variables = (
+            {"out_bias": None, "out_std": None} if variables is None else variables
+        )
         obj = cls(**data)
-        for kk in variables.keys():
-            obj[kk] = to_torch_tensor(variables[kk])
+        obj["out_bias"] = (
+            to_torch_tensor(variables["out_bias"])
+            if variables["out_bias"] is not None
+            else obj._default_bias()
+        )
+        obj["out_std"] = (
+            to_torch_tensor(variables["out_std"])
+            if variables["out_std"] is not None
+            else obj._default_std()
+        )
         return obj
 
     def compute_or_load_stat(
@@ -431,6 +438,18 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 return {kk: vv.detach() for kk, vv in atomic_ret.items()}
 
         return model_forward
+
+    def _default_bias(self):
+        ntypes = self.get_ntypes()
+        return torch.zeros(
+            [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
+        )
+
+    def _default_std(self):
+        ntypes = self.get_ntypes()
+        return torch.ones(
+            [self.n_out, ntypes, self.max_out_size], dtype=dtype, device=device
+        )
 
     def _varsize(
         self,

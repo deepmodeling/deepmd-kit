@@ -14,6 +14,8 @@ from typing import (
     Union,
 )
 
+import numpy as np
+
 from deepmd.common import (
     j_get_type,
 )
@@ -785,11 +787,16 @@ class StandardModel(Model):
             The deserialized descriptor
         """
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        # BEGINE not supported keys
         data.pop("atom_exclude_types")
         data.pop("pair_exclude_types")
+        data.pop("rcond", None)
+        data.pop("preset_out_bias", None)
+        data.pop("@variables", None)
+        # END    not supported keys
         return cls(
             descriptor=descriptor,
             fitting_net=fitting,
@@ -813,14 +820,23 @@ class StandardModel(Model):
             raise NotImplementedError("type embedding is not supported")
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
+
+        ntypes = len(self.get_type_map())
+        dict_fit = self.fitting.serialize(suffix=suffix)
         return {
             "@class": "Model",
             "type": "standard",
-            "@version": 1,
+            "@version": 2,
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
-            "fitting": self.fitting.serialize(suffix=suffix),
+            "fitting": dict_fit,
             # not supported yet
             "atom_exclude_types": [],
             "pair_exclude_types": [],
+            "rcond": None,
+            "preset_out_bias": None,
+            "@variables": {
+                "out_bias": np.zeros([1, ntypes, dict_fit["dim_out"]]),
+                "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),
+            },
         }
