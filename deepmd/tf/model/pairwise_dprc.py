@@ -77,11 +77,13 @@ class PairwiseDPRc(Model):
             compress=compress,
             **kwargs,
         )
+        self.ntypes = len(type_map)
         # type embedding
         if isinstance(type_embedding, TypeEmbedNet):
             self.typeebd = type_embedding
         else:
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **type_embedding,
                 # must use se_atten, so it must be True
                 padding=True,
@@ -100,7 +102,6 @@ class PairwiseDPRc(Model):
             compress=compress,
         )
         add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
-        self.ntypes = len(type_map)
         self.rcut = max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def build(

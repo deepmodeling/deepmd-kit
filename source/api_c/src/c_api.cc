@@ -415,6 +415,100 @@ inline void flatten_vector(std::vector<VALUETYPE>& onedv,
 }
 
 template <typename VALUETYPE>
+void DP_DeepPotModelDeviCompute_variant(DP_DeepPotModelDevi* dp,
+                                        const int nframes,
+                                        const int natoms,
+                                        const VALUETYPE* coord,
+                                        const int* atype,
+                                        const VALUETYPE* cell,
+                                        const VALUETYPE* fparam,
+                                        const VALUETYPE* aparam,
+                                        double* energy,
+                                        VALUETYPE* force,
+                                        VALUETYPE* virial,
+                                        VALUETYPE* atomic_energy,
+                                        VALUETYPE* atomic_virial) {
+  if (nframes > 1) {
+    throw std::runtime_error("nframes > 1 not supported yet");
+  }
+  // init C++ vectors from C arrays
+  std::vector<VALUETYPE> coord_(coord, coord + natoms * 3);
+  std::vector<int> atype_(atype, atype + natoms);
+  std::vector<VALUETYPE> cell_;
+  if (cell) {
+    // pbc
+    cell_.assign(cell, cell + 9);
+  }
+  std::vector<VALUETYPE> fparam_;
+  if (fparam) {
+    fparam_.assign(fparam, fparam + dp->dfparam);
+  }
+  std::vector<VALUETYPE> aparam_;
+  if (aparam) {
+    aparam_.assign(aparam, aparam + nframes * natoms * dp->daparam);
+  }
+  // different from DeepPot
+  std::vector<double> e;
+  std::vector<std::vector<VALUETYPE>> f, v, ae, av;
+
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                    fparam_, aparam_));
+  // 2D vector to 2D array, flatten first
+  if (energy) {
+    std::copy(e.begin(), e.end(), energy);
+  }
+  if (force) {
+    std::vector<VALUETYPE> f_flat;
+    flatten_vector(f_flat, f);
+    std::copy(f_flat.begin(), f_flat.end(), force);
+  }
+  if (virial) {
+    std::vector<VALUETYPE> v_flat;
+    flatten_vector(v_flat, v);
+    std::copy(v_flat.begin(), v_flat.end(), virial);
+  }
+  if (atomic_energy) {
+    std::vector<VALUETYPE> ae_flat;
+    flatten_vector(ae_flat, ae);
+    std::copy(ae_flat.begin(), ae_flat.end(), atomic_energy);
+  }
+  if (atomic_virial) {
+    std::vector<VALUETYPE> av_flat;
+    flatten_vector(av_flat, av);
+    std::copy(av_flat.begin(), av_flat.end(), atomic_virial);
+  }
+}
+
+template void DP_DeepPotModelDeviCompute_variant<double>(
+    DP_DeepPotModelDevi* dp,
+    const int nframes,
+    const int natoms,
+    const double* coord,
+    const int* atype,
+    const double* cell,
+    const double* fparam,
+    const double* aparam,
+    double* energy,
+    double* force,
+    double* virial,
+    double* atomic_energy,
+    double* atomic_virial);
+
+template void DP_DeepPotModelDeviCompute_variant<float>(DP_DeepPotModelDevi* dp,
+                                                        const int nframes,
+                                                        const int natoms,
+                                                        const float* coord,
+                                                        const int* atype,
+                                                        const float* cell,
+                                                        const float* fparam,
+                                                        const float* aparam,
+                                                        double* energy,
+                                                        float* force,
+                                                        float* virial,
+                                                        float* atomic_energy,
+                                                        float* atomic_virial);
+
+template <typename VALUETYPE>
 void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
                                              const int nframes,
                                              const int natoms,
@@ -1052,6 +1146,72 @@ bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp) { return dp->aparam_nall; }
 
 const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
   return string_to_char(dp->exception);
+}
+
+void DP_DeepPotModelDeviCompute(DP_DeepPotModelDevi* dp,
+                                const int natoms,
+                                const double* coord,
+                                const int* atype,
+                                const double* cell,
+                                double* energy,
+                                double* force,
+                                double* virial,
+                                double* atomic_energy,
+                                double* atomic_virial) {
+  DP_DeepPotModelDeviCompute_variant<double>(dp, 1, natoms, coord, atype, cell,
+                                             NULL, NULL, energy, force, virial,
+                                             atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviComputef(DP_DeepPotModelDevi* dp,
+                                 const int natoms,
+                                 const float* coord,
+                                 const int* atype,
+                                 const float* cell,
+                                 double* energy,
+                                 float* force,
+                                 float* virial,
+                                 float* atomic_energy,
+                                 float* atomic_virial) {
+  DP_DeepPotModelDeviCompute_variant<float>(dp, 1, natoms, coord, atype, cell,
+                                            NULL, NULL, energy, force, virial,
+                                            atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviCompute2(DP_DeepPotModelDevi* dp,
+                                 const int nframes,
+                                 const int natoms,
+                                 const double* coord,
+                                 const int* atype,
+                                 const double* cell,
+                                 const double* fparam,
+                                 const double* aparam,
+                                 double* energy,
+                                 double* force,
+                                 double* virial,
+                                 double* atomic_energy,
+                                 double* atomic_virial) {
+  DP_DeepPotModelDeviCompute_variant<double>(
+      dp, nframes, natoms, coord, atype, cell, fparam, aparam, energy, force,
+      virial, atomic_energy, atomic_virial);
+}
+
+void DP_DeepPotModelDeviComputef2(DP_DeepPotModelDevi* dp,
+                                  const int nframes,
+                                  const int natoms,
+                                  const float* coord,
+                                  const int* atype,
+                                  const float* cell,
+                                  const float* fparam,
+                                  const float* aparam,
+                                  double* energy,
+                                  float* force,
+                                  float* virial,
+                                  float* atomic_energy,
+                                  float* atomic_virial) {
+  DP_DeepPotModelDeviCompute_variant<float>(
+      dp, nframes, natoms, coord, atype, cell, fparam, aparam, energy, force,
+      virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,

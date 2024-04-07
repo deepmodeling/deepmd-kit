@@ -2,6 +2,7 @@
 import logging
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Union,
@@ -61,24 +62,154 @@ def make_stat_input(datasets, dataloaders, nbatches):
                         if dd not in sys_stat:
                             sys_stat[dd] = []
                         sys_stat[dd].append(stat_data[dd])
+                    elif isinstance(stat_data[dd], np.float32):
+                        sys_stat[dd] = stat_data[dd]
                     else:
                         pass
+
         for key in sys_stat:
-            if sys_stat[key] is None or sys_stat[key][0] is None:
+            if isinstance(sys_stat[key], np.float32):
+                pass
+            elif sys_stat[key] is None or sys_stat[key][0] is None:
                 sys_stat[key] = None
-            else:
+            elif isinstance(stat_data[dd], torch.Tensor):
                 sys_stat[key] = torch.cat(sys_stat[key], dim=0)
         dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
 
 
+def _restore_from_file(
+    stat_file_path: DPPath,
+    keys: List[str] = ["energy"],
+) -> Optional[dict]:
+    if stat_file_path is None:
+        return None, None
+    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
+    if all(not (ii.is_file()) for ii in stat_files):
+        return None, None
+    stat_files = [stat_file_path / f"std_atom_{kk}" for kk in keys]
+    if all(not (ii.is_file()) for ii in stat_files):
+        return None, None
+
+    ret_bias = {}
+    ret_std = {}
+    for kk in keys:
+        fp = stat_file_path / f"bias_atom_{kk}"
+        # only read the key that exists
+        if fp.is_file():
+            ret_bias[kk] = fp.load_numpy()
+    for kk in keys:
+        fp = stat_file_path / f"std_atom_{kk}"
+        # only read the key that exists
+        if fp.is_file():
+            ret_std[kk] = fp.load_numpy()
+    return ret_bias, ret_std
+
+
+def _save_to_file(
+    stat_file_path: DPPath,
+    bias_out: dict,
+    std_out: dict,
+):
+    assert stat_file_path is not None
+    stat_file_path.mkdir(exist_ok=True, parents=True)
+    for kk, vv in bias_out.items():
+        fp = stat_file_path / f"bias_atom_{kk}"
+        fp.save_numpy(vv)
+    for kk, vv in std_out.items():
+        fp = stat_file_path / f"std_atom_{kk}"
+        fp.save_numpy(vv)
+
+
+def _post_process_stat(
+    out_bias,
+    out_std,
+):
+    """Post process the statistics.
+
+    For global statistics, we do not have the std for each type of atoms,
+    thus fake the output std by ones for all the types.
+
+    """
+    new_std = {}
+    for kk, vv in out_bias.items():
+        new_std[kk] = np.ones_like(vv)
+    return out_bias, new_std
+
+
+def _compute_model_predict(
+    sampled: Union[Callable[[], List[dict]], List[dict]],
+    keys: List[str],
+    model_forward: Callable[..., torch.Tensor],
+):
+    auto_batch_size = AutoBatchSize()
+    model_predict = {kk: [] for kk in keys}
+    for system in sampled:
+        nframes = system["coord"].shape[0]
+        coord, atype, box, natoms = (
+            system["coord"],
+            system["atype"],
+            system["box"],
+            system["natoms"],
+        )
+        fparam = system.get("fparam", None)
+        aparam = system.get("aparam", None)
+
+        def model_forward_auto_batch_size(*args, **kwargs):
+            return auto_batch_size.execute_all(
+                model_forward,
+                nframes,
+                system["atype"].shape[-1],
+                *args,
+                **kwargs,
+            )
+
+        sample_predict = model_forward_auto_batch_size(
+            coord, atype, box, fparam=fparam, aparam=aparam
+        )
+        for kk in keys:
+            model_predict[kk].append(
+                to_numpy_array(
+                    torch.sum(sample_predict[kk], dim=1)  # nf x nloc x odims
+                )
+            )
+    model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
+    return model_predict
+
+
+def _make_preset_out_bias(
+    ntypes: int,
+    ibias: List[Optional[np.array]],
+) -> Optional[np.array]:
+    """Make preset out bias.
+
+    output:
+        a np array of shape [ntypes, *(odim0, odim1, ...)] is any item is not None
+        None if all items are None.
+    """
+    if len(ibias) != ntypes:
+        raise ValueError("the length of preset bias list should be ntypes")
+    if all(ii is None for ii in ibias):
+        return None
+    for refb in ibias:
+        if refb is not None:
+            break
+    refb = np.array(refb)
+    nbias = [
+        np.full_like(refb, np.nan, dtype=np.float64) if ii is None else ii
+        for ii in ibias
+    ]
+    return np.array(nbias)
+
+
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
+    keys: Union[str, List[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
-    atom_ener: Optional[List[float]] = None,
+    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
 ):
     """
@@ -99,25 +230,32 @@ def compute_output_stats(
         The path to the stat file.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    atom_ener : List[float], optional
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    preset_bias : Dict[str, List[Optional[torch.Tensor]]], optional
+        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
+        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The `set_davg_zero` key in the descrptor should be set.
     model_forward : Callable[..., torch.Tensor], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    if stat_file_path is not None:
-        stat_file_path = stat_file_path / "bias_atom_e"
-    if stat_file_path is not None and stat_file_path.is_file():
-        bias_atom_e = stat_file_path.load_numpy()
-    else:
-        if callable(merged):
-            # only get data for once
-            sampled = merged()
-        else:
-            sampled = merged
-        energy = [item["energy"] for item in sampled]
+    # try to restore the bias from stat file
+    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+
+    # failed to restore the bias from stat file. compute
+    if bias_atom_e is None:
+        # only get data for once
+        sampled = merged() if callable(merged) else merged
+        # remove the keys that are not in the sample
+        keys = [keys] if isinstance(keys, str) else keys
+        assert isinstance(keys, list)
+        new_keys = [ii for ii in keys if ii in sampled[0].keys()]
+        del keys
+        keys = new_keys
+        # get label dict from sample
+        outputs = {kk: [item[kk] for item in sampled] for kk in keys}
         data_mixed_type = "real_natoms_vec" in sampled[0]
         natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
         for system in sampled:
@@ -128,75 +266,67 @@ def compute_output_stats(
                 system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
         input_natoms = [item[natoms_key] for item in sampled]
         # shape: (nframes, ndim)
-        merged_energy = to_numpy_array(torch.cat(energy))
+        merged_output = {kk: to_numpy_array(torch.cat(outputs[kk])) for kk in keys}
         # shape: (nframes, ntypes)
         merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
-        if atom_ener is not None and len(atom_ener) > 0:
-            assigned_atom_ener = np.array(
-                [ee if ee is not None else np.nan for ee in atom_ener]
-            )
+        nf = merged_natoms.shape[0]
+        if preset_bias is not None:
+            assigned_atom_ener = {
+                kk: _make_preset_out_bias(ntypes, preset_bias[kk])
+                if kk in preset_bias.keys()
+                else None
+                for kk in keys
+            }
         else:
-            assigned_atom_ener = None
+            assigned_atom_ener = {kk: None for kk in keys}
+
         if model_forward is None:
-            # only use statistics result
-            bias_atom_e, _ = compute_stats_from_redu(
-                merged_energy,
-                merged_natoms,
-                assigned_bias=assigned_atom_ener,
-                rcond=rcond,
-            )
+            stats_input = merged_output
         else:
             # subtract the model bias and output the delta bias
-            auto_batch_size = AutoBatchSize()
-            energy_predict = []
-            for system in sampled:
-                nframes = system["coord"].shape[0]
-                coord, atype, box, natoms = (
-                    system["coord"],
-                    system["atype"],
-                    system["box"],
-                    system["natoms"],
-                )
-                fparam = system.get("fparam", None)
-                aparam = system.get("aparam", None)
+            model_predict = _compute_model_predict(sampled, keys, model_forward)
+            stats_input = {kk: merged_output[kk] - model_predict[kk] for kk in keys}
 
-                def model_forward_auto_batch_size(*args, **kwargs):
-                    return auto_batch_size.execute_all(
-                        model_forward,
-                        nframes,
-                        system["atype"].shape[-1],
-                        *args,
-                        **kwargs,
-                    )
-
-                energy = (
-                    model_forward_auto_batch_size(
-                        coord, atype, box, fparam=fparam, aparam=aparam
-                    )
-                    .reshape(nframes, -1)
-                    .sum(-1)
-                )
-                energy_predict.append(to_numpy_array(energy).reshape([nframes, 1]))
-
-            energy_predict = np.concatenate(energy_predict)
-            bias_diff = merged_energy - energy_predict
-            bias_atom_e, _ = compute_stats_from_redu(
-                bias_diff,
+        bias_atom_e = {}
+        std_atom_e = {}
+        for kk in keys:
+            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
+                stats_input[kk],
                 merged_natoms,
-                assigned_bias=assigned_atom_ener,
+                assigned_bias=assigned_atom_ener[kk],
                 rcond=rcond,
             )
-            unbias_e = energy_predict + merged_natoms @ bias_atom_e
-            atom_numbs = merged_natoms.sum(-1)
-            rmse_ae = np.sqrt(
-                np.mean(
-                    np.square((unbias_e.ravel() - merged_energy.ravel()) / atom_numbs)
-                )
+        bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
+
+        # unbias_e is only used for print rmse
+        if model_forward is None:
+            unbias_e = {
+                kk: merged_natoms @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
+            }
+        else:
+            unbias_e = {
+                kk: model_predict[kk].reshape(nf, -1)
+                + merged_natoms @ bias_atom_e[kk].reshape(ntypes, -1)
+                for kk in keys
+            }
+        atom_numbs = merged_natoms.sum(-1)
+
+        def rmse(x):
+            return np.sqrt(np.mean(np.square(x)))
+
+        for kk in keys:
+            rmse_ae = rmse(
+                (unbias_e[kk].reshape(nf, -1) - merged_output[kk].reshape(nf, -1))
+                / atom_numbs[:, None]
             )
             log.info(
-                f"RMSE of energy per atom after linear regression is: {rmse_ae} eV/atom."
+                f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
             )
+
         if stat_file_path is not None:
-            stat_file_path.save_numpy(bias_atom_e)
-    assert all(x is not None for x in [bias_atom_e])
-    return to_torch_tensor(bias_atom_e)
+            _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
+
+    ret_bias = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
+    ret_std = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
+
+    return ret_bias, ret_std

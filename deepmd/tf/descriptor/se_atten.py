@@ -82,7 +82,7 @@ class DescrptSeAtten(DescrptSeA):
             The cut-off radius :math:`r_c`
     rcut_smth
             From where the environment matrix should be smoothed :math:`r_s`
-    sel : list[str]
+    sel : int
             sel[i] specifies the maxmum number of type i atoms in the cut-off radius
     neuron : list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
@@ -681,7 +681,17 @@ class DescrptSeAtten(DescrptSeA):
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )
-            inputs_i *= mask
+            if self.smooth:
+                inputs_i = tf.where(
+                    tf.cast(mask, tf.bool),
+                    inputs_i,
+                    # (nframes * nloc, 1) -> (nframes * nloc, ndescrpt)
+                    tf.tile(
+                        tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]
+                    ),
+                )
+            else:
+                inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
             inputs_i = descrpt2r4(inputs_i, atype)
         layer, qmat = self._filter(

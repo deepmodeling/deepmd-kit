@@ -26,7 +26,7 @@ target_include_directories(${libgmxname}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/)
 
 set_target_properties(
-  ${libgmxname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}")
+  ${libgmxname} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}")
 
 install(
   FILES dp_gmx_patch

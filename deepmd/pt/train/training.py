@@ -558,46 +558,46 @@ class Trainer:
                     ]
                 self.wrapper.load_state_dict(state_dict)
 
-                def single_model_finetune(
-                    _model,
-                    _model_params,
-                    _sample_func,
-                ):
-                    old_type_map, new_type_map = (
-                        _model_params["type_map"],
-                        _model_params["new_type_map"],
-                    )
-                    if isinstance(_model, EnergyModel):
-                        _model.change_out_bias(
-                            _sample_func,
-                            bias_adjust_mode=_model_params.get(
-                                "bias_adjust_mode", "change-by-statistic"
-                            ),
-                            origin_type_map=new_type_map,
-                            full_type_map=old_type_map,
-                        )
-                    else:
-                        # need to updated
-                        pass
+                if finetune_model is not None:
 
-                # finetune
-                if not self.multi_task:
-                    single_model_finetune(
-                        self.model, model_params, self.get_sample_func
-                    )
-                else:
-                    for model_key in self.model_keys:
-                        if model_key in self.finetune_links:
-                            log.info(
-                                f"Model branch {model_key} will be fine-tuned. This may take a long time..."
-                            )
-                            single_model_finetune(
-                                self.model[model_key],
-                                model_params["model_dict"][model_key],
-                                self.get_sample_func[model_key],
+                    def single_model_finetune(
+                        _model,
+                        _model_params,
+                        _sample_func,
+                    ):
+                        old_type_map, new_type_map = (
+                            _model_params["type_map"],
+                            _model_params["new_type_map"],
+                        )
+                        if isinstance(_model, EnergyModel):
+                            _model = _model_change_out_bias(
+                                _model, new_type_map, _sample_func, _model_params
                             )
                         else:
-                            log.info(f"Model branch {model_key} will resume training.")
+                            # need to updated
+                            pass
+                        return _model
+
+                    # finetune
+                    if not self.multi_task:
+                        self.model = single_model_finetune(
+                            self.model, model_params, self.get_sample_func
+                        )
+                    else:
+                        for model_key in self.model_keys:
+                            if model_key in self.finetune_links:
+                                log.info(
+                                    f"Model branch {model_key} will be fine-tuned. This may take a long time..."
+                                )
+                                self.model[model_key] = single_model_finetune(
+                                    self.model[model_key],
+                                    model_params["model_dict"][model_key],
+                                    self.get_sample_func[model_key],
+                                )
+                            else:
+                                log.info(
+                                    f"Model branch {model_key} will resume training."
+                                )
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
@@ -1144,3 +1144,31 @@ class Trainer:
         print_str += "   %8.1e\n" % cur_lr
         fout.write(print_str)
         fout.flush()
+
+
+def _model_change_out_bias(
+    _model,
+    new_type_map,
+    _sample_func,
+    _model_params,
+):
+    old_bias = _model.get_out_bias()
+    _model.change_out_bias(
+        _sample_func,
+        bias_adjust_mode=_model_params.get("bias_adjust_mode", "change-by-statistic"),
+    )
+    new_bias = _model.get_out_bias()
+
+    model_type_map = _model.get_type_map()
+    sorter = np.argsort(model_type_map)
+    missing_types = [t for t in new_type_map if t not in model_type_map]
+    assert (
+        not missing_types
+    ), f"Some types are not in the pre-trained model: {list(missing_types)} !"
+    idx_type_map = sorter[np.searchsorted(model_type_map, new_type_map, sorter=sorter)]
+    log.info(
+        f"Change output bias of {new_type_map!s} "
+        f"from {to_numpy_array(old_bias[idx_type_map]).reshape(-1)!s} "
+        f"to {to_numpy_array(new_bias[idx_type_map]).reshape(-1)!s}."
+    )
+    return _model

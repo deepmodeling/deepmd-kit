@@ -63,6 +63,7 @@ class TestHybrid(tf.test.TestCase):
 
         # init models
         typeebd = TypeEmbedNet(
+            ntypes=ntypes,
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],

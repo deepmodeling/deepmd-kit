@@ -13,7 +13,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.utils import (
-    get_activation_fn,
+    ActivationFn,
 )
 
 
@@ -332,7 +332,7 @@ class RepformerLayer(torch.nn.Module):
         self.set_davg_zero = set_davg_zero
         self.do_bn_mode = do_bn_mode
         self.bn_momentum = bn_momentum
-        self.act = get_activation_fn(activation_function)
+        self.act = ActivationFn(activation_function)
         self.update_g1_has_grrg = update_g1_has_grrg
         self.update_g1_has_drrd = update_g1_has_drrd
         self.update_g1_has_conv = update_g1_has_conv

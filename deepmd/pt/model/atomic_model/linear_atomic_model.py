@@ -39,7 +39,7 @@ from .pairtab_atomic_model import (
 )
 
 
-class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
+class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
     Parameters
@@ -57,7 +57,8 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
-        torch.nn.Module.__init__(self)
+        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.models = torch.nn.ModuleList(models)
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
@@ -82,7 +83,6 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
         )
         self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)
-        BaseAtomicModel.__init__(self, **kwargs)
 
     def mixed_types(self) -> bool:
         """If true, the model

@@ -14,6 +14,10 @@ from dargs import (
     dargs,
 )
 
+from deepmd.common import (
+    VALID_ACTIVATION,
+    VALID_PRECISION,
+)
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
@@ -24,26 +28,8 @@ from deepmd.utils.plugin import (
 log = logging.getLogger(__name__)
 
 
-# TODO: import from a module outside tf/pt
-ACTIVATION_FN_DICT = {
-    "relu": None,
-    "relu6": None,
-    "softplus": None,
-    "sigmoid": None,
-    "tanh": None,
-    "gelu": None,
-    "gelu_tf": None,
-    "None": None,
-    "none": None,
-}
-# TODO: import from a module outside tf/pt
-PRECISION_DICT = {
-    "default": None,
-    "float16": None,
-    "float32": None,
-    "float64": None,
-    "bfloat16": None,
-}
+ACTIVATION_FN_DICT = dict.fromkeys(VALID_ACTIVATION)
+PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
@@ -2193,7 +2179,9 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_stat_file = (
         "The file path for saving the data statistics results. "
         "If set, the results will be saved and directly loaded during the next training session, "
-        "avoiding the need to recalculate the statistics"
+        "avoiding the need to recalculate the statistics. "
+        "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
+        "otherwise, a directory containing NumPy binary files are used."
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."

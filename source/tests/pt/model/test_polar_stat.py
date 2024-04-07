@@ -30,7 +30,7 @@ class TestConsistency(unittest.TestCase):
         find_atomic_polarizability = torch.rand(1, device=env.DEVICE)
         self.sampled = [
             {
-                "type": types,
+                "atype": types,
                 "find_atomic_polarizability": find_atomic_polarizability,
                 "atomic_polarizability": atomic_polarizability,
                 "polarizability": polarizability,
@@ -40,6 +40,7 @@ class TestConsistency(unittest.TestCase):
         self.all_stat = {
             k: [v.numpy(force=True)] for d in self.sampled for k, v in d.items()
         }
+        self.all_stat["type"] = self.all_stat.pop("atype")
         self.tfpolar = PolarFittingSeA(
             ntypes=ntypes,
             dim_descrpt=1,

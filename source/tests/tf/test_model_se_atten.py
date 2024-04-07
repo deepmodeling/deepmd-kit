@@ -73,6 +73,7 @@ class TestModel(tf.test.TestCase):
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
@@ -232,6 +233,7 @@ class TestModel(tf.test.TestCase):
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
@@ -300,6 +302,7 @@ class TestModel(tf.test.TestCase):
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
@@ -461,6 +464,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 0
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
@@ -529,6 +533,7 @@ class TestModel(tf.test.TestCase):
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
@@ -693,6 +698,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 2
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
@@ -769,6 +775,7 @@ class TestModel(tf.test.TestCase):
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
+            ntypes=descrpt.get_ntypes(),
             neuron=typeebd_param["neuron"],
             activation_function=None,
             resnet_dt=typeebd_param["resnet_dt"],
