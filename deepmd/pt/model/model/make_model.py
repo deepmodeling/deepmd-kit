@@ -173,7 +173,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             return model_predict
 
         @property
-        def out_bias(self)-> torch.Tensor:
+        def out_bias(self) -> torch.Tensor:
             return self.atomic_model.out_bias
 
         def change_out_bias(

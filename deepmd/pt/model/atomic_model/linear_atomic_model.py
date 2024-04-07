@@ -201,7 +201,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 aparam,
             )
             # apply bias to each individual model
-            ener_list.append(model.apply_out_stat(raw_ret, mapping[extended_atype][:,:nloc])["energy"])
+            ener_list.append(
+                model.apply_out_stat(raw_ret, mapping[extended_atype][:, :nloc])[
+                    "energy"
+                ]
+            )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         fit_ret = {
