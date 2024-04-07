@@ -193,13 +193,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             # apply bias to each individual model
             ener_list.append(
                 model.forward_common_atomic(
-                extended_coord,
-                mapping[extended_atype],
-                nlists_[i],
-                mapping,
-                fparam,
-                aparam,
-            )["energy"]
+                    extended_coord,
+                    mapping[extended_atype],
+                    nlists_[i],
+                    mapping,
+                    fparam,
+                    aparam,
+                )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
