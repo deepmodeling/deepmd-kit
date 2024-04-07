@@ -491,6 +491,5 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         md2 = DPDPAtomicModel.deserialize(md0.serialize())
         args = [self.coord_ext, self.atype_ext, self.nlist]
         ret2 = md2.forward_common_atomic(*args)
-        ret2 = cvt_ret(ret2)
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret0[kk], ret2[kk])
