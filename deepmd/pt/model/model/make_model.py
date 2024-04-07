@@ -172,6 +172,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
+        @property
+        def out_bias(self)-> torch.Tensor:
+            return self.atomic_model.out_bias
+
         def change_out_bias(
             self,
             merged,
