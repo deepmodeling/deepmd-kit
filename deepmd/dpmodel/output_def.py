@@ -224,6 +224,10 @@ class OutputVariableDef:
             if not self.r_differentiable:
                 raise ValueError("only r_differentiable variable can calculate hessian")
 
+    @property
+    def size(self):
+        return self.output_size
+
 
 class FittingOutputDef:
     """Defines the shapes and other properties of the fitting network outputs.

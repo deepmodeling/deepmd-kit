@@ -27,12 +27,18 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 class BaseAtomicModel(BaseAtomicModel_):
     def __init__(
         self,
+        type_map: List[str],
         atom_exclude_types: List[int] = [],
         pair_exclude_types: List[Tuple[int, int]] = [],
     ):
         super().__init__()
+        self.type_map = type_map
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
+
+    def get_type_map(self) -> List[str]:
+        """Get the type map."""
+        return self.type_map
 
     def reinit_atom_exclude(
         self,

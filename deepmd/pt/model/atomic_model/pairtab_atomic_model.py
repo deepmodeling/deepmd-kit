@@ -17,9 +17,6 @@ from deepmd.dpmodel import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
 from deepmd.utils.pair_tab import (
     PairTab,
 )
@@ -36,7 +33,7 @@ from .base_atomic_model import (
 
 
 @BaseAtomicModel.register("pairtab")
-class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
+class PairTabAtomicModel(BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
@@ -78,12 +75,12 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         atom_ener: Optional[List[float]] = None,
         **kwargs,
     ):
-        torch.nn.Module.__init__(self)
+        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
 
-        BaseAtomicModel.__init__(self, **kwargs)
         self.rcond = rcond
         self.atom_ener = atom_ener
         self.type_map = type_map
@@ -227,17 +224,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             The path to the stat file.
 
         """
-        bias_atom_e = compute_output_stats(
-            merged,
-            self.ntypes,
-            keys=["energy"],
-            stat_file_path=stat_file_path,
-            rcond=self.rcond,
-            atom_ener=self.atom_ener,
-        )["energy"]
-        self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])
-        )
+        self.compute_or_load_out_stat(merged, stat_file_path)
 
     def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
         """
