@@ -172,7 +172,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
-
         def change_out_bias(
             self,
             merged,

@@ -193,26 +193,22 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
             raw_ret = model.forward_atomic(
-                    extended_coord,
-                    mapping[extended_atype],
-                    nlists_[i],
-                    mapping,
-                    fparam,
-                    aparam,
-                )["energy"]
+                extended_coord,
+                mapping[extended_atype],
+                nlists_[i],
+                mapping,
+                fparam,
+                aparam,
+            )["energy"]
             # apply bias to each individual model
-            ener_list.append(
-                model.apply_out_stat(
-                    raw_ret, mapping[extended_atype]
-                )    
-            )
+            ener_list.append(model.apply_out_stat(raw_ret, mapping[extended_atype]))
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
         return fit_ret
-    
+
     def apply_out_stat(
         self,
         ret: Dict[str, torch.Tensor],
@@ -220,7 +216,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     ):
         """Apply the stat to each atomic output.
         The developer may override the method to define how the bias is applied
-        to the atomic output of the model. 
+        to the atomic output of the model.
 
         Parameters
         ----------
