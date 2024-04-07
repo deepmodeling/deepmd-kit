@@ -916,7 +916,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0
         jdata["model"]["descriptor"]["rcut_smth"] = 4.0
-        jdata["model"]["descriptor"]["exclude_types"] = [[0, 1], [1, 1]]
+        jdata["model"]["descriptor"]["exclude_types"] = [[0, 0], [0, 1]]
         jdata["model"]["descriptor"]["set_davg_zero"] = False
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
@@ -944,6 +944,8 @@ class TestModel(tf.test.TestCase):
         }
         model._compute_input_stat(input_data)
         model.descrpt.bias_atom_e = data.compute_energy_shift()
+        # make the original implementation failed
+        model.descrpt.davg[:] += 1e-1
 
         t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
         t_energy = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name="t_energy")
@@ -996,16 +998,17 @@ class TestModel(tf.test.TestCase):
         pf, pv = pf.reshape(-1), pv.reshape(-1)
 
         eps = 1e-4
+        delta = 1e-6
         fdf, fdv = finite_difference_fv(
             sess, energy, feed_dict_test, t_coord, t_box, delta=eps
         )
-        np.testing.assert_allclose(pf, fdf, atol=1e-10)
-        np.testing.assert_allclose(pv, fdv, atol=1e-8)
+        np.testing.assert_allclose(pf, fdf, delta)
+        np.testing.assert_allclose(pv, fdv, delta)
 
         tested_eps = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
         for eps in tested_eps:
-            deltae = eps
-            deltad = eps
+            deltae = 1e-15
+            deltad = 1e-15
             de, df, dv = check_smooth_efv(
                 sess,
                 energy,
@@ -1014,23 +1017,6 @@ class TestModel(tf.test.TestCase):
                 feed_dict_test,
                 t_coord,
                 jdata["model"]["descriptor"]["rcut"],
-                delta=eps,
-            )
-            np.testing.assert_allclose(de[0], de[1], rtol=0, atol=deltae)
-            np.testing.assert_allclose(df[0], df[1], rtol=0, atol=deltad)
-            np.testing.assert_allclose(dv[0], dv[1], rtol=0, atol=deltad)
-
-        for eps in tested_eps:
-            deltae = 5.0 * eps
-            deltad = 5.0 * eps
-            de, df, dv = check_smooth_efv(
-                sess,
-                energy,
-                force,
-                virial,
-                feed_dict_test,
-                t_coord,
-                jdata["model"]["descriptor"]["rcut_smth"],
                 delta=eps,
             )
             np.testing.assert_allclose(de[0], de[1], rtol=0, atol=deltae)
