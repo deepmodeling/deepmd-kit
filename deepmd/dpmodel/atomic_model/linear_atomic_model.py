@@ -66,7 +66,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
-        super().__init__(**kwargs)
+        super().__init__(type_map, **kwargs)
 
     def mixed_types(self) -> bool:
         """If true, the model

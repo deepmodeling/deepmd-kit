@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import tempfile
 import unittest
-from copy import (
-    deepcopy,
-)
 from pathlib import (
     Path,
 )
@@ -41,11 +38,9 @@ class FinetuneTest:
     def test_finetune_change_out_bias(self):
         # get model
         model = get_model(self.model_config)
-        fitting_net = model.get_fitting_net()
-        fitting_net["bias_atom_e"] = torch.rand_like(fitting_net["bias_atom_e"])
-        energy_bias_before = deepcopy(
-            to_numpy_array(fitting_net["bias_atom_e"]).reshape(-1)
-        )
+        atomic_model = model.atomic_model
+        atomic_model["out_bias"] = torch.rand_like(atomic_model["out_bias"])
+        energy_bias_before = to_numpy_array(atomic_model["out_bias"])[0].ravel()
 
         # prepare original model for test
         dp = torch.jit.script(model)
@@ -59,12 +54,8 @@ class FinetuneTest:
         model.atomic_model.change_out_bias(
             self.sampled,
             bias_adjust_mode="change-by-statistic",
-            origin_type_map=origin_type_map,
-            full_type_map=full_type_map,
         )
-        energy_bias_after = deepcopy(
-            to_numpy_array(fitting_net["bias_atom_e"]).reshape(-1)
-        )
+        energy_bias_after = to_numpy_array(atomic_model["out_bias"])[0].ravel()
 
         # get ground-truth energy bias change
         sorter = np.argsort(full_type_map)
