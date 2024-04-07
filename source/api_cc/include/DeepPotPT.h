@@ -327,6 +327,7 @@ class DeepPotPT : public DeepPotBase {
   int gpu_id;
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
+  torch::Dict<std::string, torch::Tensor> comm_dict;
 };
 
 }  // namespace deepmd
