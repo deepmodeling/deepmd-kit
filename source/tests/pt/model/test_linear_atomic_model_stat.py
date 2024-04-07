@@ -206,8 +206,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [4.0, 5.0, 6.0],
                 [7.0, 8.0, 9.0],
             ]
-        ).reshape(nf, nloc,  *linear_model.fitting_output_def()["energy"].shape)
-        
+        ).reshape(nf, nloc, *linear_model.fitting_output_def()["energy"].shape)
+
         np.testing.assert_almost_equal(ret0, expected_ret0)
 
         # 2. test bias is applied
