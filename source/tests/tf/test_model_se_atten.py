@@ -898,8 +898,6 @@ class TestModel(tf.test.TestCase):
 
         systems = j_must_have(jdata, "systems")
         set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
         test_size = 1
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
