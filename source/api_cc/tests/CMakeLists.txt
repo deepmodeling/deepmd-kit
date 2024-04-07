@@ -10,7 +10,7 @@ target_link_libraries(runUnitTests_cc GTest::gtest_main ${LIB_DEEPMD_CC}
 if(UNIX AND NOT APPLE)
   find_library(RT_LIBRARY rt)
   if(RT_LIBRARY)
-    target_link_libraries(runUnitTests_c PRIVATE ${RT_LIBRARY})
+    target_link_libraries(runUnitTests_cc PRIVATE ${RT_LIBRARY})
   endif()
 endif()
 
