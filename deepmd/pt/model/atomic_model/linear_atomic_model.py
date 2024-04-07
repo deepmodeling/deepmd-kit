@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
     Tuple,
     Union,
-    Callable,
 )
 
 import torch
@@ -297,7 +297,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         return [
-            torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE) / nmodels
+            torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
+            / nmodels
             for _ in range(nmodels)
         ]
 
@@ -336,7 +337,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         If False, the shape is (nframes, nloc, ndim).
         """
         return False
-    
+
     def compute_or_load_out_stat(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
@@ -360,7 +361,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         for md in self.models:
             md.compute_or_load_out_stat(merged, stat_file_path)
-    
+
     def compute_or_load_stat(
         self,
         sampled_func,

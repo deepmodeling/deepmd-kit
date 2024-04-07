@@ -17,7 +17,6 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.pt.model.atomic_model import (
-    BaseAtomicModel,
     DPAtomicModel,
     LinearEnergyAtomicModel,
 )
@@ -85,8 +84,9 @@ class FooFittingA(torch.nn.Module, BaseFitting):
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
         )
-        
+
         return ret
+
 
 class FooFittingB(torch.nn.Module, BaseFitting):
     def output_def(self):
@@ -128,8 +128,9 @@ class FooFittingB(torch.nn.Module, BaseFitting):
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
         )
-        
+
         return ret
+
 
 class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def tearDown(self):
@@ -153,7 +154,6 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 ),
                 # bias of foo: 1, 3
                 "energy": to_torch_tensor(np.array([5.0, 7.0]).reshape(2, 1)),
-
             }
         ]
         self.tempdir = tempfile.TemporaryDirectory()
@@ -183,9 +183,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ft_b,
             type_map=type_map,
         ).to(env.DEVICE)
-        linear_model = LinearEnergyAtomicModel(
-            [md0,md1],type_map=type_map
-        ).to(env.DEVICE)
+        linear_model = LinearEnergyAtomicModel([md0, md1], type_map=type_map).to(
+            env.DEVICE
+        )
 
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -196,7 +196,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # 1. test run without bias
         # nf x na x odim
         ret0 = linear_model.forward_common_atomic(*args)
-        
+
         ret0 = to_numpy_array(ret0["energy"])
         ret_no_bias = []
         for md in linear_model.models:
@@ -207,7 +207,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [7.0, 8.0, 9.0],
             ]
         ).reshape([nf, nloc] + linear_model.fitting_output_def()["energy"].shape)
-        
+
         np.testing.assert_almost_equal(ret0, expected_ret0)
 
         # 2. test bias is applied
@@ -222,8 +222,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ret = to_numpy_array(ret["energy"])
             linear_ret.append(ret_no_bias[idx] + ener_bias[at])
             np.testing.assert_almost_equal((ret_no_bias[idx] + ener_bias[at]), ret)
-        
+
         # linear model not adding bias again
         ret1 = linear_model.forward_common_atomic(*args)
         ret1 = to_numpy_array(ret1["energy"])
-        np.testing.assert_almost_equal(torch.mean(torch.stack(linear_ret),dim=0), ret1)
+        np.testing.assert_almost_equal(torch.mean(torch.stack(linear_ret), dim=0), ret1)
