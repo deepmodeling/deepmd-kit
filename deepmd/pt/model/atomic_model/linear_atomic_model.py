@@ -190,19 +190,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
-            raw_ret = model.forward_atomic(
+            # apply bias to each individual model
+            ener_list.append(
+                model.forward_common_atomic(
                 extended_coord,
                 mapping[extended_atype],
                 nlists_[i],
                 mapping,
                 fparam,
                 aparam,
-            )
-            # apply bias to each individual model
-            ener_list.append(
-                model.apply_out_stat(raw_ret, mapping[extended_atype][:, :nloc])[
-                    "energy"
-                ]
+            )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
