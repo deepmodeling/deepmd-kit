@@ -192,8 +192,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
-            ener_list.append(
-                model.forward_atomic(
+            raw_ret = model.forward_atomic(
                     extended_coord,
                     mapping[extended_atype],
                     nlists_[i],
@@ -201,25 +200,37 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     fparam,
                     aparam,
                 )["energy"]
+            # apply bias to each individual model
+            ener_list.append(
+                model.apply_out_stat(
+                    raw_ret, mapping[extended_atype]
+                )    
             )
-
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
-        atype = extended_atype[:, :nloc]
-        bias_list = []
-        for idx, model in enumerate(self.models):
-            bias_atom_e = model.get_out_bias()
-
-            ener_list[idx] += bias_atom_e[atype]
-            bias_list.append(bias_atom_e[atype])
-
-        self.atomic_bias = torch.sum(
-            torch.stack(bias_list) * torch.stack(weights), dim=0
-        )
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
         return fit_ret
+    
+    def apply_out_stat(
+        self,
+        ret: Dict[str, torch.Tensor],
+        atype: torch.Tensor,
+    ):
+        """Apply the stat to each atomic output.
+        The developer may override the method to define how the bias is applied
+        to the atomic output of the model. 
+
+        Parameters
+        ----------
+        ret
+            The returned dict by the forward_atomic method
+        atype
+            The atom types. nf x nloc
+
+        """
+        return ret
 
     @staticmethod
     def remap_atype(ori_map: List[str], new_map: List[str]) -> torch.Tensor:
@@ -291,26 +302,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             torch.ones(1, dtype=torch.float64, device=env.DEVICE) / nmodels
             for _ in range(nmodels)
         ]
-
-    def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
-        """
-        Modify the output bias for all the models in the linear atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        for model in self.models:
-            model.set_out_bias(out_bias, add=add)
-
-    def get_out_bias(self) -> torch.Tensor:
-        """Return the weighted output bias of the linear atomic model."""
-        return self.atomic_bias
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""

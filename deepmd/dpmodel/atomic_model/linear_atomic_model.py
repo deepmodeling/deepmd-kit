@@ -175,15 +175,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 )["energy"]
             )
         self.weights = self._compute_weight(extended_coord, extended_atype, nlists_)
-        atype = extended_atype[:, :nloc]
-        bias_list = []
-        for idx, model in enumerate(self.models):
-            bias_atom_e = model.get_out_bias()
 
-            ener_list[idx] += bias_atom_e[atype]
-            bias_list.append(bias_atom_e[atype])
-
-        self.atomic_bias = np.sum(np.stack(bias_list) * np.stack(self.weights), axis=0)
         fit_ret = {
             "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
         }  # (nframes, nloc, 1)
@@ -278,26 +270,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             return []
         # join all the selected types
         return list(set().union(*[model.get_sel_type() for model in self.models]))
-
-    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
-        """
-        Modify the output bias for all the models in the linear atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        for model in self.models:
-            model.set_out_bias(out_bias, add=add)
-
-    def get_out_bias(self) -> np.ndarray:
-        """Return the weighted output bias of the linear atomic model."""
-        return self.atomic_bias
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
