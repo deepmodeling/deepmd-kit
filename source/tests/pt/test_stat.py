@@ -337,6 +337,44 @@ class TestDatasetMixed(DatasetTest, unittest.TestCase):
         )
 
 
+class TestExcludeTypes(DatasetTest, unittest.TestCase):
+    def setup_data(self):
+        original_data = str(Path(__file__).parent / "water/data/data_0")
+        picked_data = str(Path(__file__).parent / "picked_data_for_test_stat")
+        dpdata.LabeledSystem(original_data, fmt="deepmd/npy")[:2].to_deepmd_npy(
+            picked_data
+        )
+        self.mixed_type = False
+        return picked_data
+
+    def setup_tf(self):
+        return DescrptSeA_tf(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=self.sel,
+            neuron=self.filter_neuron,
+            axis_neuron=self.axis_neuron,
+            exclude_types=[[0, 0], [1, 1]],
+        )
+
+    def setup_pt(self):
+        return DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.filter_neuron,
+            self.axis_neuron,
+            exclude_types=[[0, 0], [1, 1]],
+        ).sea  # get the block who has stat as private vars
+
+    def tf_compute_input_stats(self):
+        coord = self.dp_merged["coord"]
+        atype = self.dp_merged["type"]
+        natoms = self.dp_merged["natoms_vec"]
+        box = self.dp_merged["box"]
+        self.dp_d.compute_input_stats(coord, box, atype, natoms, self.dp_mesh, {})
+
+
 class TestOutputStat(unittest.TestCase):
     def setUp(self):
         self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
