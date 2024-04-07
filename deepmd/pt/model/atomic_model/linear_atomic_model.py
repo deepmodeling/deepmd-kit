@@ -73,11 +73,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
 
-        ntypes = len(self.type_map)
-        # a placeholder for storing weighted bias.
-        self.atomic_bias = torch.zeros(
-            ntypes, 1, dtype=env.GLOBAL_PT_ENER_FLOAT_PRECISION, device=env.DEVICE
-        )
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         self.rcuts = torch.tensor(
             self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
