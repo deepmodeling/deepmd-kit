@@ -4,8 +4,15 @@ project(deepmd_api_test)
 file(GLOB TEST_SRC test_*.cc)
 
 add_executable(runUnitTests_cc ${TEST_SRC})
-target_link_libraries(runUnitTests_cc GTest::gtest_main ${LIB_DEEPMD_CC} rt
-                      coverage_config)
+target_link_libraries(runUnitTests_cc GTest::gtest_main ${LIB_DEEPMD_CC} coverage_config)
+
+if(UNIX AND NOT APPLE)
+    find_library(RT_LIBRARY rt)
+    if(RT_LIBRARY)
+        target_link_libraries(runUnitTests_c PRIVATE ${RT_LIBRARY})
+    endif()
+endif()
+
 target_precompile_headers(runUnitTests_cc PRIVATE test_utils.h)
 add_test(
   NAME runUnitTest_cc
