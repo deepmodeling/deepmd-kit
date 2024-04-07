@@ -5,6 +5,8 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
+    Callable,
 )
 
 import torch
@@ -293,8 +295,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
+        nframes, nloc, _ = nlists_[0].shape
         return [
-            torch.ones(1, dtype=torch.float64, device=env.DEVICE) / nmodels
+            torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE) / nmodels
             for _ in range(nmodels)
         ]
 
@@ -333,6 +336,53 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         If False, the shape is (nframes, nloc, ndim).
         """
         return False
+    
+    def compute_or_load_out_stat(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        for md in self.models:
+            md.compute_or_load_out_stat(merged, stat_file_path)
+    
+    def compute_or_load_stat(
+        self,
+        sampled_func,
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        """
+        for md in self.models:
+            md.compute_or_load_stat(sampled_func, stat_file_path)
 
 
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
@@ -375,29 +425,6 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
-
-    def compute_or_load_stat(
-        self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
-    ):
-        """
-        Compute or load the statistics parameters of the model,
-        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
-        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
-        and saved in the `stat_file_path`(s).
-        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
-        and load the calculated statistics parameters.
-
-        Parameters
-        ----------
-        sampled_func
-            The lazy sampled function to get data frames from different data systems.
-        stat_file_path
-            The dictionary of paths to the statistics files.
-        """
-        self.models[0].compute_or_load_stat(sampled_func, stat_file_path)
-        self.models[1].compute_or_load_stat(sampled_func, stat_file_path)
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)

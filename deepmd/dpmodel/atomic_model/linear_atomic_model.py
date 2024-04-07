@@ -248,7 +248,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     ) -> List[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
-        return [np.ones(1) / nmodels for _ in range(nmodels)]
+        nframes, nloc, _ = nlists_[0].shape
+        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
