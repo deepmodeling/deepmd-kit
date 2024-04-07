@@ -97,7 +97,11 @@ class DpLoaderSet(Dataset):
 
         with Pool(
             os.cpu_count()
-            // (int(os.environ["LOCAL_WORLD_SIZE"]) if dist.is_available() and dist.is_initialized() else 1)
+            // (
+                int(os.environ["LOCAL_WORLD_SIZE"])
+                if dist.is_available() and dist.is_initialized()
+                else 1
+            )
         ) as pool:
             self.systems = pool.map(construct_dataset, systems)
 
@@ -138,7 +142,8 @@ class DpLoaderSet(Dataset):
                 num_workers=0,  # Should be 0 to avoid too many threads forked
                 sampler=system_sampler,
                 collate_fn=collate_batch,
-                shuffle=(not (dist.is_available() and dist.is_initialized())) and shuffle,
+                shuffle=(not (dist.is_available() and dist.is_initialized()))
+                and shuffle,
             )
             self.dataloaders.append(system_dataloader)
             self.index.append(len(system_dataloader))
