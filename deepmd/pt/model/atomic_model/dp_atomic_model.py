@@ -176,6 +176,9 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return fit_ret
 
+    def get_out_bias(self) -> torch.Tensor:
+        return self.out_bias
+        
     def compute_or_load_stat(
         self,
         sampled_func,

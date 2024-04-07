@@ -1152,12 +1152,12 @@ def _model_change_out_bias(
     _sample_func,
     _model_params,
 ):
-    old_bias = _model.out_bias
+    old_bias = _model.get_out_bias()
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_model_params.get("bias_adjust_mode", "change-by-statistic"),
     )
-    new_bias = _model.out_bias
+    new_bias = _model.get_out_bias()
 
     model_type_map = _model.get_type_map()
     sorter = np.argsort(model_type_map)
@@ -1168,7 +1168,7 @@ def _model_change_out_bias(
     idx_type_map = sorter[np.searchsorted(model_type_map, new_type_map, sorter=sorter)]
     log.info(
         f"Change output bias of {new_type_map!s} "
-        f"from {to_numpy_array(old_bias[idx_type_map]).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias[idx_type_map]).reshape(-1)!s}."
+        f"from {to_numpy_array(old_bias[:,idx_type_map]).reshape(-1)!s} "
+        f"to {to_numpy_array(new_bias[:,idx_type_map]).reshape(-1)!s}."
     )
     return _model
