@@ -274,6 +274,18 @@ class DescrptSeA(DescrptSe):
                 sel_a=self.sel_a,
                 sel_r=self.sel_r,
             )
+            if len(self.exclude_types):
+                # exclude types applied to data stat
+                mask = self.build_type_exclude_mask(
+                    self.exclude_types,
+                    self.ntypes,
+                    self.sel_a,
+                    self.ndescrpt,
+                    # for data stat, nloc == nall
+                    self.place_holders["type"],
+                    tf.size(self.place_holders["type"]),
+                )
+                self.stat_descrpt *= tf.reshape(mask, tf.shape(self.stat_descrpt))
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
         self.original_sel = None
         self.multi_task = multi_task

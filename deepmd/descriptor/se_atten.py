@@ -4,6 +4,7 @@ import warnings
 from typing import (
     List,
     Optional,
+    Set,
     Tuple,
 )
 
@@ -250,6 +251,19 @@ class DescrptSeAtten(DescrptSeA):
                 sel_a=self.sel_all_a,
                 sel_r=self.sel_all_r,
             )
+            if len(self.exclude_types):
+                # exclude types applied to data stat
+                mask = self.build_type_exclude_mask_mixed(
+                    self.exclude_types,
+                    self.ntypes,
+                    self.sel_a,
+                    self.ndescrpt,
+                    # for data stat, nloc == nall
+                    self.place_holders["type"],
+                    tf.size(self.place_holders["type"]),
+                    self.nei_type_vec_t,  # extra input for atten
+                )
+                self.stat_descrpt *= tf.reshape(mask, tf.shape(self.stat_descrpt))
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
     def compute_input_stats(
@@ -640,7 +654,7 @@ class DescrptSeAtten(DescrptSeA):
         inputs_i = tf.reshape(inputs_i, [-1, self.ndescrpt])
         type_i = -1
         if len(self.exclude_types):
-            mask = self.build_type_exclude_mask(
+            mask = self.build_type_exclude_mask_mixed(
                 self.exclude_types,
                 self.ntypes,
                 self.sel_a,
@@ -1335,9 +1349,9 @@ class DescrptSeAtten(DescrptSeA):
                 )
             )
 
-    def build_type_exclude_mask(
+    def build_type_exclude_mask_mixed(
         self,
-        exclude_types: List[Tuple[int, int]],
+        exclude_types: Set[Tuple[int, int]],
         ntypes: int,
         sel: List[int],
         ndescrpt: int,
