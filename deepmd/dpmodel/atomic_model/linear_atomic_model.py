@@ -162,7 +162,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         ]
         ener_list = []
-
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
             ener_list.append(
@@ -176,13 +175,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 )["energy"]
             )
         self.weights = self._compute_weight(extended_coord, extended_atype, nlists_)
-        self.atomic_bias = None
-        if self.atomic_bias is not None:
-            raise NotImplementedError("Need to add bias in a future PR.")
-        else:
-            fit_ret = {
-                "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
-            }  # (nframes, nloc, 1)
+
+        fit_ret = {
+            "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
+        }  # (nframes, nloc, 1)
         return fit_ret
 
     @staticmethod
@@ -252,7 +248,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     ) -> List[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
-        return [np.ones(1) / nmodels for _ in range(nmodels)]
+        nframes, nloc, _ = nlists_[0].shape
+        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -274,27 +271,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             return []
         # join all the selected types
         return list(set().union(*[model.get_sel_type() for model in self.models]))
-
-    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
-        """
-        Modify the output bias for all the models in the linear atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        for model in self.models:
-            model.set_out_bias(out_bias, add=add)
-
-    def get_out_bias(self) -> np.ndarray:
-        """Return the weighted output bias of the linear atomic model."""
-        # TODO add get_out_bias for linear atomic model
-        raise NotImplementedError
 
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
