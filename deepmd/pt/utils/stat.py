@@ -246,10 +246,8 @@ def compute_output_stats(
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
-        
-        
         # only get data once, sampled is a list of dict[str, torch.Tensor]
-        sampled = merged() if callable(merged) else merged 
+        sampled = merged() if callable(merged) else merged
         if model_forward is not None:
             model_pred = _compute_model_predict(sampled, keys, model_forward)
         else:
@@ -267,11 +265,19 @@ def compute_output_stats(
             global_sampled : [sys1, sys2]
             atomic_sampled : [sys1]
         """
-        for kk in  keys:
+        for kk in keys:
             for idx, system in enumerate(sampled):
-                if (("find_atom_" + kk) in system) and (system["find_atom_" + kk] > 0.0) and (idx not in atomic_sampled):
-                   atomic_sampled[idx] = system
-                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0) and (idx not in global_sampled):
+                if (
+                    (("find_atom_" + kk) in system)
+                    and (system["find_atom_" + kk] > 0.0)
+                    and (idx not in atomic_sampled)
+                ):
+                    atomic_sampled[idx] = system
+                elif (
+                    (("find_" + kk) in system)
+                    and (system["find_" + kk] > 0.0)
+                    and (idx not in global_sampled)
+                ):
                     global_sampled[idx] = system
                 else:
                     continue
@@ -287,7 +293,7 @@ def compute_output_stats(
                 preset_bias,
                 model_pred,
             )
-        
+
         if len(atomic_sampled) > 0:
             bias_atom_e, std_atom_e = compute_output_stats_atomic(
                 global_sampled,
@@ -297,14 +303,15 @@ def compute_output_stats(
                 preset_bias,
                 model_pred,
             )
-        
+
         # need to merge dict
         if stat_file_path is not None:
             _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
 
     bias_atom_e = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
     std_atom_e = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
-    return  bias_atom_e, std_atom_e
+    return bias_atom_e, std_atom_e
+
 
 def compute_output_stats_global(
     sampled: List[dict],
@@ -315,7 +322,6 @@ def compute_output_stats_global(
     model_pred: Optional[Dict[str, np.ndarray]] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
-    
     # remove the keys that are not in the sample
     keys = [keys] if isinstance(keys, str) else keys
     assert isinstance(keys, list)
@@ -324,7 +330,14 @@ def compute_output_stats_global(
     keys = new_keys
 
     # get label dict from sample; for each key, only picking the system with global labels.
-    outputs = {kk: [system[kk] for system in sampled if kk in system and system.get(f"find_{kk}", 0) > 0] for kk in keys}
+    outputs = {
+        kk: [
+            system[kk]
+            for system in sampled
+            if kk in system and system.get(f"find_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
 
     data_mixed_type = "real_natoms_vec" in sampled[0]
     natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
@@ -367,7 +380,7 @@ def compute_output_stats_global(
             rcond=rcond,
         )
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
-    
+
     # unbias_e is only used for print rmse
     if model_pred is None:
         unbias_e = {
@@ -393,6 +406,7 @@ def compute_output_stats_global(
             f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
         )
     return bias_atom_e, std_atom_e
+
 
 def compute_output_stats_atomic(
     sampled: List[dict],
