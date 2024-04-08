@@ -112,6 +112,7 @@ def compute_stats_from_atomic(
     assert output.ndim == 3
     assert atype.ndim == 2
     assert output.shape[:2] == atype.shape
+    
     # compute output bias
     nframes, nloc, ndim = output.shape
     ntypes = atype.max() + 1
