@@ -11,7 +11,7 @@ endif()
 
 find_package(MPI)
 if(MPI_FOUND)
-  target_link_libraries(deepmd_op_pt INTERFACE MPI::MPI_CXX)
+  target_link_libraries(deepmd_op_pt PRIVATE MPI::MPI_CXX)
   target_compile_definitions(deepmd_op_pt PRIVATE USE_MPI)
 endif()
 
