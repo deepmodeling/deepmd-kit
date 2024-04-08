@@ -126,13 +126,15 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     np.array([[3, 3, 2, 1], [3, 3, 1, 2]], dtype=np.int32)
                 ),
                 # bias of foo: 1, 3
-                "foo": to_torch_tensor(np.array([[5.0, 5.0, 5.0],[5.0, 6.0, 7.0]]).reshape(2, 3, 1)),
+                "foo": to_torch_tensor(
+                    np.array([[5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]).reshape(2, 3, 1)
+                ),
                 # bias of bar: [1, 5], [3, 2]
                 "bar": to_torch_tensor(
                     np.array([5.0, 12.0, 7.0, 9.0]).reshape(2, 1, 2)
                 ),
                 "find_atom_foo": np.float32(1.0),
-                "find_bar": np.float32(1.0)
+                "find_bar": np.float32(1.0),
             },
             {
                 "coord": to_torch_tensor(np.zeros([2, 3, 3])),
@@ -153,8 +155,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     np.array([5.0, 12.0, 7.0, 9.0]).reshape(2, 1, 2)
                 ),
                 "find_foo": np.float32(1.0),
-                "find_bar": np.float32(1.0)
-            }
+                "find_bar": np.float32(1.0),
+            },
         ]
         self.tempdir = tempfile.TemporaryDirectory()
         h5file = str((Path(self.tempdir.name) / "testcase.h5").resolve())
@@ -245,9 +247,11 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         ret3 = md0.forward_common_atomic(*args)
         ret3 = cvt_ret(ret3)
-        
+
         expected_ret3 = {}
         # new bias [2.666, 1.333]
-        expected_ret3["foo"] = np.array([[3.6667, 4.6667, 4.3333], [6.6667, 6.3333, 7.3333]]).reshape(2, 3, 1)
+        expected_ret3["foo"] = np.array(
+            [[3.6667, 4.6667, 4.3333], [6.6667, 6.3333, 7.3333]]
+        ).reshape(2, 3, 1)
         for kk in ["foo"]:
-            np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk],decimal=4)
+            np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)

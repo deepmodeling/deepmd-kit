@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections import (
+    defaultdict,
+)
 from typing import (
     Callable,
     Dict,
@@ -7,7 +10,6 @@ from typing import (
     Optional,
     Union,
 )
-from collections import defaultdict
 
 import numpy as np
 import torch
@@ -24,8 +26,8 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
-    compute_stats_from_redu,
     compute_stats_from_atomic,
+    compute_stats_from_redu,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -203,6 +205,7 @@ def _make_preset_out_bias(
     ]
     return np.array(nbias)
 
+
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
@@ -264,24 +267,60 @@ def compute_output_stats(
         atomic_sampled_idx = defaultdict(set)
         global_sampled_idx = defaultdict(set)
 
-        for kk in  keys:
+        for kk in keys:
             for idx, system in enumerate(sampled):
-                
-                if (("find_atom_" + kk) in system) and (system["find_atom_" + kk] > 0.0) and (idx not in atomic_sampled_idx[kk]):
+                if (
+                    (("find_atom_" + kk) in system)
+                    and (system["find_atom_" + kk] > 0.0)
+                    and (idx not in atomic_sampled_idx[kk])
+                ):
                     atomic_sampled_idx[kk].add(idx)
-                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0) and (idx not in global_sampled_idx[kk]):
+                elif (
+                    (("find_" + kk) in system)
+                    and (system["find_" + kk] > 0.0)
+                    and (idx not in global_sampled_idx[kk])
+                ):
                     global_sampled_idx[kk].add(idx)
                 else:
                     continue
 
-
         # use index to gather model predictions for the corresponding systems.
-        model_pred_g = {kk: [vv[idx] for idx in sorted(list(global_sampled_idx[kk]))] for kk, vv in model_pred.items()} if model_pred else None
-        model_pred_a = {kk: [vv[idx] for idx in sorted(list(atomic_sampled_idx[kk]))] for kk, vv in model_pred.items()} if model_pred else None
+        model_pred_g = (
+            {
+                kk: [vv[idx] for idx in sorted(list(global_sampled_idx[kk]))]
+                for kk, vv in model_pred.items()
+            }
+            if model_pred
+            else None
+        )
+        model_pred_a = (
+            {
+                kk: [vv[idx] for idx in sorted(list(atomic_sampled_idx[kk]))]
+                for kk, vv in model_pred.items()
+            }
+            if model_pred
+            else None
+        )
         # concat all frames within those systmes
-        model_pred_g = {kk: np.concatenate(model_pred_g[kk]) for kk in model_pred_g.keys() if len(model_pred_g[kk])>0} if model_pred else None
-        model_pred_a = {kk: np.concatenate(model_pred_a[kk]) for kk in model_pred_a.keys() if len(model_pred_a[kk])>0} if model_pred else None
-        
+        model_pred_g = (
+            {
+                kk: np.concatenate(model_pred_g[kk])
+                for kk in model_pred_g.keys()
+                if len(model_pred_g[kk]) > 0
+            }
+            if model_pred
+            else None
+        )
+        model_pred_a = (
+            {
+                kk: np.concatenate(model_pred_a[kk])
+                for kk in model_pred_a.keys()
+                if len(model_pred_a[kk]) > 0
+            }
+            if model_pred
+            else None
+        )
+
         # compute stat
         bias_atom_g, std_atom_g = compute_output_stats_global(
             sampled,
@@ -328,11 +367,16 @@ def compute_output_stats_global(
     model_pred: Optional[Dict[str, np.ndarray]] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
-
     # get label dict from sample; for each key, only picking the system with global labels.
-    outputs = {kk: [system[kk] for system in sampled if kk in system and system.get(f"find_{kk}", 0) > 0] for kk in keys}
-    
-    
+    outputs = {
+        kk: [
+            system[kk]
+            for system in sampled
+            if kk in system and system.get(f"find_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
+
     data_mixed_type = "real_natoms_vec" in sampled[0]
     natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
     for system in sampled:
@@ -342,12 +386,21 @@ def compute_output_stats_global(
             ).get_type_mask()
             system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
     # input_natoms = [item[natoms_key] for item in sampled]
-            
-    input_natoms = {kk: [item[natoms_key] for item in sampled if kk in item and item.get(f"find_{kk}", 0) > 0] for kk in keys}
+
+    input_natoms = {
+        kk: [
+            item[natoms_key]
+            for item in sampled
+            if kk in item and item.get(f"find_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
     # shape: (nframes, ndim)
     merged_output = {kk: to_numpy_array(torch.cat(outputs[kk])) for kk in keys}
     # shape: (nframes, ntypes)
-    merged_natoms = {kk: to_numpy_array(torch.cat(input_natoms[kk])[:, 2:]) for kk in keys}
+    merged_natoms = {
+        kk: to_numpy_array(torch.cat(input_natoms[kk])[:, 2:]) for kk in keys
+    }
     nf = {kk: merged_natoms[kk].shape[0] for kk in keys}
     if preset_bias is not None:
         assigned_atom_ener = {
@@ -363,10 +416,12 @@ def compute_output_stats_global(
         stats_input = merged_output
     else:
         # subtract the model bias and output the delta bias
-        
+
         # need to find the output of the corresponding system, may need idx.
         model_pred = {kk: np.sum(model_pred[kk], axis=1) for kk in keys}
-        stats_input = {kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output}
+        stats_input = {
+            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+        }
 
     bias_atom_e = {}
     std_atom_e = {}
@@ -379,7 +434,7 @@ def compute_output_stats_global(
                 rcond=rcond,
             )
         else:
-        # this key does not have atomic labels, skip it.
+            # this key does not have atomic labels, skip it.
             continue
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
@@ -416,20 +471,41 @@ def compute_output_stats_atomic(
     keys: List[str],
     model_pred: Optional[Dict[str, np.ndarray]] = None,
 ):
-
     # get label dict from sample; for each key, only picking the system with atomic labels.
-    outputs = {kk: [system[kk] for system in sampled if kk in system and system.get(f"find_atom_{kk}", 0) > 0] for kk in keys}
-    natoms = {kk: [system["atype"] for system in sampled if kk in system and system.get(f"find_atom_{kk}", 0) > 0] for kk in keys}
+    outputs = {
+        kk: [
+            system[kk]
+            for system in sampled
+            if kk in system and system.get(f"find_atom_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
+    natoms = {
+        kk: [
+            system["atype"]
+            for system in sampled
+            if kk in system and system.get(f"find_atom_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
     # shape: (nframes, nloc, ndim)
-    merged_output = {kk: to_numpy_array(torch.cat(outputs[kk])) for kk in keys if len(outputs[kk]) > 0}
-    merged_natoms = {kk: to_numpy_array(torch.cat(natoms[kk])) for kk in keys if len(natoms[kk]) > 0}
+    merged_output = {
+        kk: to_numpy_array(torch.cat(outputs[kk]))
+        for kk in keys
+        if len(outputs[kk]) > 0
+    }
+    merged_natoms = {
+        kk: to_numpy_array(torch.cat(natoms[kk])) for kk in keys if len(natoms[kk]) > 0
+    }
 
     if model_pred is None:
         stats_input = merged_output
     else:
         # subtract the model bias and output the delta bias
-        stats_input = {kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output}
-    
+        stats_input = {
+            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+        }
+
     bias_atom_e = {}
     std_atom_e = {}
 
@@ -440,9 +516,8 @@ def compute_output_stats_atomic(
                 merged_natoms[kk],
             )
         else:
-        # this key does not have atomic labels, skip it.
+            # this key does not have atomic labels, skip it.
             continue
 
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
     return bias_atom_e, std_atom_e
-
