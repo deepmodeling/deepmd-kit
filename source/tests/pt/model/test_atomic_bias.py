@@ -87,7 +87,7 @@ class FooFitting(torch.nn.Module, BaseFitting):
                     [4.0, 5.0, 6.0],
                 ]
             )
-            .view([nf, nloc] + self.output_def()["foo"].shape)
+            .view([nf, nloc, *self.output_def()["foo"].shape])
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
         )
@@ -98,7 +98,7 @@ class FooFitting(torch.nn.Module, BaseFitting):
                     [4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
                 ]
             )
-            .view([nf, nloc] + self.output_def()["bar"].shape)
+            .view([nf, nloc, *self.output_def()["bar"].shape])
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
         )
@@ -198,13 +198,13 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [1.0, 2.0, 3.0],
                 [4.0, 5.0, 6.0],
             ]
-        ).reshape([nf, nloc] + md0.fitting_output_def()["foo"].shape)
+        ).reshape([nf, nloc, *md0.fitting_output_def()["foo"].shape])
         expected_ret0["bar"] = np.array(
             [
                 [1.0, 2.0, 3.0, 7.0, 8.0, 9.0],
                 [4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
             ]
-        ).reshape([nf, nloc] + md0.fitting_output_def()["bar"].shape)
+        ).reshape([nf, nloc, *md0.fitting_output_def()["bar"].shape])
         for kk in ["foo", "bar"]:
             np.testing.assert_almost_equal(ret0[kk], expected_ret0[kk])
 
