@@ -259,7 +259,11 @@ def compute_output_stats(
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         assert isinstance(keys, list)
-        new_keys = [ii for ii in keys if (ii in sampled[0].keys()) or ("atom_"+ii in sampled[0].keys())]
+        new_keys = [
+            ii
+            for ii in keys
+            if (ii in sampled[0].keys()) or ("atom_" + ii in sampled[0].keys())
+        ]
         del keys
         keys = new_keys
         # split system based on label
@@ -491,7 +495,7 @@ def compute_output_stats_atomic(
         kk: [
             system["atom_" + kk]
             for system in sampled
-            if ("atom_"+kk) in system and system.get(f"find_atom_{kk}", 0) > 0
+            if ("atom_" + kk) in system and system.get(f"find_atom_{kk}", 0) > 0
         ]
         for kk in keys
     }
@@ -499,7 +503,7 @@ def compute_output_stats_atomic(
         kk: [
             system["atype"]
             for system in sampled
-            if ("atom_"+kk) in system and system.get(f"find_atom_{kk}", 0) > 0
+            if ("atom_" + kk) in system and system.get(f"find_atom_{kk}", 0) > 0
         ]
         for kk in keys
     }
