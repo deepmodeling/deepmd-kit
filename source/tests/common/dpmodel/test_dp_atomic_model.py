@@ -41,7 +41,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
         md0 = DPAtomicModel(ds, ft, type_map=type_map)
 
-        self.assertEqual(md0.get_output_keys(), ["energy", "mask"])
+        self.assertEqual(list(md0.atomic_output_def().keys()), ["energy", "mask"])
         self.assertEqual(md0.get_type_map(), ["foo", "bar"])
         self.assertEqual(md0.get_ntypes(), 2)
         self.assertAlmostEqual(md0.get_rcut(), self.rcut)

@@ -7,6 +7,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Set,
     Tuple,
 )
 
@@ -357,7 +358,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
 
     def build_type_exclude_mask(
         self,
-        exclude_types: List[Tuple[int, int]],
+        exclude_types: Set[Tuple[int, int]],
         ntypes: int,
         sel: List[int],
         ndescrpt: int,

@@ -51,9 +51,6 @@ def make_base_atomic_model(
             """
             return self.fitting_output_def()
 
-        def get_output_keys(self) -> List[str]:
-            return list(self.atomic_output_def().keys())
-
         @abstractmethod
         def get_rcut(self) -> float:
             """Get the cut-off radius."""

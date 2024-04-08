@@ -78,8 +78,11 @@ class InvarFitting(GeneralFitting):
         Random seed.
     exclude_types: List[int]
         Atomic contributions of the excluded atom types are set zero.
-    atom_ener: List[float], optional
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+    atom_ener: List[Optional[torch.Tensor]], optional
+        Specifying atomic energy contribution in vacuum.
+        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The `set_davg_zero` key in the descrptor should be set.
 
     """
 
@@ -100,7 +103,7 @@ class InvarFitting(GeneralFitting):
         rcond: Optional[float] = None,
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
-        atom_ener: Optional[List[float]] = None,
+        atom_ener: Optional[List[Optional[torch.Tensor]]] = None,
         **kwargs,
     ):
         self.dim_out = dim_out
@@ -164,14 +167,17 @@ class InvarFitting(GeneralFitting):
             The path to the stat file.
 
         """
+        # [0] to get the mean (bias)
         bias_atom_e = compute_output_stats(
             merged,
             self.ntypes,
             keys=[self.var_name],
             stat_file_path=stat_file_path,
             rcond=self.rcond,
-            atom_ener=self.atom_ener,
-        )[self.var_name]
+            preset_bias={self.var_name: self.atom_ener}
+            if self.atom_ener is not None
+            else None,
+        )[0][self.var_name]
         self.bias_atom_e.copy_(bias_atom_e.view([self.ntypes, self.dim_out]))
 
     def output_def(self) -> FittingOutputDef:
