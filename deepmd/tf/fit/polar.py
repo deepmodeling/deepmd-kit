@@ -555,7 +555,6 @@ class PolarFittingSeA(Fitting):
             "@class": "Fitting",
             "type": "polar",
             "@version": 1,
-            "var_name": "polar",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,

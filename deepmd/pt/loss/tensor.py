@@ -93,14 +93,14 @@ class TensorLoss(TaskLoss):
         if (
             self.has_local_weight
             and self.tensor_name in model_pred
-            and "atomic_" + self.label_name in label
+            and "atom_" + self.label_name in label
         ):
-            find_local = label.get("find_" + "atomic_" + self.label_name, 0.0)
+            find_local = label.get("find_" + "atom_" + self.label_name, 0.0)
             local_weight = self.local_weight * find_local
             local_tensor_pred = model_pred[self.tensor_name].reshape(
                 [-1, natoms, self.tensor_size]
             )
-            local_tensor_label = label["atomic_" + self.label_name].reshape(
+            local_tensor_label = label["atom_" + self.label_name].reshape(
                 [-1, natoms, self.tensor_size]
             )
             diff = (local_tensor_pred - local_tensor_label).reshape(
@@ -157,7 +157,7 @@ class TensorLoss(TaskLoss):
         if self.has_local_weight:
             label_requirement.append(
                 DataRequirementItem(
-                    "atomic_" + self.label_name,
+                    "atom_" + self.label_name,
                     ndof=self.tensor_size,
                     atomic=True,
                     must=False,

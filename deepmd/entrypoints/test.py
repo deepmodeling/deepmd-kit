@@ -870,7 +870,7 @@ def test_polar(
         arrays with results and their shapes
     """
     data.add(
-        "polarizability" if not atomic else "atomic_polarizability",
+        "polarizability" if not atomic else "atom_polarizability",
         9,
         atomic=atomic,
         must=True,
@@ -897,7 +897,7 @@ def test_polar(
         polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape(
             (polar.shape[0], -1)
         )
-        rmse_f = rmse(polar - test_data["atomic_polarizability"][:numb_test])
+        rmse_f = rmse(polar - test_data["atom_polarizability"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Polarizability  RMSE       : {rmse_f:e}")
@@ -926,7 +926,7 @@ def test_polar(
             pe = np.concatenate(
                 (
                     np.reshape(
-                        test_data["atomic_polarizability"][:numb_test],
+                        test_data["atom_polarizability"][:numb_test],
                         [-1, 9 * sel_natoms],
                     ),
                     np.reshape(polar, [-1, 9 * sel_natoms]),
@@ -1011,7 +1011,7 @@ def test_dipole(
         arrays with results and their shapes
     """
     data.add(
-        "dipole" if not atomic else "atomic_dipole",
+        "dipole" if not atomic else "atom_dipole",
         3,
         atomic=atomic,
         must=True,
@@ -1037,7 +1037,7 @@ def test_dipole(
         dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape(
             (dipole.shape[0], -1)
         )
-        rmse_f = rmse(dipole - test_data["atomic_dipole"][:numb_test])
+        rmse_f = rmse(dipole - test_data["atom_dipole"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d}")
     log.info(f"Dipole  RMSE       : {rmse_f:e}")
@@ -1061,7 +1061,7 @@ def test_dipole(
             pe = np.concatenate(
                 (
                     np.reshape(
-                        test_data["atomic_dipole"][:numb_test], [-1, 3 * sel_natoms]
+                        test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]
                     ),
                     np.reshape(dipole, [-1, 3 * sel_natoms]),
                 ),
