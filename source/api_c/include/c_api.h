@@ -36,7 +36,7 @@ extern DP_Nlist* DP_NewNlist_comm(int inum_,
                                   int** sendlist,
                                   int* sendproc,
                                   int* recvproc,
-                                  int* world);
+                                  void* world);
 
 /**
  * @brief Delete a neighbor list.

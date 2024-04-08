@@ -583,7 +583,7 @@ struct InputNlist {
              int **sendlist,
              int *sendproc,
              int *recvproc,
-             int *world)
+             void* world)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),

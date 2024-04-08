@@ -325,6 +325,7 @@ class DeepPotPT : public DeepPotBase {
   NeighborListData nlist_data;
   int max_num_neighbors;
   int gpu_id;
+  int model_type; //1:dpa2 model 0:others
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;

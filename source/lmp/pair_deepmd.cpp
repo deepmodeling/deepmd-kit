@@ -460,7 +460,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
   bool do_ghost = true;
   assert(sizeof(MPI_Comm) == sizeof(int));
-  int* world_int = (int*)world;
+  //std::cout<<world<<std::endl;
+  //long int world_int = world;
   // dpa2 communication
   commdata_ = (CommBrickDeepMD *)comm;
   double **x = atom->x;
@@ -557,7 +558,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         list->inum, list->ilist, list->numneigh, list->firstneigh,
         commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
-        commdata_->recvproc, world_int);
+        commdata_->recvproc, &world);
     deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,

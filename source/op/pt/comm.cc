@@ -57,9 +57,8 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
     auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
-    std::cout << "nswap: " << nswap << std::endl;
+
     for (int iswap = 0; iswap < nswap; ++iswap) {
-      std::cout << "num" << iswap << std::endl;
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
       torch::Tensor isendlist =
@@ -69,17 +68,14 @@ class Border : public torch::autograd::Function<Border> {
       FPTYPE* send_g1 = send_g1_tensor.data_ptr<FPTYPE>();
       if (sendproc[iswap] != me) {
         if (nrecv) {
-          std::cout << "recv" << std::endl;
           MPI_Irecv(recv_g1, nrecv * tensor_size, mpi_type, recvproc[iswap], 0,
                     world, &request);
         }
         if (nsend) {
-          std::cout << "send" << std::endl;
           MPI_Send(send_g1, nsend * tensor_size, mpi_type, sendproc[iswap], 0,
                    world);
         }
         if (nrecv) {
-          std::cout << "wait" << std::endl;
           MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
       } else {
@@ -151,7 +147,6 @@ class Border : public torch::autograd::Function<Border> {
 
     int end = ntotal;
     auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
-    std::cout << "nswap backward" << nswap << std::endl;
     for (int iswap = nswap - 1; iswap >= 0; --iswap) {
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
@@ -202,7 +197,7 @@ class Border : public torch::autograd::Function<Border> {
   }
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
-    int* communicator = communicator_tensor.data_ptr<int>();
+    long int* communicator = communicator_tensor.data_ptr<long int>();
     mpi_comm = reinterpret_cast<MPI_Comm>(*communicator);
   }
 };
