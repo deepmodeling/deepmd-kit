@@ -154,6 +154,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 ),
                 # bias of foo: 1, 3
                 "energy": to_torch_tensor(np.array([5.0, 7.0]).reshape(2, 1)),
+                "find_energy": np.float32(1.0),
             }
         ]
         self.tempdir = tempfile.TemporaryDirectory()
