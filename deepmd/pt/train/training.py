@@ -122,8 +122,14 @@ class Trainer:
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
-        self.rank = dist.get_rank() if dist.is_initialized() else 0
-        self.world_size = dist.get_world_size() if dist.is_initialized() else 1
+        self.rank = (
+            dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        )
+        self.world_size = (
+            dist.get_world_size()
+            if dist.is_available() and dist.is_initialized()
+            else 1
+        )
         self.num_model = len(self.model_keys)
 
         # Iteration config
@@ -169,7 +175,9 @@ class Trainer:
                     _data,
                     sampler=_sampler,
                     batch_size=None,
-                    num_workers=NUM_WORKERS,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                    num_workers=NUM_WORKERS
+                    if dist.is_available()
+                    else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
                     pin_memory=True,
                 )
@@ -607,7 +615,7 @@ class Trainer:
         if shared_links is not None:
             self.wrapper.share_params(shared_links, resume=resuming or self.rank != 0)
 
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             torch.cuda.set_device(LOCAL_RANK)
             # DDP will guarantee the model parameters are identical across all processes
             self.wrapper = DDP(
@@ -673,7 +681,7 @@ class Trainer:
             record_file = f"Sample_rank_{self.rank}.txt"
             fout1 = open(record_file, mode="w", buffering=1)
         log.info("Start to train %d steps.", self.num_steps)
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             log.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
         if self.enable_tensorboard:
             from torch.utils.tensorboard import (
@@ -734,7 +742,11 @@ class Trainer:
             elif self.opt_type == "LKF":
                 if isinstance(self.loss, EnergyStdLoss):
                     KFOptWrapper = KFOptimizerWrapper(
-                        self.wrapper, self.optimizer, 24, 6, dist.is_initialized()
+                        self.wrapper,
+                        self.optimizer,
+                        24,
+                        6,
+                        dist.is_available() and dist.is_initialized(),
                     )
                     pref_e = self.opt_param["kf_start_pref_e"] * (
                         self.opt_param["kf_limit_pref_e"]
@@ -753,7 +765,9 @@ class Trainer:
                     # [coord, atype, natoms, mapping, shift, nlist, box]
                     model_pred = {"energy": p_energy, "force": p_force}
                     module = (
-                        self.wrapper.module if dist.is_initialized() else self.wrapper
+                        self.wrapper.module
+                        if dist.is_available() and dist.is_initialized()
+                        else self.wrapper
                     )
 
                     def fake_model():
@@ -768,10 +782,16 @@ class Trainer:
                     )
                 elif isinstance(self.loss, DenoiseLoss):
                     KFOptWrapper = KFOptimizerWrapper(
-                        self.wrapper, self.optimizer, 24, 6, dist.is_initialized()
+                        self.wrapper,
+                        self.optimizer,
+                        24,
+                        6,
+                        dist.is_available() and dist.is_initialized(),
                     )
                     module = (
-                        self.wrapper.module if dist.is_initialized() else self.wrapper
+                        self.wrapper.module
+                        if dist.is_available() and dist.is_initialized()
+                        else self.wrapper
                     )
                     model_pred = KFOptWrapper.update_denoise_coord(
                         input_dict,
@@ -924,7 +944,11 @@ class Trainer:
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pt")
 
-                module = self.wrapper.module if dist.is_initialized() else self.wrapper
+                module = (
+                    self.wrapper.module
+                    if dist.is_available() and dist.is_initialized()
+                    else self.wrapper
+                )
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 log.info(f"Saved model to {self.latest_model}")
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
@@ -990,7 +1014,11 @@ class Trainer:
             prof.stop()
 
     def save_model(self, save_path, lr=0.0, step=0):
-        module = self.wrapper.module if dist.is_initialized() else self.wrapper
+        module = (
+            self.wrapper.module
+            if dist.is_available() and dist.is_initialized()
+            else self.wrapper
+        )
         module.train_infos["lr"] = lr
         module.train_infos["step"] = step
         torch.save(
