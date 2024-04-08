@@ -126,7 +126,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     np.array([[3, 3, 2, 1], [3, 3, 1, 2]], dtype=np.int32)
                 ),
                 # bias of foo: 1, 3
-                "foo": to_torch_tensor(
+                "atom_foo": to_torch_tensor(
                     np.array([[5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]).reshape(2, 3, 1)
                 ),
                 # bias of bar: [1, 5], [3, 2]

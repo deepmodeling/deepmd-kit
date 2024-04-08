@@ -259,10 +259,9 @@ def compute_output_stats(
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         assert isinstance(keys, list)
-        new_keys = [ii for ii in keys if ii in sampled[0].keys()]
+        new_keys = [ii for ii in keys if (ii in sampled[0].keys()) or ("atom_"+ii in sampled[0].keys())]
         del keys
         keys = new_keys
-
         # split system based on label
         atomic_sampled_idx = defaultdict(list)
         global_sampled_idx = defaultdict(list)
@@ -417,8 +416,7 @@ def compute_output_stats_global(
         for kk in keys
         if len(input_natoms[kk]) > 0
     }
-
-    nf = {kk: merged_natoms[kk].shape[0] for kk in keys}
+    nf = {kk: merged_natoms[kk].shape[0] for kk in keys if kk in merged_natoms}
     if preset_bias is not None:
         assigned_atom_ener = {
             kk: _make_preset_out_bias(ntypes, preset_bias[kk])
@@ -455,30 +453,30 @@ def compute_output_stats_global(
             continue
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
-    # unbias_e is only used for print rmse
-    if model_pred is None:
-        unbias_e = {
-            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
-        }
-    else:
-        unbias_e = {
-            kk: model_pred[kk].reshape(nf[kk], -1)
-            + merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
-            for kk in keys
-        }
-    atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in keys}
+    # # unbias_e is only used for print rmse
+    # if model_pred is None:
+    #     unbias_e = {
+    #         kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
+    #     }
+    # else:
+    #     unbias_e = {
+    #         kk: model_pred[kk].reshape(nf[kk], -1)
+    #         + merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
+    #         for kk in keys
+    #     }
+    # atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in keys}
 
-    def rmse(x):
-        return np.sqrt(np.mean(np.square(x)))
+    # def rmse(x):
+    #     return np.sqrt(np.mean(np.square(x)))
 
-    for kk in keys:
-        rmse_ae = rmse(
-            (unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1))
-            / atom_numbs[kk][:, None]
-        )
-        log.info(
-            f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
-        )
+    # for kk in keys:
+    #     rmse_ae = rmse(
+    #         (unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1))
+    #         / atom_numbs[kk][:, None]
+    #     )
+    #     log.info(
+    #         f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
+    #     )
     return bias_atom_e, std_atom_e
 
 
@@ -491,9 +489,9 @@ def compute_output_stats_atomic(
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
         kk: [
-            system[kk]
+            system["atom_" + kk]
             for system in sampled
-            if kk in system and system.get(f"find_atom_{kk}", 0) > 0
+            if ("atom_"+kk) in system and system.get(f"find_atom_{kk}", 0) > 0
         ]
         for kk in keys
     }
@@ -501,7 +499,7 @@ def compute_output_stats_atomic(
         kk: [
             system["atype"]
             for system in sampled
-            if kk in system and system.get(f"find_atom_{kk}", 0) > 0
+            if ("atom_"+kk) in system and system.get(f"find_atom_{kk}", 0) > 0
         ]
         for kk in keys
     }
@@ -526,6 +524,7 @@ def compute_output_stats_atomic(
     bias_atom_e = {}
     std_atom_e = {}
 
+    # print(stats_input['dos'].shape, merged_natoms['dos'].shape)
     for kk in keys:
         if kk in stats_input:
             bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_atomic(
