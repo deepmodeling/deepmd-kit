@@ -150,6 +150,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "bar": to_torch_tensor(
                     np.array([5.0, 12.0, 7.0, 9.0]).reshape(2, 1, 2)
                 ),
+                "find_foo": np.float32(1.0),
+                "find_bar": np.float32(1.0)
             }
         ]
         self.tempdir = tempfile.TemporaryDirectory()
