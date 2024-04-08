@@ -528,7 +528,6 @@ def compute_output_stats_atomic(
     bias_atom_e = {}
     std_atom_e = {}
 
-    # print(stats_input['dos'].shape, merged_natoms['dos'].shape)
     for kk in keys:
         if kk in stats_input:
             bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_atomic(
