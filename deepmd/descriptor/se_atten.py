@@ -672,6 +672,10 @@ class DescrptSeAtten(DescrptSeA):
                         tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]
                     ),
                 )
+                self.recovered_switch *= tf.reshape(
+                    tf.slice(tf.reshape(mask, [-1, 4]), [0, 0], [-1, 1]),
+                    [-1, natoms[0], self.sel_all_a[0]],
+                )
             else:
                 inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
