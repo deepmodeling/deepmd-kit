@@ -255,7 +255,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
-                comm_dict=comm_dict
+                comm_dict=comm_dict,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,

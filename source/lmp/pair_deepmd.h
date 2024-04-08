@@ -31,6 +31,7 @@ namespace deepmd_compat = deepmd::hpp;
 #include <fstream>
 #include <iostream>
 #include <map>
+
 #include "comm_brick.h"
 #define FLOAT_PREC double
 

@@ -235,7 +235,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
-            comm_dict=comm_dict
+            comm_dict=comm_dict,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifdef USE_CUDA
 #include <cuda.h>
 #include <cuda_runtime_api.h>

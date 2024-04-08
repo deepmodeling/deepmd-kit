@@ -79,7 +79,7 @@ class EnergyModel(DPModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
-            comm_dict=comm_dict
+            comm_dict=comm_dict,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

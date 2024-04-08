@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <string.h>
+
 #include <cassert>
 #include <iomanip>
 #include <iostream>
@@ -460,9 +461,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
   bool do_ghost = true;
   assert(sizeof(MPI_Comm) == sizeof(int));
-  //std::cout<<world<<std::endl;
-  //long int world_int = world;
-  // dpa2 communication
+  // std::cout<<world<<std::endl;
+  // long int world_int = world;
+  //  dpa2 communication
   commdata_ = (CommBrickDeepMD *)comm;
   double **x = atom->x;
   double **f = atom->f;

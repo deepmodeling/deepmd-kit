@@ -54,11 +54,12 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
-  module = torch::jit::load(model, device,metadata);
-  if(metadata["type"] == "dpa2")
+  module = torch::jit::load(model, device, metadata);
+  if (metadata["type"] == "dpa2") {
     model_type = 1;
-  else 
+  } else {
     model_type = 0;
+  }
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
   torch::jit::setFusionStrategy(strategy);
@@ -115,7 +116,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     options = torch::TensorOptions().dtype(torch::kFloat32);
     floatType = torch::kFloat32;
   }
- auto int32_option =
+  auto int32_option =
       torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
   auto int_option =
       torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
@@ -157,8 +158,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-    if(model_type == 1)
-    {
+    if (model_type == 1) {
       int nswap = lmp_list.nswap;
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
@@ -170,8 +170,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
           torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
       torch::Tensor sendnum_tensor =
           torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
-      torch::Tensor communicator_tensor =
-            torch::from_blob(const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+      torch::Tensor communicator_tensor = torch::from_blob(
+          const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
       // torch::Tensor communicator_tensor =
       //     torch::tensor(lmp_list.world, int32_option);
       torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
@@ -211,7 +211,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       module
           .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
                       firstneigh_tensor, optional_tensor, fparam_tensor,
-                      aparam_tensor, do_atom_virial_tensor,comm_dict)
+                      aparam_tensor, do_atom_virial_tensor, comm_dict)
           .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
