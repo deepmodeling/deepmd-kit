@@ -269,11 +269,23 @@ def compute_output_stats(
 
         for kk in keys:
             for idx, system in enumerate(sampled):
-
-                
-                if (("find_atom_" + kk) in system) and (system["find_atom_" + kk] > 0.0) and (len(atomic_sampled_idx[kk])==0 or idx > atomic_sampled_idx[kk][-1]):
+                if (
+                    (("find_atom_" + kk) in system)
+                    and (system["find_atom_" + kk] > 0.0)
+                    and (
+                        len(atomic_sampled_idx[kk]) == 0
+                        or idx > atomic_sampled_idx[kk][-1]
+                    )
+                ):
                     atomic_sampled_idx[kk].append(idx)
-                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0) and (len(global_sampled_idx[kk])==0 or idx > global_sampled_idx[kk][-1]):
+                elif (
+                    (("find_" + kk) in system)
+                    and (system["find_" + kk] > 0.0)
+                    and (
+                        len(global_sampled_idx[kk]) == 0
+                        or idx > global_sampled_idx[kk][-1]
+                    )
+                ):
                     global_sampled_idx[kk].append(idx)
 
                 else:
@@ -281,8 +293,22 @@ def compute_output_stats(
 
         # use index to gather model predictions for the corresponding systems.
 
-        model_pred_g = {kk: [vv[idx] for idx in global_sampled_idx[kk]] for kk, vv in model_pred.items()} if model_pred else None
-        model_pred_a = {kk: [vv[idx] for idx in atomic_sampled_idx[kk]] for kk, vv in model_pred.items()} if model_pred else None
+        model_pred_g = (
+            {
+                kk: [vv[idx] for idx in global_sampled_idx[kk]]
+                for kk, vv in model_pred.items()
+            }
+            if model_pred
+            else None
+        )
+        model_pred_a = (
+            {
+                kk: [vv[idx] for idx in atomic_sampled_idx[kk]]
+                for kk, vv in model_pred.items()
+            }
+            if model_pred
+            else None
+        )
 
         # concat all frames within those systmes
         model_pred_g = (
@@ -379,10 +405,18 @@ def compute_output_stats_global(
         for kk in keys
     }
     # shape: (nframes, ndim)
-    merged_output = {kk: to_numpy_array(torch.cat(outputs[kk])) for kk in keys if len(outputs[kk])>0}
+    merged_output = {
+        kk: to_numpy_array(torch.cat(outputs[kk]))
+        for kk in keys
+        if len(outputs[kk]) > 0
+    }
     # shape: (nframes, ntypes)
 
-    merged_natoms = {kk: to_numpy_array(torch.cat(input_natoms[kk])[:, 2:]) for kk in keys if len(input_natoms[kk])>0}
+    merged_natoms = {
+        kk: to_numpy_array(torch.cat(input_natoms[kk])[:, 2:])
+        for kk in keys
+        if len(input_natoms[kk]) > 0
+    }
 
     nf = {kk: merged_natoms[kk].shape[0] for kk in keys}
     if preset_bias is not None:
