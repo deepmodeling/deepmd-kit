@@ -1168,7 +1168,7 @@ def _model_change_out_bias(
     idx_type_map = sorter[np.searchsorted(model_type_map, new_type_map, sorter=sorter)]
     log.info(
         f"Change output bias of {new_type_map!s} "
-        f"from {to_numpy_array(old_bias[idx_type_map]).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias[idx_type_map]).reshape(-1)!s}."
+        f"from {to_numpy_array(old_bias[:,idx_type_map]).reshape(-1)!s} "
+        f"to {to_numpy_array(new_bias[:,idx_type_map]).reshape(-1)!s}."
     )
     return _model

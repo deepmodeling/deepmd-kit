@@ -96,25 +96,6 @@ def make_base_atomic_model(
             """
 
         @abstractmethod
-        def set_out_bias(self, out_bias: t_tensor, add=False) -> None:
-            """
-            Modify the output bias for the atomic model.
-
-            Parameters
-            ----------
-            out_bias : t_tensor
-                The new bias to be applied.
-            add : bool, optional
-                Whether to add the new bias to the existing one.
-                If False, the output bias will be directly replaced by the new bias.
-                If True, the new bias will be added to the existing one.
-            """
-
-        @abstractmethod
-        def get_out_bias(self) -> t_tensor:
-            """Return the output bias of the atomic model."""
-
-        @abstractmethod
         def is_aparam_nall(self) -> bool:
             """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
