@@ -200,7 +200,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret0 = to_numpy_array(ret0["energy"])
         ret_no_bias = []
         for md in linear_model.models:
-            ret_no_bias.append(md.forward_common_atomic(*args)["energy"])
+            ret_no_bias.append(to_numpy_array(md.forward_common_atomic(*args)["energy"]))
         expected_ret0 = np.array(
             [
                 [4.0, 5.0, 6.0],
@@ -226,4 +226,4 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # linear model not adding bias again
         ret1 = linear_model.forward_common_atomic(*args)
         ret1 = to_numpy_array(ret1["energy"])
-        np.testing.assert_almost_equal(torch.mean(torch.stack(linear_ret), dim=0), ret1)
+        np.testing.assert_almost_equal(np.mean(np.stack(linear_ret), axis=0), ret1)
