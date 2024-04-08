@@ -96,6 +96,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
 
+
 @unittest.skip("something wrong with the data.")
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
