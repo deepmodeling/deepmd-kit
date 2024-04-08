@@ -286,6 +286,7 @@ def train(FLAGS):
 
 def freeze(FLAGS):
     model = torch.jit.script(inference.Tester(FLAGS.model, head=FLAGS.head).model)
+    print(model.model_def_script)
     torch.jit.save(
         model,
         FLAGS.output,

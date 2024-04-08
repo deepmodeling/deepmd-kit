@@ -259,10 +259,12 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         # [nframes, nloc, tebd_dim]
         if comm_dict is None:
+            assert(isinstance(extended_atype_embd,torch.Tensor))#for jit
             atype_embd = extended_atype_embd[:, :nloc, :]
+            assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
         else:
             atype_embd = extended_atype_embd
-        assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
+        assert(isinstance(atype_embd,torch.Tensor))#for jit
         g1 = self.act(atype_embd)
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         if not self.direct_dist:
@@ -300,7 +302,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                 assert "send_num" in comm_dict
                 assert "recv_num" in comm_dict
                 assert "communicator" in comm_dict
-                ret = env.op_module.border_op(
+                ret = torch.ops.deepmd.border_op(
                     comm_dict["send_list"],
                     comm_dict["send_proc"],
                     comm_dict["recv_proc"],

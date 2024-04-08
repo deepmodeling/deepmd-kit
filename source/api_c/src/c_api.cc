@@ -35,7 +35,7 @@ DP_Nlist* DP_NewNlist_comm(int inum_,
                            int** sendlist,
                            int* sendproc,
                            int* recvproc,
-                           long int* world) {
+                           int* world) {
   deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_, nswap, sendnum,
                         recvnum, firstrecv, sendlist, sendproc, recvproc,
                         world);
