@@ -76,20 +76,20 @@ class DPTrainTest:
                 shutil.rmtree(f)
 
 
-# class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water/se_atten.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.config["training"]["training_data"]["systems"] = data_file
-#         self.config["training"]["validation_data"]["systems"] = data_file
-#         self.config["model"] = deepcopy(model_se_e2_a)
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
+class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
@@ -110,281 +110,281 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
-# class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water/zbl.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.config["training"]["training_data"]["systems"] = data_file
-#         self.config["training"]["validation_data"]["systems"] = data_file
-#         self.config["model"] = deepcopy(model_zbl)
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
+class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/zbl.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_zbl)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
-
-
-# class TestFparam(unittest.TestCase, DPTrainTest):
-#     """Test if `fparam` can be loaded correctly."""
-
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water/se_atten.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.config["training"]["training_data"]["systems"] = data_file
-#         self.config["training"]["validation_data"]["systems"] = data_file
-#         self.config["model"] = deepcopy(model_se_e2_a)
-#         self.config["model"]["fitting_net"]["numb_fparam"] = 1
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
-#         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
-#         shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
-
-#     def tearDown(self) -> None:
-#         (self.set_path / "fparam.npy").unlink(missing_ok=True)
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water/se_atten.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.config["training"]["training_data"]["systems"] = data_file
-#         self.config["training"]["validation_data"]["systems"] = data_file
-#         self.config["model"] = deepcopy(model_dpa1)
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
+class TestFparam(unittest.TestCase, DPTrainTest):
+    """Test if `fparam` can be loaded correctly."""
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"]["fitting_net"]["numb_fparam"] = 1
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
+        shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
 
-
-# class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water/se_atten.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.config["training"]["training_data"]["systems"] = data_file
-#         self.config["training"]["validation_data"]["systems"] = data_file
-#         self.config["model"] = deepcopy(model_dpa2)
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
-
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        DPTrainTest.tearDown(self)
 
 
-# @unittest.skip("hybrid not supported at the moment")
-# class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water/se_atten.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file = [str(Path(__file__).parent / "water/data/data_0")]
-#         self.config["training"]["training_data"]["systems"] = data_file
-#         self.config["training"]["validation_data"]["systems"] = data_file
-#         self.config["model"] = deepcopy(model_hybrid)
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
+class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
-
-
-# class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file_atomic = str(
-#             Path(__file__).parent / "water_tensor/dipole/atomic_system"
-#         )
-#         data_file_global = str(
-#             Path(__file__).parent / "water_tensor/dipole/global_system"
-#         )
-#         self.config["training"]["training_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["training"]["validation_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["model"] = deepcopy(model_se_e2_a)
-#         self.config["model"]["atom_exclude_types"] = [1]
-#         self.config["model"]["fitting_net"]["type"] = "dipole"
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
-
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file_atomic = str(
-#             Path(__file__).parent / "water_tensor/dipole/atomic_system"
-#         )
-#         data_file_global = str(
-#             Path(__file__).parent / "water_tensor/dipole/global_system"
-#         )
-#         self.config["training"]["training_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["training"]["validation_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["model"] = deepcopy(model_dpa1)
-#         self.config["model"]["atom_exclude_types"] = [1]
-#         self.config["model"]["fitting_net"]["type"] = "dipole"
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
+class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file_atomic = str(
-#             Path(__file__).parent / "water_tensor/dipole/atomic_system"
-#         )
-#         data_file_global = str(
-#             Path(__file__).parent / "water_tensor/dipole/global_system"
-#         )
-#         self.config["training"]["training_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["training"]["validation_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["model"] = deepcopy(model_dpa2)
-#         self.config["model"]["atom_exclude_types"] = [1]
-#         self.config["model"]["fitting_net"]["type"] = "dipole"
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
+@unittest.skip("hybrid not supported at the moment")
+class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_hybrid)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file_atomic = str(
-#             Path(__file__).parent / "water_tensor/polar/atomic_system"
-#         )
-#         data_file_global = str(
-#             Path(__file__).parent / "water_tensor/polar/global_system"
-#         )
-#         self.config["training"]["training_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["training"]["validation_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["model"] = deepcopy(model_se_e2_a)
-#         self.config["model"]["atom_exclude_types"] = [1]
-#         self.config["model"]["fitting_net"]["type"] = "polar"
-#         self.config["model"]["fitting_net"]["fit_diag"] = False
-#         self.config["model"]["fitting_net"]["shift_diag"] = False
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
-#         # can not set requires_grad false for all parameters,
-#         # because the input coord has no grad, thus the loss if all set to false
-#         self.not_all_grad = True
+class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/dipole/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/dipole/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "dipole"
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file_atomic = str(
-#             Path(__file__).parent / "water_tensor/polar/atomic_system"
-#         )
-#         data_file_global = str(
-#             Path(__file__).parent / "water_tensor/polar/global_system"
-#         )
-#         self.config["training"]["training_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["training"]["validation_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["model"] = deepcopy(model_dpa1)
-#         self.config["model"]["atom_exclude_types"] = [1]
-#         self.config["model"]["fitting_net"]["type"] = "polar"
-#         self.config["model"]["fitting_net"]["fit_diag"] = False
-#         self.config["model"]["fitting_net"]["shift_diag"] = False
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
-#         # can not set requires_grad false for all parameters,
-#         # because the input coord has no grad, thus the loss if all set to false
-#         self.not_all_grad = True
+class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/dipole/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/dipole/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "dipole"
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
-#     def setUp(self):
-#         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
-#         with open(input_json) as f:
-#             self.config = json.load(f)
-#         data_file_atomic = str(
-#             Path(__file__).parent / "water_tensor/polar/atomic_system"
-#         )
-#         data_file_global = str(
-#             Path(__file__).parent / "water_tensor/polar/global_system"
-#         )
-#         self.config["training"]["training_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["training"]["validation_data"]["systems"] = [
-#             data_file_atomic,
-#             data_file_global,
-#         ]
-#         self.config["model"] = deepcopy(model_dpa2)
-#         self.config["model"]["atom_exclude_types"] = [1]
-#         self.config["model"]["fitting_net"]["type"] = "polar"
-#         self.config["model"]["fitting_net"]["fit_diag"] = False
-#         self.config["model"]["fitting_net"]["shift_diag"] = False
-#         self.config["training"]["numb_steps"] = 1
-#         self.config["training"]["save_freq"] = 1
-#         # can not set requires_grad false for all parameters,
-#         # because the input coord has no grad, thus the loss if all set to false
-#         self.not_all_grad = True
+class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/dipole/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/dipole/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "dipole"
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
 
-#     def tearDown(self) -> None:
-#         DPTrainTest.tearDown(self)
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
 
 
-# if __name__ == "__main__":
-#     unittest.main()
+class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/polar/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/polar/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "polar"
+        self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        # can not set requires_grad false for all parameters,
+        # because the input coord has no grad, thus the loss if all set to false
+        self.not_all_grad = True
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/polar/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/polar/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa1)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "polar"
+        self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        # can not set requires_grad false for all parameters,
+        # because the input coord has no grad, thus the loss if all set to false
+        self.not_all_grad = True
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file_atomic = str(
+            Path(__file__).parent / "water_tensor/polar/atomic_system"
+        )
+        data_file_global = str(
+            Path(__file__).parent / "water_tensor/polar/global_system"
+        )
+        self.config["training"]["training_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["training"]["validation_data"]["systems"] = [
+            data_file_atomic,
+            data_file_global,
+        ]
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["model"]["atom_exclude_types"] = [1]
+        self.config["model"]["fitting_net"]["type"] = "polar"
+        self.config["model"]["fitting_net"]["fit_diag"] = False
+        self.config["model"]["fitting_net"]["shift_diag"] = False
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        # can not set requires_grad false for all parameters,
+        # because the input coord has no grad, thus the loss if all set to false
+        self.not_all_grad = True
+
+    def tearDown(self) -> None:
+        DPTrainTest.tearDown(self)
+
+
+if __name__ == "__main__":
+    unittest.main()
