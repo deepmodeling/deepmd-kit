@@ -12,6 +12,7 @@ import h5py
 import numpy as np
 import torch
 
+from deepmd.dpmodel.atomic_model import DPAtomicModel as DPDPAtomicModel
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -20,11 +21,15 @@ from deepmd.pt.model.atomic_model import (
     BaseAtomicModel,
     DPAtomicModel,
 )
-from deepmd.pt.model.descriptor.dpa1 import (
+from deepmd.pt.model.descriptor import (
     DescrptDPA1,
+    DescrptSeA,
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
+)
+from deepmd.pt.model.task.ener import (
+    InvarFitting,
 )
 from deepmd.pt.utils import (
     env,
@@ -441,3 +446,50 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
+
+    def test_serialize(self):
+        nf, nloc, nnei = self.nlist.shape
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "foo",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        ).to(env.DEVICE)
+        type_map = ["A", "B"]
+        md0 = DPAtomicModel(
+            ds,
+            ft,
+            type_map=type_map,
+        ).to(env.DEVICE)
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        # nf x nloc
+        at = self.atype_ext[:, :nloc]
+
+        def cvt_ret(x):
+            return {kk: to_numpy_array(vv) for kk, vv in x.items()}
+
+        md0.compute_or_load_out_stat(
+            self.merged_output_stat, stat_file_path=self.stat_file_path
+        )
+        ret0 = md0.forward_common_atomic(*args)
+        ret0 = cvt_ret(ret0)
+        md1 = DPAtomicModel.deserialize(md0.serialize())
+        ret1 = md1.forward_common_atomic(*args)
+        ret1 = cvt_ret(ret1)
+
+        for kk in ["foo"]:
+            np.testing.assert_almost_equal(ret0[kk], ret1[kk])
+
+        md2 = DPDPAtomicModel.deserialize(md0.serialize())
+        args = [self.coord_ext, self.atype_ext, self.nlist]
+        ret2 = md2.forward_common_atomic(*args)
+        for kk in ["foo"]:
+            np.testing.assert_almost_equal(ret0[kk], ret2[kk])
