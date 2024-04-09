@@ -93,6 +93,7 @@ A full [document](doc/train/train-input-auto.rst) on options in the training inp
     - [Building conda packages](doc/install/build-conda.md)
     - [Install Node.js interface](doc/install/install-nodejs.md)
     - [Easy install the latest development version](doc/install/easy-install-dev.md)
+- [DeepMD and determinism](doc/determinism.md)
 - [Data](doc/data/index.md)
     - [System](doc/data/system.md)
     - [Formats of a system](doc/data/data-conv.md)
