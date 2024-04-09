@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 from typing import (
     Dict,
     List,
@@ -30,11 +31,44 @@ class BaseAtomicModel(BaseAtomicModel_):
         type_map: List[str],
         atom_exclude_types: List[int] = [],
         pair_exclude_types: List[Tuple[int, int]] = [],
+        rcond: Optional[float] = None,
+        preset_out_bias: Optional[Dict[str, np.ndarray]] = None,
     ):
         super().__init__()
         self.type_map = type_map
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
+        self.rcond = rcond
+        self.preset_out_bias = preset_out_bias
+
+    def init_out_stat(self):
+        """Initialize the output bias."""
+        ntypes = self.get_ntypes()
+        self.bias_keys: List[str] = list(self.fitting_output_def().keys())
+        self.max_out_size = max(
+            [self.atomic_output_def()[kk].size for kk in self.bias_keys]
+        )
+        self.n_out = len(self.bias_keys)
+        out_bias_data = np.zeros([self.n_out, ntypes, self.max_out_size])
+        out_std_data = np.ones([self.n_out, ntypes, self.max_out_size])
+        self.out_bias = out_bias_data
+        self.out_std = out_std_data
+
+    def __setitem__(self, key, value):
+        if key in ["out_bias"]:
+            self.out_bias = value
+        elif key in ["out_std"]:
+            self.out_std = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ["out_bias"]:
+            return self.out_bias
+        elif key in ["out_std"]:
+            return self.out_std
+        else:
+            raise KeyError(key)
 
     def get_type_map(self) -> List[str]:
         """Get the type map."""
@@ -132,6 +166,7 @@ class BaseAtomicModel(BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
         )
+        ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
         atom_mask = ext_atom_mask[:, :nloc].astype(np.int32)
@@ -150,6 +185,84 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def serialize(self) -> dict:
         return {
+            "type_map": self.type_map,
             "atom_exclude_types": self.atom_exclude_types,
             "pair_exclude_types": self.pair_exclude_types,
+            "rcond": self.rcond,
+            "preset_out_bias": self.preset_out_bias,
+            "@variables": {
+                "out_bias": self.out_bias,
+                "out_std": self.out_std,
+            },
         }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "BaseAtomicModel":
+        data = copy.deepcopy(data)
+        variables = data.pop("@variables")
+        obj = cls(**data)
+        for kk in variables.keys():
+            obj[kk] = variables[kk]
+        return obj
+
+    def apply_out_stat(
+        self,
+        ret: Dict[str, np.ndarray],
+        atype: np.ndarray,
+    ):
+        """Apply the stat to each atomic output.
+        The developer may override the method to define how the bias is applied
+        to the atomic output of the model.
+
+        Parameters
+        ----------
+        ret
+            The returned dict by the forward_atomic method
+        atype
+            The atom types. nf x nloc
+
+        """
+        out_bias, out_std = self._fetch_out_stat(self.bias_keys)
+        for kk in self.bias_keys:
+            # nf x nloc x odims, out_bias: ntypes x odims
+            ret[kk] = ret[kk] + out_bias[kk][atype]
+        return ret
+
+    def _varsize(
+        self,
+        shape: List[int],
+    ) -> int:
+        output_size = 1
+        len_shape = len(shape)
+        for i in range(len_shape):
+            output_size *= shape[i]
+        return output_size
+
+    def _get_bias_index(
+        self,
+        kk: str,
+    ) -> int:
+        res: List[int] = []
+        for i, e in enumerate(self.bias_keys):
+            if e == kk:
+                res.append(i)
+        assert len(res) == 1
+        return res[0]
+
+    def _fetch_out_stat(
+        self,
+        keys: List[str],
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+        ret_bias = {}
+        ret_std = {}
+        ntypes = self.get_ntypes()
+        for kk in keys:
+            idx = self._get_bias_index(kk)
+            isize = self._varsize(self.atomic_output_def()[kk].shape)
+            ret_bias[kk] = self.out_bias[idx, :, :isize].reshape(
+                [ntypes] + list(self.atomic_output_def()[kk].shape)  # noqa: RUF005
+            )
+            ret_std[kk] = self.out_std[idx, :, :isize].reshape(
+                [ntypes] + list(self.atomic_output_def()[kk].shape)  # noqa: RUF005
+            )
+        return ret_bias, ret_std

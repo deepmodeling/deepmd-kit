@@ -100,7 +100,7 @@ class DPAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "standard",
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
@@ -112,13 +112,14 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map", None)
-        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
+        data["descriptor"] = descriptor_obj
+        data["fitting"] = fitting_obj
+        obj = super().deserialize(data)
         return obj
 
     def forward_atomic(
