@@ -19,6 +19,8 @@ jobs:
             filename: libdeepmd_c_cu11.tar.gz
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Package C library
         run: ./source/install/docker_package_c.sh
         env:
