@@ -206,6 +206,28 @@ def _make_preset_out_bias(
     return np.array(nbias)
 
 
+def _fill_stat_with_global(
+    atomic_stat: Union[np.ndarray, None],
+    global_stat: np.ndarray,
+    ):
+    """This function is used to fill atomic stat with global stat.
+    
+    Parameters
+    ----------
+    atomic_stat : Union[np.ndarray, None]
+        The atomic stat.
+    global_stat : np.ndarray
+        The global stat.
+    
+    if the atomic stat is None, use global stat. 
+    if the atomic stat is not None, but has nan values (missing atypes), fill with global stat.
+    """
+    if atomic_stat is None:
+        return global_stat
+    else:
+       return np.nan_to_num(np.where(np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat))
+
+
 def compute_output_stats(
     merged: Union[Callable[[], List[dict]], List[dict]],
     ntypes: int,
@@ -352,16 +374,20 @@ def compute_output_stats(
         # merge global/atomic bias
         bias_atom_e, std_atom_e = {}, {}
         for kk in keys:
+            # use atomic bias whenever available
             if kk in bias_atom_a:
                 bias_atom_e[kk] = bias_atom_a[kk]
                 std_atom_e[kk] = std_atom_a[kk]
-            elif kk in bias_atom_g:
-                bias_atom_e[kk] = bias_atom_g[kk]
-                std_atom_e[kk] = std_atom_g[kk]
             else:
                 bias_atom_e[kk] = None
                 std_atom_e[kk] = None
-
+            # use global bias to fill missing atomic bias
+            if kk in bias_atom_g:
+                bias_atom_e[kk] = _fill_stat_with_global(bias_atom_e[kk], bias_atom_g[kk])
+                std_atom_e[kk] = _fill_stat_with_global(std_atom_e[kk], std_atom_g[kk])
+            else:
+                raise RuntimeError("Fail to compute stat.")
+                
         if stat_file_path is not None:
             _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
 
@@ -457,30 +483,31 @@ def compute_output_stats_global(
             continue
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
-    # # unbias_e is only used for print rmse
-    # if model_pred is None:
-    #     unbias_e = {
-    #         kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
-    #     }
-    # else:
-    #     unbias_e = {
-    #         kk: model_pred[kk].reshape(nf[kk], -1)
-    #         + merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
-    #         for kk in keys
-    #     }
-    # atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in keys}
+    # unbias_e is only used for print rmse
 
-    # def rmse(x):
-    #     return np.sqrt(np.mean(np.square(x)))
+    if model_pred is None:
+        unbias_e = {
+            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
+        }
+    else:
+        unbias_e = {
+            kk: model_pred[kk].reshape(nf[kk], -1)
+            + merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
+            for kk in keys
+        }
+    atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in keys}
 
-    # for kk in keys:
-    #     rmse_ae = rmse(
-    #         (unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1))
-    #         / atom_numbs[kk][:, None]
-    #     )
-    #     log.info(
-    #         f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
-    #     )
+    def rmse(x):
+        return np.sqrt(np.mean(np.square(x)))
+
+    for kk in keys:
+        rmse_ae = rmse(
+            (unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1))
+            / atom_numbs[kk][:, None]
+        )
+        log.info(
+            f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
+        )
     return bias_atom_e, std_atom_e
 
 
@@ -534,6 +561,13 @@ def compute_output_stats_atomic(
                 stats_input[kk],
                 merged_natoms[kk],
             )
+            # correction for missing types
+            missing_types = ntypes - merged_natoms[kk].max() - 1
+            if missing_types > 0:
+                nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))
+                nan_padding.fill(np.nan)
+                bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding],axis=0)
+                std_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding],axis=0)
         else:
             # this key does not have atomic labels, skip it.
             continue
