@@ -492,7 +492,8 @@ def compute_output_stats_global(
 
     if model_pred is None:
         unbias_e = {
-            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in bias_atom_e.keys()
+            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
+            for kk in bias_atom_e.keys()
         }
     else:
         unbias_e = {
