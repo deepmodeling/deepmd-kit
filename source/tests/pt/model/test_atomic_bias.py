@@ -255,7 +255,11 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)
         assert False
-class TestAtomicModelStatMergeGlobalAtomic(unittest.TestCase, TestCaseSingleFrameWithNlist):
+
+
+class TestAtomicModelStatMergeGlobalAtomic(
+    unittest.TestCase, TestCaseSingleFrameWithNlist
+):
     def tearDown(self):
         self.tempdir.cleanup()
 
@@ -398,8 +402,6 @@ class TestAtomicModelStatMergeGlobalAtomic(unittest.TestCase, TestCaseSingleFram
         ret3 = cvt_ret(ret3)
         expected_ret3 = {}
         # new bias [2, -5]
-        expected_ret3["foo"] = np.array(
-            [[3, 4, -2], [6, 0, 1]]
-        ).reshape(2, 3, 1)
+        expected_ret3["foo"] = np.array([[3, 4, -2], [6, 0, 1]]).reshape(2, 3, 1)
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)

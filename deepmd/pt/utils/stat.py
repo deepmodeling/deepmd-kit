@@ -209,23 +209,26 @@ def _make_preset_out_bias(
 def _fill_stat_with_global(
     atomic_stat: Union[np.ndarray, None],
     global_stat: np.ndarray,
-    ):
+):
     """This function is used to fill atomic stat with global stat.
-    
+
     Parameters
     ----------
     atomic_stat : Union[np.ndarray, None]
         The atomic stat.
     global_stat : np.ndarray
         The global stat.
-    
-    if the atomic stat is None, use global stat. 
+    if the atomic stat is None, use global stat.
     if the atomic stat is not None, but has nan values (missing atypes), fill with global stat.
     """
     if atomic_stat is None:
         return global_stat
     else:
-       return np.nan_to_num(np.where(np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat))
+        return np.nan_to_num(
+            np.where(
+                np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat
+            )
+        )
 
 
 def compute_output_stats(
@@ -383,11 +386,13 @@ def compute_output_stats(
                 std_atom_e[kk] = None
             # use global bias to fill missing atomic bias
             if kk in bias_atom_g:
-                bias_atom_e[kk] = _fill_stat_with_global(bias_atom_e[kk], bias_atom_g[kk])
+                bias_atom_e[kk] = _fill_stat_with_global(
+                    bias_atom_e[kk], bias_atom_g[kk]
+                )
                 std_atom_e[kk] = _fill_stat_with_global(std_atom_e[kk], std_atom_g[kk])
             else:
                 raise RuntimeError("Fail to compute stat.")
-                
+
         if stat_file_path is not None:
             _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
 
@@ -566,8 +571,8 @@ def compute_output_stats_atomic(
             if missing_types > 0:
                 nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))
                 nan_padding.fill(np.nan)
-                bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding],axis=0)
-                std_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding],axis=0)
+                bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
+                std_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
         else:
             # this key does not have atomic labels, skip it.
             continue
