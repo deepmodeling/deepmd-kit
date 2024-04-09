@@ -254,7 +254,6 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).reshape(2, 3, 1)
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)
-        assert False
 
 
 class TestAtomicModelStatMergeGlobalAtomic(

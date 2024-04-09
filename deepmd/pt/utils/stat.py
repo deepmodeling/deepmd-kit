@@ -390,7 +390,7 @@ def compute_output_stats(
                     bias_atom_e[kk], bias_atom_g[kk]
                 )
                 std_atom_e[kk] = _fill_stat_with_global(std_atom_e[kk], std_atom_g[kk])
-            else:
+            if (bias_atom_e[kk] is None) or (std_atom_e[kk] is None):
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
@@ -492,20 +492,20 @@ def compute_output_stats_global(
 
     if model_pred is None:
         unbias_e = {
-            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
+            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1) for kk in bias_atom_e.keys()
         }
     else:
         unbias_e = {
             kk: model_pred[kk].reshape(nf[kk], -1)
             + merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
-            for kk in keys
+            for kk in bias_atom_e.keys()
         }
-    atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in keys}
+    atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in bias_atom_e.keys()}
 
     def rmse(x):
         return np.sqrt(np.mean(np.square(x)))
 
-    for kk in keys:
+    for kk in bias_atom_e.keys():
         rmse_ae = rmse(
             (unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1))
             / atom_numbs[kk][:, None]
@@ -576,6 +576,5 @@ def compute_output_stats_atomic(
         else:
             # this key does not have atomic labels, skip it.
             continue
-
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
     return bias_atom_e, std_atom_e
