@@ -180,7 +180,7 @@ class DeepmdData:
         # standardize key
         if "atomic_" in key:
             key = key.replace("atomic_", "atom_")
-            
+
         self.data_dict[key] = {
             "ndof": ndof,
             "atomic": atomic,

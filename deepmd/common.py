@@ -126,7 +126,7 @@ def add_data_requirement(
     # standardize key
     if "atomic_" in key:
         key = key.replace("atomic_", "atom_")
-        
+
     data_requirement[key] = {
         "ndof": ndof,
         "atomic": atomic,
