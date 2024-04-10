@@ -158,7 +158,7 @@ class DipoleFitting(GeneralFitting):
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("var_name", None)
+        assert data.pop("var_name", None) == "dipole"
         return super().deserialize(data)
 
     def output_def(self):

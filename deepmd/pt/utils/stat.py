@@ -300,19 +300,11 @@ def compute_output_stats(
                 if (
                     (("find_atom_" + kk) in system)
                     and (system["find_atom_" + kk] > 0.0)
-                    and (
-                        len(atomic_sampled_idx[kk]) == 0
-                        or idx > atomic_sampled_idx[kk][-1]
-                    )
                 ):
                     atomic_sampled_idx[kk].append(idx)
                 elif (
                     (("find_" + kk) in system)
                     and (system["find_" + kk] > 0.0)
-                    and (
-                        len(global_sampled_idx[kk]) == 0
-                        or idx > global_sampled_idx[kk][-1]
-                    )
                 ):
                     global_sampled_idx[kk].append(idx)
 
@@ -428,7 +420,6 @@ def compute_output_stats_global(
                 ntypes, system["atom_exclude_types"]
             ).get_type_mask()
             system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
-    # input_natoms = [item[natoms_key] for item in sampled]
 
     input_natoms = {
         kk: [
@@ -467,7 +458,6 @@ def compute_output_stats_global(
     else:
         # subtract the model bias and output the delta bias
 
-        # need to find the output of the corresponding system, may need idx.
         model_pred = {kk: np.sum(model_pred[kk], axis=1) for kk in keys}
         stats_input = {
             kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
@@ -484,7 +474,7 @@ def compute_output_stats_global(
                 rcond=rcond,
             )
         else:
-            # this key does not have atomic labels, skip it.
+            # this key does not have global labels, skip it.
             continue
     bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
 
