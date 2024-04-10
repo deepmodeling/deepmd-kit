@@ -177,6 +177,10 @@ class DeepmdData:
         output_natoms_for_type_sel : bool, optional
             if True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
+        # standardize key
+        if "atomic_" in key:
+            key = key.replace("atomic_", "atom_")
+            
         self.data_dict[key] = {
             "ndof": ndof,
             "atomic": atomic,

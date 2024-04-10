@@ -31,8 +31,8 @@ class TestConsistency(unittest.TestCase):
         self.sampled = [
             {
                 "atype": types,
-                "find_atomic_polarizability": find_atomic_polarizability,
-                "atomic_polarizability": atomic_polarizability,
+                "find_atom_polarizability": find_atomic_polarizability,
+                "atom_polarizability": atomic_polarizability,
                 "polarizability": polarizability,
                 "find_polarizability": find_polarizability,
             }
@@ -61,13 +61,13 @@ class TestConsistency(unittest.TestCase):
         np.testing.assert_allclose(tfbias, to_numpy_array(ptbias))
 
     def test_global_consistency(self):
-        self.sampled[0]["find_atomic_polarizability"] = -1
+        self.sampled[0]["find_atom_polarizability"] = -1
         self.sampled[0]["polarizability"] = self.sampled[0][
-            "atomic_polarizability"
+            "atom_polarizability"
         ].sum(dim=1)
-        self.all_stat["find_atomic_polarizability"] = [-1]
+        self.all_stat["find_atom_polarizability"] = [-1]
         self.all_stat["polarizability"] = [
-            self.all_stat["atomic_polarizability"][0].sum(axis=1)
+            self.all_stat["atom_polarizability"][0].sum(axis=1)
         ]
         self.tfpolar.compute_output_stats(self.all_stat)
         tfbias = self.tfpolar.constant_matrix

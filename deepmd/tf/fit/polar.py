@@ -193,7 +193,7 @@ class PolarFittingSeA(Fitting):
                 atom_has_polar = [
                     w for w in all_stat["type"][ss][0] if (w in self.sel_type)
                 ]  # select atom with polar
-                if all_stat["find_atomic_polarizability"][ss] > 0.0:
+                if all_stat["find_atom_polarizability"][ss] > 0.0:
                     for itype in range(
                         len(self.sel_type)
                     ):  # Atomic polar mode, should specify the atoms
@@ -208,7 +208,7 @@ class PolarFittingSeA(Fitting):
 
                         polar_bias.append(
                             np.sum(
-                                all_stat["atomic_polarizability"][ss].reshape(
+                                all_stat["atom_polarizability"][ss].reshape(
                                     nframes, len(atom_has_polar), -1
                                 )[:, index_lis, :]
                                 / nframes,
