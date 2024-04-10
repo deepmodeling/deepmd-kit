@@ -62,9 +62,9 @@ class TestConsistency(unittest.TestCase):
 
     def test_global_consistency(self):
         self.sampled[0]["find_atomic_polarizability"] = -1
-        self.sampled[0]["polarizability"] = self.sampled[0]["atomic_polarizability"].sum(
-            dim=1
-        )
+        self.sampled[0]["polarizability"] = self.sampled[0][
+            "atomic_polarizability"
+        ].sum(dim=1)
         self.all_stat["find_atomic_polarizability"] = [-1]
         self.all_stat["polarizability"] = [
             self.all_stat["atomic_polarizability"][0].sum(axis=1)
