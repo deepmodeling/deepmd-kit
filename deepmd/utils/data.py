@@ -177,7 +177,6 @@ class DeepmdData:
         output_natoms_for_type_sel : bool, optional
             if True and type_sel is True, the atomic dimension will be natoms instead of nsel
         """
-
         self.data_dict[key] = {
             "ndof": ndof,
             "atomic": atomic,
@@ -578,8 +577,8 @@ class DeepmdData:
         else:
             data["type"] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 
-        #standardize keys
-        data = {kk.replace("atomic","atom"): vv for kk, vv in data.items()}
+        # standardize keys
+        data = {kk.replace("atomic", "atom"): vv for kk, vv in data.items()}
         return data
 
     def _load_data(

@@ -123,7 +123,6 @@ def add_data_requirement(
     output_natoms_for_type_sel : bool, optional
         if True and type_sel is True, the atomic dimension will be natoms instead of nsel
     """
-    
     data_requirement[key] = {
         "ndof": ndof,
         "atomic": atomic,
