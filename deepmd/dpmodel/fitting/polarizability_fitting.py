@@ -198,7 +198,8 @@ class PolarFitting(GeneralFitting):
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
-        assert data.pop("var_name", None) == "polar"
+        var_name = data.pop("var_name", None)
+        assert  var_name == "polar"
         return super().deserialize(data)
 
     def output_def(self):
