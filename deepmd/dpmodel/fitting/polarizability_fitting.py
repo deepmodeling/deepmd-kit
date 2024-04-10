@@ -199,7 +199,7 @@ class PolarFitting(GeneralFitting):
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         var_name = data.pop("var_name", None)
-        assert  var_name == "polar"
+        assert var_name == "polar"
         return super().deserialize(data)
 
     def output_def(self):
