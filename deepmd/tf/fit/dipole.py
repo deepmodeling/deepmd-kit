@@ -362,7 +362,6 @@ class DipoleFittingSeA(Fitting):
             "@class": "Fitting",
             "type": "dipole",
             "@version": 1,
-            "var_name": "dipole",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
