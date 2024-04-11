@@ -2,9 +2,14 @@
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-
+from typing import Dict
+import torch
 
 class DPPolarAtomicModel(DPAtomicModel):
-    def apply_out_stat(self, ret, atype):
+    def apply_out_stat(
+        self,
+        ret: Dict[str, torch.Tensor],
+        atype: torch.Tensor,
+    ):
         # TODO: migrate bias
         return ret
