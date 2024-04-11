@@ -6,17 +6,18 @@ from typing import (
 
 import torch
 
+from deepmd.pt.model.atomic_model import (
+    DPPolarAtomicModel,
+)
+from deepmd.pt.model.model.model import (
+    BaseModel,
+)
 
 from .make_model import (
     make_model,
 )
-from deepmd.pt.model.atomic_model import(
-    DPPolarAtomicModel
-)
 
-from deepmd.pt.model.model.model import (
-    BaseModel,
-)
+
 @BaseModel.register("standard")
 class PolarModel(make_model(DPPolarAtomicModel)):
     model_type = "polar"
@@ -80,7 +81,7 @@ class PolarModel(make_model(DPPolarAtomicModel)):
     def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
-    
+
     @torch.jit.export
     def forward_lower(
         self,

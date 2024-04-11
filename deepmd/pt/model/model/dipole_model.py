@@ -6,15 +6,18 @@ from typing import (
 
 import torch
 
-from .make_model import (
-    make_model,
-)
-from deepmd.pt.model.atomic_model import(
-    DPDipoleAtomicModel
+from deepmd.pt.model.atomic_model import (
+    DPDipoleAtomicModel,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+
+from .make_model import (
+    make_model,
+)
+
+
 @BaseModel.register("standard")
 class DipoleModel(make_model(DPDipoleAtomicModel)):
     model_type = "dipole"
@@ -86,7 +89,7 @@ class DipoleModel(make_model(DPDipoleAtomicModel)):
     def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
-    
+
     @torch.jit.export
     def forward_lower(
         self,

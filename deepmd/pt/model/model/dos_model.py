@@ -6,15 +6,18 @@ from typing import (
 
 import torch
 
-from .make_model import (
-    make_model,
-)
-from deepmd.pt.model.atomic_model import(
-    DPAtomicModel
+from deepmd.pt.model.atomic_model import (
+    DPAtomicModel,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+
+from .make_model import (
+    make_model,
+)
+
+
 @BaseModel.register("standard")
 class DOSModel(make_model(DPAtomicModel)):
     model_type = "dos"
@@ -79,7 +82,7 @@ class DOSModel(make_model(DPAtomicModel)):
     def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
-    
+
     @torch.jit.export
     def get_numb_dos(self) -> int:
         """Get the number of  DOS for DOSFittingNet."""
