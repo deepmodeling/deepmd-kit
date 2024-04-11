@@ -9,9 +9,18 @@ import torch
 from .dp_model import (
     DPModel,
 )
+from .make_model import (
+    make_model,
+)
+from deepmd.pt.model.atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.pt.model.model.model import (
+    BaseModel,
+)
 
-
-class EnergyModel(DPModel):
+@BaseModel.register("standard")
+class EnergyModel(make_model(DPAtomicModel),DPModel):
     model_type = "ener"
 
     def __init__(

@@ -13,13 +13,14 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 
+from .dp_model import DPModel
 from .make_model import (
     make_model,
 )
 
 
 @BaseModel.register("standard")
-class DipoleModel(make_model(DPDipoleAtomicModel)):
+class DipoleModel(make_model(DPDipoleAtomicModel), DPModel):
     model_type = "dipole"
 
     def __init__(
@@ -64,23 +65,6 @@ class DipoleModel(make_model(DPDipoleAtomicModel)):
             model_predict = model_ret
             model_predict["updated_coord"] += coord
         return model_predict
-
-    @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
-        """Update the selection and perform neighbor statistics.
-
-        Parameters
-        ----------
-        global_jdata : dict
-            The global data, containing the training section
-        local_jdata : dict
-            The local data refer to the current class
-        """
-        local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["descriptor"] = cls.get_descriptor().update_sel(
-            global_jdata, local_jdata["descriptor"]
-        )
-        return local_jdata_cpy
 
     def get_fitting_net(self):
         """Get the fitting network."""
