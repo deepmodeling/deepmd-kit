@@ -27,11 +27,19 @@ from .linear_atomic_model import (
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
+from .polar_atomic_model import (
+    DPPolarAtomicModel,
+)
+from .dipole_atomic_model import (
+    DPDipoleAtomicModel,
+)
 
 __all__ = [
     "BaseAtomicModel",
     "DPAtomicModel",
     "PairTabAtomicModel",
     "LinearEnergyAtomicModel",
+    "DPPolarAtomicModel",
+    "DPDipoleAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
 ]
