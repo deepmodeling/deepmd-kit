@@ -11,7 +11,6 @@ from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model import (
-    DPModel,
     EnergyModel,
 )
 from deepmd.pt.model.task.ener import (
@@ -57,8 +56,8 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward_common(*args)
         ret1 = md1.forward_common(*args)
@@ -133,7 +132,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         )
         type_map = ["foo", "bar"]
         md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         rng = np.random.default_rng()
         fparam = rng.normal(size=[self.nf, nfp])
@@ -174,7 +173,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         )
         type_map = ["foo", "bar"]
         md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         rng = np.random.default_rng()
         fparam = rng.normal(size=[self.nf, nfp])
@@ -217,7 +216,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
         md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         args64 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         args64[0] = args64[0].to(torch.float64)
@@ -267,8 +266,8 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
         ]
@@ -319,7 +318,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         type_map = ["foo", "bar"]
         md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args0 = [self.coord_ext, self.atype_ext, self.nlist]
         args1 = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -358,7 +357,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
         md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         args64 = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -405,7 +404,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md0 = torch.jit.script(md0)
         md0.get_rcut()
         md0.get_type_map()
@@ -455,7 +454,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        self.md = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        self.md = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
 
     def test_nlist_eq(self):
         # n_nnei == nnei

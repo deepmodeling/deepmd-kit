@@ -175,10 +175,10 @@ def get_standard_model(model_params):
         modelcls = PolarModel
     elif fitting_net["type"] == "dos":
         modelcls = DOSModel
-    elif fitting_net["type"] == "ener":
+    elif fitting_net["type"] in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
     else:
-        pass
+        raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
 
     model = modelcls(
         descriptor=descriptor,
