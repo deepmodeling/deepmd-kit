@@ -526,7 +526,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             return self.atomic_model.mixed_types()
-        
+
         def forward(
             self,
             coord,
