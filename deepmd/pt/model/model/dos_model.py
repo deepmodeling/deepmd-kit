@@ -21,7 +21,7 @@ from .make_model import (
 )
 
 
-@BaseModel.register("standard")
+@BaseModel.register("dos")
 class DOSModel(DPModel, make_model(DPAtomicModel)):
     model_type = "dos"
 
