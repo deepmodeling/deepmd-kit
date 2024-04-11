@@ -77,7 +77,7 @@ class EnergyModel(DPModel, make_model(DPAtomicModel)):
     def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
-        
+
     @torch.jit.export
     def forward_lower(
         self,

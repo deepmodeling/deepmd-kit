@@ -30,6 +30,12 @@ from deepmd.utils.spin import (
     Spin,
 )
 
+from .dipole_model import (
+    DipoleModel,
+)
+from .dos_model import (
+    DOSModel,
+)
 from .dp_model import (
     DPModel,
 )
@@ -38,15 +44,6 @@ from .dp_zbl_model import (
 )
 from .ener_model import (
     EnergyModel,
-)
-from .dos_model import (
-    DOSModel,
-)
-from .polar_model import (
-    PolarModel,
-)
-from .dipole_model import (
-    DipoleModel,
 )
 from .frozen import (
     FrozenModel,
@@ -59,6 +56,9 @@ from .make_model import (
 )
 from .model import (
     BaseModel,
+)
+from .polar_model import (
+    PolarModel,
 )
 from .spin_model import (
     SpinEnergyModel,
