@@ -100,7 +100,7 @@ class DPAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "standard",
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
@@ -112,13 +112,14 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map", None)
-        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
+        data["descriptor"] = descriptor_obj
+        data["fitting"] = fitting_obj
+        obj = super().deserialize(data)
         return obj
 
     def forward_atomic(
@@ -176,6 +177,9 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return fit_ret
 
+    def get_out_bias(self) -> torch.Tensor:
+        return self.out_bias
+
     def compute_or_load_stat(
         self,
         sampled_func,
@@ -216,27 +220,6 @@ class DPAtomicModel(BaseAtomicModel):
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
-
-    def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
-        """
-        Modify the output bias for the atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        self.fitting_net["bias_atom_e"] = (
-            out_bias + self.fitting_net["bias_atom_e"] if add else out_bias
-        )
-
-    def get_out_bias(self) -> torch.Tensor:
-        """Return the output bias of the atomic model."""
-        return self.fitting_net["bias_atom_e"]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""

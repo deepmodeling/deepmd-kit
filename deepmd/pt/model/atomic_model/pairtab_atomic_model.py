@@ -71,8 +71,6 @@ class PairTabAtomicModel(BaseAtomicModel):
         rcut: float,
         sel: Union[int, List[int]],
         type_map: List[str],
-        rcond: Optional[float] = None,
-        atom_ener: Optional[List[float]] = None,
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -81,8 +79,6 @@ class PairTabAtomicModel(BaseAtomicModel):
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
 
-        self.rcond = rcond
-        self.atom_ener = atom_ener
         self.type_map = type_map
         self.ntypes = len(type_map)
 
@@ -136,6 +132,9 @@ class PairTabAtomicModel(BaseAtomicModel):
             ]
         )
 
+    def get_out_bias(self) -> torch.Tensor:
+        return self.out_bias
+
     def get_rcut(self) -> float:
         return self.rcut
 
@@ -166,14 +165,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "pairtab",
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
                 "type_map": self.type_map,
-                "rcond": self.rcond,
-                "atom_ener": self.atom_ener,
             }
         )
         return dd
@@ -181,16 +178,12 @@ class PairTabAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        rcut = data.pop("rcut")
-        sel = data.pop("sel")
-        type_map = data.pop("type_map")
-        rcond = data.pop("rcond")
-        atom_ener = data.pop("atom_ener")
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)
         data.pop("type", None)
-        tab_model = cls(None, rcut, sel, type_map, rcond, atom_ener, **data)
+        data["tab_file"] = None
+        tab_model = super().deserialize(data)
 
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
@@ -225,25 +218,6 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         """
         self.compute_or_load_out_stat(merged, stat_file_path)
-
-    def set_out_bias(self, out_bias: torch.Tensor, add=False) -> None:
-        """
-        Modify the output bias for the atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        self.bias_atom_e = out_bias + self.bias_atom_e if add else out_bias
-
-    def get_out_bias(self) -> torch.Tensor:
-        """Return the output bias of the atomic model."""
-        return self.bias_atom_e
 
     def forward_atomic(
         self,

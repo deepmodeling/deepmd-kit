@@ -47,8 +47,6 @@ class PolarFittingNet(GeneralFitting):
 
     Parameters
     ----------
-    var_name : str
-        The atomic property to fit, 'polar'.
     ntypes : int
         Element count.
     dim_descrpt : int
@@ -127,7 +125,7 @@ class PolarFittingNet(GeneralFitting):
             ntypes, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         )
         super().__init__(
-            var_name=kwargs.pop("var_name", "polar"),
+            var_name="polar",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -180,6 +178,7 @@ class PolarFittingNet(GeneralFitting):
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
+        data.pop("var_name", None)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:

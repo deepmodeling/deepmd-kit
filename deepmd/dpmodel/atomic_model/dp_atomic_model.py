@@ -49,11 +49,12 @@ class DPAtomicModel(BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
+        super().__init__(type_map, **kwargs)
         self.type_map = type_map
         self.descriptor = descriptor
         self.fitting = fitting
         self.type_map = type_map
-        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -78,27 +79,6 @@ class DPAtomicModel(BaseAtomicModel):
 
         """
         return self.descriptor.mixed_types()
-
-    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
-        """
-        Modify the output bias for the atomic model.
-
-        Parameters
-        ----------
-        out_bias : np.ndarray
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        self.fitting["bias_atom_e"] = (
-            out_bias + self.fitting["bias_atom_e"] if add else out_bias
-        )
-
-    def get_out_bias(self) -> np.ndarray:
-        """Return the output bias of the atomic model."""
-        return self.fitting["bias_atom_e"]
 
     def forward_atomic(
         self,
@@ -157,7 +137,7 @@ class DPAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "type": "standard",
-                "@version": 1,
+                "@version": 2,
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
                 "fitting": self.fitting.serialize(),
@@ -168,13 +148,14 @@ class DPAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
         data.pop("type")
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map")
-        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
+        data["descriptor"] = descriptor_obj
+        data["fitting"] = fitting_obj
+        obj = super().deserialize(data)
         return obj
 
     def get_dim_fparam(self) -> int:

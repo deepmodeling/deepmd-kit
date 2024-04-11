@@ -64,6 +64,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
         self.type_map = type_map
@@ -130,32 +131,13 @@ class PairTabAtomicModel(BaseAtomicModel):
         # to match DPA1 and DPA2.
         return True
 
-    def set_out_bias(self, out_bias: np.ndarray, add=False) -> None:
-        """
-        Modify the output bias for the atomic model.
-
-        Parameters
-        ----------
-        out_bias : torch.Tensor
-            The new bias to be applied.
-        add : bool, optional
-            Whether to add the new bias to the existing one.
-            If False, the output bias will be directly replaced by the new bias.
-            If True, the new bias will be added to the existing one.
-        """
-        self.bias_atom_e = out_bias + self.bias_atom_e if add else out_bias
-
-    def get_out_bias(self) -> np.ndarray:
-        """Return the output bias of the atomic model."""
-        return self.bias_atom_e
-
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(
             {
                 "@class": "Model",
                 "type": "pairtab",
-                "@version": 1,
+                "@version": 2,
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
@@ -167,14 +149,13 @@ class PairTabAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
         data.pop("type")
-        rcut = data.pop("rcut")
-        sel = data.pop("sel")
-        type_map = data.pop("type_map")
         tab = PairTab.deserialize(data.pop("tab"))
-        tab_model = cls(None, rcut, sel, type_map, **data)
+        data["tab_file"] = None
+        tab_model = super().deserialize(data)
+
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         nspline, ntypes = tab_model.tab_info[-2:].astype(int)

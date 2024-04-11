@@ -47,7 +47,7 @@ class LKFOptimizer(Optimizer):
         # the first param, because this helps with casting in load_state_dict
         self._state = self.state[self._params[0]]
         self._state.setdefault("kalman_lambda", kalman_lambda)
-        self.dist_init = dist.is_initialized()
+        self.dist_init = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.dist_init else 0
         self.dindex = []
         self.remainder = 0
