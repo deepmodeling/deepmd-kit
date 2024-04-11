@@ -22,7 +22,7 @@ from .make_model import (
 
 
 @BaseModel.register("standard")
-class EnergyModel(make_model(DPAtomicModel), DPModel):
+class EnergyModel(DPModel, make_model(DPAtomicModel)):
     model_type = "ener"
 
     def __init__(
@@ -70,6 +70,14 @@ class EnergyModel(make_model(DPAtomicModel), DPModel):
             model_predict["updated_coord"] += coord
         return model_predict
 
+    def get_fitting_net(self):
+        """Get the fitting network."""
+        return self.atomic_model.fitting_net
+
+    def get_descriptor(self):
+        """Get the descriptor."""
+        return self.atomic_model.descriptor
+        
     @torch.jit.export
     def forward_lower(
         self,

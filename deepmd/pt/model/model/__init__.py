@@ -39,6 +39,15 @@ from .dp_zbl_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .dos_model import (
+    DOSModel,
+)
+from .polar_model import (
+    PolarModel,
+)
+from .dipole_model import (
+    DipoleModel,
+)
 from .frozen import (
     FrozenModel,
 )
@@ -160,7 +169,18 @@ def get_standard_model(model_params):
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
 
-    model = DPModel(
+    if fitting_net["type"] == "dipole":
+        modelcls = DipoleModel
+    elif fitting_net["type"] == "polar":
+        modelcls = PolarModel
+    elif fitting_net["type"] == "dos":
+        modelcls = DOSModel
+    elif fitting_net["type"] == "ener":
+        modelcls = EnergyModel
+    else:
+        pass
+
+    model = modelcls(
         descriptor=descriptor,
         fitting=fitting,
         type_map=model_params["type_map"],

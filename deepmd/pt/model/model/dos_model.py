@@ -22,7 +22,7 @@ from .make_model import (
 
 
 @BaseModel.register("standard")
-class DOSModel(make_model(DPAtomicModel), DPModel):
+class DOSModel(DPModel, make_model(DPAtomicModel)):
     model_type = "dos"
 
     def __init__(

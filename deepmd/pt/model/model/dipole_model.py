@@ -22,7 +22,7 @@ from .make_model import (
 
 
 @BaseModel.register("standard")
-class DipoleModel(make_model(DPDipoleAtomicModel), DPModel):
+class DipoleModel(DPModel, make_model(DPDipoleAtomicModel)):
     model_type = "dipole"
 
     def __init__(
