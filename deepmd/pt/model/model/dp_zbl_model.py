@@ -6,9 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.model.dp_model import (
-    DPModel,
-)
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearEnergyAtomicModel,
 )
