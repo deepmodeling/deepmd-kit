@@ -526,5 +526,24 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             return self.atomic_model.mixed_types()
+        
+        def forward(
+            self,
+            coord,
+            atype,
+            box: Optional[torch.Tensor] = None,
+            fparam: Optional[torch.Tensor] = None,
+            aparam: Optional[torch.Tensor] = None,
+            do_atomic_virial: bool = False,
+        ) -> Dict[str, torch.Tensor]:
+            # directly call the forward_common method when no specific transform rule
+            return self.forward_common(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+            )
 
     return CM
