@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 
+
 class DPModel:
-    """A base class to implement common methods for all the Models. """
+    """A base class to implement common methods for all the Models."""
 
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):

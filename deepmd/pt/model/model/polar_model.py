@@ -12,7 +12,10 @@ from deepmd.pt.model.atomic_model import (
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
-from .dp_model import DPModel
+
+from .dp_model import (
+    DPModel,
+)
 from .make_model import (
     make_model,
 )

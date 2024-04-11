@@ -16,11 +16,13 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 
+from .dp_model import (
+    DPModel,
+)
 from .make_model import (
     make_model,
 )
 
-from .dp_model import DPModel
 DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 

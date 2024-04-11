@@ -6,12 +6,6 @@ from typing import (
 
 import torch
 
-from .dp_model import (
-    DPModel,
-)
-from .make_model import (
-    make_model,
-)
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
 )
@@ -19,8 +13,16 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 
+from .dp_model import (
+    DPModel,
+)
+from .make_model import (
+    make_model,
+)
+
+
 @BaseModel.register("standard")
-class EnergyModel(make_model(DPAtomicModel),DPModel):
+class EnergyModel(make_model(DPAtomicModel), DPModel):
     model_type = "ener"
 
     def __init__(
