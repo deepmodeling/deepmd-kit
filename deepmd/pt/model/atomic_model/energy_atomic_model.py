@@ -3,5 +3,6 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 
+
 class DPEnergyAtomicModel(DPAtomicModel):
     pass

@@ -23,7 +23,6 @@ class DPModelCommon:
             global_jdata, local_jdata["descriptor"]
         )
         return local_jdata_cpy
-    
 
     def get_fitting_net(self):
         """Get the fitting network."""
