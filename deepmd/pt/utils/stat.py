@@ -269,13 +269,6 @@ def compute_output_stats(
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
     """
-    # mapping keys, to resolve var_name/label_name mismatch (eg. polar/polarizabitlity)
-    key_mapping = {
-        "polar": "polarizability",
-    }
-    keys = [keys] if isinstance(keys, str) else keys
-    assert isinstance(keys, list)
-    keys = [key_mapping[k] if k in key_mapping else k for k in keys]
 
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)

@@ -185,7 +185,7 @@ class PolarFittingNet(GeneralFitting):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    self.var_name,
+                    "polarizability",
                     [3, 3],
                     reduciable=True,
                     r_differentiable=False,
@@ -314,7 +314,7 @@ class PolarFittingNet(GeneralFitting):
             bias = bias.unsqueeze(-1) * eye
             out = out + bias
 
-        return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        return {"polarizability": out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 
     # make jit happy with torch 2.0.0
     exclude_types: List[int]
