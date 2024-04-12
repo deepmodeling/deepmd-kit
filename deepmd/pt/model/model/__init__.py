@@ -37,7 +37,7 @@ from .dos_model import (
     DOSModel,
 )
 from .dp_model import (
-    DPModel,
+    DPModelCommon,
 )
 from .dp_zbl_model import (
     DPZBLModel,
@@ -203,7 +203,7 @@ def get_model(model_params):
 __all__ = [
     "BaseModel",
     "get_model",
-    "DPModel",
+    "DPModelCommon",
     "EnergyModel",
     "FrozenModel",
     "SpinModel",
