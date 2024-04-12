@@ -14,7 +14,7 @@ from deepmd.pt.model.model.model import (
 )
 
 from .dp_model import (
-    DPModel,
+    DPModelCommon,
 )
 from .make_model import (
     make_model,
@@ -22,7 +22,7 @@ from .make_model import (
 
 
 @BaseModel.register("dipole")
-class DipoleModel(DPModel, make_model(DPDipoleAtomicModel)):
+class DipoleModel(DPModelCommon, make_model(DPDipoleAtomicModel)):
     model_type = "dipole"
 
     def __init__(
@@ -67,14 +67,6 @@ class DipoleModel(DPModel, make_model(DPDipoleAtomicModel)):
             model_predict = model_ret
             model_predict["updated_coord"] += coord
         return model_predict
-
-    def get_fitting_net(self):
-        """Get the fitting network."""
-        return self.atomic_model.fitting_net
-
-    def get_descriptor(self):
-        """Get the descriptor."""
-        return self.atomic_model.descriptor
 
     @torch.jit.export
     def forward_lower(

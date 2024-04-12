@@ -4,7 +4,7 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 )
 
 
-class DPModel:
+class DPModelCommon:
     """A base class to implement common methods for all the Models."""
 
     @classmethod
@@ -23,3 +23,12 @@ class DPModel:
             global_jdata, local_jdata["descriptor"]
         )
         return local_jdata_cpy
+    
+
+    def get_fitting_net(self):
+        """Get the fitting network."""
+        return self.atomic_model.fitting_net
+
+    def get_descriptor(self):
+        """Get the descriptor."""
+        return self.atomic_model.descriptor

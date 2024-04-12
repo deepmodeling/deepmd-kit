@@ -14,7 +14,7 @@ from deepmd.pt.model.model.model import (
 )
 
 from .dp_model import (
-    DPModel,
+    DPModelCommon,
 )
 from .make_model import (
     make_model,
@@ -24,7 +24,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 
 @BaseModel.register("zbl")
-class DPZBLModel(DPModel, DPZBLModel_):
+class DPZBLModel(DPModelCommon, DPZBLModel_):
     model_type = "ener"
 
     def __init__(

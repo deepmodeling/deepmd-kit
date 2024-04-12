@@ -7,14 +7,14 @@ from typing import (
 import torch
 
 from deepmd.pt.model.atomic_model import (
-    DPAtomicModel,
+    DPDOSAtomicModel,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
 
 from .dp_model import (
-    DPModel,
+    DPModelCommon,
 )
 from .make_model import (
     make_model,
@@ -22,7 +22,7 @@ from .make_model import (
 
 
 @BaseModel.register("dos")
-class DOSModel(DPModel, make_model(DPAtomicModel)):
+class DOSModel(DPModelCommon, make_model(DPDOSAtomicModel)):
     model_type = "dos"
 
     def __init__(
@@ -60,14 +60,6 @@ class DOSModel(DPModel, make_model(DPAtomicModel)):
             model_predict = model_ret
             model_predict["updated_coord"] += coord
         return model_predict
-
-    def get_fitting_net(self):
-        """Get the fitting network."""
-        return self.atomic_model.fitting_net
-
-    def get_descriptor(self):
-        """Get the descriptor."""
-        return self.atomic_model.descriptor
 
     @torch.jit.export
     def get_numb_dos(self) -> int:
