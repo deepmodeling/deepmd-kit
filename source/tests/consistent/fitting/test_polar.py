@@ -125,7 +125,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 torch.from_numpy(self.gr).to(device=PT_DEVICE),
                 None,
-            )["polar"]
+            )["polarizability"]
             .detach()
             .cpu()
             .numpy()
