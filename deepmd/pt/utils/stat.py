@@ -271,7 +271,7 @@ def compute_output_stats(
     """
     # mapping keys, to resolve var_name/label_name mismatch (eg. polar/polarizabitlity)
     key_mapping = {
-        "polar":"polarizability",
+        "polar": "polarizability",
     }
     keys = [keys] if isinstance(keys, str) else keys
     assert isinstance(keys, list)
@@ -544,7 +544,10 @@ def compute_output_stats_atomic(
         kk: to_numpy_array(torch.cat(natoms[kk])) for kk in keys if len(natoms[kk]) > 0
     }
     # reshape merged data to [nf, nloc, ndim]
-    merged_output = {kk: merged_output[kk].reshape((*merged_natoms[kk].shape, -1)) for kk in merged_output}
+    merged_output = {
+        kk: merged_output[kk].reshape((*merged_natoms[kk].shape, -1))
+        for kk in merged_output
+    }
 
     if model_pred is None:
         stats_input = merged_output
