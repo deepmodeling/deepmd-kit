@@ -5,11 +5,12 @@ from typing import (
 
 import torch
 
-from .dp_atomic_model import (
-    DPAtomicModel,
-)
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
+)
+
+from .dp_atomic_model import (
+    DPAtomicModel,
 )
 
 
