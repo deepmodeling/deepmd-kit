@@ -4,9 +4,9 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
 from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
+from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )

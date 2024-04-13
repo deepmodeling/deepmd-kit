@@ -1,18 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
-from deepmd.dpmodel.atomic_model import (
-    DPAtomicModel,
-)
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
-)
-from deepmd.dpmodel.model.base_model import (
-    BaseModel,
-)
-
-from .make_model import (
-    make_model,
 )
 
 
