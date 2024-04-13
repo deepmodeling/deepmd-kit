@@ -200,7 +200,8 @@ class DOSModel(StandardModel):
         return model_dict
 
     def serialize(self, suffix: str = "") -> dict:
-        return super().serialize(suffix= "").update({"type":"dos"})
+        return super().serialize(suffix="").update({"type": "dos"})
+
     def init_variables(
         self,
         graph: tf.Graph,

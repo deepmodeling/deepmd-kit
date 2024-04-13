@@ -209,7 +209,7 @@ class TensorModel(StandardModel):
         return model_dict
 
     def serialize(self, suffix: str = "") -> dict:
-        return super().serialize(suffix= "").update({"type":self.model_type})
+        return super().serialize(suffix="").update({"type": self.model_type})
 
     def init_variables(
         self,
