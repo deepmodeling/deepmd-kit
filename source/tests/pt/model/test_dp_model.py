@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
-from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
+from deepmd.dpmodel.fitting import EnergyFittingNet as DPEnergyFittingNet
 from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
@@ -14,7 +14,7 @@ from deepmd.pt.model.model import (
     EnergyModel,
 )
 from deepmd.pt.model.task.ener import (
-    InvarFitting,
+    EnergyFittingNet,
 )
 from deepmd.pt.utils import (
     env,
@@ -48,11 +48,9 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -121,11 +119,9 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
             numb_fparam=nfp,
             numb_aparam=nap,
@@ -162,11 +158,9 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
             numb_fparam=nfp,
             numb_aparam=nap,
@@ -203,11 +197,9 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         )
         nfp, nap = 2, 3
@@ -258,11 +250,9 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -309,11 +299,9 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
@@ -344,11 +332,9 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         )
         nfp, nap = 2, 3
@@ -396,11 +382,9 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -446,11 +430,9 @@ class TestDPModelFormatNlist(unittest.TestCase):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -519,11 +501,9 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -589,11 +569,9 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -639,11 +617,9 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
