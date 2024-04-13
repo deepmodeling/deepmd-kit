@@ -1383,7 +1383,7 @@ def standard_model_args() -> Argument:
     doc_fitting = "The fitting of physical properties."
 
     ca = Argument(
-        "standard",
+        "ener",
         dict,
         [
             Argument(
