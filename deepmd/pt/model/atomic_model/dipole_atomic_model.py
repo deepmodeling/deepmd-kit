@@ -5,10 +5,13 @@ from typing import (
 
 import torch
 
+from deepmd.pt.model.task.dipole import (
+    DipoleFittingNet,
+)
+
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-from deepmd.pt.model.task.dipole import DipoleFittingNet
 
 
 class DPDipoleAtomicModel(DPAtomicModel):
