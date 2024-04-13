@@ -22,7 +22,7 @@ from .model_stat import (
     merge_sys_stat,
 )
 
-
+@StandardModel.register("dos")
 class DOSModel(StandardModel):
     """DOS model.
 

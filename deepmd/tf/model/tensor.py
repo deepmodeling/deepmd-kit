@@ -21,7 +21,8 @@ from .model_stat import (
     merge_sys_stat,
 )
 
-
+@StandardModel.register("dipole")
+@StandardModel.register("polar")
 class TensorModel(StandardModel):
     """Tensor model.
 
