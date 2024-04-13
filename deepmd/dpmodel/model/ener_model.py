@@ -9,7 +9,9 @@ from .dp_model import (
 from .make_model import (
     make_model,
 )
-
-
+from deepmd.dpmodel.model.base_model import (	
+    BaseModel,	
+)
+@BaseModel.register("ener")
 class EnergyModel(DPModelCommon, make_model(DPAtomicModel)):
     pass
