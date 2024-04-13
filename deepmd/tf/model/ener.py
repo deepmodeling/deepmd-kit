@@ -346,6 +346,9 @@ class EnerModel(StandardModel):
 
         return model_dict
 
+    def serialize(self, suffix: str = "") -> dict:
+        return super().serialize(suffix= "").update({"type":"ener"})
+
     def init_variables(
         self,
         graph: tf.Graph,
