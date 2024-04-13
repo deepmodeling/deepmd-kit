@@ -3,6 +3,11 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 
+from deepmd.pt.model.task.dos import (
+    DOSFittingNet,
+)
 
 class DPDOSAtomicModel(DPAtomicModel):
-    pass
+    def __init__(self, descriptor, fitting, type_map, **kwargs):
+        assert isinstance(fitting, DOSFittingNet)
+        super().__init__(descriptor, fitting, type_map, **kwargs)
