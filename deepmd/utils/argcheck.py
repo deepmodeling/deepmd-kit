@@ -1372,7 +1372,7 @@ def model_args(exclude_hybrid=False):
                     *hybrid_models,
                 ],
                 optional=True,
-                default_tag="standard",
+                default_tag="ener",
             ),
         ],
     )
