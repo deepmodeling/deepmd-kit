@@ -31,6 +31,7 @@ from .model_stat import (
     merge_sys_stat,
 )
 
+
 @StandardModel.register("ener")
 class EnerModel(StandardModel):
     """Energy model.
