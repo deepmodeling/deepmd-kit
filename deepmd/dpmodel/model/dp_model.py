@@ -17,8 +17,7 @@ from .make_model import (
 
 
 # use "class" to resolve "Variable not allowed in type expression"
-@BaseModel.register("standard")
-class DPModel(make_model(DPAtomicModel)):
+class DPModelCommon:
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):
         """Update the selection and perform neighbor statistics.

@@ -35,7 +35,7 @@ def make_base_model() -> Type[object]:
 
         def __new__(cls, *args, **kwargs):
             if inspect.isabstract(cls):
-                cls = cls.get_class_by_type(kwargs.get("type", "standard"))
+                cls = cls.get_class_by_type(kwargs.get("type", "ener"))
             return super().__new__(cls)
 
         @abstractmethod
@@ -151,7 +151,7 @@ def make_base_model() -> Type[object]:
             local_jdata : dict
                 The local data refer to the current class
             """
-            cls = cls.get_class_by_type(local_jdata.get("type", "standard"))
+            cls = cls.get_class_by_type(local_jdata.get("type", "ener"))
             return cls.update_sel(global_jdata, local_jdata)
 
     return BaseBaseModel

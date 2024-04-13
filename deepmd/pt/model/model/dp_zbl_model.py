@@ -24,7 +24,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 
 @BaseModel.register("zbl")
-class DPZBLModel(DPModelCommon, DPZBLModel_):
+class DPZBLModel(DPZBLModel_):
     model_type = "ener"
 
     def __init__(
@@ -103,3 +103,19 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
             assert model_ret["dforce"] is not None
             model_predict["dforce"] = model_ret["dforce"]
         return model_predict
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["dpmodel"] = DPModelCommon.update_sel(
+            global_jdata, local_jdata["dpmodel"]
+        )
+        return local_jdata_cpy

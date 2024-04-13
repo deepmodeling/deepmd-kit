@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel import DPModel as DPDPModel
+from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
 from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
 from deepmd.pt.model.descriptor.se_a import (
@@ -131,7 +131,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             numb_aparam=nap,
         )
         type_map = ["foo", "bar"]
-        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         rng = np.random.default_rng()
@@ -172,7 +172,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             numb_aparam=nap,
         )
         type_map = ["foo", "bar"]
-        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         rng = np.random.default_rng()
@@ -215,7 +215,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
-        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         args64 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
@@ -317,7 +317,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
-        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args0 = [self.coord_ext, self.atype_ext, self.nlist]
         args1 = [
@@ -356,7 +356,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
-        md0 = DPDPModel(ds, ft, type_map=type_map)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         args64 = [
