@@ -588,7 +588,7 @@ class Model(ABC, make_plugin_registry("model")):
         """
         raise NotImplementedError("Not implemented in class %s" % self.__name__)
 
-
+@Model.register("standard")
 class StandardModel(Model):
     """Standard model, which must contain a descriptor and a fitting.
 

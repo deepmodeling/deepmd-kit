@@ -1372,7 +1372,7 @@ def model_args(exclude_hybrid=False):
                     *hybrid_models,
                 ],
                 optional=True,
-                default_tag="ener",
+                default_tag="standard",
             ),
         ],
     )
@@ -1383,7 +1383,7 @@ def standard_model_args() -> Argument:
     doc_fitting = "The fitting of physical properties."
 
     ca = Argument(
-        "ener",
+        "standard",
         dict,
         [
             Argument(
