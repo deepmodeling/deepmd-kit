@@ -200,7 +200,9 @@ class DOSModel(StandardModel):
         return model_dict
 
     def serialize(self, suffix: str = "") -> dict:
-        return super().serialize(suffix="").update({"type": "dos"})
+        dd = super().serialize(suffix)
+        dd.update({"type": "dos"})
+        return dd
 
     def init_variables(
         self,
