@@ -14,12 +14,14 @@ from .make_model import (
 )
 
 DPEnergyModel_ = make_model(DPAtomicModel)
+
+
 @BaseModel.register("ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     def __init__(
-            self,
-            *args,
-            **kwargs,
-        ):
-            DPModelCommon.__init__(self)
-            DPEnergyModel_.__init__(self, *args, **kwargs)
+        self,
+        *args,
+        **kwargs,
+    ):
+        DPModelCommon.__init__(self)
+        DPEnergyModel_.__init__(self, *args, **kwargs)

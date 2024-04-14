@@ -21,6 +21,8 @@ from .make_model import (
 )
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
+
+
 @BaseModel.register("ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     model_type = "ener"

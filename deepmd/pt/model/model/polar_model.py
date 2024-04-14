@@ -21,6 +21,8 @@ from .make_model import (
 )
 
 DPDOSModel_ = make_model(DPPolarAtomicModel)
+
+
 @BaseModel.register("polar")
 class PolarModel(DPModelCommon, DPDOSModel_):
     model_type = "polar"

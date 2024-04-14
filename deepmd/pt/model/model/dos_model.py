@@ -22,6 +22,7 @@ from .make_model import (
 
 DPDOSModel_ = make_model(DPDOSAtomicModel)
 
+
 @BaseModel.register("dos")
 class DOSModel(DPModelCommon, DPDOSModel_):
     model_type = "dos"
