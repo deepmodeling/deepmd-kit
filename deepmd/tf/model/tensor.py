@@ -208,11 +208,6 @@ class TensorModel(StandardModel):
 
         return model_dict
 
-    def serialize(self, suffix: str = "") -> dict:
-        dd = super().serialize(suffix)
-        dd.update({"type": self.model_type})
-        return dd
-
     def init_variables(
         self,
         graph: tf.Graph,
