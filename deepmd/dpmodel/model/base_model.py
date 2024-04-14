@@ -36,7 +36,9 @@ def make_base_model() -> Type[object]:
         def __new__(cls, *args, **kwargs):
             if inspect.isabstract(cls):
                 # getting model type based on fitting type
-                model_type = kwargs["fitting"]["type"]
+                model_type = kwargs.get("type","standard")
+                if model_type == "standard":
+                    model_type = kwargs.get("fitting",{}).get("type","ener")
                 cls = cls.get_class_by_type(model_type)
             return super().__new__(cls)
 
@@ -120,7 +122,10 @@ def make_base_model() -> Type[object]:
                 The deserialized model
             """
             if inspect.isabstract(cls):
-                return cls.get_class_by_type(data["fitting"]["type"]).deserialize(data)
+                model_type = data.get("type","standard")
+                if model_type == "standard":
+                    model_type = data.get("fitting",{}).get("type","ener")
+                return cls.get_class_by_type(model_type).deserialize(data)
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
         model_def_script: str
@@ -154,7 +159,9 @@ def make_base_model() -> Type[object]:
                 The local data refer to the current class
             """
             # getting model type based on fitting type
-            model_type = local_jdata["fitting"]["type"]
+            model_type = local_jdata.get("type","standard")
+            if model_type == "standard":
+                model_type = local_jdata.get("fitting",{}).get("type","ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(global_jdata, local_jdata)
 
