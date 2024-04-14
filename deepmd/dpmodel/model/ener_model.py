@@ -13,7 +13,13 @@ from .make_model import (
     make_model,
 )
 
-
+DPEnergyModel_ = make_model(DPAtomicModel)
 @BaseModel.register("ener")
-class EnergyModel(DPModelCommon, make_model(DPAtomicModel)):
-    pass
+class EnergyModel(DPModelCommon, DPEnergyModel_):
+    def __init__(
+            self,
+            *args,
+            **kwargs,
+        ):
+            DPModelCommon.__init__(self)
+            DPEnergyModel_.__init__(self, *args, **kwargs)

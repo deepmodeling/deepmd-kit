@@ -20,9 +20,9 @@ from .make_model import (
     make_model,
 )
 
-
+DPDOSModel_ = make_model(DPPolarAtomicModel)
 @BaseModel.register("polar")
-class PolarModel(DPModelCommon, make_model(DPPolarAtomicModel)):
+class PolarModel(DPModelCommon, DPDOSModel_):
     model_type = "polar"
 
     def __init__(
@@ -30,7 +30,8 @@ class PolarModel(DPModelCommon, make_model(DPPolarAtomicModel)):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        DPModelCommon.__init__(self)
+        DPDOSModel_.__init__(self, *args, **kwargs)
 
     def forward(
         self,

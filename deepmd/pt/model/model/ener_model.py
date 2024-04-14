@@ -20,9 +20,9 @@ from .make_model import (
     make_model,
 )
 
-
+DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 @BaseModel.register("ener")
-class EnergyModel(DPModelCommon, make_model(DPEnergyAtomicModel)):
+class EnergyModel(DPModelCommon, DPEnergyModel_):
     model_type = "ener"
 
     def __init__(
@@ -30,7 +30,8 @@ class EnergyModel(DPModelCommon, make_model(DPEnergyAtomicModel)):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        DPModelCommon.__init__(self)
+        DPEnergyModel_.__init__(self, *args, **kwargs)
 
     def forward(
         self,

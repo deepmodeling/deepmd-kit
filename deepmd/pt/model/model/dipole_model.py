@@ -20,9 +20,9 @@ from .make_model import (
     make_model,
 )
 
-
+DPDOSModel_ = make_model(DPDipoleAtomicModel)
 @BaseModel.register("dipole")
-class DipoleModel(DPModelCommon, make_model(DPDipoleAtomicModel)):
+class DipoleModel(DPModelCommon, DPDOSModel_):
     model_type = "dipole"
 
     def __init__(
@@ -30,7 +30,8 @@ class DipoleModel(DPModelCommon, make_model(DPDipoleAtomicModel)):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        DPModelCommon.__init__(self)
+        DPDOSModel_.__init__(self, *args, **kwargs)
 
     def forward(
         self,

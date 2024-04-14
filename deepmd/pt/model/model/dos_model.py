@@ -20,9 +20,10 @@ from .make_model import (
     make_model,
 )
 
+DPDOSModel_ = make_model(DPDOSAtomicModel)
 
 @BaseModel.register("dos")
-class DOSModel(DPModelCommon, make_model(DPDOSAtomicModel)):
+class DOSModel(DPModelCommon, DPDOSModel_):
     model_type = "dos"
 
     def __init__(
@@ -30,7 +31,8 @@ class DOSModel(DPModelCommon, make_model(DPDOSAtomicModel)):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        DPModelCommon.__init__(self)
+        DPDOSModel_.__init__(self, *args, **kwargs)
 
     def forward(
         self,
