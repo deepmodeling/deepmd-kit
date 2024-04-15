@@ -6,12 +6,25 @@ from typing import (
 
 import torch
 
-from .dp_model import (
-    DPModel,
+from deepmd.pt.model.atomic_model import (
+    DPDipoleAtomicModel,
+)
+from deepmd.pt.model.model.model import (
+    BaseModel,
 )
 
+from .dp_model import (
+    DPModelCommon,
+)
+from .make_model import (
+    make_model,
+)
 
-class DipoleModel(DPModel):
+DPDOSModel_ = make_model(DPDipoleAtomicModel)
+
+
+@BaseModel.register("dipole")
+class DipoleModel(DPModelCommon, DPDOSModel_):
     model_type = "dipole"
 
     def __init__(
@@ -19,7 +32,8 @@ class DipoleModel(DPModel):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        DPModelCommon.__init__(self)
+        DPDOSModel_.__init__(self, *args, **kwargs)
 
     def forward(
         self,

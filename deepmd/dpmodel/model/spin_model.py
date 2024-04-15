@@ -7,8 +7,11 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.dp_model import (
-    DPModel,
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.model.make_model import (
+    make_model,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -259,7 +262,9 @@ class SpinModel:
 
     @classmethod
     def deserialize(cls, data) -> "SpinModel":
-        backbone_model_obj = DPModel.deserialize(data["backbone_model"])
+        backbone_model_obj = make_model(DPAtomicModel).deserialize(
+            data["backbone_model"]
+        )
         spin = Spin.deserialize(data["spin"])
         return cls(
             backbone_model=backbone_model_obj,

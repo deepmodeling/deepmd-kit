@@ -5,7 +5,7 @@ from .common import (
     NativeOP,
 )
 from .model import (
-    DPModel,
+    DPModelCommon,
 )
 from .output_def import (
     FittingOutputDef,
@@ -19,7 +19,7 @@ from .output_def import (
 )
 
 __all__ = [
-    "DPModel",
+    "DPModelCommon",
     "PRECISION_DICT",
     "DEFAULT_PRECISION",
     "NativeOP",
