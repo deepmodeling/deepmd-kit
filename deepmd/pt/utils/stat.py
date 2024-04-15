@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections import (
+    defaultdict,
+)
 from typing import (
     Callable,
     Dict,
@@ -23,6 +26,7 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
+    compute_stats_from_atomic,
     compute_stats_from_redu,
 )
 from deepmd.utils.path import (
@@ -171,10 +175,9 @@ def _compute_model_predict(
         for kk in keys:
             model_predict[kk].append(
                 to_numpy_array(
-                    torch.sum(sample_predict[kk], dim=1)  # nf x nloc x odims
+                    sample_predict[kk]  # nf x nloc x odims
                 )
             )
-    model_predict = {kk: np.concatenate(model_predict[kk]) for kk in keys}
     return model_predict
 
 
@@ -201,6 +204,31 @@ def _make_preset_out_bias(
         for ii in ibias
     ]
     return np.array(nbias)
+
+
+def _fill_stat_with_global(
+    atomic_stat: Union[np.ndarray, None],
+    global_stat: np.ndarray,
+):
+    """This function is used to fill atomic stat with global stat.
+
+    Parameters
+    ----------
+    atomic_stat : Union[np.ndarray, None]
+        The atomic stat.
+    global_stat : np.ndarray
+        The global stat.
+    if the atomic stat is None, use global stat.
+    if the atomic stat is not None, but has nan values (missing atypes), fill with global stat.
+    """
+    if atomic_stat is None:
+        return global_stat
+    else:
+        return np.nan_to_num(
+            np.where(
+                np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat
+            )
+        )
 
 
 def compute_output_stats(
@@ -246,87 +274,294 @@ def compute_output_stats(
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
-        # only get data for once
+        # only get data once, sampled is a list of dict[str, torch.Tensor]
         sampled = merged() if callable(merged) else merged
+        if model_forward is not None:
+            model_pred = _compute_model_predict(sampled, keys, model_forward)
+        else:
+            model_pred = None
+
         # remove the keys that are not in the sample
         keys = [keys] if isinstance(keys, str) else keys
         assert isinstance(keys, list)
-        new_keys = [ii for ii in keys if ii in sampled[0].keys()]
+        new_keys = [
+            ii
+            for ii in keys
+            if (ii in sampled[0].keys()) or ("atom_" + ii in sampled[0].keys())
+        ]
         del keys
         keys = new_keys
-        # get label dict from sample
-        outputs = {kk: [item[kk] for item in sampled] for kk in keys}
-        data_mixed_type = "real_natoms_vec" in sampled[0]
-        natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
-        for system in sampled:
-            if "atom_exclude_types" in system:
-                type_mask = AtomExcludeMask(
-                    ntypes, system["atom_exclude_types"]
-                ).get_type_mask()
-                system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
-        input_natoms = [item[natoms_key] for item in sampled]
-        # shape: (nframes, ndim)
-        merged_output = {kk: to_numpy_array(torch.cat(outputs[kk])) for kk in keys}
-        # shape: (nframes, ntypes)
-        merged_natoms = to_numpy_array(torch.cat(input_natoms)[:, 2:])
-        nf = merged_natoms.shape[0]
-        if preset_bias is not None:
-            assigned_atom_ener = {
-                kk: _make_preset_out_bias(ntypes, preset_bias[kk])
-                if kk in preset_bias.keys()
-                else None
-                for kk in keys
-            }
-        else:
-            assigned_atom_ener = {kk: None for kk in keys}
-
-        if model_forward is None:
-            stats_input = merged_output
-        else:
-            # subtract the model bias and output the delta bias
-            model_predict = _compute_model_predict(sampled, keys, model_forward)
-            stats_input = {kk: merged_output[kk] - model_predict[kk] for kk in keys}
-
-        bias_atom_e = {}
-        std_atom_e = {}
-        for kk in keys:
-            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
-                stats_input[kk],
-                merged_natoms,
-                assigned_bias=assigned_atom_ener[kk],
-                rcond=rcond,
-            )
-        bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
-
-        # unbias_e is only used for print rmse
-        if model_forward is None:
-            unbias_e = {
-                kk: merged_natoms @ bias_atom_e[kk].reshape(ntypes, -1) for kk in keys
-            }
-        else:
-            unbias_e = {
-                kk: model_predict[kk].reshape(nf, -1)
-                + merged_natoms @ bias_atom_e[kk].reshape(ntypes, -1)
-                for kk in keys
-            }
-        atom_numbs = merged_natoms.sum(-1)
-
-        def rmse(x):
-            return np.sqrt(np.mean(np.square(x)))
+        # split system based on label
+        atomic_sampled_idx = defaultdict(list)
+        global_sampled_idx = defaultdict(list)
 
         for kk in keys:
-            rmse_ae = rmse(
-                (unbias_e[kk].reshape(nf, -1) - merged_output[kk].reshape(nf, -1))
-                / atom_numbs[:, None]
-            )
-            log.info(
-                f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
-            )
+            for idx, system in enumerate(sampled):
+                if (("find_atom_" + kk) in system) and (
+                    system["find_atom_" + kk] > 0.0
+                ):
+                    atomic_sampled_idx[kk].append(idx)
+                elif (("find_" + kk) in system) and (system["find_" + kk] > 0.0):
+                    global_sampled_idx[kk].append(idx)
+
+                else:
+                    continue
+
+        # use index to gather model predictions for the corresponding systems.
+
+        model_pred_g = (
+            {
+                kk: [vv[idx] for idx in global_sampled_idx[kk]]
+                for kk, vv in model_pred.items()
+            }
+            if model_pred
+            else None
+        )
+        model_pred_a = (
+            {
+                kk: [vv[idx] for idx in atomic_sampled_idx[kk]]
+                for kk, vv in model_pred.items()
+            }
+            if model_pred
+            else None
+        )
+
+        # concat all frames within those systmes
+        model_pred_g = (
+            {
+                kk: np.concatenate(model_pred_g[kk])
+                for kk in model_pred_g.keys()
+                if len(model_pred_g[kk]) > 0
+            }
+            if model_pred
+            else None
+        )
+        model_pred_a = (
+            {
+                kk: np.concatenate(model_pred_a[kk])
+                for kk in model_pred_a.keys()
+                if len(model_pred_a[kk]) > 0
+            }
+            if model_pred
+            else None
+        )
+
+        # compute stat
+        bias_atom_g, std_atom_g = compute_output_stats_global(
+            sampled,
+            ntypes,
+            keys,
+            rcond,
+            preset_bias,
+            model_pred_g,
+        )
+        bias_atom_a, std_atom_a = compute_output_stats_atomic(
+            sampled,
+            ntypes,
+            keys,
+            model_pred_a,
+        )
+
+        # merge global/atomic bias
+        bias_atom_e, std_atom_e = {}, {}
+        for kk in keys:
+            # use atomic bias whenever available
+            if kk in bias_atom_a:
+                bias_atom_e[kk] = bias_atom_a[kk]
+                std_atom_e[kk] = std_atom_a[kk]
+            else:
+                bias_atom_e[kk] = None
+                std_atom_e[kk] = None
+            # use global bias to fill missing atomic bias
+            if kk in bias_atom_g:
+                bias_atom_e[kk] = _fill_stat_with_global(
+                    bias_atom_e[kk], bias_atom_g[kk]
+                )
+                std_atom_e[kk] = _fill_stat_with_global(std_atom_e[kk], std_atom_g[kk])
+            if (bias_atom_e[kk] is None) or (std_atom_e[kk] is None):
+                raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
             _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
 
-    ret_bias = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
-    ret_std = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
+    bias_atom_e = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
+    std_atom_e = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
+    return bias_atom_e, std_atom_e
 
-    return ret_bias, ret_std
+
+def compute_output_stats_global(
+    sampled: List[dict],
+    ntypes: int,
+    keys: List[str],
+    rcond: Optional[float] = None,
+    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
+    model_pred: Optional[Dict[str, np.ndarray]] = None,
+):
+    """This function only handle stat computation from reduced global labels."""
+    # get label dict from sample; for each key, only picking the system with global labels.
+    outputs = {
+        kk: [
+            system[kk]
+            for system in sampled
+            if kk in system and system.get(f"find_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
+
+    data_mixed_type = "real_natoms_vec" in sampled[0]
+    natoms_key = "natoms" if not data_mixed_type else "real_natoms_vec"
+    for system in sampled:
+        if "atom_exclude_types" in system:
+            type_mask = AtomExcludeMask(
+                ntypes, system["atom_exclude_types"]
+            ).get_type_mask()
+            system[natoms_key][:, 2:] *= type_mask.unsqueeze(0)
+
+    input_natoms = {
+        kk: [
+            item[natoms_key]
+            for item in sampled
+            if kk in item and item.get(f"find_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
+    # shape: (nframes, ndim)
+    merged_output = {
+        kk: to_numpy_array(torch.cat(outputs[kk]))
+        for kk in keys
+        if len(outputs[kk]) > 0
+    }
+    # shape: (nframes, ntypes)
+
+    merged_natoms = {
+        kk: to_numpy_array(torch.cat(input_natoms[kk])[:, 2:])
+        for kk in keys
+        if len(input_natoms[kk]) > 0
+    }
+    nf = {kk: merged_natoms[kk].shape[0] for kk in keys if kk in merged_natoms}
+    if preset_bias is not None:
+        assigned_atom_ener = {
+            kk: _make_preset_out_bias(ntypes, preset_bias[kk])
+            if kk in preset_bias.keys()
+            else None
+            for kk in keys
+        }
+    else:
+        assigned_atom_ener = {kk: None for kk in keys}
+
+    if model_pred is None:
+        stats_input = merged_output
+    else:
+        # subtract the model bias and output the delta bias
+
+        model_pred = {kk: np.sum(model_pred[kk], axis=1) for kk in keys}
+        stats_input = {
+            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+        }
+
+    bias_atom_e = {}
+    std_atom_e = {}
+    for kk in keys:
+        if kk in stats_input:
+            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
+                stats_input[kk],
+                merged_natoms[kk],
+                assigned_bias=assigned_atom_ener[kk],
+                rcond=rcond,
+            )
+        else:
+            # this key does not have global labels, skip it.
+            continue
+    bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
+
+    # unbias_e is only used for print rmse
+
+    if model_pred is None:
+        unbias_e = {
+            kk: merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
+            for kk in bias_atom_e.keys()
+        }
+    else:
+        unbias_e = {
+            kk: model_pred[kk].reshape(nf[kk], -1)
+            + merged_natoms[kk] @ bias_atom_e[kk].reshape(ntypes, -1)
+            for kk in bias_atom_e.keys()
+        }
+    atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in bias_atom_e.keys()}
+
+    def rmse(x):
+        return np.sqrt(np.mean(np.square(x)))
+
+    for kk in bias_atom_e.keys():
+        rmse_ae = rmse(
+            (unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1))
+            / atom_numbs[kk][:, None]
+        )
+        log.info(
+            f"RMSE of {kk} per atom after linear regression is: {rmse_ae} in the unit of {kk}."
+        )
+    return bias_atom_e, std_atom_e
+
+
+def compute_output_stats_atomic(
+    sampled: List[dict],
+    ntypes: int,
+    keys: List[str],
+    model_pred: Optional[Dict[str, np.ndarray]] = None,
+):
+    # get label dict from sample; for each key, only picking the system with atomic labels.
+    outputs = {
+        kk: [
+            system["atom_" + kk]
+            for system in sampled
+            if ("atom_" + kk) in system and system.get(f"find_atom_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
+    natoms = {
+        kk: [
+            system["atype"]
+            for system in sampled
+            if ("atom_" + kk) in system and system.get(f"find_atom_{kk}", 0) > 0
+        ]
+        for kk in keys
+    }
+    # shape: (nframes, nloc, ndim)
+    merged_output = {
+        kk: to_numpy_array(torch.cat(outputs[kk]))
+        for kk in keys
+        if len(outputs[kk]) > 0
+    }
+    merged_natoms = {
+        kk: to_numpy_array(torch.cat(natoms[kk])) for kk in keys if len(natoms[kk]) > 0
+    }
+
+    if model_pred is None:
+        stats_input = merged_output
+    else:
+        # subtract the model bias and output the delta bias
+        stats_input = {
+            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+        }
+
+    bias_atom_e = {}
+    std_atom_e = {}
+
+    for kk in keys:
+        if kk in stats_input:
+            bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_atomic(
+                stats_input[kk],
+                merged_natoms[kk],
+            )
+            # correction for missing types
+            missing_types = ntypes - merged_natoms[kk].max() - 1
+            if missing_types > 0:
+                nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))
+                nan_padding.fill(np.nan)
+                bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
+                std_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
+        else:
+            # this key does not have atomic labels, skip it.
+            continue
+    bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
+    return bias_atom_e, std_atom_e

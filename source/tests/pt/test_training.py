@@ -106,6 +106,7 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_dos)
+        self.config["model"]["type_map"] = ["H"]
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.not_all_grad = True
