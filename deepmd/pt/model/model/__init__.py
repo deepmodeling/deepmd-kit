@@ -138,6 +138,7 @@ def get_zbl_model(model_params):
 
 
 def get_standard_model(model_params):
+    model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
     # descriptor
@@ -167,7 +168,7 @@ def get_standard_model(model_params):
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
-    model.model_def_script = json.dumps(model_params)
+    model.model_def_script = json.dumps(model_params_old)
     return model
 
 
