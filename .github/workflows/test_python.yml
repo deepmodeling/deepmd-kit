@@ -39,7 +39,7 @@ jobs:
         # changes, setting `TENSORFLOW_ROOT`.
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
-    - run: uv pip install --system horovod mpi4py
+    - run: uv pip install --system --no-build-isolation horovod mpi4py
       env:
         HOROVOD_WITH_TENSORFLOW: 1
         HOROVOD_WITHOUT_PYTORCH: 1
