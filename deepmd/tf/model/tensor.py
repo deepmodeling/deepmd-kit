@@ -22,8 +22,6 @@ from .model_stat import (
 )
 
 
-@StandardModel.register("dipole")
-@StandardModel.register("polar")
 class TensorModel(StandardModel):
     """Tensor model.
 
@@ -243,12 +241,12 @@ class WFCModel(TensorModel):
     def __init__(self, *args, **kwargs) -> None:
         TensorModel.__init__(self, "wfc", *args, **kwargs)
 
-
+@StandardModel.register("dipole")
 class DipoleModel(TensorModel):
     def __init__(self, *args, **kwargs) -> None:
         TensorModel.__init__(self, "dipole", *args, **kwargs)
 
-
+@StandardModel.register("polar")
 class PolarModel(TensorModel):
     def __init__(self, *args, **kwargs) -> None:
         TensorModel.__init__(self, "polar", *args, **kwargs)
