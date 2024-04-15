@@ -142,7 +142,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.atype.reshape(1, -1),
             self.gr,
             None,
-        )["polar"]
+        )["polarizability"]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:
