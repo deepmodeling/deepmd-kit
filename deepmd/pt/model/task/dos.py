@@ -105,63 +105,6 @@ class DOSFittingNet(InvarFitting):
             ]
         )
 
-    def compute_output_stats(
-        self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the output statistics (e.g. dos bias) for the fitting net from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        if stat_file_path is not None:
-            stat_file_path = stat_file_path / "bias_dos"
-        if stat_file_path is not None and stat_file_path.is_file():
-            bias_dos = stat_file_path.load_numpy()
-        else:
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-            for sys in range(len(sampled)):
-                nframs = sampled[sys]["atype"].shape[0]
-
-                if "atom_dos" in sampled[sys]:
-                    bias_dos = compute_stats_from_atomic(
-                        sampled[sys]["atom_dos"].numpy(force=True),
-                        sampled[sys]["atype"].numpy(force=True),
-                    )[0]
-                else:
-                    sys_type_count = np.zeros(
-                        (nframs, self.ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
-                    )
-                    for itype in range(self.ntypes):
-                        type_mask = sampled[sys]["atype"] == itype
-                        sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
-                            force=True
-                        )
-                    sys_bias_redu = sampled[sys]["dos"].numpy(force=True)
-
-                    bias_dos = compute_stats_from_redu(
-                        sys_bias_redu, sys_type_count, rcond=self.rcond
-                    )[0]
-                if stat_file_path is not None:
-                    stat_file_path.save_numpy(bias_dos)
-        self.bias_dos = torch.tensor(bias_dos, device=env.DEVICE)
-
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = copy.deepcopy(data)

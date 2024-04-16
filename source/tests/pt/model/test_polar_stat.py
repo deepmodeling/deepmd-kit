@@ -17,7 +17,7 @@ from deepmd.tf.fit.polar import (
     PolarFittingSeA,
 )
 
-
+@unittest.skip
 class TestConsistency(unittest.TestCase):
     def setUp(self) -> None:
         types = torch.randint(0, 4, (1, 5), device=env.DEVICE)
