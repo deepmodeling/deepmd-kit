@@ -23,6 +23,7 @@ from .model_stat import (
 )
 
 
+@StandardModel.register("dos")
 class DOSModel(StandardModel):
     """DOS model.
 

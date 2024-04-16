@@ -30,8 +30,14 @@ from deepmd.utils.spin import (
     Spin,
 )
 
+from .dipole_model import (
+    DipoleModel,
+)
+from .dos_model import (
+    DOSModel,
+)
 from .dp_model import (
-    DPModel,
+    DPModelCommon,
 )
 from .dp_zbl_model import (
     DPZBLModel,
@@ -50,6 +56,9 @@ from .make_model import (
 )
 from .model import (
     BaseModel,
+)
+from .polar_model import (
+    PolarModel,
 )
 from .spin_model import (
     SpinEnergyModel,
@@ -138,6 +147,7 @@ def get_zbl_model(model_params):
 
 
 def get_standard_model(model_params):
+    model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
     # descriptor
@@ -160,14 +170,25 @@ def get_standard_model(model_params):
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
 
-    model = DPModel(
+    if fitting_net["type"] == "dipole":
+        modelcls = DipoleModel
+    elif fitting_net["type"] == "polar":
+        modelcls = PolarModel
+    elif fitting_net["type"] == "dos":
+        modelcls = DOSModel
+    elif fitting_net["type"] in ["ener", "direct_force_ener"]:
+        modelcls = EnergyModel
+    else:
+        raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
+
+    model = modelcls(
         descriptor=descriptor,
         fitting=fitting,
         type_map=model_params["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
-    model.model_def_script = json.dumps(model_params)
+    model.model_def_script = json.dumps(model_params_old)
     return model
 
 
@@ -183,7 +204,7 @@ def get_model(model_params):
 __all__ = [
     "BaseModel",
     "get_model",
-    "DPModel",
+    "DPModelCommon",
     "EnergyModel",
     "FrozenModel",
     "SpinModel",

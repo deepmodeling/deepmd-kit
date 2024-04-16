@@ -32,6 +32,7 @@ from .model_stat import (
 )
 
 
+@StandardModel.register("ener")
 class EnerModel(StandardModel):
     """Energy model.
 

@@ -242,11 +242,13 @@ class WFCModel(TensorModel):
         TensorModel.__init__(self, "wfc", *args, **kwargs)
 
 
+@StandardModel.register("dipole")
 class DipoleModel(TensorModel):
     def __init__(self, *args, **kwargs) -> None:
         TensorModel.__init__(self, "dipole", *args, **kwargs)
 
 
+@StandardModel.register("polar")
 class PolarModel(TensorModel):
     def __init__(self, *args, **kwargs) -> None:
         TensorModel.__init__(self, "polar", *args, **kwargs)

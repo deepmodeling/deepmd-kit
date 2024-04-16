@@ -6,9 +6,6 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.model.dp_model import (
-    DPModel,
-)
 from deepmd.pt.model.atomic_model import (
     DPZBLLinearEnergyAtomicModel,
 )
@@ -16,6 +13,9 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 
+from .dp_model import (
+    DPModelCommon,
+)
 from .make_model import (
     make_model,
 )
@@ -116,7 +116,7 @@ class DPZBLModel(DPZBLModel_):
             The local data refer to the current class
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["dpmodel"] = DPModel.update_sel(
+        local_jdata_cpy["dpmodel"] = DPModelCommon.update_sel(
             global_jdata, local_jdata["dpmodel"]
         )
         return local_jdata_cpy
