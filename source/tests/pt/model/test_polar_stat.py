@@ -17,6 +17,7 @@ from deepmd.tf.fit.polar import (
     PolarFittingSeA,
 )
 
+
 @unittest.skip
 class TestConsistency(unittest.TestCase):
     def setUp(self) -> None:

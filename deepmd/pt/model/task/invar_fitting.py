@@ -2,10 +2,8 @@
 import copy
 import logging
 from typing import (
-    Callable,
     List,
     Optional,
-    Union,
 )
 
 import torch
@@ -23,12 +21,6 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
-)
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,

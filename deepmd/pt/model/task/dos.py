@@ -2,13 +2,11 @@
 import copy
 import logging
 from typing import (
-    Callable,
     List,
     Optional,
     Union,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel import (
@@ -29,13 +27,6 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
-)
-from deepmd.utils.out_stat import (
-    compute_stats_from_atomic,
-    compute_stats_from_redu,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
