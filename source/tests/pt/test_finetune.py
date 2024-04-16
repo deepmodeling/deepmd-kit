@@ -29,10 +29,49 @@ from .model.test_permutation import (
     model_se_e2_a,
     model_zbl,
 )
-from .test_stat import (
-    energy_data_requirement,
+
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
+energy_data_requirement = [
+    DataRequirementItem(
+        "energy",
+        ndof=1,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "force",
+        ndof=3,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "virial",
+        ndof=9,
+        atomic=False,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_ener",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_pref",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        repeat=3,
+    ),
+]
 
 class FinetuneTest:
     def test_finetune_change_out_bias(self):
