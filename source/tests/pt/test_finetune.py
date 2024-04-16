@@ -23,15 +23,14 @@ from deepmd.pt.utils.stat import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
     model_zbl,
-)
-
-from deepmd.utils.data import (
-    DataRequirementItem,
 )
 
 energy_data_requirement = [
@@ -72,6 +71,7 @@ energy_data_requirement = [
         repeat=3,
     ),
 ]
+
 
 class FinetuneTest:
     def test_finetune_change_out_bias(self):
