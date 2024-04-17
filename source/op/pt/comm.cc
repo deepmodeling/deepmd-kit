@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#ifdef USE_CUDA
+#ifdef GOOGLE_CUDA
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #endif
@@ -80,7 +80,7 @@ class Border : public torch::autograd::Function<Border> {
           MPI_Wait(&request, MPI_STATUS_IGNORE);
         }
       } else {
-#ifdef USE_CUDA
+#ifdef GOOGLE_CUDA
         cudaMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                    cudaMemcpyDeviceToDevice);
 #else
@@ -95,7 +95,7 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
-#ifdef USE_CUDA
+#ifdef GOOGLE_CUDA
     cudaDeviceSynchronize();
 #endif
     using FPTYPE = double;
@@ -174,7 +174,7 @@ class Border : public torch::autograd::Function<Border> {
         }
       } else {
         if (nrecv) {
-#ifdef USE_CUDA
+#ifdef GOOGLE_CUDA
           cudaMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                      cudaMemcpyDeviceToDevice);
 #else
@@ -187,7 +187,7 @@ class Border : public torch::autograd::Function<Border> {
                                      recv_g1_tensor.slice(0, 0, nrecv));
       }
     }
-#ifdef USE_CUDA
+#ifdef GOOGLE_CUDA
     cudaDeviceSynchronize();
 #endif
 
