@@ -4,18 +4,17 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel import DPModel as DPDPModel
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
-from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
+from deepmd.dpmodel.fitting import EnergyFittingNet as DPEnergyFittingNet
+from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model import (
-    DPModel,
     EnergyModel,
 )
 from deepmd.pt.model.task.ener import (
-    InvarFitting,
+    EnergyFittingNet,
 )
 from deepmd.pt.utils import (
     env,
@@ -49,16 +48,14 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         ret0 = md0.forward_common(*args)
         ret1 = md1.forward_common(*args)
@@ -122,18 +119,16 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
             numb_fparam=nfp,
             numb_aparam=nap,
         )
         type_map = ["foo", "bar"]
-        md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         rng = np.random.default_rng()
         fparam = rng.normal(size=[self.nf, nfp])
@@ -163,18 +158,16 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
             numb_fparam=nfp,
             numb_aparam=nap,
         )
         type_map = ["foo", "bar"]
-        md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         rng = np.random.default_rng()
         fparam = rng.normal(size=[self.nf, nfp])
@@ -204,11 +197,9 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         )
         nfp, nap = 2, 3
@@ -216,8 +207,8 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
-        md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         args64 = [to_torch_tensor(ii) for ii in [self.coord, self.atype, self.cell]]
         args64[0] = args64[0].to(torch.float64)
@@ -259,16 +250,14 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
         ]
@@ -310,16 +299,14 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
-        md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
         args0 = [self.coord_ext, self.atype_ext, self.nlist]
         args1 = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -345,11 +332,9 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         )
-        ft = DPInvarFitting(
-            "energy",
+        ft = DPEnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         )
         nfp, nap = 2, 3
@@ -357,8 +342,8 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
-        md0 = DPDPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize()).to(env.DEVICE)
+        md0 = DPEnergyModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
         args64 = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
@@ -397,15 +382,13 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
         md0 = torch.jit.script(md0)
         md0.get_rcut()
         md0.get_type_map()
@@ -447,15 +430,13 @@ class TestDPModelFormatNlist(unittest.TestCase):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        self.md = DPModel(ds, ft, type_map=type_map).to(env.DEVICE)
+        self.md = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
 
     def test_nlist_eq(self):
         # n_nnei == nnei
@@ -520,11 +501,9 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -590,11 +569,9 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
@@ -640,11 +617,9 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
             self.sel,
         ).to(env.DEVICE)
-        ft = InvarFitting(
-            "energy",
+        ft = EnergyFittingNet(
             self.nt,
             ds.get_dim_out(),
-            1,
             mixed_types=ds.mixed_types(),
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]

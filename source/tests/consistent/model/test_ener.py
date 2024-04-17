@@ -7,7 +7,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.dp_model import DPModel as EnergyModelDP
+from deepmd.dpmodel.model.ener_model import EnergyModel as EnergyModelDP
 from deepmd.dpmodel.model.model import get_model as get_model_dp
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
