@@ -221,7 +221,8 @@ class Border : public torch::autograd::Function<Border> {
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
     long int* communicator = communicator_tensor.data_ptr<long int>();
-    mpi_comm = reinterpret_cast<MPI_Comm>(*communicator);
+    int* int_ptr = reinterpret_cast<int*>(communicator);//in order to solve mpich type, may cause error
+    mpi_comm = reinterpret_cast<MPI_Comm>(*int_ptr);
   }
 #endif
 };
