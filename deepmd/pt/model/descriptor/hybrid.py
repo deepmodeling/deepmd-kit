@@ -443,7 +443,7 @@ class DescrptBlockHybrid(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Calculate decoded embedding for each atom.
 
