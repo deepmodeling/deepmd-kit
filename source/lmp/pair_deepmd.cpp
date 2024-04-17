@@ -461,8 +461,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
   bool do_ghost = true;
   assert(sizeof(MPI_Comm) == sizeof(int));
-  // std::cout<<world<<std::endl;
-  // long int world_int = world;
   //  dpa2 communication
   commdata_ = (CommBrickDeepMD *)comm;
   double **x = atom->x;

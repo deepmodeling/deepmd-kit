@@ -600,7 +600,6 @@ struct InputNlist {
                             sendproc,
                             recvproc,
                             world)){
-            // DP_CHECK_OK(DP_NlistCheckOK, nl);
         };
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
