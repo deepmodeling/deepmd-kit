@@ -198,7 +198,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        expected_std = np.ones((1,2,9)) # 1 keys, 2 atypes, 9 max dims.
+        expected_std = np.ones((1, 2, 9))  # 1 keys, 2 atypes, 9 max dims.
         # nt x odim (dia)
         diagnoal_bias = np.array(
             [
@@ -222,7 +222,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret2 = cvt_ret(ret2)
         np.testing.assert_almost_equal(ret1["polarizability"], ret2["polarizability"])
         np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
-        
+
         # 4. test change bias
         BaseAtomicModel.change_out_bias(
             md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"

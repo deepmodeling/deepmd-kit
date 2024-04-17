@@ -222,7 +222,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        expected_std = np.ones((3,2,2)) # 3 keys, 2 atypes, 2 max dims.
+        expected_std = np.ones((3, 2, 2))  # 3 keys, 2 atypes, 2 max dims.
         # nt x odim
         foo_bias = np.array([1.0, 3.0]).reshape(2, 1)
         bar_bias = np.array([1.0, 5.0, 3.0, 2.0]).reshape(2, 1, 2)

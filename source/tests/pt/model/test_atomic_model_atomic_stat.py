@@ -212,7 +212,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
         ret1 = md0.forward_common_atomic(*args)
-        expected_std = np.ones((2,2,2)) # 2 keys, 2 atypes, 2 max dims.
+        expected_std = np.ones((2, 2, 2))  # 2 keys, 2 atypes, 2 max dims.
         np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
         ret1 = cvt_ret(ret1)
         # nt x odim
@@ -223,6 +223,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
         for kk in ["foo", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
+
         # 3. test bias load from file
         def raise_error():
             raise RuntimeError
@@ -257,6 +258,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)
         np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
+
 
 class TestAtomicModelStatMergeGlobalAtomic(
     unittest.TestCase, TestCaseSingleFrameWithNlist
