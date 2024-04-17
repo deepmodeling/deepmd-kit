@@ -34,9 +34,10 @@ class Border : public torch::autograd::Function<Border> {
       const torch::Tensor& nghost_tensor) {
     bool type_flag = (g1.dtype() == torch::kDouble) ? true : false;
     using FPTYPE = float;
-    if(type_flag)
+    if (type_flag) {
       using FPTYPE = double;
-      
+    }
+
     ctx->save_for_backward({sendlist_tensor, sendproc_tensor, recvproc_tensor,
                             sendnum_tensor, recvnum_tensor, communicator_tensor,
                             nlocal_tensor, nghost_tensor});
@@ -55,7 +56,7 @@ class Border : public torch::autograd::Function<Border> {
 
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
 
-#ifdef USE_MPI 
+#ifdef USE_MPI
     int me;
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
     MPI_Comm world;
@@ -92,7 +93,7 @@ class Border : public torch::autograd::Function<Border> {
         cudaMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                    cudaMemcpyDeviceToDevice);
 #else
-        memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
+      memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
 #endif
 #ifdef USE_MPI
       }
@@ -120,11 +121,13 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor nghost_tensor = saved_variables[7];
 
     torch::Tensor d_local_g1_tensor = grad_output[0];
-    bool type_flag = (d_local_g1_tensor.dtype() == torch::kDouble) ? true : false;
+    bool type_flag =
+        (d_local_g1_tensor.dtype() == torch::kDouble) ? true : false;
     using FPTYPE = float;
-    if(type_flag)
+    if (type_flag) {
       using FPTYPE = double;
-      
+    }
+
     int** recvlist = reinterpret_cast<int**>(sendlist_tensor.data_ptr());
     // swap send and recv here
     int* recvproc = sendproc_tensor.data_ptr<int>();
@@ -194,7 +197,7 @@ class Border : public torch::autograd::Function<Border> {
           cudaMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                      cudaMemcpyDeviceToDevice);
 #else
-          memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
+        memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
 #endif
         }
 #ifdef USE_MPI
