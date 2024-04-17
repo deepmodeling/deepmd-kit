@@ -599,8 +599,7 @@ struct InputNlist {
                             sendlist,
                             sendproc,
                             recvproc,
-                            world)){
-        };
+                            world)){};
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist *nl;
