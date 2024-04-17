@@ -12,10 +12,6 @@ import h5py
 import numpy as np
 import torch
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
 from deepmd.pt.model.atomic_model import (
     BaseAtomicModel,
     DPPolarAtomicModel,
@@ -45,7 +41,6 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class FooFitting(PolarFittingNet):
-    
     def forward(
         self,
         descriptor: torch.Tensor,
@@ -61,8 +56,16 @@ class FooFitting(PolarFittingNet):
         ret["polarizability"] = (
             torch.Tensor(
                 [
-                    [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], [[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]], [[3.0, 3.0, 3.0] ,[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]]],
-                    [[[4.0, 4.0, 4.0], [4.0, 4.0, 4.0], [4.0, 4.0, 4.0]], [[4.0, 4.0, 4.0], [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]], [[6.0, 6.0, 6.0], [4.0, 4.0, 4.0], [2.0, 2.0, 2.0]]],
+                    [
+                        [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                        [[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]],
+                        [[3.0, 3.0, 3.0], [3.0, 3.0, 3.0], [6.0, 6.0, 6.0]],
+                    ],
+                    [
+                        [[4.0, 4.0, 4.0], [4.0, 4.0, 4.0], [4.0, 4.0, 4.0]],
+                        [[4.0, 4.0, 4.0], [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]],
+                        [[6.0, 6.0, 6.0], [4.0, 4.0, 4.0], [2.0, 2.0, 2.0]],
+                    ],
                 ]
             )
             .view([nf, nloc, *self.output_def()["polarizability"].shape])
@@ -94,7 +97,20 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 ),
                 # bias of foo: 5, 6
                 "atom_polarizability": to_torch_tensor(
-                    np.array([[[[5.0, 5.0, 5.0],[5.0, 5.0, 5.0],[5.0, 5.0, 5.0]], [[5.0, 5.0, 5.0],[5.0, 5.0, 5.0],[5.0, 5.0, 5.0]], [[5.0, 5.0, 5.0],[5.0, 5.0, 5.0],[5.0, 5.0, 5.0]]], [[[5.0, 5.0, 5.0],[5.0, 5.0, 5.0],[5.0, 5.0, 5.0]], [[6.0, 6.0, 6.0],[6.0, 6.0, 6.0],[6.0, 6.0, 6.0]], [[7.0, 7.0, 7.0],[7.0, 7.0, 7.0],[7.0, 7.0, 7.0]]]]).reshape(2, 3, 3, 3)
+                    np.array(
+                        [
+                            [
+                                [[5.0, 5.0, 5.0], [5.0, 5.0, 5.0], [5.0, 5.0, 5.0]],
+                                [[5.0, 5.0, 5.0], [5.0, 5.0, 5.0], [5.0, 5.0, 5.0]],
+                                [[5.0, 5.0, 5.0], [5.0, 5.0, 5.0], [5.0, 5.0, 5.0]],
+                            ],
+                            [
+                                [[5.0, 5.0, 5.0], [5.0, 5.0, 5.0], [5.0, 5.0, 5.0]],
+                                [[6.0, 6.0, 6.0], [6.0, 6.0, 6.0], [6.0, 6.0, 6.0]],
+                                [[7.0, 7.0, 7.0], [7.0, 7.0, 7.0], [7.0, 7.0, 7.0]],
+                            ],
+                        ]
+                    ).reshape(2, 3, 3, 3)
                 ),
                 "find_atom_polarizability": np.float32(1.0),
             },
@@ -111,7 +127,14 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     np.array([[3, 3, 2, 1], [3, 3, 1, 2]], dtype=np.int32)
                 ),
                 # bias of foo: 5, 6 from atomic label.
-                "polarizability": to_torch_tensor(np.array([[[5.0, 5.0, 5.0],[5.0, 5.0, 5.0],[5.0, 5.0, 5.0]], [[7.0, 7.0, 7.0], [7.0, 7.0, 7.0], [7.0, 7.0, 7.0]]]).reshape(2, 3, 3)),
+                "polarizability": to_torch_tensor(
+                    np.array(
+                        [
+                            [[5.0, 5.0, 5.0], [5.0, 5.0, 5.0], [5.0, 5.0, 5.0]],
+                            [[7.0, 7.0, 7.0], [7.0, 7.0, 7.0], [7.0, 7.0, 7.0]],
+                        ]
+                    ).reshape(2, 3, 3)
+                ),
                 "find_polarizability": np.float32(1.0),
             },
         ]
@@ -152,12 +175,22 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret0 = {}
         expected_ret0["polarizability"] = np.array(
             [
-                [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], [[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]], [[3.0, 3.0, 3.0] ,[3.0, 3.0, 3.0], [6.0, 6.0, 6.0]]],
-                [[[4.0, 4.0, 4.0], [4.0, 4.0, 4.0], [4.0, 4.0, 4.0]], [[4.0, 4.0, 4.0], [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]], [[6.0, 6.0, 6.0], [4.0, 4.0, 4.0], [2.0, 2.0, 2.0]]],
+                [
+                    [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
+                    [[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]],
+                    [[3.0, 3.0, 3.0], [3.0, 3.0, 3.0], [6.0, 6.0, 6.0]],
+                ],
+                [
+                    [[4.0, 4.0, 4.0], [4.0, 4.0, 4.0], [4.0, 4.0, 4.0]],
+                    [[4.0, 4.0, 4.0], [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]],
+                    [[6.0, 6.0, 6.0], [4.0, 4.0, 4.0], [2.0, 2.0, 2.0]],
+                ],
             ]
         ).reshape([nf, nloc, *md0.fitting_output_def()["polarizability"].shape])
-    
-        np.testing.assert_almost_equal(ret0["polarizability"], expected_ret0["polarizability"])
+
+        np.testing.assert_almost_equal(
+            ret0["polarizability"], expected_ret0["polarizability"]
+        )
 
         # 2. test bias is applied
         md0.compute_or_load_out_stat(
@@ -166,10 +199,17 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
         # nt x odim (dia)
-        diagnoal_bias = np.array([[[5.0, 0.0, 0.0],[0.0, 5.0, 0.0],[0.0, 0.0, 5.0]], [[6.0, 0.0, 0.0],[0.0, 6.0, 0.0],[0.0, 0.0, 6.0]]]).reshape(2, 3, 3)
+        diagnoal_bias = np.array(
+            [
+                [[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 5.0]],
+                [[6.0, 0.0, 0.0], [0.0, 6.0, 0.0], [0.0, 0.0, 6.0]],
+            ]
+        ).reshape(2, 3, 3)
         expected_ret1 = {}
         expected_ret1["polarizability"] = ret0["polarizability"] + diagnoal_bias[at]
-        np.testing.assert_almost_equal(ret1["polarizability"], expected_ret1["polarizability"])
+        np.testing.assert_almost_equal(
+            ret1["polarizability"], expected_ret1["polarizability"]
+        )
 
         # 3. test bias load from file
         def raise_error():
@@ -194,17 +234,25 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         ret3 = md0.forward_common_atomic(*args)
         ret3 = cvt_ret(ret3)
-        
+
         expected_ret3 = {}
         # new bias [[[3.0000, -, -, -, 2.6667, -, -, -, 2.3333],
         # [1.6667, -, -, -, 2.0000, -, -, -, 1.3333]]]
         # which yields [2.667, 1.667]
         expected_ret3["polarizability"] = np.array(
-
             [
-                [[[3.6667, 1.0, 1.0], [1.0, 3.6667, 1.0], [1.0, 1.0, 3.6667]], [[3.6667, 1.0, 1.0], [2.0, 4.6667, 2.0], [3.0, 3.0, 5.6667]], [[4.6667, 3.0, 3.0] ,[3.0, 4.6667, 3.0], [6.0, 6.0, 7.6667]]],
-                [[[6.6667, 4.0, 4.0], [4.0, 6.6667, 4.0], [4.0, 4.0, 6.6667]], [[5.6667, 4.0, 4.0], [5.0, 6.6667, 5.0], [6.0, 6.0, 7.6667]], [[7.6667, 6.0, 6.0], [4.0, 5.6667, 4.0], [2.0, 2.0, 3.6667]]],
+                [
+                    [[3.6667, 1.0, 1.0], [1.0, 3.6667, 1.0], [1.0, 1.0, 3.6667]],
+                    [[3.6667, 1.0, 1.0], [2.0, 4.6667, 2.0], [3.0, 3.0, 5.6667]],
+                    [[4.6667, 3.0, 3.0], [3.0, 4.6667, 3.0], [6.0, 6.0, 7.6667]],
+                ],
+                [
+                    [[6.6667, 4.0, 4.0], [4.0, 6.6667, 4.0], [4.0, 4.0, 6.6667]],
+                    [[5.6667, 4.0, 4.0], [5.0, 6.6667, 5.0], [6.0, 6.0, 7.6667]],
+                    [[7.6667, 6.0, 6.0], [4.0, 5.6667, 4.0], [2.0, 2.0, 3.6667]],
+                ],
             ]
         ).reshape(2, 3, 3, 3)
-        np.testing.assert_almost_equal(ret3["polarizability"], expected_ret3["polarizability"], decimal=4)
-
+        np.testing.assert_almost_equal(
+            ret3["polarizability"], expected_ret3["polarizability"], decimal=4
+        )
