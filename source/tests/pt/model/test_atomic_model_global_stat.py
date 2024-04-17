@@ -193,6 +193,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # nf x na x odim
         ret0 = md0.forward_common_atomic(*args)
         ret0 = cvt_ret(ret0)
+
         expected_ret0 = {}
         expected_ret0["foo"] = np.array(
             [
@@ -221,6 +222,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
+        expected_std = np.ones((3,2,2)) # 3 keys, 2 atypes, 2 max dims.
         # nt x odim
         foo_bias = np.array([1.0, 3.0]).reshape(2, 1)
         bar_bias = np.array([1.0, 5.0, 3.0, 2.0]).reshape(2, 1, 2)
@@ -230,6 +232,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
+        np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
 
         # 3. test bias load from file
         def raise_error():
@@ -240,6 +243,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret2 = cvt_ret(ret2)
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], ret2[kk])
+        np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
 
         # 4. test change bias
         BaseAtomicModel.change_out_bias(
@@ -266,6 +270,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
         # bar is too complicated to be manually computed.
+        np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
 
     def test_preset_bias(self):
         nf, nloc, nnei = self.nlist.shape
