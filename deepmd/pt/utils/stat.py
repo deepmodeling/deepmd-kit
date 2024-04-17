@@ -224,6 +224,7 @@ def _fill_stat_with_global(
     if atomic_stat is None:
         return global_stat
     else:
+        atomic_stat = atomic_stat.reshape(*global_stat.shape)
         return np.nan_to_num(
             np.where(
                 np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat
@@ -546,7 +547,7 @@ def compute_output_stats_atomic(
     else:
         # subtract the model bias and output the delta bias
         stats_input = {
-            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+            kk: merged_output[kk] - model_pred[kk].reshape(*merged_output[kk].shape) for kk in keys if kk in merged_output
         }
 
     bias_atom_e = {}

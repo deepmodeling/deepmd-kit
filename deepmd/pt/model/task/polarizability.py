@@ -217,18 +217,6 @@ class PolarFittingNet(GeneralFitting):
             "bim,bmj->bij", gr.transpose(1, 2), out
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
-        if self.shift_diag:
-            bias = self.constant_matrix[atype]
-
-            # (nframes, nloc, 1)
-            bias = bias.unsqueeze(-1) * self.scale[atype]
-
-            eye = torch.eye(3, device=env.DEVICE)
-            eye = eye.repeat(nframes, nloc, 1, 1)
-            # (nframes, nloc, 3, 3)
-            bias = bias.unsqueeze(-1) * eye
-            out = out + bias
-
         return {"polarizability": out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 
     # make jit happy with torch 2.0.0
