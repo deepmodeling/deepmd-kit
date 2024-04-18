@@ -8,15 +8,10 @@ import torch
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
 )
-from deepmd.pt.utils import (
-    env,
-)
 
 from .dp_atomic_model import (
     DPAtomicModel,
 )
-
-dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class DPPolarAtomicModel(DPAtomicModel):
@@ -44,6 +39,7 @@ class DPPolarAtomicModel(DPAtomicModel):
         if self.fitting_net.shift_diag:
             nframes, nloc = atype.shape
             device = out_bias[self.bias_keys[0]].device
+            dtype = out_bias[self.bias_keys[0]].dtype
             for kk in self.bias_keys:
                 ntypes = out_bias[kk].shape[0]
                 temp = torch.zeros(ntypes, dtype=dtype, device=device)
