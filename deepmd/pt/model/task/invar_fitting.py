@@ -2,10 +2,8 @@
 import copy
 import logging
 from typing import (
-    Callable,
     List,
     Optional,
-    Union,
 )
 
 import torch
@@ -23,12 +21,6 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
-)
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -145,40 +137,6 @@ class InvarFitting(GeneralFitting):
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         return super().deserialize(data)
-
-    def compute_output_stats(
-        self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
-    ):
-        """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        # [0] to get the mean (bias)
-        bias_atom_e = compute_output_stats(
-            merged,
-            self.ntypes,
-            keys=[self.var_name],
-            stat_file_path=stat_file_path,
-            rcond=self.rcond,
-            preset_bias={self.var_name: self.atom_ener}
-            if self.atom_ener is not None
-            else None,
-        )[0][self.var_name]
-        self.bias_atom_e.copy_(bias_atom_e.view([self.ntypes, self.dim_out]))
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

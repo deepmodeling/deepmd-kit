@@ -577,6 +577,8 @@ class DeepmdData:
         else:
             data["type"] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 
+        # standardize keys
+        data = {kk.replace("atomic", "atom"): vv for kk, vv in data.items()}
         return data
 
     def _load_data(

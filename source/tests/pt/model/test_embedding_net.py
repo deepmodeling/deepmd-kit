@@ -39,7 +39,7 @@ from deepmd.tf.common import (
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 
-from ..test_stat import (
+from ..test_finetune import (
     energy_data_requirement,
 )
 

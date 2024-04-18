@@ -224,6 +224,7 @@ def _fill_stat_with_global(
     if atomic_stat is None:
         return global_stat
     else:
+        atomic_stat = atomic_stat.reshape(*global_stat.shape)
         return np.nan_to_num(
             np.where(
                 np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat
@@ -535,13 +536,20 @@ def compute_output_stats_atomic(
     merged_natoms = {
         kk: to_numpy_array(torch.cat(natoms[kk])) for kk in keys if len(natoms[kk]) > 0
     }
+    # reshape merged data to [nf, nloc, ndim]
+    merged_output = {
+        kk: merged_output[kk].reshape((*merged_natoms[kk].shape, -1))
+        for kk in merged_output
+    }
 
     if model_pred is None:
         stats_input = merged_output
     else:
         # subtract the model bias and output the delta bias
         stats_input = {
-            kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
+            kk: merged_output[kk] - model_pred[kk].reshape(*merged_output[kk].shape)
+            for kk in keys
+            if kk in merged_output
         }
 
     bias_atom_e = {}
@@ -559,9 +567,8 @@ def compute_output_stats_atomic(
                 nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
-                std_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
+                std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
         else:
             # this key does not have atomic labels, skip it.
             continue
-    bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
     return bias_atom_e, std_atom_e
