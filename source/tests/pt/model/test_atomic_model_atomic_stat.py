@@ -218,7 +218,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_std[0, :, :1] = np.array([0.0, 0.816496]).reshape(
             2, 1
         )  # updating std for foo based on [5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]
-        np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std, decimal=4)
+        np.testing.assert_almost_equal(
+            to_numpy_array(md0.out_std), expected_std, decimal=4
+        )
         ret1 = cvt_ret(ret1)
         # nt x odim
         foo_bias = np.array([5.0, 6.0]).reshape(2, 1)
@@ -238,7 +240,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret2 = cvt_ret(ret2)
         for kk in ["foo", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], ret2[kk])
-        np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std, decimal=4)
+        np.testing.assert_almost_equal(
+            to_numpy_array(md0.out_std), expected_std, decimal=4
+        )
 
         # 4. test change bias
         BaseAtomicModel.change_out_bias(
