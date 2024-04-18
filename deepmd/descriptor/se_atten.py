@@ -673,7 +673,11 @@ class DescrptSeAtten(DescrptSeA):
                     ),
                 )
                 self.recovered_switch *= tf.reshape(
-                    tf.slice(tf.reshape(mask, [-1, 4]), [0, 0], [-1, 1]),
+                    tf.slice(
+                        tf.reshape(tf.cast(mask, self.filter_precision), [-1, 4]),
+                        [0, 0],
+                        [-1, 1],
+                    ),
                     [-1, natoms[0], self.sel_all_a[0]],
                 )
             else:
