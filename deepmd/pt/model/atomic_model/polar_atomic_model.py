@@ -8,12 +8,14 @@ import torch
 from deepmd.pt.model.task.polarizability import (
     PolarFittingNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
 
 from .dp_atomic_model import (
     DPAtomicModel,
 )
 
-from deepmd.pt.utils import env
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
