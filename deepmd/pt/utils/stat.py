@@ -567,9 +567,8 @@ def compute_output_stats_atomic(
                 nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
-                std_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
+                std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
         else:
             # this key does not have atomic labels, skip it.
             continue
-    bias_atom_e, std_atom_e = _post_process_stat(bias_atom_e, std_atom_e)
     return bias_atom_e, std_atom_e

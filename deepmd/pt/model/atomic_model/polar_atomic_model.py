@@ -13,6 +13,9 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 
+from deepmd.pt.utils import env
+dtype = env.GLOBAL_PT_FLOAT_PRECISION
+
 
 class DPPolarAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
@@ -41,7 +44,7 @@ class DPPolarAtomicModel(DPAtomicModel):
             device = out_bias[self.bias_keys[0]].device
             for kk in self.bias_keys:
                 ntypes = out_bias[kk].shape[0]
-                temp = torch.zeros(ntypes, device=device)
+                temp = torch.zeros(ntypes, dtype=dtype, device=device)
                 for i in range(ntypes):
                     temp[i] = torch.mean(torch.diagonal(out_bias[kk][i].reshape(3, 3)))
                 modified_bias = temp[atype]
@@ -51,7 +54,7 @@ class DPPolarAtomicModel(DPAtomicModel):
                     modified_bias.unsqueeze(-1) * self.fitting_net.scale[atype]
                 )
 
-                eye = torch.eye(3, device=device)
+                eye = torch.eye(3, dtype=dtype, device=device)
                 eye = eye.repeat(nframes, nloc, 1, 1)
                 # (nframes, nloc, 3, 3)
                 modified_bias = modified_bias.unsqueeze(-1) * eye

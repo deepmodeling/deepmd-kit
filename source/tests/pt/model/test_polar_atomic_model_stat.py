@@ -198,7 +198,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        expected_std = np.ones((1, 2, 9))  # 1 keys, 2 atypes, 9 max dims.
+        expected_std = np.zeros((1, 2, 9), dtype=np.float64)  # 1 keys, 2 atypes, 9 max dims.
+        expected_std[:,1,:] = np.ones(9, dtype=np.float64) * 0.8164966 # updating std
         # nt x odim (dia)
         diagnoal_bias = np.array(
             [
@@ -239,6 +240,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret3 = cvt_ret(ret3)
 
         expected_ret3 = {}
+        expected_std = np.array([[[1.4142136, 1.4142136, 1.4142136, 1.2472191, 1.2472191, 1.2472191, 1.2472191, 1.2472191, 1.2472191],
+                                  [0.4714045, 0.4714045, 0.4714045, 0.8164966, 0.8164966,0.8164966, 2.6246693, 2.6246693, 2.6246693]]])
         # new bias [[[3.0000, -, -, -, 2.6667, -, -, -, 2.3333],
         # [1.6667, -, -, -, 2.0000, -, -, -, 1.3333]]]
         # which yields [2.667, 1.667]
