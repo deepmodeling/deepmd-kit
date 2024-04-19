@@ -89,7 +89,7 @@ repos:
           - --duplicates=key,doi,citation,abstract
           - --merge=combine
           #- --sort-fields
-          - --strip-comments
+          #- --strip-comments
           - --trailing-commas
           - --encode-urls
           - --remove-empty-fields
