@@ -212,6 +212,15 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
         ret1 = md0.forward_common_atomic(*args)
+        expected_std = np.ones(
+            (2, 2, 2), dtype=np.float64
+        )  # 2 keys, 2 atypes, 2 max dims.
+        expected_std[0, :, :1] = np.array([0.0, 0.816496]).reshape(
+            2, 1
+        )  # updating std for foo based on [5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]
+        np.testing.assert_almost_equal(
+            to_numpy_array(md0.out_std), expected_std, decimal=4
+        )
         ret1 = cvt_ret(ret1)
         # nt x odim
         foo_bias = np.array([5.0, 6.0]).reshape(2, 1)
@@ -231,6 +240,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret2 = cvt_ret(ret2)
         for kk in ["foo", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], ret2[kk])
+        np.testing.assert_almost_equal(
+            to_numpy_array(md0.out_std), expected_std, decimal=4
+        )
 
         # 4. test change bias
         BaseAtomicModel.change_out_bias(
@@ -246,7 +258,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         ret3 = md0.forward_common_atomic(*args)
         ret3 = cvt_ret(ret3)
-
+        expected_std[0, :, :1] = np.array([1.24722, 0.47140]).reshape(
+            2, 1
+        )  # updating std for foo based on [4.0, 3.0, 2.0], [1.0, 1.0, 1.0]]
         expected_ret3 = {}
         # new bias [2.666, 1.333]
         expected_ret3["foo"] = np.array(
@@ -254,6 +268,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).reshape(2, 3, 1)
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)
+        np.testing.assert_almost_equal(
+            to_numpy_array(md0.out_std), expected_std, decimal=4
+        )
 
 
 class TestAtomicModelStatMergeGlobalAtomic(

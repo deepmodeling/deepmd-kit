@@ -32,7 +32,7 @@ from deepmd.utils.data import (
 from .model.test_embedding_net import (
     get_single_batch,
 )
-from .test_stat import (
+from .test_finetune import (
     energy_data_requirement,
 )
 

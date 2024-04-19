@@ -125,7 +125,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 torch.from_numpy(self.gr).to(device=PT_DEVICE),
                 None,
-            )["polar"]
+            )["polarizability"]
             .detach()
             .cpu()
             .numpy()
@@ -142,7 +142,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.atype.reshape(1, -1),
             self.gr,
             None,
-        )["polar"]
+        )["polarizability"]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:

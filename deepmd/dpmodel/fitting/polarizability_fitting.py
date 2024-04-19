@@ -206,7 +206,7 @@ class PolarFitting(GeneralFitting):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    self.var_name,
+                    "polarizability",
                     [3, 3],
                     reduciable=True,
                     r_differentiable=False,
@@ -280,4 +280,4 @@ class PolarFitting(GeneralFitting):
             # (nframes, nloc, 3, 3)
             bias = np.expand_dims(bias, axis=-1) * eye
             out = out + bias
-        return {self.var_name: out}
+        return {"polarizability": out}

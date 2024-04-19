@@ -54,8 +54,8 @@ class PolarModel(DPModelCommon, DPDOSModel_):
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
-            model_predict["polar"] = model_ret["polar"]
-            model_predict["global_polar"] = model_ret["polar_redu"]
+            model_predict["polar"] = model_ret["polarizability"]
+            model_predict["global_polar"] = model_ret["polarizability_redu"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
         else:
@@ -85,8 +85,8 @@ class PolarModel(DPModelCommon, DPDOSModel_):
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
-            model_predict["polar"] = model_ret["polar"]
-            model_predict["global_polar"] = model_ret["polar_redu"]
+            model_predict["polar"] = model_ret["polarizability"]
+            model_predict["global_polar"] = model_ret["polarizability_redu"]
         else:
             model_predict = model_ret
         return model_predict

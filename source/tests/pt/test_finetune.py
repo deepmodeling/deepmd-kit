@@ -23,15 +23,54 @@ from deepmd.pt.utils.stat import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
     model_zbl,
 )
-from .test_stat import (
-    energy_data_requirement,
-)
+
+energy_data_requirement = [
+    DataRequirementItem(
+        "energy",
+        ndof=1,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "force",
+        ndof=3,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "virial",
+        ndof=9,
+        atomic=False,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_ener",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_pref",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        repeat=3,
+    ),
+]
 
 
 class FinetuneTest:
