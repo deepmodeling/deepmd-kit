@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #ifdef GOOGLE_CUDA
-#include <cuda.h>
-#include <cuda_runtime_api.h>
+#include "device.h"
 #endif
 #include <torch/torch.h>
 #ifdef USE_MPI
@@ -90,8 +89,8 @@ class Border : public torch::autograd::Function<Border> {
       } else {
 #endif
 #ifdef GOOGLE_CUDA
-        cudaMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
-                   cudaMemcpyDeviceToDevice);
+        gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
+                   gpuMemcpyDeviceToDevice);
 #else
       memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
 #endif
@@ -107,7 +106,7 @@ class Border : public torch::autograd::Function<Border> {
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
 #ifdef GOOGLE_CUDA
-    cudaDeviceSynchronize();
+    gpuDeviceSynchronize();
 #endif
 
     torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
@@ -194,8 +193,8 @@ class Border : public torch::autograd::Function<Border> {
 #endif
         if (nrecv) {
 #ifdef GOOGLE_CUDA
-          cudaMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
-                     cudaMemcpyDeviceToDevice);
+          gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
+                     gpuMemcpyDeviceToDevice);
 #else
         memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
 #endif
@@ -209,7 +208,7 @@ class Border : public torch::autograd::Function<Border> {
       }
     }
 #ifdef GOOGLE_CUDA
-    cudaDeviceSynchronize();
+    gpuDeviceSynchronize();
 #endif
 
     return {torch::Tensor(), torch::Tensor(), torch::Tensor(),
