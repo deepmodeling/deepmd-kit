@@ -8,4 +8,6 @@ build:
       - pip install uv
     post_install:
       - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
+  apt_packages:
+    - inkscape
 formats: all
