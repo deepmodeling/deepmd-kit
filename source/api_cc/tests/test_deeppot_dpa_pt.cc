@@ -119,7 +119,7 @@ TYPED_TEST(TestInferDeepPotDpaPt, cpu_build_nlist_atomic) {
   deepmd::DeepPot& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
-  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box;
+  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(virial.size(), 9);
