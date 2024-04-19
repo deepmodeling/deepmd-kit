@@ -34,13 +34,13 @@ class Border : public torch::autograd::Function<Border> {
     bool type_flag = (g1.dtype() == torch::kDouble) ? true : false;
     if (type_flag) {
       return forward_t<double>(ctx, sendlist_tensor, sendproc_tensor,
-                               recvproc_tensor, sendnum_tensor, recvnum_tensor,g1,
-                               communicator_tensor, nlocal_tensor,
+                               recvproc_tensor, sendnum_tensor, recvnum_tensor,
+                               g1, communicator_tensor, nlocal_tensor,
                                nghost_tensor);
     } else {
       return forward_t<float>(ctx, sendlist_tensor, sendproc_tensor,
-                              recvproc_tensor, sendnum_tensor, recvnum_tensor,g1,
-                              communicator_tensor, nlocal_tensor,
+                              recvproc_tensor, sendnum_tensor, recvnum_tensor,
+                              g1, communicator_tensor, nlocal_tensor,
                               nghost_tensor);
     }
   }
