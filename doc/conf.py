@@ -32,7 +32,6 @@ project = "DeePMD-kit"
 copyright = "2017-%d, DeepModeling" % date.today().year
 author = "DeepModeling"
 
-extensions = ["autoapi.extension"]
 autoapi_dirs = ["../deepmd"]
 autoapi_add_toctree_entry = False
 
