@@ -239,12 +239,11 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
-
 #ifdef OMPI_MPI_H
-  long int* communicator = communicator_tensor.data_ptr<long int>();
+    long int* communicator = communicator_tensor.data_ptr<long int>();
 #else
-  long int* ptr = communicator_tensor.data_ptr<long int>();
-  int* communicator = reinterpret_cast<int*> (ptr);
+    long int* ptr = communicator_tensor.data_ptr<long int>();
+    int* communicator = reinterpret_cast<int*>(ptr);
 #endif
     mpi_comm = reinterpret_cast<MPI_Comm>(*communicator);
   }
