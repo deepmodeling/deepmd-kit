@@ -92,6 +92,7 @@ docs = [
     "sphinx-argparse",
     "pygments-lammps",
     "sphinxcontrib-bibtex",
+    "sphinx-autoapi",
 ]
 lmp = [
     "lammps~=2023.8.2.3.0",
