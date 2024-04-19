@@ -234,22 +234,22 @@ std::vector<torch::Tensor> border_op(const torch::Tensor& sendlist_tensor,
                                      const torch::Tensor& g1_tensor,
                                      const torch::Tensor& communicator_tensor,
                                      const torch::Tensor& nlocal_tensor,
-                                     const torch::Tensor& nghost_tensor) 
+                                     const torch::Tensor& nghost_tensor)
 
 /**
-   * @brief communicate the latest g1 info to other lmp proc
-   * @param[out] recv_g1_tensor g1 after communication
-   * @param[in]  sendlist_tensor list of atoms to send in each swap
-   * @param[in]  sendproc_tensor proc to send to at each swap
-   * @param[in]  recvproc_tensor proc to recv from at each swap
-   * @param[in]  sendnum_tensor # of atoms to send in each swap
-   * @param[in]  recvnum_tensor # of atoms to recv in each swap
-   * @param[in]  g1_tensor tensor to store g1 info
-   * @param[in]  communicator_tensor MPI_comm data in lmp
-   * @param[in]  nlocal_tensor # of local atoms
-   * @param[in]  nghost_tensor # of nghost atoms 
-   **/
-                                     {
+ * @brief communicate the latest g1 info to other lmp proc
+ * @param[out] recv_g1_tensor g1 after communication
+ * @param[in]  sendlist_tensor list of atoms to send in each swap
+ * @param[in]  sendproc_tensor proc to send to at each swap
+ * @param[in]  recvproc_tensor proc to recv from at each swap
+ * @param[in]  sendnum_tensor # of atoms to send in each swap
+ * @param[in]  recvnum_tensor # of atoms to recv in each swap
+ * @param[in]  g1_tensor tensor to store g1 info
+ * @param[in]  communicator_tensor MPI_comm data in lmp
+ * @param[in]  nlocal_tensor # of local atoms
+ * @param[in]  nghost_tensor # of nghost atoms
+ **/
+{
   return Border::apply(sendlist_tensor, sendproc_tensor, recvproc_tensor,
                        sendnum_tensor, recvnum_tensor, g1_tensor,
                        communicator_tensor, nlocal_tensor, nghost_tensor);
