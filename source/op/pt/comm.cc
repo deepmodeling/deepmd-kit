@@ -32,11 +32,30 @@ class Border : public torch::autograd::Function<Border> {
       const torch::Tensor& nlocal_tensor,
       const torch::Tensor& nghost_tensor) {
     bool type_flag = (g1.dtype() == torch::kDouble) ? true : false;
-    using FPTYPE = float;
     if (type_flag) {
-      using FPTYPE = double;
+      return forward_t<double>(ctx, sendlist_tensor, sendproc_tensor,
+                               recvproc_tensor, sendnum_tensor, recvnum_tensor,g1,
+                               communicator_tensor, nlocal_tensor,
+                               nghost_tensor);
+    } else {
+      return forward_t<float>(ctx, sendlist_tensor, sendproc_tensor,
+                              recvproc_tensor, sendnum_tensor, recvnum_tensor,g1,
+                              communicator_tensor, nlocal_tensor,
+                              nghost_tensor);
     }
-
+  }
+  template <typename FPTYPE>
+  static torch::autograd::variable_list forward_t(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& sendlist_tensor,
+      const torch::Tensor& sendproc_tensor,
+      const torch::Tensor& recvproc_tensor,
+      const torch::Tensor& sendnum_tensor,
+      const torch::Tensor& recvnum_tensor,
+      const torch::Tensor& g1,
+      const torch::Tensor& communicator_tensor,
+      const torch::Tensor& nlocal_tensor,
+      const torch::Tensor& nghost_tensor) {
     ctx->save_for_backward({sendlist_tensor, sendproc_tensor, recvproc_tensor,
                             sendnum_tensor, recvnum_tensor, communicator_tensor,
                             nlocal_tensor, nghost_tensor});
@@ -52,7 +71,6 @@ class Border : public torch::autograd::Function<Border> {
     int nghost = nghost_tensor.item<int>();
     int ntotal = nlocal + nghost;
     torch::Tensor recv_g1_tensor = g1;
-
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
 
 #ifdef USE_MPI
@@ -105,6 +123,17 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
+    bool type_flag = (grad_output[0].dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return backward_t<double>(ctx, grad_output);
+    } else {
+      return backward_t<float>(ctx, grad_output);
+    }
+  }
+  template <typename FPTYPE>
+  static torch::autograd::variable_list backward_t(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
 #ifdef GOOGLE_CUDA
     gpuDeviceSynchronize();
 #endif
@@ -120,13 +149,6 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor nghost_tensor = saved_variables[7];
 
     torch::Tensor d_local_g1_tensor = grad_output[0];
-    bool type_flag =
-        (d_local_g1_tensor.dtype() == torch::kDouble) ? true : false;
-    using FPTYPE = float;
-    if (type_flag) {
-      using FPTYPE = double;
-    }
-
     int** recvlist = reinterpret_cast<int**>(sendlist_tensor.data_ptr());
     // swap send and recv here
     int* recvproc = sendproc_tensor.data_ptr<int>();
@@ -146,7 +168,7 @@ class Border : public torch::autograd::Function<Border> {
 
     int max_recvnum = sendnum_tensor.max().item<int>();
     auto options = torch::TensorOptions()
-                       .dtype(torch::kFloat64)
+                       .dtype(d_local_g1_tensor.dtype())
                        .device(d_local_g1_tensor.device());
     torch::Tensor recv_g1_tensor =
         torch::empty({max_recvnum, tensor_size}, options);
@@ -160,8 +182,6 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #endif
-    std::string msg;
-
     int end = ntotal;
     auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
     for (int iswap = nswap - 1; iswap >= 0; --iswap) {
@@ -220,9 +240,7 @@ class Border : public torch::autograd::Function<Border> {
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
     long int* communicator = communicator_tensor.data_ptr<long int>();
-    int* int_ptr = reinterpret_cast<int*>(
-        communicator);  // in order to solve mpich type, may cause error
-    mpi_comm = reinterpret_cast<MPI_Comm>(*int_ptr);
+    mpi_comm = reinterpret_cast<MPI_Comm>(*communicator);
   }
 #endif
 };
