@@ -207,16 +207,18 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         options)
                         .to(device);
   }
-  c10::Dict<c10::IValue, c10::IValue> outputs = (model_type == 1) ?
-      module
-          .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                      firstneigh_tensor, optional_tensor, fparam_tensor,
-                      aparam_tensor, do_atom_virial_tensor, comm_dict)
-          .toGenericDict() : module
-          .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                      firstneigh_tensor, optional_tensor, fparam_tensor,
-                      aparam_tensor, do_atom_virial_tensor)
-          .toGenericDict();
+  c10::Dict<c10::IValue, c10::IValue> outputs =
+      (model_type == 1)
+          ? module
+                .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
+                            firstneigh_tensor, optional_tensor, fparam_tensor,
+                            aparam_tensor, do_atom_virial_tensor, comm_dict)
+                .toGenericDict()
+          : module
+                .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
+                            firstneigh_tensor, optional_tensor, fparam_tensor,
+                            aparam_tensor, do_atom_virial_tensor)
+                .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue virial_ = outputs.at("virial");
