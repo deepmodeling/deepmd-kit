@@ -90,7 +90,7 @@ class Border : public torch::autograd::Function<Border> {
 #endif
 #ifdef GOOGLE_CUDA
         gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
-                   gpuMemcpyDeviceToDevice);
+                  gpuMemcpyDeviceToDevice);
 #else
       memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
 #endif
@@ -194,7 +194,7 @@ class Border : public torch::autograd::Function<Border> {
         if (nrecv) {
 #ifdef GOOGLE_CUDA
           gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
-                     gpuMemcpyDeviceToDevice);
+                    gpuMemcpyDeviceToDevice);
 #else
         memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
 #endif
