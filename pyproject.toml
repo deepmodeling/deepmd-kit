@@ -84,7 +84,7 @@ docs = [
     "myst-parser>=0.19.2",
     "sphinx-design",
     "breathe",
-    "exhale",
+    "exhale>=0.3.7",
     "numpydoc",
     "ase",
     "deepmodeling-sphinx>=0.1.0",
