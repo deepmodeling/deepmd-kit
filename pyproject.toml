@@ -79,12 +79,11 @@ test = [
 docs = [
     "sphinx>=3.1.1",
     "sphinx_rtd_theme>=1.0.0rc1",
-    "sphinx_markdown_tables",
     "myst-nb>=1.0.0rc0",
     "myst-parser>=0.19.2",
     "sphinx-design",
     "breathe",
-    "exhale",
+    "exhale>=0.3.7",
     "numpydoc",
     "ase",
     "deepmodeling-sphinx>=0.1.0",
@@ -92,6 +91,7 @@ docs = [
     "sphinx-argparse",
     "pygments-lammps",
     "sphinxcontrib-bibtex",
+    "sphinx-autoapi>=3.0.0",
 ]
 lmp = [
     "lammps~=2023.8.2.3.0",
