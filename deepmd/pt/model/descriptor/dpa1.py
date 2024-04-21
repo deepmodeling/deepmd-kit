@@ -153,7 +153,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Whether to normalize the hidden vectors in attention weights calculation.
     temperature: float
             If not None, the scaling of attention weights is `temperature` itself.
-    smooth_type_embdding: bool
+    smooth_type_embedding: bool
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
@@ -201,7 +201,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         temperature=None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
-        smooth_type_embdding: bool = True,
+        smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         # not implemented
         stripped_type_embedding: bool = False,
@@ -236,7 +236,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             scaling_factor=scaling_factor,
             normalize=normalize,
             temperature=temperature,
-            smooth=smooth_type_embdding,
+            smooth=smooth_type_embedding,
             type_one_side=type_one_side,
             exclude_types=exclude_types,
             env_protection=env_protection,
@@ -373,7 +373,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "scaling_factor": obj.scaling_factor,
             "normalize": obj.normalize,
             "temperature": obj.temperature,
-            "smooth_type_embdding": obj.smooth,
+            "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             # make deterministic

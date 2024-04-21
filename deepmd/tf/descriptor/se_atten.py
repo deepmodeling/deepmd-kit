@@ -141,7 +141,7 @@ class DescrptSeAtten(DescrptSeA):
     stripped_type_embedding
             Whether to strip the type embedding into a separated embedding network.
             Default value will be True in `se_atten_v2` descriptor.
-    smooth_type_embdding
+    smooth_type_embedding
             Whether to use smooth process in attention weights calculation.
             And when using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
@@ -176,7 +176,7 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
         stripped_type_embedding: bool = False,
-        smooth_type_embdding: bool = False,
+        smooth_type_embedding: bool = False,
         # not implemented
         scaling_factor=1.0,
         normalize=True,
@@ -185,7 +185,9 @@ class DescrptSeAtten(DescrptSeA):
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
-        if not set_davg_zero and not (stripped_type_embedding and smooth_type_embdding):
+        if not set_davg_zero and not (
+            stripped_type_embedding and smooth_type_embedding
+        ):
             warnings.warn(
                 "Set 'set_davg_zero' False in descriptor 'se_atten' "
                 "may cause unexpected incontinuity during model inference!"
@@ -230,7 +232,7 @@ class DescrptSeAtten(DescrptSeA):
         if ntypes == 0:
             raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
-        self.smooth = smooth_type_embdding
+        self.smooth = smooth_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -1775,7 +1777,7 @@ class DescrptSeAtten(DescrptSeA):
             "attn_mask": self.attn_mask,
             "activation_function": self.activation_function_name,
             "resnet_dt": self.filter_resnet_dt,
-            "smooth_type_embdding": self.smooth,
+            "smooth_type_embedding": self.smooth,
             "precision": self.filter_precision.name,
             "embeddings": self.serialize_network(
                 ntypes=self.ntypes,
@@ -1869,7 +1871,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Not supported in this version.
     temperature: float
             Not supported in this version.
-    smooth_type_embdding: bool
+    smooth_type_embedding: bool
             Whether to use smooth process in attention weights calculation. Only support True in this version.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor. Only support True in this version.
@@ -1902,7 +1904,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         scaling_factor=1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
-        smooth_type_embdding: bool = True,
+        smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
@@ -1948,7 +1950,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             attn_mask=attn_mask,
             multi_task=True,
             stripped_type_embedding=False,
-            smooth_type_embdding=smooth_type_embdding,
+            smooth_type_embedding=smooth_type_embedding,
             env_protection=env_protection,
         )
         self.tebd_dim = tebd_dim

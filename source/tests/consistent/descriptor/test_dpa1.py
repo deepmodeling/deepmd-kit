@@ -43,7 +43,7 @@ from deepmd.utils.argcheck import (
     ([], [[0, 1]]),  # excluded_types
     ("float32", "float64"),  # precision
     (0.0, 1e-8, 1e-2),  # env_protection
-    (True, False),  # smooth_type_embdding
+    (True, False),  # smooth_type_embedding
     (True, False),  # type_one_side
     (True, False),  # set_davg_zero
     (0, 2),  # attn_layer
@@ -56,7 +56,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,
@@ -84,7 +84,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             "env_protection": env_protection,
             "precision": precision,
             "set_davg_zero": set_davg_zero,
-            "smooth_type_embdding": smooth_type_embdding,
+            "smooth_type_embedding": smooth_type_embedding,
             "seed": 1145141919810,
         }
 
@@ -95,7 +95,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,
@@ -109,7 +109,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,
@@ -123,7 +123,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,
@@ -131,7 +131,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         # TODO (excluded_types != [] and attn_layer > 0) need fix
         return (
             env_protection != 0.0
-            or smooth_type_embdding
+            or smooth_type_embedding
             or (excluded_types != [] and attn_layer > 0)
         )
 
@@ -178,7 +178,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,
@@ -225,7 +225,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,
@@ -245,7 +245,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
             env_protection,
-            smooth_type_embdding,
+            smooth_type_embedding,
             type_one_side,
             set_davg_zero,
             attn_layer,

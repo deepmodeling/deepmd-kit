@@ -67,7 +67,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 attn_layer=2,
                 precision=prec,
                 resnet_dt=idt,
-                smooth_type_embdding=sm,
+                smooth_type_embedding=sm,
                 type_one_side=to,
                 old_impl=False,
             ).to(env.DEVICE)
@@ -130,7 +130,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     attn_layer=2,
                     precision=prec,
                     resnet_dt=idt,
-                    smooth_type_embdding=sm,
+                    smooth_type_embedding=sm,
                     old_impl=True,
                 ).to(env.DEVICE)
                 dd0_state_dict = dd0.se_atten.state_dict()
@@ -203,7 +203,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.nt,
                 precision=prec,
                 resnet_dt=idt,
-                smooth_type_embdding=sm,
+                smooth_type_embedding=sm,
                 type_one_side=to,
                 old_impl=False,
             )

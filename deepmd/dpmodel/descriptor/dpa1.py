@@ -171,7 +171,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to normalize the hidden vectors in attention weights calculation.
     temperature: float
             If not None, the scaling of attention weights is `temperature` itself.
-    smooth_type_embdding: bool
+    smooth_type_embedding: bool
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
@@ -219,7 +219,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         scaling_factor=1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
-        smooth_type_embdding: bool = True,
+        smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
@@ -259,7 +259,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
-        self.smooth = smooth_type_embdding
+        self.smooth = smooth_type_embedding
         self.concat_output_tebd = concat_output_tebd
         self.spin = spin
         # order matters, placed after the assignment of self.ntypes
@@ -535,7 +535,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "scaling_factor": self.scaling_factor,
             "normalize": self.normalize,
             "temperature": self.temperature,
-            "smooth_type_embdding": self.smooth,
+            "smooth_type_embedding": self.smooth,
             "type_one_side": self.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             # make deterministic
