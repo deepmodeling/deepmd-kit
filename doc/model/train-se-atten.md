@@ -133,7 +133,6 @@ An example of the DPA-1 descriptor is provided as follows
           "attn_layer":	2,
           "attn_mask": false,
           "attn_dotr": true,
-          "post_ln": true
 	}
 ```
 
@@ -147,7 +146,6 @@ An example of the DPA-1 descriptor is provided as follows
 - {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
 - {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
 - {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
-- {ref}`post_ln <model/descriptor[se_atten]/post_ln>` determines whether to perform post layer norm.
 
 :::
 

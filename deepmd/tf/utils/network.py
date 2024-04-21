@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+
 import numpy as np
 
 from deepmd.tf.common import (
@@ -103,6 +104,271 @@ def one_layer(
         if mixed_prec is not None:
             hidden = tf.cast(hidden, get_precision(mixed_prec["output_prec"]))
         return hidden
+
+
+def layer_norm_tf(x, shape, weight=None, bias=None, eps=1e-5):
+    """
+    Layer normalization implementation in TensorFlow.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        The input tensor.
+    shape : tuple
+        The shape of the weight and bias tensors.
+    weight : tf.Tensor
+        The weight tensor.
+    bias : tf.Tensor
+        The bias tensor.
+    eps : float
+        A small value added to prevent division by zero.
+
+    Returns
+    -------
+    tf.Tensor
+        The normalized output tensor.
+    """
+    # Calculate the mean and variance
+    mean = tf.reduce_mean(x, axis=list(range(-len(shape), 0)), keepdims=True)
+    variance = tf.reduce_mean(
+        tf.square(x - mean), axis=list(range(-len(shape), 0)), keepdims=True
+    )
+
+    # Normalize the input
+    x_ln = (x - mean) / tf.sqrt(variance + eps)
+
+    # Scale and shift the normalized input
+    if weight is not None and bias is not None:
+        x_ln = x_ln * weight + bias
+
+    return x_ln
+
+
+def layernorm(
+    inputs,
+    outputs_size,
+    precision=GLOBAL_TF_FLOAT_PRECISION,
+    name="linear",
+    scope="",
+    reuse=None,
+    seed=None,
+    uniform_seed=False,
+    uni_init=True,
+    eps=1e-5,
+    trainable=True,
+    initial_variables=None,
+):
+    with tf.variable_scope(name, reuse=reuse):
+        shape = inputs.get_shape().as_list()
+        if uni_init:
+            gamma_initializer = tf.ones_initializer()
+            beta_initializer = tf.zeros_initializer()
+        else:
+            gamma_initializer = tf.random_normal_initializer(
+                seed=seed if (seed is None or uniform_seed) else seed + 0
+            )
+            beta_initializer = tf.random_normal_initializer(
+                seed=seed if (seed is None or uniform_seed) else seed + 1
+            )
+        if initial_variables is not None:
+            gamma_initializer = tf.constant_initializer(
+                initial_variables[scope + name + "/gamma"]
+            )
+            beta_initializer = tf.constant_initializer(
+                initial_variables[scope + name + "/beta"]
+            )
+        gamma = tf.get_variable(
+            "gamma",
+            [outputs_size],
+            precision,
+            gamma_initializer,
+            trainable=trainable,
+        )
+        variable_summaries(gamma, "gamma")
+        beta = tf.get_variable(
+            "beta", [outputs_size], precision, beta_initializer, trainable=trainable
+        )
+        variable_summaries(beta, "beta")
+
+        output = layer_norm_tf(
+            inputs,
+            (outputs_size,),
+            weight=gamma,
+            bias=beta,
+            eps=eps,
+        )
+        return output
+
+
+# class LayerNormCompat:
+#     """Implementation of Layer Normalization layer for testing with other backend references.
+#
+#     Parameters
+#     ----------
+#     num_in : int
+#         The input dimension of the layer.
+#     eps : float, optional
+#         A small value added to prevent division by zero in calculations.
+#     uni_init : bool, optional
+#         If initialize the weights to be zeros and ones.
+#     precision : str, optional
+#         The precision of the layer parameters. Supported options are |PRECISION|
+#     """
+#
+#     def __init__(
+#         self,
+#         num_in: int,
+#         eps: float = 1e-5,
+#         uni_init: bool = True,
+#         precision: str = "default",
+#     ) -> None:
+#         self.eps = eps
+#         self.uni_init = uni_init
+#         self.num_in = num_in
+#         self.filter_precision = get_precision(precision)
+#         self.layer_norm_variables = None
+#
+#     def build(
+#         self,
+#         inputs,
+#         input_shape: List[int],
+#         reuse=None,
+#         suffix="",
+#     ):
+#         """Build the computational graph for the layer normalization.
+#
+#         Parameters
+#         ----------
+#         input_shape
+#             The shape of the input tensor.
+#         reuse
+#             The weights in the networks should be reused when get the variable.
+#         suffix
+#             Name suffix to identify this layer
+#
+#         Returns
+#         -------
+#         normalized_output
+#             The computational graph for the normalized output
+#         """
+#         assert input_shape[-1] == self.num_in
+#         name = "layer_norm" + suffix
+#         with tf.variable_scope(name, reuse=reuse):
+#             gamma = tf.get_variable(
+#                 "gamma",
+#                 shape=[self.num_in],
+#                 initializer=tf.ones_initializer(),
+#                 dtype=self.filter_precision,
+#                 trainable=True,
+#             )
+#             beta = tf.get_variable(
+#                 "beta",
+#                 shape=[self.num_in],
+#                 initializer=tf.zeros_initializer(),
+#                 dtype=self.filter_precision,
+#                 trainable=True,
+#             )
+#             normalized_output = tf.contrib.layers.layer_norm(
+#                 inputs=input,
+#                 begin_norm_axis=-1,
+#                 begin_params_axis=-1,
+#                 epsilon=self.eps,
+#                 activation_fn=None,
+#                 param_initializers={
+#                     "gamma": tf.ones_initializer(),
+#                     "beta": tf.zeros_initializer(),
+#                 },
+#                 trainable=True,
+#                 reuse=reuse,
+#                 variables_collections=None,
+#                 outputs_collections=None,
+#                 data_format="NHWC",
+#                 name=name,
+#             )
+#         return normalized_output
+#
+#     def init_variables(
+#         self,
+#         graph: tf.Graph,
+#         graph_def: tf.GraphDef,
+#         suffix="",
+#         model_type="original_model",
+#     ) -> None:
+#         """Init the layer norm variables with the given dict.
+#
+#         Parameters
+#         ----------
+#         graph : tf.Graph
+#             The input frozen model graph
+#         graph_def : tf.GraphDef
+#             The input frozen model graph_def
+#         suffix
+#             Name suffix to identify this layer
+#         model_type
+#             Indicator of whether this model is a compressed model
+#         """
+#         self.layer_norm_variables = get_layer_norm_variables_from_graph_def(
+#             graph_def, suffix=suffix
+#         )
+#
+#     @classmethod
+#     def deserialize(cls, data: dict, suffix: str = ""):
+#         """Deserialize the layer from a dict.
+#
+#         Parameters
+#         ----------
+#         data : dict
+#             The dict to deserialize from.
+#         suffix : str, optional
+#             The suffix of the scope
+#
+#         Returns
+#         -------
+#         LayerNorm
+#             The deserialized layer
+#         """
+#         data = data.copy()
+#         check_version_compatibility(data.pop("@version", 1), 1, 1)
+#         data_cls = data.pop("@class")
+#         assert data_cls == "LayerNorm", f"Invalid class {data_cls}"
+#         variables = data.pop("@variables")
+#         obj = cls(
+#             num_in=variables["w"].shape[0],
+#             eps=data.pop("eps"),
+#             precision=data.pop("precision"),
+#         )
+#         obj.layer_norm_variables = {
+#             f"layer_norm{suffix}/gamma": variables["w"],
+#             f"layer_norm{suffix}/beta": variables["b"],
+#         }
+#         return obj
+#
+#     def serialize(self, suffix: str = "") -> dict:
+#         """Serialize the layer to a dict.
+#
+#         Parameters
+#         ----------
+#         suffix : str, optional
+#             The suffix of the scope
+#
+#         Returns
+#         -------
+#         dict
+#             The serialized layer.
+#         """
+#         assert self.layer_norm_variables is not None
+#         gamma = self.layer_norm_variables[f"layer_norm{suffix}/gamma"]
+#         beta = self.layer_norm_variables[f"layer_norm{suffix}/beta"]
+#         return {
+#             "@class": "LayerNorm",
+#             "@version": 1,
+#             "eps": self.eps,
+#             "precision": self.filter_precision.name,
+#             "@variables": {
+#                 "w": gamma,
+#                 "b": beta,
+#             },
+#         }
 
 
 def embedding_net_rand_seed_shift(network_size):

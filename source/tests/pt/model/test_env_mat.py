@@ -35,6 +35,8 @@ class TestCaseSingleFrameWithNlist:
         self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
         # sel = [5, 2]
         self.sel = [5, 2]
+        self.sel_mix = [7]
+        self.natoms = [3, 3, 2, 1]
         self.nlist = np.array(
             [
                 [1, 3, -1, -1, -1, 2, -1],
@@ -83,6 +85,8 @@ class TestCaseSingleFrameWithNlistWithVirtual:
         self.atype_ext = np.array([0, -1, 0, 1, 0], dtype=int).reshape([1, self.nall])
         # sel = [5, 2]
         self.sel = [5, 2]
+        self.sel_mix = [7]
+        self.natoms = [3, 3, 2, 1]
         self.nlist = np.array(
             [
                 [2, 4, -1, -1, -1, 3, -1],
@@ -131,6 +135,8 @@ class TestCaseSingleFrameWithoutNlist:
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
         # sel = [5, 2]
         self.sel = [16, 8]
+        self.sel_mix = [24]
+        self.natoms = [3, 3, 2, 1]
         self.rcut = 2.2
         self.rcut_smth = 0.4
         self.atol = 1e-12

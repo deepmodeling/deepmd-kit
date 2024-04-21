@@ -409,7 +409,7 @@ def descrpt_se_atten_common_args():
     )
     doc_type_one_side = (
         doc_only_tf_supported
-        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+        + r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
     )
     doc_precision = (
         doc_only_tf_supported
@@ -476,7 +476,7 @@ def descrpt_se_atten_common_args():
 @descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
     doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
-    doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embdding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
@@ -507,7 +507,7 @@ def descrpt_se_atten_args():
             bool,
             optional=True,
             default=False,
-            doc=doc_only_tf_supported + doc_smooth_type_embdding,
+            doc=doc_smooth_type_embdding,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
@@ -528,39 +528,11 @@ def descrpt_se_atten_args():
             doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
-            "post_ln",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "ffn",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "ffn_embed_dim",
-            int,
-            optional=True,
-            default=1024,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
             "scaling_factor",
             float,
             optional=True,
             default=1.0,
             doc=doc_only_pt_supported + doc_scaling_factor,
-        ),
-        Argument(
-            "head_num",
-            int,
-            optional=True,
-            default=1,
-            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "normalize",
@@ -574,13 +546,6 @@ def descrpt_se_atten_args():
             float,
             optional=True,
             doc=doc_only_pt_supported + doc_temperature,
-        ),
-        Argument(
-            "return_rot",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "concat_output_tebd",
