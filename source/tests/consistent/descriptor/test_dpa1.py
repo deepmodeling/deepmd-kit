@@ -39,27 +39,43 @@ from deepmd.utils.argcheck import (
 
 
 @parameterized(
-    (True, False),  # resnet_dt
-    ([], [[0, 1]]),  # excluded_types
-    ("float32", "float64"),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
-    (True, False),  # smooth_type_embedding
+    (4,),  # tebd_dim
+    ("concat",),  # tebd_input_mode
+    (True,),  # resnet_dt
     (True, False),  # type_one_side
-    (True, False),  # set_davg_zero
+    (20,),  # attn
     (0, 2),  # attn_layer
+    (True, False),  # attn_dotr
+    ([], [[0, 1]]),  # excluded_types
+    (0.0,),  # env_protection
+    (True, False),  # set_davg_zero
+    (1.0,),  # scaling_factor
+    (True, False),  # normalize
+    (None, 1.0),  # temperature
+    (True, False),  # smooth_type_embedding
+    (True, False),  # concat_output_tebd
+    ("float64",),  # precision
 )
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
         return {
             "sel": [10],
@@ -68,16 +84,16 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             "neuron": [6, 12, 24],
             "ntypes": self.ntypes,
             "axis_neuron": 3,
-            "tebd_dim": 4,
-            # "tebd_input_mode": tebd_input_mode,
-            "attn": 20,
+            "tebd_dim": tebd_dim,
+            "tebd_input_mode": tebd_input_mode,
+            "attn": attn,
             "attn_layer": attn_layer,
-            "attn_dotr": True,
+            "attn_dotr": attn_dotr,
             "attn_mask": False,
-            "scaling_factor": 1.0,
-            "normalize": True,
-            "temperature": 1.0,
-            "concat_output_tebd": True,
+            "scaling_factor": scaling_factor,
+            "normalize": normalize,
+            "temperature": temperature,
+            "concat_output_tebd": concat_output_tebd,
             "resnet_dt": resnet_dt,
             "type_one_side": type_one_side,
             "exclude_types": excluded_types,
@@ -91,47 +107,73 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def skip_pt(self) -> bool:
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
         return CommonTest.skip_pt
 
     @property
     def skip_dp(self) -> bool:
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
         return CommonTest.skip_pt
 
     @property
     def skip_tf(self) -> bool:
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
         # TODO (excluded_types != [] and attn_layer > 0) need fix
         return (
             env_protection != 0.0
             or smooth_type_embedding
+            or not normalize
+            or temperature != 1.0
             or (excluded_types != [] and attn_layer > 0)
         )
 
@@ -174,14 +216,22 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
@@ -221,14 +271,22 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     def rtol(self) -> float:
         """Relative tolerance for comparing the return value."""
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -241,14 +299,22 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     def atol(self) -> float:
         """Absolute tolerance for comparing the return value."""
         (
+            tebd_dim,
+            tebd_input_mode,
             resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-            smooth_type_embedding,
             type_one_side,
-            set_davg_zero,
+            attn,
             attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
         ) = self.param
         if precision == "float64":
             return 1e-10

@@ -135,7 +135,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The way to mix the type embeddings. Supported options are `concat`, `dot_residual_s`.
+            The way to mix the type embeddings. Supported options are `concat`.
+            (TODO need to support stripped_type_embedding option)
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -152,6 +153,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     attn_dotr: bool
             If dot the angular gate to the attention weights
     attn_mask: bool
+            (Deprecated, only support False to keep consistent with old implementation.)
             If mask the diagonal of attention weights
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
@@ -176,16 +178,17 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
     spin
-            The old implementation of deepspin (deprecated in the descriptor).
+            (Deprecated, only support None to keep consistent with old implementation.)
+            The old implementation of deepspin.
 
     Limitations
     -----------
     The currently implementation does not support the following features
+    1. tebd_input_mode != 'concat'
 
-    1. type_one_side == True
-    2. exclude_types != []
-    3. spin is not None
-    4. tebd_input_mode != 'concat'
+    The currently implementation will not support the following deprecated features
+    1. spin is not None
+    2. attn_mask == True
 
     References
     ----------
@@ -228,10 +231,15 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         ## seed, uniform_seed, multi_task, not included.
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
+        if attn_mask:
+            raise NotImplementedError(
+                "old implementation of attn_mask is not supported."
+            )
         # TODO
         if tebd_input_mode != "concat":
             raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
 
+        del attn_mask, spin
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         if isinstance(sel, int):
@@ -250,7 +258,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.attn = attn
         self.attn_layer = attn_layer
         self.attn_dotr = attn_dotr
-        self.attn_mask = attn_mask
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.set_davg_zero = set_davg_zero
@@ -261,7 +268,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.temperature = temperature
         self.smooth = smooth_type_embedding
         self.concat_output_tebd = concat_output_tebd
-        self.spin = spin
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -297,7 +303,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             self.filter_neuron[-1],
             self.attn,
             dotr=self.attn_dotr,
-            do_mask=self.attn_mask,
             scaling_factor=self.scaling_factor,
             normalize=self.normalize,
             temperature=self.temperature,
@@ -529,7 +534,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "attn": self.attn,
             "attn_layer": self.attn_layer,
             "attn_dotr": self.attn_dotr,
-            "attn_mask": self.attn_mask,
+            "attn_mask": False,
             "activation_function": self.activation_function,
             "resnet_dt": self.resnet_dt,
             "scaling_factor": self.scaling_factor,

@@ -1838,14 +1838,17 @@ class DescrptDPA1Compat(DescrptSeAtten):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The way to mix the type embeddings. Only support `concat` in this version.
+            (Only support `concat` to keep consistent with other backend references.)
+            The way to mix the type embeddings.
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
     trainable: bool
             If the weights of embedding net are trainable.
     type_one_side: bool
-            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
     attn: int
             Hidden dimension of the attention vectors
     attn_layer: int
@@ -1853,6 +1856,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
     attn_dotr: bool
             If dot the angular gate to the attention weights
     attn_mask: bool
+            (Only support False to keep consistent with other backend references.)
             If mask the diagonal of attention weights
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
@@ -1866,17 +1870,26 @@ class DescrptDPA1Compat(DescrptSeAtten):
     precision: str
             The precision of the embedding net parameters. Supported options are |PRECISION|
     scaling_factor: float
-            Not supported in this version.
+            (Only to keep consistent with other backend references.)
+            (Not used in this version.)
+            The scaling factor of normalization in calculations of attention weights.
+            If `temperature` is None, the scaling of attention weights is (N_dim * scaling_factor)**0.5
     normalize: bool
-            Not supported in this version.
+            (Only support True to keep consistent with other backend references.)
+            (Not used in this version.)
+            Whether to normalize the hidden vectors in attention weights calculation.
     temperature: float
-            Not supported in this version.
+            (Only support 1.0 to keep consistent with other backend references.)
+            (Not used in this version.)
+            If not None, the scaling of attention weights is `temperature` itself.
     smooth_type_embedding: bool
-            Whether to use smooth process in attention weights calculation. Only support True in this version.
+            (Only support False to keep consistent with other backend references.)
+            Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
-            Whether to concat type embedding at the output of the descriptor. Only support True in this version.
+            Whether to concat type embedding at the output of the descriptor.
     spin
-            The old implementation of deepspin (deprecated in the descriptor). Not supported in this version.
+            (Only support None to keep consistent with old implementation.)
+            The old implementation of deepspin.
     """
 
     def __init__(
@@ -1921,12 +1934,12 @@ class DescrptDPA1Compat(DescrptSeAtten):
             raise NotImplementedError(
                 "Only support temperature == 1.0 in this version."
             )
-        if not concat_output_tebd:
-            raise NotImplementedError(
-                "Only support concat_output_tebd == True in this version."
-            )
         if spin is not None:
             raise NotImplementedError("Only support spin is None in this version.")
+        if attn_mask:
+            raise NotImplementedError(
+                "old implementation of attn_mask is not supported."
+            )
 
         super().__init__(
             rcut,

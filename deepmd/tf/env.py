@@ -190,7 +190,7 @@ ATTENTION_LAYER_PATTERN = str(
     r"attention_layer_(\d+)/(layer_normalization)/(gamma)|"
     # r"attention_layer_(\d+)/(layer_normalization)_\d+/(beta)|"
     # r"attention_layer_(\d+)/(layer_normalization)_\d+/(gamma)|"
-)
+)[:-1]
 
 TRANSFER_PATTERN = (
     EMBEDDING_NET_PATTERN

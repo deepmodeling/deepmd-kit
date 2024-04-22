@@ -117,7 +117,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The way to mix the type embeddings. Supported options are `concat`, `dot_residual_s`.
+            The way to mix the type embeddings. Supported options are `concat`.
+            (TODO need to support stripped_type_embedding option)
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -134,6 +135,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     attn_dotr: bool
             If dot the angular gate to the attention weights
     attn_mask: bool
+            (Deprecated, only support False to keep consistent with old implementation.)
             If mask the diagonal of attention weights
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
@@ -158,15 +160,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
     spin
-            The old implementation of deepspin (deprecated in the descriptor).
+            (Deprecated, only support None to keep consistent with old implementation.)
+            The old implementation of deepspin.
 
     Limitations
     -----------
     The currently implementation does not support the following features
+    1. tebd_input_mode != 'concat'
 
-    1. exclude_types != []
-    2. spin is not None
-    3. tebd_input_mode != 'concat'
+    The currently implementation will not support the following deprecated features
+    1. spin is not None
+    2. attn_mask == True
 
     References
     ----------
@@ -215,7 +219,15 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("stripped_type_embedding is not supported.")
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
-        del type, spin
+        if attn_mask:
+            raise NotImplementedError(
+                "old implementation of attn_mask is not supported."
+            )
+        # TODO
+        if tebd_input_mode != "concat":
+            raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
+
+        del type, spin, attn_mask
         self.se_atten = DescrptBlockSeAtten(
             rcut,
             rcut_smth,
@@ -229,7 +241,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             attn=attn,
             attn_layer=attn_layer,
             attn_dotr=attn_dotr,
-            attn_mask=attn_mask,
+            attn_mask=False,
             activation_function=activation_function,
             precision=precision,
             resnet_dt=resnet_dt,
@@ -367,7 +379,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "attn": obj.attn_dim,
             "attn_layer": obj.attn_layer,
             "attn_dotr": obj.attn_dotr,
-            "attn_mask": obj.attn_mask,
+            "attn_mask": False,
             "activation_function": obj.activation_function,
             "resnet_dt": obj.resnet_dt,
             "scaling_factor": obj.scaling_factor,
