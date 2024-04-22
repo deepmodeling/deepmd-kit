@@ -212,7 +212,7 @@ class Border : public torch::autograd::Function<Border> {
       } else {
 #endif
         if (nrecv) {
-#ifdef GOOGLE_CUDA
+#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
           gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
 #else
