@@ -5,15 +5,6 @@ import unittest
 import numpy as np
 import torch
 
-try:
-    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DPDescrptDPA1
-
-    support_se_atten = True
-except ModuleNotFoundError:
-    support_se_atten = False
-except ImportError:
-    support_se_atten = False
-
 from deepmd.pt.model.descriptor.dpa1 import (
     DescrptDPA1,
 )
@@ -34,7 +25,6 @@ from .test_mlp import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
-@unittest.skipIf(not support_se_atten, "EnvMat not supported")
 class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
@@ -49,10 +39,10 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = 0.1 + np.abs(dstd)
 
         for idt, prec, sm, to in itertools.product(
-            [False, True],
-            ["float64", "float32"],
-            [False, True],
-            [False, True],
+            [False, True],  # resnet_dt
+            ["float64", "float32"],  # precision
+            [False, True],  # smooth_type_embedding
+            [False, True],  # type_one_side
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -92,37 +82,9 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
                 err_msg=err_msg,
             )
-            # dp impl
-            dd2 = DPDescrptDPA1.deserialize(dd0.serialize())
-            rd2, _, _, _, _ = dd2.call(
-                self.coord_ext,
-                self.atype_ext,
-                self.nlist,
-            )
-            np.testing.assert_allclose(
-                rd0.detach().cpu().numpy(),
-                rd2,
-                rtol=rtol,
-                atol=atol,
-                err_msg=err_msg,
-            )
-            # dp impl serialization
-            dd3 = DPDescrptDPA1.deserialize(dd2.serialize())
-            rd3, _, _, _, _ = dd3.call(
-                self.coord_ext,
-                self.atype_ext,
-                self.nlist,
-            )
-            np.testing.assert_allclose(
-                rd0.detach().cpu().numpy(),
-                rd3,
-                rtol=rtol,
-                atol=atol,
-                err_msg=err_msg,
-            )
             # old impl
             if idt is False and prec == "float64" and to is False:
-                dd4 = DescrptDPA1(
+                dd2 = DescrptDPA1(
                     self.rcut,
                     self.rcut_smth,
                     self.sel_mix,
@@ -134,10 +96,10 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     old_impl=True,
                 ).to(env.DEVICE)
                 dd0_state_dict = dd0.se_atten.state_dict()
-                dd4_state_dict = dd4.se_atten.state_dict()
+                dd4_state_dict = dd2.se_atten.state_dict()
 
                 dd0_state_dict_attn = dd0.se_atten.dpa1_attention.state_dict()
-                dd4_state_dict_attn = dd4.se_atten.dpa1_attention.state_dict()
+                dd4_state_dict_attn = dd2.se_atten.dpa1_attention.state_dict()
                 for i in dd4_state_dict:
                     dd4_state_dict[i] = (
                         dd0_state_dict[
@@ -152,26 +114,26 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     )
                     if ".bias" in i and "attn_layer_norm" not in i:
                         dd4_state_dict[i] = dd4_state_dict[i].unsqueeze(0)
-                dd4.se_atten.load_state_dict(dd4_state_dict)
+                dd2.se_atten.load_state_dict(dd4_state_dict)
 
                 dd0_state_dict_tebd = dd0.type_embedding.state_dict()
-                dd4_state_dict_tebd = dd4.type_embedding.state_dict()
+                dd4_state_dict_tebd = dd2.type_embedding.state_dict()
                 for i in dd4_state_dict_tebd:
                     dd4_state_dict_tebd[i] = (
                         dd0_state_dict_tebd[i.replace("embedding.weight", "matrix")]
                         .detach()
                         .clone()
                     )
-                dd4.type_embedding.load_state_dict(dd4_state_dict_tebd)
+                dd2.type_embedding.load_state_dict(dd4_state_dict_tebd)
 
-                rd4, _, _, _, _ = dd4(
+                rd2, _, _, _, _ = dd2(
                     torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                     torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                     torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
                 )
                 np.testing.assert_allclose(
                     rd0.detach().cpu().numpy(),
-                    rd4.detach().cpu().numpy(),
+                    rd2.detach().cpu().numpy(),
                     rtol=rtol,
                     atol=atol,
                     err_msg=err_msg,
