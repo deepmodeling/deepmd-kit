@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#ifdef GOOGLE_CUDA
+#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "device.h"
 #endif
 #include <torch/torch.h>
