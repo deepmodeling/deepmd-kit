@@ -190,8 +190,8 @@ class TestData(unittest.TestCase):
             self.assertEqual(data["type"][ii][1], 1)
         self.assertEqual(data["find_coord"], 1)
         self._comp_np_mat2(data["coord"], self.coord)
-        self.assertEqual(data["find_test_atomic"], 1)
-        self._comp_np_mat2(data["test_atomic"], self.test_atomic)
+        self.assertEqual(data["find_test_atom"], 1)
+        self._comp_np_mat2(data["test_atom"], self.test_atomic)
         self.assertEqual(data["find_test_frame"], 1)
         self._comp_np_mat2(data["test_frame"], self.test_frame)
         self.assertEqual(data["find_test_null"], 0)
@@ -207,7 +207,7 @@ class TestData(unittest.TestCase):
         data_bk = copy.deepcopy(data)
         data, idx = dd._shuffle_data(data)
         self._comp_np_mat2(data_bk["coord"][idx, :], data["coord"])
-        self._comp_np_mat2(data_bk["test_atomic"][idx, :], data["test_atomic"])
+        self._comp_np_mat2(data_bk["test_atom"][idx, :], data["test_atom"])
         self._comp_np_mat2(data_bk["test_frame"][idx, :], data["test_frame"])
 
     def test_shuffle_with_numb_copy(self):
@@ -224,15 +224,15 @@ class TestData(unittest.TestCase):
         data, idx = dd._shuffle_data(data)
         assert idx.size == np.sum(prob)
         self._comp_np_mat2(data_bk["coord"][idx, :], data["coord"])
-        self._comp_np_mat2(data_bk["test_atomic"][idx, :], data["test_atomic"])
+        self._comp_np_mat2(data_bk["test_atom"][idx, :], data["test_atom"])
         self._comp_np_mat2(data_bk["test_frame"][idx, :], data["test_frame"])
 
     def test_reduce(self):
         dd = DeepmdData(self.data_name).add("test_atomic", 7, atomic=True, must=True)
         dd.reduce("redu", "test_atomic")
         data = dd._load_set(os.path.join(self.data_name, "set.foo"))
-        self.assertEqual(data["find_test_atomic"], 1)
-        self._comp_np_mat2(data["test_atomic"], self.test_atomic)
+        self.assertEqual(data["find_test_atom"], 1)
+        self._comp_np_mat2(data["test_atom"], self.test_atomic)
         self.assertEqual(data["find_redu"], 1)
         self._comp_np_mat2(data["redu"], self.redu_atomic)
 
@@ -240,9 +240,9 @@ class TestData(unittest.TestCase):
         dd = DeepmdData(self.data_name).add("test_atomic_1", 7, atomic=True, must=False)
         dd.reduce("redu", "test_atomic_1")
         data = dd._load_set(os.path.join(self.data_name, "set.foo"))
-        self.assertEqual(data["find_test_atomic_1"], 0)
+        self.assertEqual(data["find_test_atom_1"], 0)
         self._comp_np_mat2(
-            data["test_atomic_1"], np.zeros([self.nframes, self.natoms * 7])
+            data["test_atom_1"], np.zeros([self.nframes, self.natoms * 7])
         )
         self.assertEqual(data["find_redu"], 0)
         self._comp_np_mat2(data["redu"], np.zeros([self.nframes, 7]))

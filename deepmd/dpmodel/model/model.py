@@ -5,8 +5,8 @@ from deepmd.dpmodel.descriptor.se_e2_a import (
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
 )
-from deepmd.dpmodel.model.dp_model import (
-    DPModel,
+from deepmd.dpmodel.model.ener_model import (
+    EnergyModel,
 )
 from deepmd.dpmodel.model.spin_model import (
     SpinModel,
@@ -16,8 +16,8 @@ from deepmd.utils.spin import (
 )
 
 
-def get_standard_model(data: dict) -> DPModel:
-    """Get a standard DPModel from a dictionary.
+def get_standard_model(data: dict) -> EnergyModel:
+    """Get a EnergyModel from a dictionary.
 
     Parameters
     ----------
@@ -41,7 +41,7 @@ def get_standard_model(data: dict) -> DPModel:
         )
     else:
         raise ValueError(f"Unknown fitting type {fitting_type}")
-    return DPModel(
+    return EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
         type_map=data["type_map"],

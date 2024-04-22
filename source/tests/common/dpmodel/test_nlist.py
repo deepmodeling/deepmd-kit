@@ -9,8 +9,8 @@ from deepmd.dpmodel.descriptor import (
 from deepmd.dpmodel.fitting import (
     InvarFitting,
 )
-from deepmd.dpmodel.model import (
-    DPModel,
+from deepmd.dpmodel.model.ener_model import (
+    EnergyModel,
 )
 from deepmd.dpmodel.utils import (
     build_multiple_neighbor_list,
@@ -65,7 +65,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
             mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
-        self.md = DPModel(ds, ft, type_map=type_map)
+        self.md = EnergyModel(ds, ft, type_map=type_map)
 
     def test_nlist_eq(self):
         # n_nnei == nnei

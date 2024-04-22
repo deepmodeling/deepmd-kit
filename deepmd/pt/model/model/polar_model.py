@@ -6,12 +6,25 @@ from typing import (
 
 import torch
 
-from .dp_model import (
-    DPModel,
+from deepmd.pt.model.atomic_model import (
+    DPPolarAtomicModel,
+)
+from deepmd.pt.model.model.model import (
+    BaseModel,
 )
 
+from .dp_model import (
+    DPModelCommon,
+)
+from .make_model import (
+    make_model,
+)
 
-class PolarModel(DPModel):
+DPDOSModel_ = make_model(DPPolarAtomicModel)
+
+
+@BaseModel.register("polar")
+class PolarModel(DPModelCommon, DPDOSModel_):
     model_type = "polar"
 
     def __init__(
@@ -19,7 +32,8 @@ class PolarModel(DPModel):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        DPModelCommon.__init__(self)
+        DPDOSModel_.__init__(self, *args, **kwargs)
 
     def forward(
         self,
@@ -40,8 +54,8 @@ class PolarModel(DPModel):
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
-            model_predict["polar"] = model_ret["polar"]
-            model_predict["global_polar"] = model_ret["polar_redu"]
+            model_predict["polar"] = model_ret["polarizability"]
+            model_predict["global_polar"] = model_ret["polarizability_redu"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
         else:
@@ -71,8 +85,8 @@ class PolarModel(DPModel):
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
-            model_predict["polar"] = model_ret["polar"]
-            model_predict["global_polar"] = model_ret["polar_redu"]
+            model_predict["polar"] = model_ret["polarizability"]
+            model_predict["global_polar"] = model_ret["polarizability_redu"]
         else:
             model_predict = model_ret
         return model_predict

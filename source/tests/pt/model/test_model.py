@@ -51,7 +51,7 @@ from deepmd.tf.utils.learning_rate import (
     LearningRateExp,
 )
 
-from ..test_stat import (
+from ..test_finetune import (
     energy_data_requirement,
 )
 

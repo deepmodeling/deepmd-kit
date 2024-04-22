@@ -303,9 +303,10 @@ class Trainer:
                     tensor_name
                 ].output_size
                 label_name = tensor_name
-                if label_name == "polar":
-                    label_name = "polarizability"
+                if label_name == "polarizability":
+                    label_name = "polar"
                 loss_params["label_name"] = label_name
+                loss_params["tensor_name"] = label_name
                 return TensorLoss(**loss_params)
             else:
                 raise NotImplementedError

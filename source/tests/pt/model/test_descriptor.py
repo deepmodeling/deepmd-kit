@@ -38,7 +38,7 @@ from deepmd.tf.env import (
     op_module,
 )
 
-from ..test_stat import (
+from ..test_finetune import (
     energy_data_requirement,
 )
 from .test_embedding_net import (
