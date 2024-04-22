@@ -584,8 +584,8 @@ class NeighborGatedAttention(nn.Module):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class", None)
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
         attention_layers = data.pop("attention_layers")
         obj = cls(**data)
         for ii, network in enumerate(attention_layers):

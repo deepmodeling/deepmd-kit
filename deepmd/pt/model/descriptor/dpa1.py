@@ -415,9 +415,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class", None)
-        data.pop("type", None)
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")

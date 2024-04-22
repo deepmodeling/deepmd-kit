@@ -1647,9 +1647,9 @@ class DescrptSeAtten(DescrptSeA):
         if cls is not DescrptSeAtten:
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class", None)
-        data.pop("type", None)
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
@@ -2041,9 +2041,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
         if cls is not DescrptDPA1Compat:
             raise NotImplementedError("Not implemented in class %s" % cls.__name__)
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class", None)
-        data.pop("type", None)
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
