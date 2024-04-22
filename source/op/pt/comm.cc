@@ -4,8 +4,10 @@
 #endif
 #include <torch/torch.h>
 #ifdef USE_MPI
-#include <mpi-ext.h>
 #include <mpi.h>
+#ifdef OMPI_MPI_H
+#include <mpi-ext.h>
+#endif
 template <typename T>
 static MPI_Datatype get_mpi_type();
 
