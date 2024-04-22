@@ -118,7 +118,7 @@ class DescrptSeAtten(DescrptSeA):
     stripped_type_embedding
             Whether to strip the type embedding into a separated embedding network.
             Default value will be True in `se_atten_v2` descriptor.
-    smooth_type_embdding
+    smooth_type_embedding
             When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
@@ -152,10 +152,12 @@ class DescrptSeAtten(DescrptSeA):
         attn_mask: bool = False,
         multi_task: bool = False,
         stripped_type_embedding: bool = False,
-        smooth_type_embdding: bool = False,
+        smooth_type_embedding: bool = False,
         **kwargs,
     ) -> None:
-        if not set_davg_zero and not (stripped_type_embedding and smooth_type_embdding):
+        if not set_davg_zero and not (
+            stripped_type_embedding and smooth_type_embedding
+        ):
             warnings.warn(
                 "Set 'set_davg_zero' False in descriptor 'se_atten' "
                 "may cause unexpected incontinuity during model inference!"
@@ -188,7 +190,7 @@ class DescrptSeAtten(DescrptSeA):
         if ntypes == 0:
             raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
-        self.smooth = smooth_type_embdding
+        self.smooth = smooth_type_embedding
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer

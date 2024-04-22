@@ -37,27 +37,27 @@ tests = [
     {
         "se_atten precision": "float64",
         "type embedding precision": "float64",
-        "smooth_type_embdding": True,
+        "smooth_type_embedding": True,
     },
     {
         "se_atten precision": "float64",
         "type embedding precision": "float64",
-        "smooth_type_embdding": False,
+        "smooth_type_embedding": False,
     },
     {
         "se_atten precision": "float64",
         "type embedding precision": "float32",
-        "smooth_type_embdding": True,
+        "smooth_type_embedding": True,
     },
     {
         "se_atten precision": "float32",
         "type embedding precision": "float64",
-        "smooth_type_embdding": True,
+        "smooth_type_embedding": True,
     },
     {
         "se_atten precision": "float32",
         "type embedding precision": "float32",
-        "smooth_type_embdding": True,
+        "smooth_type_embedding": True,
     },
 ]
 
@@ -82,8 +82,8 @@ def _init_models():
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
-        jdata["model"]["descriptor"]["smooth_type_embdding"] = tests[i][
-            "smooth_type_embdding"
+        jdata["model"]["descriptor"]["smooth_type_embedding"] = tests[i][
+            "smooth_type_embedding"
         ]
         jdata["model"]["type_embedding"] = {}
         jdata["model"]["type_embedding"]["precision"] = tests[i][
