@@ -751,7 +751,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
-        jdata["model"]["descriptor"]["smooth_type_embdding"] = True
+        jdata["model"]["descriptor"]["smooth_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0
         jdata["model"]["descriptor"]["rcut_smth"] = 4.0
@@ -894,7 +894,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
         jdata["model"]["descriptor"]["stripped_type_embedding"] = True
-        jdata["model"]["descriptor"]["smooth_type_embdding"] = True
+        jdata["model"]["descriptor"]["smooth_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0
         jdata["model"]["descriptor"]["rcut_smth"] = 4.0

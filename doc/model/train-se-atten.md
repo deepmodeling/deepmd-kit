@@ -114,7 +114,7 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
 
 ```json
       "stripped_type_embedding": true,
-      "smooth_type_embdding": true,
+      "smooth_type_embedding": true,
       "set_davg_zero": false
 ```
 
