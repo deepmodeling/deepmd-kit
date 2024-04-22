@@ -507,6 +507,7 @@ def descrpt_se_atten_args():
             bool,
             optional=True,
             default=False,
+            alias=["smooth_type_embdding"],
             doc=doc_only_tf_supported + doc_smooth_type_embedding,
         ),
         Argument(
