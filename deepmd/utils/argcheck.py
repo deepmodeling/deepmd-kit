@@ -478,6 +478,9 @@ def descrpt_se_atten_args():
     doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
     doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
@@ -507,10 +510,14 @@ def descrpt_se_atten_args():
             bool,
             optional=True,
             default=False,
+            alias=["smooth_type_embdding"],
             doc=doc_smooth_type_embedding,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
         ),
         # pt only
         Argument(

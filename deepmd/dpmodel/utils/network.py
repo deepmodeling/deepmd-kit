@@ -399,6 +399,7 @@ class LayerNorm(NativeLayer):
         num_in: int,
         eps: float = 1e-5,
         uni_init: bool = True,
+        trainable: bool = True,
         precision: str = DEFAULT_PRECISION,
     ) -> None:
         self.eps = eps
@@ -417,6 +418,8 @@ class LayerNorm(NativeLayer):
         if self.uni_init:
             self.w = np.ones_like(self.w)
             self.b = np.zeros_like(self.b)
+        # only to keep consistent with other backends
+        self.trainable = trainable
 
     def serialize(self) -> dict:
         """Serialize the layer to a dict.
@@ -434,6 +437,7 @@ class LayerNorm(NativeLayer):
             "@class": "LayerNorm",
             "@version": 1,
             "eps": self.eps,
+            "trainable": self.trainable,
             "precision": self.precision,
             "@variables": data,
         }
@@ -477,6 +481,8 @@ class LayerNorm(NativeLayer):
             self.w = value
         elif key in ("b", "bias"):
             self.b = value
+        elif key == "trainable":
+            self.trainable = value
         elif key == "precision":
             self.precision = value
         elif key == "eps":
@@ -489,6 +495,8 @@ class LayerNorm(NativeLayer):
             return self.w
         elif key in ("b", "bias"):
             return self.b
+        elif key == "trainable":
+            return self.trainable
         elif key == "precision":
             return self.precision
         elif key == "eps":
@@ -512,21 +520,20 @@ class LayerNorm(NativeLayer):
         np.ndarray
             The output.
         """
-        if self.w is None or self.b is None:
-            raise ValueError("w/b must be set")
         y = self.layer_norm_numpy(x, (self.num_in,), self.w, self.b, self.eps)
         return y
 
     @staticmethod
-    def layer_norm_numpy(x, shape, weight, bias, eps):
+    def layer_norm_numpy(x, shape, weight=None, bias=None, eps=1e-5):
         # mean and variance
         mean = np.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
         var = np.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
         # normalize
         x_normalized = (x - mean) / np.sqrt(var + eps)
         # shift and scale
-        x_ln = x_normalized * weight + bias
-        return x_ln
+        if weight is not None and bias is not None:
+            x_normalized = x_normalized * weight + bias
+        return x_normalized
 
 
 def make_multilayer_network(T_NetworkLayer, ModuleBase):

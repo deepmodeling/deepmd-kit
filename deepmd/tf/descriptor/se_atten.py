@@ -181,6 +181,7 @@ class DescrptSeAtten(DescrptSeA):
         scaling_factor=1.0,
         normalize=True,
         temperature=None,
+        trainable_ln: bool = True,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
@@ -233,6 +234,7 @@ class DescrptSeAtten(DescrptSeA):
             raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
         self.smooth = smooth_type_embedding
+        self.trainable_ln = trainable_ln
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -251,12 +253,6 @@ class DescrptSeAtten(DescrptSeA):
         std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
             GLOBAL_NP_FLOAT_PRECISION
         )
-        # self.beta = np.zeros([self.attn_layer, self.filter_neuron[-1]]).astype(
-        #     GLOBAL_NP_FLOAT_PRECISION
-        # )
-        # self.gamma = np.ones([self.attn_layer, self.filter_neuron[-1]]).astype(
-        #     GLOBAL_NP_FLOAT_PRECISION
-        # )
         self.attention_layer_variables = None
         sub_graph = tf.Graph()
         with sub_graph.as_default():
@@ -891,38 +887,6 @@ class DescrptSeAtten(DescrptSeA):
             return self.embedding_input_2
         return self.embedding_input
 
-    def _feedforward(self, input_xyz, d_in, d_mid):
-        residual = input_xyz
-        input_xyz = tf.nn.relu(
-            one_layer(
-                input_xyz,
-                d_mid,
-                name="c_ffn1",
-                reuse=tf.AUTO_REUSE,
-                seed=self.seed,
-                activation_fn=None,
-                precision=self.filter_precision,
-                trainable=True,
-                uniform_seed=self.uniform_seed,
-                initial_variables=self.attention_layer_variables,
-            )
-        )
-        input_xyz = one_layer(
-            input_xyz,
-            d_in,
-            name="c_ffn2",
-            reuse=tf.AUTO_REUSE,
-            seed=self.seed,
-            activation_fn=None,
-            precision=self.filter_precision,
-            trainable=True,
-            uniform_seed=self.uniform_seed,
-            initial_variables=self.attention_layer_variables,
-        )
-        input_xyz += residual
-        input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
-        return input_xyz
-
     def _scaled_dot_attn(
         self,
         Q,
@@ -1068,15 +1032,9 @@ class DescrptSeAtten(DescrptSeA):
                     reuse=tf.AUTO_REUSE,
                     seed=self.seed,
                     uniform_seed=self.uniform_seed,
-                    trainable=trainable,
+                    trainable=self.trainable_ln,
                     initial_variables=self.attention_layer_variables,
                 )
-                # input_xyz = tf.keras.layers.LayerNormalization(
-                #     beta_initializer=tf.constant_initializer(self.beta[i]),
-                #     gamma_initializer=tf.constant_initializer(self.gamma[i]),
-                #     dtype=self.filter_precision,
-                # )(input_xyz)
-                # input_xyz = self._feedforward(input_xyz, outputs_size[-1], self.att_n)
         return input_xyz
 
     def _filter_lower(
@@ -1384,27 +1342,6 @@ class DescrptSeAtten(DescrptSeA):
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        # if self.attn_layer > 0:
-        #     self.beta[0] = self.attention_layer_variables[
-        #         f"attention_layer_0{suffix}/layer_normalization/beta"
-        #     ]
-        #     self.gamma[0] = self.attention_layer_variables[
-        #         f"attention_layer_0{suffix}/layer_normalization/gamma"
-        #     ]
-        #     for i in range(1, self.attn_layer):
-        #         self.beta[i] = self.attention_layer_variables[
-        #             f"attention_layer_{i}{suffix}/layer_normalization_{i}/beta"
-        #         ]
-        #         self.gamma[i] = self.attention_layer_variables[
-        #             f"attention_layer_{i}{suffix}/layer_normalization_{i}/gamma"
-        #         ]
-        # for i in range(self.attn_layer):
-        #     self.beta[i] = self.attention_layer_variables[
-        #         f"attention_layer_{i}{suffix}/layer_normalization/beta"
-        #     ]
-        #     self.gamma[i] = self.attention_layer_variables[
-        #         f"attention_layer_{i}{suffix}/layer_normalization/gamma"
-        #     ]
 
         if self.stripped_type_embedding:
             self.two_side_embeeding_net_variables = (
@@ -1527,6 +1464,7 @@ class DescrptSeAtten(DescrptSeA):
         hidden_dim: int,
         dotr: bool,
         do_mask: bool,
+        trainable_ln: bool,
         variables: dict,
         bias: bool = True,
         suffix: str = "",
@@ -1538,6 +1476,7 @@ class DescrptSeAtten(DescrptSeA):
             "hidden_dim": hidden_dim,
             "dotr": dotr,
             "do_mask": do_mask,
+            "trainable_ln": trainable_ln,
             "precision": self.precision.name,
             "attention_layers": [],
         }
@@ -1592,6 +1531,7 @@ class DescrptSeAtten(DescrptSeA):
 
             layer_norm = LayerNorm(
                 embed_dim,
+                trainable=self.trainable_ln,
                 precision=self.precision.name,
             )
             layer_norm["matrix"] = attention_layer_params[layer_idx][
@@ -1609,6 +1549,7 @@ class DescrptSeAtten(DescrptSeA):
                         "smooth": self.smooth,
                     },
                     "attn_layer_norm": layer_norm.serialize(),
+                    "trainable_ln": self.trainable_ln,
                 }
             )
         return data
@@ -1778,6 +1719,7 @@ class DescrptSeAtten(DescrptSeA):
             "activation_function": self.activation_function_name,
             "resnet_dt": self.filter_resnet_dt,
             "smooth_type_embedding": self.smooth,
+            "trainable_ln": self.trainable_ln,
             "precision": self.filter_precision.name,
             "embeddings": self.serialize_network(
                 ntypes=self.ntypes,
@@ -1799,6 +1741,7 @@ class DescrptSeAtten(DescrptSeA):
                 hidden_dim=self.att_n,
                 dotr=self.attn_dotr,
                 do_mask=self.attn_mask,
+                trainable_ln=self.trainable_ln,
                 variables=self.attention_layer_variables,
                 suffix=suffix,
             ),
@@ -1844,7 +1787,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
     trainable: bool
-            If the weights of embedding net are trainable.
+            If the weights of this descriptors are trainable.
+    trainable_ln: bool
+            Whether to use trainable shift and scale weights in layer normalization.
     type_one_side: bool
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
@@ -1917,6 +1862,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         scaling_factor=1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
+        trainable_ln: bool = True,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
@@ -1963,6 +1909,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             attn_mask=attn_mask,
             multi_task=True,
             stripped_type_embedding=False,
+            trainable_ln=trainable_ln,
             smooth_type_embedding=smooth_type_embedding,
             env_protection=env_protection,
         )

@@ -31,6 +31,7 @@ class LayerNorm(MLPLayer):
         bavg: float = 0.0,
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
+        trainable: bool = True,
     ):
         self.eps = eps
         self.uni_init = uni_init
@@ -50,6 +51,10 @@ class LayerNorm(MLPLayer):
         if self.uni_init:
             nn.init.ones_(self.matrix.data)
             nn.init.zeros_(self.bias.data)
+        self.trainable = trainable
+        if not self.trainable:
+            self.matrix.requires_grad = False
+            self.bias.requires_grad = False
 
     def dim_out(self) -> int:
         return self.matrix.shape[0]
@@ -73,10 +78,8 @@ class LayerNorm(MLPLayer):
         mean = xx.mean(dim=-1, keepdim=True)
         variance = xx.var(dim=-1, unbiased=False, keepdim=True)
         yy = (xx - mean) / torch.sqrt(variance + self.eps)
-        if self.matrix is not None:
-            yy = yy * self.matrix
-        if self.bias is not None:
-            yy = yy + self.bias
+        if self.matrix is not None and self.bias is not None:
+            yy = yy * self.matrix + self.bias
         return yy
 
     def serialize(self) -> dict:
@@ -90,6 +93,7 @@ class LayerNorm(MLPLayer):
         nl = DPLayerNorm(
             self.matrix.shape[0],
             eps=self.eps,
+            trainable=self.trainable,
             precision=self.precision,
         )
         nl.w = to_numpy_array(self.matrix)
@@ -110,6 +114,7 @@ class LayerNorm(MLPLayer):
         obj = cls(
             nl["matrix"].shape[0],
             eps=nl["eps"],
+            trainable=nl["trainable"],
             precision=nl["precision"],
         )
         prec = PRECISION_DICT[obj.precision]

@@ -123,7 +123,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
     trainable: bool
-            If the weights of embedding net are trainable.
+            If the weights of this descriptors are trainable.
+    trainable_ln: bool
+            Whether to use trainable shift and scale weights in layer normalization.
     type_one_side: bool
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
@@ -205,6 +207,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         temperature=None,
         concat_output_tebd: bool = True,
         trainable: bool = True,
+        trainable_ln: bool = True,
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         # not implemented
@@ -252,6 +255,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             type_one_side=type_one_side,
             exclude_types=exclude_types,
             env_protection=env_protection,
+            trainable_ln=trainable_ln,
             old_impl=old_impl,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
@@ -385,6 +389,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "scaling_factor": obj.scaling_factor,
             "normalize": obj.normalize,
             "temperature": obj.temperature,
+            "trainable_ln": obj.trainable_ln,
             "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,

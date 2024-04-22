@@ -83,6 +83,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         type_one_side: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
+        trainable_ln: bool = True,
         type: Optional[str] = None,
         old_impl: bool = False,
     ):
@@ -119,6 +120,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.smooth = smooth
         self.type_one_side = type_one_side
         self.env_protection = env_protection
+        self.trainable_ln = trainable_ln
         self.old_impl = old_impl
 
         if isinstance(sel, int):
@@ -157,6 +159,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 scaling_factor=self.scaling_factor,
                 normalize=self.normalize,
                 temperature=self.temperature,
+                trainable_ln=self.trainable_ln,
                 smooth=self.smooth,
                 precision=self.precision,
             )
@@ -468,6 +471,7 @@ class NeighborGatedAttention(nn.Module):
         scaling_factor: float = 1.0,
         normalize: bool = True,
         temperature: Optional[float] = None,
+        trainable_ln: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
@@ -482,6 +486,7 @@ class NeighborGatedAttention(nn.Module):
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
+        self.trainable_ln = trainable_ln
         self.smooth = smooth
         self.precision = precision
         self.network_type = NeighborGatedAttentionLayer
@@ -497,7 +502,8 @@ class NeighborGatedAttention(nn.Module):
                     scaling_factor=scaling_factor,
                     normalize=normalize,
                     temperature=temperature,
-                    smooth=self.smooth,
+                    trainable_ln=trainable_ln,
+                    smooth=smooth,
                     precision=precision,
                 )
             )
@@ -563,6 +569,7 @@ class NeighborGatedAttention(nn.Module):
             "scaling_factor": self.scaling_factor,
             "normalize": self.normalize,
             "temperature": self.temperature,
+            "trainable_ln": self.trainable_ln,
             "precision": self.precision,
             "attention_layers": [layer.serialize() for layer in self.attention_layers],
         }
@@ -598,6 +605,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         normalize: bool = True,
         temperature: Optional[float] = None,
         smooth: bool = True,
+        trainable_ln: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
         """Construct a neighbor-wise attention layer."""
@@ -611,6 +619,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         self.normalize = normalize
         self.temperature = temperature
         self.precision = precision
+        self.trainable_ln = trainable_ln
         self.attention_layer = GatedAttentionLayer(
             nnei,
             embed_dim,
@@ -623,7 +632,9 @@ class NeighborGatedAttentionLayer(nn.Module):
             smooth=smooth,
             precision=precision,
         )
-        self.attn_layer_norm = LayerNorm(self.embed_dim, precision=precision)
+        self.attn_layer_norm = LayerNorm(
+            self.embed_dim, trainable=trainable_ln, precision=precision
+        )
 
     def forward(
         self,
@@ -655,6 +666,7 @@ class NeighborGatedAttentionLayer(nn.Module):
             "scaling_factor": self.scaling_factor,
             "normalize": self.normalize,
             "temperature": self.temperature,
+            "trainable_ln": self.trainable_ln,
             "precision": self.precision,
             "attention_layer": self.attention_layer.serialize(),
             "attn_layer_norm": self.attn_layer_norm.serialize(),
