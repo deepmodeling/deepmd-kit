@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #include "device.h"
 #endif
 #include <torch/torch.h>
 #ifdef USE_MPI
 #include <mpi.h>
+#include <mpi-ext.h>
 template <typename T>
 static MPI_Datatype get_mpi_type();
 
@@ -18,6 +19,7 @@ MPI_Datatype get_mpi_type<double>() {
   return MPI_DOUBLE;
 }
 #endif
+using namespace deepmd;
 class Border : public torch::autograd::Function<Border> {
  public:
   static torch::autograd::variable_list forward(
@@ -74,6 +76,14 @@ class Border : public torch::autograd::Function<Border> {
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
 
 #ifdef USE_MPI
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    int cuda_aware = MPIX_Query_cuda_support();
+    if (cuda_aware == 0)
+    {
+      throw deepmd::deepmd_exception(
+        "OP compiled with MPI library without device communication support");
+    }
+#endif
     int me;
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
     MPI_Comm world;
@@ -106,7 +116,7 @@ class Border : public torch::autograd::Function<Border> {
         }
       } else {
 #endif
-#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
         gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                   gpuMemcpyDeviceToDevice);
 #else
@@ -134,7 +144,7 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward_t(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
-#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     gpuDeviceSynchronize();
 #endif
 
@@ -175,6 +185,14 @@ class Border : public torch::autograd::Function<Border> {
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>();
     FPTYPE* send_g1 = send_g1_tensor.data_ptr<FPTYPE>() + ntotal * tensor_size;
 #ifdef USE_MPI
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    int cuda_aware = MPIX_Query_cuda_support();
+    if (cuda_aware == 0)
+    {
+      throw deepmd::deepmd_exception(
+        "OP compiled with MPI library without device communication support");
+    }
+#endif
     MPI_Comm world;
     unpack_communicator(communicator_tensor, world);
     int me;
@@ -212,7 +230,7 @@ class Border : public torch::autograd::Function<Border> {
       } else {
 #endif
         if (nrecv) {
-#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
           gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
 #else
@@ -227,7 +245,7 @@ class Border : public torch::autograd::Function<Border> {
                                      recv_g1_tensor.slice(0, 0, nrecv));
       }
     }
-#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     gpuDeviceSynchronize();
 #endif
 
