@@ -227,7 +227,7 @@ class Border : public torch::autograd::Function<Border> {
                                      recv_g1_tensor.slice(0, 0, nrecv));
       }
     }
-#ifdef GOOGLE_CUDA
+#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     gpuDeviceSynchronize();
 #endif
 
