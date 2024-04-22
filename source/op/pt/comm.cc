@@ -4,8 +4,8 @@
 #endif
 #include <torch/torch.h>
 #ifdef USE_MPI
-#include <mpi.h>
 #include <mpi-ext.h>
+#include <mpi.h>
 template <typename T>
 static MPI_Datatype get_mpi_type();
 
@@ -78,10 +78,9 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     int cuda_aware = MPIX_Query_cuda_support();
-    if (cuda_aware == 0)
-    {
+    if (cuda_aware == 0) {
       throw deepmd::deepmd_exception(
-        "OP compiled with MPI library without device communication support");
+          "OP compiled with MPI library without device communication support");
     }
 #endif
     int me;
@@ -187,10 +186,9 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     int cuda_aware = MPIX_Query_cuda_support();
-    if (cuda_aware == 0)
-    {
+    if (cuda_aware == 0) {
       throw deepmd::deepmd_exception(
-        "OP compiled with MPI library without device communication support");
+          "OP compiled with MPI library without device communication support");
     }
 #endif
     MPI_Comm world;
