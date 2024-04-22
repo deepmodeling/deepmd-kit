@@ -462,10 +462,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype_embd_nnei = np.tile(atype_embd[:, np.newaxis, :], (1, nnei, 1))
         # nfnl x nnei
         nlist_mask = nlist != -1
-        nlist_masked = np.copy(nlist)
         # nfnl x nnei x 1
         sw = np.where(nlist_mask[:, :, None], sw, 0.0)
-        nlist_masked[nlist_masked == -1] = 0
+        nlist_masked = np.where(nlist_mask, nlist, 0)
         index = np.tile(nlist_masked.reshape(nf, -1, 1), (1, 1, self.tebd_dim))
         # nfnl x nnei x tebd_dim
         atype_embd_nlist = np.take_along_axis(atype_embd_ext, index, axis=1).reshape(
