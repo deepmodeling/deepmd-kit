@@ -134,7 +134,7 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward_t(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
-#ifdef GOOGLE_CUDA
+#ifdef GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     gpuDeviceSynchronize();
 #endif
 
