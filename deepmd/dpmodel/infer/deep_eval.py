@@ -24,7 +24,7 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils.batch_size import (
     AutoBatchSize,
 )
-from deepmd.dpmodel.utils.network import (
+from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
 )
 from deepmd.infer.deep_dipole import (
