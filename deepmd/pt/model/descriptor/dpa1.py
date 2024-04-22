@@ -137,7 +137,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     attn_dotr: bool
             If dot the angular gate to the attention weights
     attn_mask: bool
-            (Deprecated, only support False to keep consistent with old implementation.)
+            (Only support False to keep consistent with other backend references.)
+            (Not used in this version.)
             If mask the diagonal of attention weights
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
@@ -162,7 +163,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
     spin
-            (Deprecated, only support None to keep consistent with old implementation.)
+            (Only support None to keep consistent with other backend references.)
+            (Not used in this version.)
             The old implementation of deepspin.
 
     Limitations
