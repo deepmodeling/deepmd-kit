@@ -21,6 +21,7 @@ MPI_Datatype get_mpi_type<double>() {
   return MPI_DOUBLE;
 }
 #endif
+#include "errors.h"
 using namespace deepmd;
 class Border : public torch::autograd::Function<Border> {
  public:
