@@ -8,7 +8,6 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
@@ -917,61 +916,3 @@ class GatedAttentionLayer(nn.Module):
         obj.in_proj = MLPLayer.deserialize(in_proj)
         obj.out_proj = MLPLayer.deserialize(out_proj)
         return obj
-
-
-def analyze_descrpt(matrix, ndescrpt, natoms, mixed_types=False, real_atype=None):
-    """Collect avg, square avg and count of descriptors in a batch."""
-    ntypes = natoms.shape[1] - 2
-    if not mixed_types:
-        sysr = []
-        sysa = []
-        sysn = []
-        sysr2 = []
-        sysa2 = []
-        start_index = 0
-        for type_i in range(ntypes):
-            end_index = start_index + natoms[0, 2 + type_i]
-            dd = matrix[:, start_index:end_index]
-            start_index = end_index
-            dd = np.reshape(
-                dd, [-1, 4]
-            )  # Shape is [nframes*natoms[2+type_id]*self.nnei, 4]
-            ddr = dd[:, :1]
-            dda = dd[:, 1:]
-            sumr = np.sum(ddr)
-            suma = np.sum(dda) / 3.0
-            sumn = dd.shape[0]  # Value is nframes*natoms[2+type_id]*self.nnei
-            sumr2 = np.sum(np.multiply(ddr, ddr))
-            suma2 = np.sum(np.multiply(dda, dda)) / 3.0
-            sysr.append(sumr)
-            sysa.append(suma)
-            sysn.append(sumn)
-            sysr2.append(sumr2)
-            sysa2.append(suma2)
-    else:
-        sysr = [0.0 for i in range(ntypes)]
-        sysa = [0.0 for i in range(ntypes)]
-        sysn = [0 for i in range(ntypes)]
-        sysr2 = [0.0 for i in range(ntypes)]
-        sysa2 = [0.0 for i in range(ntypes)]
-        for frame_item in range(matrix.shape[0]):
-            dd_ff = matrix[frame_item]
-            atype_frame = real_atype[frame_item]
-            for type_i in range(ntypes):
-                type_idx = atype_frame == type_i
-                dd = dd_ff[type_idx]
-                dd = np.reshape(dd, [-1, 4])  # typen_atoms * nnei, 4
-                ddr = dd[:, :1]
-                dda = dd[:, 1:]
-                sumr = np.sum(ddr)
-                suma = np.sum(dda) / 3.0
-                sumn = dd.shape[0]
-                sumr2 = np.sum(np.multiply(ddr, ddr))
-                suma2 = np.sum(np.multiply(dda, dda)) / 3.0
-                sysr[type_i] += sumr
-                sysa[type_i] += suma
-                sysn[type_i] += sumn
-                sysr2[type_i] += sumr2
-                sysa2[type_i] += suma2
-
-    return sysr, sysr2, sysa, sysa2, sysn
