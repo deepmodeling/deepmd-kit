@@ -66,7 +66,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         exclude_types: List[Tuple[int, int]] = [],
         stripped_type_embedding: bool = False,
-        smooth_type_embdding: bool = False,
+        smooth_type_embedding: bool = False,
     ):
         super().__init__()
         if resnet_dt:
@@ -77,8 +77,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("precison is not supported.")
         if stripped_type_embedding:
             raise NotImplementedError("stripped_type_embedding is not supported.")
-        if smooth_type_embdding:
-            raise NotImplementedError("smooth_type_embdding is not supported.")
+        if smooth_type_embedding:
+            raise NotImplementedError("smooth_type_embedding is not supported.")
         del type
         self.se_atten = DescrptBlockSeAtten(
             rcut,

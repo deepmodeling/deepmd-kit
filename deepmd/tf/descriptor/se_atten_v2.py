@@ -110,6 +110,6 @@ class DescrptSeAttenV2(DescrptSeAtten):
             attn_mask=attn_mask,
             multi_task=multi_task,
             stripped_type_embedding=True,
-            smooth_type_embdding=True,
+            smooth_type_embedding=True,
             **kwargs,
         )
