@@ -14,7 +14,7 @@ class DipoleChargeModifierBase {
   /**
    * @brief Dipole charge modifier without initialization.
    **/
-  DipoleChargeModifierBase(){};
+  DipoleChargeModifierBase() {};
   /**
    * @brief Dipole charge modifier without initialization.
    * @param[in] model The name of the frozen model file.
@@ -24,7 +24,7 @@ class DipoleChargeModifierBase {
   DipoleChargeModifierBase(const std::string& model,
                            const int& gpu_rank = 0,
                            const std::string& name_scope = "");
-  virtual ~DipoleChargeModifierBase(){};
+  virtual ~DipoleChargeModifierBase() {};
   /**
    * @brief Initialize the dipole charge modifier.
    * @param[in] model The name of the frozen model file.
