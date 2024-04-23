@@ -76,7 +76,6 @@ class Border : public torch::autograd::Function<Border> {
     int nghost = nghost_tensor.item<int>();
     int ntotal = nlocal + nghost;
     torch::Tensor recv_g1_tensor = g1;
-    
 
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
@@ -172,7 +171,8 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     int cuda_aware = MPIX_Query_cuda_support();
     if (cuda_aware == 0) {
-      torch::Tensor d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
+      torch::Tensor d_local_g1_tensor =
+          torch::empty_like(grad_output[0]).to(torch::kCPU);
       d_local_g1_tensor.copy_(grad_output[0]);
     }
 #endif
@@ -264,11 +264,10 @@ class Border : public torch::autograd::Function<Border> {
     }
 #endif
 #endif
-    
-    return {torch::Tensor(), torch::Tensor(), torch::Tensor(),
-            torch::Tensor(), torch::Tensor(), grad_output[0],
-            torch::Tensor(), torch::Tensor(), torch::Tensor(),
-            torch::Tensor()};
+
+    return {torch::Tensor(), torch::Tensor(), torch::Tensor(), torch::Tensor(),
+            torch::Tensor(), grad_output[0],  torch::Tensor(), torch::Tensor(),
+            torch::Tensor(), torch::Tensor()};
   }
 #ifdef USE_MPI
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
