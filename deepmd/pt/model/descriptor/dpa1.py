@@ -126,6 +126,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             If the weights of this descriptors are trainable.
     trainable_ln: bool
             Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
     type_one_side: bool
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
@@ -210,6 +212,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         # not implemented
@@ -231,6 +234,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # TODO
         if tebd_input_mode != "concat":
             raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-5
 
         del type, spin, attn_mask
         self.se_atten = DescrptBlockSeAtten(
@@ -258,6 +264,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             exclude_types=exclude_types,
             env_protection=env_protection,
             trainable_ln=trainable_ln,
+            ln_eps=ln_eps,
             old_impl=old_impl,
         )
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
@@ -392,6 +399,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "normalize": obj.normalize,
             "temperature": obj.temperature,
             "trainable_ln": obj.trainable_ln,
+            "ln_eps": obj.ln_eps,
             "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,

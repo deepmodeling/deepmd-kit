@@ -144,6 +144,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             If the weights of this descriptors are trainable.
     trainable_ln: bool
             Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
     type_one_side: bool
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
@@ -227,6 +229,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
@@ -243,6 +246,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         # TODO
         if tebd_input_mode != "concat":
             raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-5
 
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -259,6 +265,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.resnet_dt = resnet_dt
         self.trainable = trainable
         self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.type_one_side = type_one_side
         self.attn = attn
         self.attn_layer = attn_layer
@@ -312,6 +319,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             normalize=self.normalize,
             temperature=self.temperature,
             trainable_ln=self.trainable_ln,
+            ln_eps=self.ln_eps,
             smooth=self.smooth,
             precision=self.precision,
         )
@@ -546,6 +554,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "normalize": self.normalize,
             "temperature": self.temperature,
             "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
             "smooth_type_embedding": self.smooth,
             "type_one_side": self.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
@@ -615,6 +624,7 @@ class NeighborGatedAttention(NativeOP):
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
+        ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
@@ -630,6 +640,7 @@ class NeighborGatedAttention(NativeOP):
         self.normalize = normalize
         self.temperature = temperature
         self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.smooth = smooth
         self.precision = precision
         self.network_type = NeighborGatedAttentionLayer
@@ -645,6 +656,7 @@ class NeighborGatedAttention(NativeOP):
                 normalize=normalize,
                 temperature=temperature,
                 trainable_ln=trainable_ln,
+                ln_eps=ln_eps,
                 smooth=smooth,
                 precision=precision,
             )
@@ -701,6 +713,7 @@ class NeighborGatedAttention(NativeOP):
             "normalize": self.normalize,
             "temperature": self.temperature,
             "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
             "precision": self.precision,
             "attention_layers": [layer.serialize() for layer in self.attention_layers],
         }
@@ -737,6 +750,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
+        ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
@@ -751,6 +765,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         self.normalize = normalize
         self.temperature = temperature
         self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.precision = precision
         self.attention_layer = GatedAttentionLayer(
             nnei,
@@ -765,7 +780,7 @@ class NeighborGatedAttentionLayer(NativeOP):
             precision=precision,
         )
         self.attn_layer_norm = LayerNorm(
-            self.embed_dim, trainable=self.trainable_ln, precision=precision
+            self.embed_dim, eps=ln_eps, trainable=self.trainable_ln, precision=precision
         )
 
     def call(
@@ -799,6 +814,7 @@ class NeighborGatedAttentionLayer(NativeOP):
             "normalize": self.normalize,
             "temperature": self.temperature,
             "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
             "precision": self.precision,
             "attention_layer": self.attention_layer.serialize(),
             "attn_layer_norm": self.attn_layer_norm.serialize(),

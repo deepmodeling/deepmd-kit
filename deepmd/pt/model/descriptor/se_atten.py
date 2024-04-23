@@ -82,6 +82,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
         type: Optional[str] = None,
         old_impl: bool = False,
     ):
@@ -112,6 +113,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
             y = x + dt * \phi (Wx + b)
         trainable_ln : bool
             Whether to use trainable shift and scale weights in layer normalization.
+        ln_eps : float, Optional
+            The epsilon value for layer normalization.
         type_one_side : bool
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
@@ -170,6 +173,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.type_one_side = type_one_side
         self.env_protection = env_protection
         self.trainable_ln = trainable_ln
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-5
+        self.ln_eps = ln_eps
         self.old_impl = old_impl
 
         if isinstance(sel, int):
@@ -209,6 +216,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 normalize=self.normalize,
                 temperature=self.temperature,
                 trainable_ln=self.trainable_ln,
+                ln_eps=self.ln_eps,
                 smooth=self.smooth,
                 precision=self.precision,
             )
@@ -540,6 +548,7 @@ class NeighborGatedAttention(nn.Module):
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
+        ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
@@ -555,6 +564,7 @@ class NeighborGatedAttention(nn.Module):
         self.normalize = normalize
         self.temperature = temperature
         self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.smooth = smooth
         self.precision = precision
         self.network_type = NeighborGatedAttentionLayer
@@ -571,6 +581,7 @@ class NeighborGatedAttention(nn.Module):
                     normalize=normalize,
                     temperature=temperature,
                     trainable_ln=trainable_ln,
+                    ln_eps=ln_eps,
                     smooth=smooth,
                     precision=precision,
                 )
@@ -641,6 +652,7 @@ class NeighborGatedAttention(nn.Module):
             "normalize": self.normalize,
             "temperature": self.temperature,
             "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
             "precision": self.precision,
             "attention_layers": [layer.serialize() for layer in self.attention_layers],
         }
@@ -677,6 +689,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         temperature: Optional[float] = None,
         smooth: bool = True,
         trainable_ln: bool = True,
+        ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
     ):
         """Construct a neighbor-wise attention layer."""
@@ -691,6 +704,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         self.temperature = temperature
         self.precision = precision
         self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.attention_layer = GatedAttentionLayer(
             nnei,
             embed_dim,
@@ -704,7 +718,7 @@ class NeighborGatedAttentionLayer(nn.Module):
             precision=precision,
         )
         self.attn_layer_norm = LayerNorm(
-            self.embed_dim, trainable=trainable_ln, precision=precision
+            self.embed_dim, eps=ln_eps, trainable=trainable_ln, precision=precision
         )
 
     def forward(
@@ -738,6 +752,7 @@ class NeighborGatedAttentionLayer(nn.Module):
             "normalize": self.normalize,
             "temperature": self.temperature,
             "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
             "precision": self.precision,
             "attention_layer": self.attention_layer.serialize(),
             "attn_layer_norm": self.attn_layer_norm.serialize(),

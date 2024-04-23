@@ -481,6 +481,7 @@ def descrpt_se_atten_args():
     doc_trainable_ln = (
         "Whether to use trainable shift and scale weights in layer normalization."
     )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
@@ -519,6 +520,7 @@ def descrpt_se_atten_args():
         Argument(
             "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
         ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
         # pt only
         Argument(
             "tebd_dim",

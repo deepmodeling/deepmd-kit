@@ -97,51 +97,53 @@ class DescrptSeAtten(DescrptSeA):
 
     Parameters
     ----------
-    rcut
+    rcut: float
             The cut-off radius :math:`r_c`
-    rcut_smth
+    rcut_smth: float
             From where the environment matrix should be smoothed :math:`r_s`
-    sel : list[int], int
+    sel: list[int], int
             list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
             int: the total maxmum number of atoms in the cut-off radius
-    neuron : list[int]
+    neuron: list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
-    axis_neuron
+    axis_neuron: int
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
-    resnet_dt
+    resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    trainable
+    trainable: bool
             If the weights of embedding net are trainable.
-    seed
+    seed: int, Optional
             Random seed for initializing the network parameters.
-    type_one_side
+    type_one_side: bool
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-    set_davg_zero
+    set_davg_zero: bool
             Set the shift of embedding net input to zero.
-    activation_function
+    activation_function: str
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
-    precision
+    precision: str
             The precision of the embedding net parameters. Supported options are |PRECISION|
-    uniform_seed
+    uniform_seed: bool
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
-    attn
+    attn: int
             The length of hidden vector during scale-dot attention computation.
-    attn_layer
+    attn_layer: int
             The number of layers in attention mechanism.
-    attn_dotr
+    attn_dotr: bool
             Whether to dot the relative coordinates on the attention weights as a gated scheme.
-    attn_mask
+    attn_mask: bool
             Whether to mask the diagonal in the attention weights.
-    multi_task
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
+    multi_task: bool
             If the model has multi fitting nets to train.
-    stripped_type_embedding
+    stripped_type_embedding: bool
             Whether to strip the type embedding into a separated embedding network.
             Default value will be True in `se_atten_v2` descriptor.
-    smooth_type_embedding
+    smooth_type_embedding: bool
             Whether to use smooth process in attention weights calculation.
             And when using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
@@ -182,6 +184,7 @@ class DescrptSeAtten(DescrptSeA):
         normalize=True,
         temperature=None,
         trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-3,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
@@ -203,6 +206,9 @@ class DescrptSeAtten(DescrptSeA):
             raise NotImplementedError("concat_output_tebd is not supported.")
         if env_protection != 0.0:
             raise NotImplementedError("env_protection != 0.0 is not supported.")
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-3
         if isinstance(sel, list):
             sel = sum(sel)
         DescrptSeA.__init__(
@@ -235,6 +241,7 @@ class DescrptSeAtten(DescrptSeA):
         self.stripped_type_embedding = stripped_type_embedding
         self.smooth = smooth_type_embedding
         self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -1037,6 +1044,7 @@ class DescrptSeAtten(DescrptSeA):
                     seed=self.seed,
                     uniform_seed=self.uniform_seed,
                     trainable=self.trainable_ln,
+                    eps=self.ln_eps,
                     initial_variables=self.attention_layer_variables,
                 )
         return input_xyz
@@ -1347,6 +1355,17 @@ class DescrptSeAtten(DescrptSeA):
             graph_def, suffix=suffix
         )
 
+        def compat_ln_pattern(old_key):
+            pattern = r"attention_layer_(\d+)/(layer_normalization)_\d+"
+            replacement = r"attention_layer_\1/\2"
+            if bool(re.search(pattern, old_key)):
+                new_key = re.sub(pattern, replacement, old_key)
+                v = self.attention_layer_variables.pop(old_key)
+                self.attention_layer_variables[new_key] = v
+
+        for item_key in list(self.attention_layer_variables.keys()):
+            compat_ln_pattern(item_key)
+
         if self.stripped_type_embedding:
             self.two_side_embeeding_net_variables = (
                 get_extra_embedding_net_variables_from_graph_def(
@@ -1469,6 +1488,7 @@ class DescrptSeAtten(DescrptSeA):
         dotr: bool,
         do_mask: bool,
         trainable_ln: bool,
+        ln_eps: float,
         variables: dict,
         bias: bool = True,
         suffix: str = "",
@@ -1481,6 +1501,7 @@ class DescrptSeAtten(DescrptSeA):
             "dotr": dotr,
             "do_mask": do_mask,
             "trainable_ln": trainable_ln,
+            "ln_eps": ln_eps,
             "precision": self.precision.name,
             "attention_layers": [],
         }
@@ -1536,6 +1557,7 @@ class DescrptSeAtten(DescrptSeA):
             layer_norm = LayerNorm(
                 embed_dim,
                 trainable=self.trainable_ln,
+                eps=self.ln_eps,
                 precision=self.precision.name,
             )
             layer_norm["matrix"] = attention_layer_params[layer_idx][
@@ -1554,6 +1576,7 @@ class DescrptSeAtten(DescrptSeA):
                     },
                     "attn_layer_norm": layer_norm.serialize(),
                     "trainable_ln": self.trainable_ln,
+                    "ln_eps": self.ln_eps,
                 }
             )
         return data
@@ -1724,6 +1747,7 @@ class DescrptSeAtten(DescrptSeA):
             "resnet_dt": self.filter_resnet_dt,
             "smooth_type_embedding": self.smooth,
             "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
             "precision": self.filter_precision.name,
             "embeddings": self.serialize_network(
                 ntypes=self.ntypes,
@@ -1746,6 +1770,7 @@ class DescrptSeAtten(DescrptSeA):
                 dotr=self.attn_dotr,
                 do_mask=self.attn_mask,
                 trainable_ln=self.trainable_ln,
+                ln_eps=self.ln_eps,
                 variables=self.attention_layer_variables,
                 suffix=suffix,
             ),
@@ -1773,12 +1798,12 @@ class DescrptDPA1Compat(DescrptSeAtten):
             The cut-off radius :math:`r_c`
     rcut_smth: float
             From where the environment matrix should be smoothed :math:`r_s`
-    sel : list[int], int
+    sel: list[int], int
             list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
             int: the total maxmum number of atoms in the cut-off radius
-    ntypes : int
+    ntypes: int
             Number of element types
-    neuron : list[int]
+    neuron: list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
     axis_neuron: int
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
@@ -1794,6 +1819,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             If the weights of this descriptors are trainable.
     trainable_ln: bool
             Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
     type_one_side: bool
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
@@ -1867,6 +1894,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         normalize: bool = True,
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-3,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
@@ -1890,6 +1918,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             raise NotImplementedError(
                 "old implementation of attn_mask is not supported."
             )
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-3
 
         super().__init__(
             rcut,
@@ -1914,6 +1945,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             multi_task=True,
             stripped_type_embedding=False,
             trainable_ln=trainable_ln,
+            ln_eps=ln_eps,
             smooth_type_embedding=smooth_type_embedding,
             env_protection=env_protection,
         )

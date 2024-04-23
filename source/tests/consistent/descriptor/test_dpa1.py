@@ -52,6 +52,7 @@ from deepmd.utils.argcheck import (
     (1.0,),  # scaling_factor
     (True, False),  # normalize
     (None, 1.0),  # temperature
+    (1e-5,),  # ln_eps
     (True, False),  # smooth_type_embedding
     (True, False),  # concat_output_tebd
     ("float64",),  # precision
@@ -73,6 +74,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
@@ -93,6 +95,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             "scaling_factor": scaling_factor,
             "normalize": normalize,
             "temperature": temperature,
+            "ln_eps": ln_eps,
             "concat_output_tebd": concat_output_tebd,
             "resnet_dt": resnet_dt,
             "type_one_side": type_one_side,
@@ -120,6 +123,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
@@ -142,6 +146,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
@@ -164,6 +169,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
@@ -229,6 +235,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
@@ -284,6 +291,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
@@ -312,6 +320,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             scaling_factor,
             normalize,
             temperature,
+            ln_eps,
             smooth_type_embedding,
             concat_output_tebd,
             precision,
