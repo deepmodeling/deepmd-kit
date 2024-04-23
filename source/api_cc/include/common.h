@@ -164,9 +164,9 @@ void load_op_library();
  **/
 struct tf_exception : public deepmd::deepmd_exception {
  public:
-  tf_exception() : deepmd::deepmd_exception("TensorFlow Error!"){};
+  tf_exception() : deepmd::deepmd_exception("TensorFlow Error!") {};
   tf_exception(const std::string& msg)
-      : deepmd::deepmd_exception(std::string("TensorFlow Error: ") + msg){};
+      : deepmd::deepmd_exception(std::string("TensorFlow Error: ") + msg) {};
 };
 
 std::string name_prefix(const std::string& name_scope);
