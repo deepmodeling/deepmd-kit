@@ -244,7 +244,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         if tebd_input_mode != "concat":
             raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
 
-        del attn_mask, spin
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         if isinstance(sel, int):
