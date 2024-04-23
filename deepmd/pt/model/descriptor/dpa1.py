@@ -450,9 +450,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        coord_ext
+        extended_coord
             The extended coordinates of atoms. shape: nf x (nallx3)
-        atype_ext
+        extended_atype
             The extended aotm types. shape: nf x nall
         nlist
             The neighbor list. shape: nf x nloc x nnei

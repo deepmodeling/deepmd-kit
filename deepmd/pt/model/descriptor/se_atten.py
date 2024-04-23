@@ -67,8 +67,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         axis_neuron: int = 16,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
-        # set_davg_zero: bool = False,
-        set_davg_zero: bool = True,  # TODO
+        set_davg_zero: bool = True,
         attn: int = 128,
         attn_layer: int = 2,
         attn_dotr: bool = True,
@@ -87,14 +86,65 @@ class DescrptBlockSeAtten(DescriptorBlock):
         type: Optional[str] = None,
         old_impl: bool = False,
     ):
-        """Construct an embedding net of type `se_atten`.
+        r"""Construct an embedding net of type `se_atten`.
 
-        Args:
-        - rcut: Cut-off radius.
-        - rcut_smth: Smooth hyper-parameter for pair force & energy.
-        - sel: For each element type, how many atoms is selected as neighbors.
-        - filter_neuron: Number of neurons in each hidden layers of the embedding net.
-        - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
+        Parameters
+        ----------
+        rcut : float
+            The cut-off radius :math:`r_c`
+        rcut_smth : float
+            From where the environment matrix should be smoothed :math:`r_s`
+        sel : list[int], int
+            list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+            int: the total maxmum number of atoms in the cut-off radius
+        ntypes : int
+            Number of element types
+        neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+        axis_neuron : int
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+        tebd_dim : int
+            Dimension of the type embedding
+        tebd_input_mode : str
+            The way to mix the type embeddings. Supported options are `concat`.
+            (TODO need to support stripped_type_embedding option)
+        resnet_dt : bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+        trainable_ln : bool
+            Whether to use trainable shift and scale weights in layer normalization.
+        type_one_side : bool
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+        attn : int
+            Hidden dimension of the attention vectors
+        attn_layer : int
+            Number of attention layers
+        attn_dotr : bool
+            If dot the angular gate to the attention weights
+        attn_mask : bool
+            (Only support False to keep consistent with other backend references.)
+            (Not used in this version.)
+            If mask the diagonal of attention weights
+        exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+        env_protection : float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+        set_davg_zero : bool
+            Set the shift of embedding net input to zero.
+        activation_function : str
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+        precision : str
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+        scaling_factor : float
+            The scaling factor of normalization in calculations of attention weights.
+            If `temperature` is None, the scaling of attention weights is (N_dim * scaling_factor)**0.5
+        normalize : bool
+            Whether to normalize the hidden vectors in attention weights calculation.
+        temperature : float
+            If not None, the scaling of attention weights is `temperature` itself.
         """
         super().__init__()
         del type
@@ -343,18 +393,37 @@ class DescrptBlockSeAtten(DescriptorBlock):
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
     ):
-        """Calculate decoded embedding for each atom.
+        """Compute the descriptor.
 
-        Args:
-        - coord: Tell atom coordinates with shape [nframes, natoms[1]*3].
-        - atype: Tell atom types with shape [nframes, natoms[1]].
-        - natoms: Tell atom count and element count. Its shape is [2+self.ntypes].
-        - box: Tell simulation box with shape [nframes, 9].
+        Parameters
+        ----------
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        extended_coord
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        extended_atype
+            The extended aotm types. shape: nf x nall x nt
+        extended_atype_embd
+            The extended type embedding of atoms. shape: nf x nall
+        mapping
+            The index mapping, not required by this descriptor.
 
         Returns
         -------
-        - result: descriptor with shape [nframes, nloc, self.filter_neuron[-1] * self.axis_neuron].
-        - ret: environment matrix with shape [nframes, nloc, self.neei, out_size]
+        result
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        g2
+            The rotationally invariant pair-partical representation.
+            shape: nf x nloc x nnei x ng
+        h2
+            The rotationally equivariant pair-partical representation.
+            shape: nf x nloc x nnei x 3
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        sw
+            The smooth switch function. shape: nf x nloc x nnei
+
         """
         del mapping
         assert extended_atype_embd is not None
@@ -516,15 +585,18 @@ class NeighborGatedAttention(nn.Module):
         input_r: Optional[torch.Tensor] = None,
         sw: Optional[torch.Tensor] = None,
     ):
-        """
-        Args:
-            input_G: Input G, [nframes * nloc, nnei, embed_dim].
-            nei_mask: neighbor mask, [nframes * nloc, nnei].
-            input_r: normalized radial, [nframes, nloc, nei, 3].
+        """Compute the multi-layer gated self-attention.
 
-        Returns
-        -------
-        out: Output G, [nframes * nloc, nnei, embed_dim]
+        Parameters
+        ----------
+        input_G
+            inputs with shape: (nf x nloc) x nnei x embed_dim.
+        nei_mask
+            neighbor mask, with paddings being 0. shape: (nf x nloc) x nnei.
+        input_r
+            normalized radial. shape: (nf x nloc) x nnei x 3.
+        sw
+            The smooth switch function. shape: nf x nloc x nnei
         """
         out = input_G
         # https://github.com/pytorch/pytorch/issues/39165#issuecomment-635472592
@@ -749,15 +821,20 @@ class GatedAttentionLayer(nn.Module):
         sw: Optional[torch.Tensor] = None,
         attnw_shift: float = 20.0,
     ):
-        """
-        Args:
-            query: input G, [nframes * nloc, nnei, embed_dim].
-            nei_mask: neighbor mask, [nframes * nloc, nnei].
-            input_r: normalized radial, [nframes, nloc, nei, 3].
+        """Compute the gated self-attention.
 
-        Returns
-        -------
-        type_embedding:
+        Parameters
+        ----------
+        query
+            inputs with shape: (nf x nloc) x nnei x embed_dim.
+        nei_mask
+            neighbor mask, with paddings being 0. shape: (nf x nloc) x nnei.
+        input_r
+            normalized radial. shape: (nf x nloc) x nnei x 3.
+        sw
+            The smooth switch function. shape: (nf x nloc) x nnei
+        attnw_shift : float
+            The attention weight shift to preserve smoothness when doing padding before softmax.
         """
         q, k, v = self.in_proj(query).chunk(3, dim=-1)
         #  [nframes * nloc, nnei, hidden_dim]
