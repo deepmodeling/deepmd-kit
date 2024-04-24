@@ -274,6 +274,161 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         raise NotImplementedError(activation_function)
 
 
+class LayerNorm(NativeLayer):
+    """Implementation of Layer Normalization layer.
+
+    Parameters
+    ----------
+    num_in : int
+        The input dimension of the layer.
+    eps : float, optional
+        A small value added to prevent division by zero in calculations.
+    uni_init : bool, optional
+        If initialize the weights to be zeros and ones.
+    """
+
+    def __init__(
+        self,
+        num_in: int,
+        eps: float = 1e-5,
+        uni_init: bool = True,
+        trainable: bool = True,
+        precision: str = DEFAULT_PRECISION,
+    ) -> None:
+        self.eps = eps
+        self.uni_init = uni_init
+        self.num_in = num_in
+        super().__init__(
+            num_in=1,
+            num_out=num_in,
+            bias=True,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            precision=precision,
+        )
+        self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
+        if self.uni_init:
+            self.w = np.ones_like(self.w)
+            self.b = np.zeros_like(self.b)
+        # only to keep consistent with other backends
+        self.trainable = trainable
+
+    def serialize(self) -> dict:
+        """Serialize the layer to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized layer.
+        """
+        data = {
+            "w": self.w,
+            "b": self.b,
+        }
+        return {
+            "@class": "LayerNorm",
+            "@version": 1,
+            "eps": self.eps,
+            "trainable": self.trainable,
+            "precision": self.precision,
+            "@variables": data,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "LayerNorm":
+        """Deserialize the layer from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        variables = data.pop("@variables")
+        if variables["w"] is not None:
+            assert len(variables["w"].shape) == 1
+        if variables["b"] is not None:
+            assert len(variables["b"].shape) == 1
+        (num_in,) = variables["w"].shape
+        obj = cls(
+            num_in,
+            **data,
+        )
+        (obj.w,) = (variables["w"],)
+        (obj.b,) = (variables["b"],)
+        obj._check_shape_consistency()
+        return obj
+
+    def _check_shape_consistency(self):
+        if self.b is not None and self.w.shape[0] != self.b.shape[0]:
+            raise ValueError(
+                f"dim 1 of w {self.w.shape[0]} is not equal to shape "
+                f"of b {self.b.shape[0]}",
+            )
+
+    def __setitem__(self, key, value):
+        if key in ("w", "matrix"):
+            self.w = value
+        elif key in ("b", "bias"):
+            self.b = value
+        elif key == "trainable":
+            self.trainable = value
+        elif key == "precision":
+            self.precision = value
+        elif key == "eps":
+            self.eps = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("w", "matrix"):
+            return self.w
+        elif key in ("b", "bias"):
+            return self.b
+        elif key == "trainable":
+            return self.trainable
+        elif key == "precision":
+            return self.precision
+        elif key == "eps":
+            return self.eps
+        else:
+            raise KeyError(key)
+
+    def dim_out(self) -> int:
+        return self.w.shape[0]
+
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            The input.
+
+        Returns
+        -------
+        np.ndarray
+            The output.
+        """
+        y = self.layer_norm_numpy(x, (self.num_in,), self.w, self.b, self.eps)
+        return y
+
+    @staticmethod
+    def layer_norm_numpy(x, shape, weight=None, bias=None, eps=1e-5):
+        # mean and variance
+        mean = np.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        var = np.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        # normalize
+        x_normalized = (x - mean) / np.sqrt(var + eps)
+        # shift and scale
+        if weight is not None and bias is not None:
+            x_normalized = x_normalized * weight + bias
+        return x_normalized
+
+
 def make_multilayer_network(T_NetworkLayer, ModuleBase):
     class NN(ModuleBase):
         """Native representation of a neural network.

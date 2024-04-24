@@ -556,15 +556,19 @@ class ResidualDeep(nn.Module):
 
 
 class TypeEmbedNet(nn.Module):
-    def __init__(self, type_nums, embed_dim, bavg=0.0, stddev=1.0):
+    def __init__(self, type_nums, embed_dim, bavg=0.0, stddev=1.0, precision="default"):
         """Construct a type embedding net."""
         super().__init__()
+        self.type_nums = type_nums
+        self.embed_dim = embed_dim
+        self.bavg = bavg
+        self.stddev = stddev
         self.embedding = TypeEmbedNetConsistent(
-            ntypes=type_nums,
-            neuron=[embed_dim],
+            ntypes=self.type_nums,
+            neuron=[self.embed_dim],
             padding=True,
             activation_function="Linear",
-            precision="default",
+            precision=precision,
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
@@ -847,6 +851,7 @@ class NeighborWiseAttention(nn.Module):
         head_num=1,
         normalize=True,
         temperature=None,
+        smooth=True,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -868,6 +873,7 @@ class NeighborWiseAttention(nn.Module):
                     head_num=head_num,
                     normalize=normalize,
                     temperature=temperature,
+                    smooth=smooth,
                 )
             )
         self.attention_layers = nn.ModuleList(attention_layers)
@@ -915,6 +921,7 @@ class NeighborWiseAttentionLayer(nn.Module):
         head_num=1,
         normalize=True,
         temperature=None,
+        smooth=True,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -925,6 +932,7 @@ class NeighborWiseAttentionLayer(nn.Module):
         self.do_mask = do_mask
         self.post_ln = post_ln
         self.ffn = ffn
+        self.smooth = smooth
         self.attention_layer = GatedSelfAttetion(
             nnei,
             embed_dim,
@@ -935,6 +943,7 @@ class NeighborWiseAttentionLayer(nn.Module):
             head_num=head_num,
             normalize=normalize,
             temperature=temperature,
+            smooth=smooth,
         )
         self.attn_layer_norm = nn.LayerNorm(
             self.embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
