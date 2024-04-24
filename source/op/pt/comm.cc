@@ -125,7 +125,7 @@ class Border : public torch::autograd::Function<Border> {
           gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
         }
-#elif
+#else
         gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                   gpuMemcpyDeviceToDevice);
 #endif
@@ -254,7 +254,7 @@ class Border : public torch::autograd::Function<Border> {
             gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                       gpuMemcpyDeviceToDevice);
           }
-#elif
+#else
           gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
 #endif
