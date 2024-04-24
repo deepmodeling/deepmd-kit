@@ -81,7 +81,7 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     int cuda_aware = MPIX_Query_cuda_support();
     if (cuda_aware == 0) {
-      torch::Tensor recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
+      recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
       recv_g1_tensor.copy_(g1);
     }
 #endif
@@ -94,7 +94,6 @@ class Border : public torch::autograd::Function<Border> {
 #endif
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
     auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
-
     for (int iswap = 0; iswap < nswap; ++iswap) {
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
@@ -119,8 +118,15 @@ class Border : public torch::autograd::Function<Border> {
       } else {
 #endif
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+#ifdef USE_MPI
+        if(cuda_aware == 0)
+          memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
+        else
+          gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),gpuMemcpyDeviceToDevice);
+#elif
         gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                   gpuMemcpyDeviceToDevice);
+#endif
 #else
       memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
 #endif
@@ -171,7 +177,7 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     int cuda_aware = MPIX_Query_cuda_support();
     if (cuda_aware == 0) {
-      torch::Tensor d_local_g1_tensor =
+      d_local_g1_tensor =
           torch::empty_like(grad_output[0]).to(torch::kCPU);
       d_local_g1_tensor.copy_(grad_output[0]);
     }
@@ -240,8 +246,15 @@ class Border : public torch::autograd::Function<Border> {
 #endif
         if (nrecv) {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+#ifdef USE_MPI
+        if(cuda_aware == 0)
+          memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
+        else
+          gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),gpuMemcpyDeviceToDevice);
+#elif
           gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
+#endif
 #else
         memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
 #endif
