@@ -48,7 +48,7 @@ template <typename Device, typename FPTYPE>
 class FltNvnmdOp : public OpKernel {
  public:
   /// Constructor.
-  explicit FltNvnmdOp(OpKernelConstruction* context) : OpKernel(context){};
+  explicit FltNvnmdOp(OpKernelConstruction* context) : OpKernel(context) {};
 
   /// Compute the descriptor
   /// param: context
