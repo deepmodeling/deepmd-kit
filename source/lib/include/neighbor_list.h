@@ -46,7 +46,7 @@ struct InputNlist {
         sendlist(nullptr),
         sendproc(nullptr),
         recvproc(nullptr),
-        world(0){};
+        world(0) {};
   InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
@@ -59,7 +59,7 @@ struct InputNlist {
         sendlist(nullptr),
         sendproc(nullptr),
         recvproc(nullptr),
-        world(0){};
+        world(0) {};
   InputNlist(int inum_,
              int* ilist_,
              int* numneigh_,
@@ -83,8 +83,8 @@ struct InputNlist {
         sendlist(sendlist),
         sendproc(sendproc),
         recvproc(recvproc),
-        world(world){};
-  ~InputNlist(){};
+        world(world) {};
+  ~InputNlist() {};
 };
 
 /**
