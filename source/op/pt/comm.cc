@@ -119,10 +119,12 @@ class Border : public torch::autograd::Function<Border> {
 #endif
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
-        if(cuda_aware == 0)
+        if (cuda_aware == 0) {
           memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
-        else
-          gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),gpuMemcpyDeviceToDevice);
+        } else {
+          gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
+                    gpuMemcpyDeviceToDevice);
+        }
 #elif
         gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
                   gpuMemcpyDeviceToDevice);
@@ -177,8 +179,7 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     int cuda_aware = MPIX_Query_cuda_support();
     if (cuda_aware == 0) {
-      d_local_g1_tensor =
-          torch::empty_like(grad_output[0]).to(torch::kCPU);
+      d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
       d_local_g1_tensor.copy_(grad_output[0]);
     }
 #endif
@@ -247,10 +248,12 @@ class Border : public torch::autograd::Function<Border> {
         if (nrecv) {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
-        if(cuda_aware == 0)
-          memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
-        else
-          gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),gpuMemcpyDeviceToDevice);
+          if (cuda_aware == 0) {
+            memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
+          } else {
+            gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
+                      gpuMemcpyDeviceToDevice);
+          }
 #elif
           gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
