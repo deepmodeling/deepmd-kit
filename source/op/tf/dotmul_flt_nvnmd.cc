@@ -61,7 +61,7 @@ class DotmulFltNvnmdOp : public OpKernel {
  public:
   /// Constructor.
   explicit DotmulFltNvnmdOp(OpKernelConstruction *context)
-      : OpKernel(context){};
+      : OpKernel(context) {};
 
   /// Compute the descriptor
   /// param: context

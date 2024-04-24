@@ -100,7 +100,7 @@ class DPModelBackend(Backend):
         Callable[[str], dict]
             The serialize hook of the backend.
         """
-        from deepmd.dpmodel.utils.network import (
+        from deepmd.dpmodel.utils.serialization import (
             load_dp_model,
         )
 
@@ -115,7 +115,7 @@ class DPModelBackend(Backend):
         Callable[[str, dict], None]
             The deserialize hook of the backend.
         """
-        from deepmd.dpmodel.utils.network import (
+        from deepmd.dpmodel.utils.serialization import (
             save_dp_model,
         )
 
