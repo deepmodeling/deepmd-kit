@@ -26,13 +26,21 @@ struct InputNlist {
   int* numneigh;
   /// Array stores the core region atom's neighbor index
   int** firstneigh;
+  ///  # of swaps to perform = sum of maxneed
   int nswap;
+  /// # of atoms to send in each swap
   int* sendnum;
+  /// # of atoms to recv in each swap
   int* recvnum;
+  /// where to put 1st recv atom in each swap
   int* firstrecv;
+  /// list of atoms to send in each swap
   int** sendlist;
+  /// proc to send to at each swap
   int* sendproc;
+  /// proc to recv from at each swap
   int* recvproc;
+  /// MPI_comm data in lmp
   void* world;
   InputNlist()
       : inum(0),
