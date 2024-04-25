@@ -234,10 +234,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
-        if not self.type_one_side:
-            self.tebd_dim_input = self.tebd_dim * 2
-        else:
-            self.tebd_dim_input = self.tebd_dim
+        self.tebd_dim_input = self.tebd_dim * (2 if not self.type_one_side else 1)
         if self.tebd_input_mode in ["concat"]:
             self.embd_input_dim = 1 + self.tebd_dim_input
         else:
