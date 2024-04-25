@@ -77,7 +77,8 @@ if platform.system() == "Linux":
 
 # keras 3 is incompatible with tf.compat.v1
 # https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# 2024/04/24: deepmd.tf doesn't import tf.keras any more
+
 # import tensorflow v1 compatability
 try:
     import tensorflow.compat.v1 as tf
