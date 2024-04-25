@@ -21,8 +21,6 @@ MPI_Datatype get_mpi_type<double>() {
   return MPI_DOUBLE;
 }
 #endif
-#include "errors.h"
-using namespace deepmd;
 class Border : public torch::autograd::Function<Border> {
  public:
   static torch::autograd::variable_list forward(
@@ -120,17 +118,17 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
         if (cuda_aware == 0) {
-          memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
+          memcpy(recv_g1, send_g1, (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
         } else {
-          gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
+          gpuMemcpy(recv_g1, send_g1, (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
         }
 #else
-        gpuMemcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE),
+        gpuMemcpy(recv_g1, send_g1, (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
                   gpuMemcpyDeviceToDevice);
 #endif
 #else
-      memcpy(recv_g1, send_g1, nsend * tensor_size * sizeof(FPTYPE));
+      memcpy(recv_g1, send_g1, (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
 #endif
 #ifdef USE_MPI
       }
@@ -249,17 +247,17 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
           if (cuda_aware == 0) {
-            memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
+            memcpy(recv_g1, send_g1, (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
           } else {
-            gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
+            gpuMemcpy(recv_g1, send_g1, (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
                       gpuMemcpyDeviceToDevice);
           }
 #else
-          gpuMemcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE),
+          gpuMemcpy(recv_g1, send_g1, (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
 #endif
 #else
-        memcpy(recv_g1, send_g1, nrecv * tensor_size * sizeof(FPTYPE));
+        memcpy(recv_g1, send_g1, (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
 #endif
         }
 #ifdef USE_MPI

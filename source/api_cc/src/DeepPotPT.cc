@@ -130,6 +130,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
   int nframes = 1;
+  //TODO: dpa2 model may need a fake communication op to deal with nloc == 0. this should be fixed after wrapping comm op as a pure c++ implementation.
   if (nloc == 0) {
     // no backward map needed
     ener.resize(nframes);
