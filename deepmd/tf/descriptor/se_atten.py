@@ -20,8 +20,10 @@ from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
 )
 from deepmd.dpmodel.utils.network import (
+    EmbeddingNet,
     LayerNorm,
     NativeLayer,
+    NetworkCollection,
 )
 from deepmd.tf.common import (
     cast_precision,
@@ -116,7 +118,9 @@ class DescrptSeAtten(DescrptSeA):
     seed: int, Optional
             Random seed for initializing the network parameters.
     type_one_side: bool
-            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
@@ -140,9 +144,11 @@ class DescrptSeAtten(DescrptSeA):
             The epsilon value for layer normalization.
     multi_task: bool
             If the model has multi fitting nets to train.
-    stripped_type_embedding: bool
-            Whether to strip the type embedding into a separated embedding network.
-            Default value will be True in `se_atten_v2` descriptor.
+    tebd_input_mode: str
+            The input mode of the type embedding. Supported modes are [`concat`, `strip`].
+            - `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+            Default value will be `strip` in `se_atten_v2` descriptor.
     smooth_type_embedding: bool
             Whether to use smooth process in attention weights calculation.
             And when using stripped type embedding, whether to dot smooth factor on the network output of type embedding
@@ -177,8 +183,8 @@ class DescrptSeAtten(DescrptSeA):
         attn_dotr: bool = True,
         attn_mask: bool = False,
         multi_task: bool = False,
-        stripped_type_embedding: bool = False,
         smooth_type_embedding: bool = False,
+        tebd_input_mode: str = "concat",
         # not implemented
         scaling_factor=1.0,
         normalize=True,
@@ -189,6 +195,8 @@ class DescrptSeAtten(DescrptSeA):
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
+        # to be compat with old option of `stripped_type_embedding`
+        stripped_type_embedding = tebd_input_mode == "strip"
         if not set_davg_zero and not (
             stripped_type_embedding and smooth_type_embedding
         ):
@@ -239,6 +247,7 @@ class DescrptSeAtten(DescrptSeA):
         if ntypes == 0:
             raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
+        self.tebd_input_mode = tebd_input_mode
         self.smooth = smooth_type_embedding
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
@@ -1372,7 +1381,6 @@ class DescrptSeAtten(DescrptSeA):
                     graph_def,
                     suffix,
                     get_extra_embedding_net_suffix(type_one_side=False),
-                    self.layer_size,
                 )
             )
 
@@ -1581,6 +1589,89 @@ class DescrptSeAtten(DescrptSeA):
             )
         return data
 
+    def serialize_network_strip(
+        self,
+        ntypes: int,
+        ndim: int,
+        in_dim: int,
+        neuron: List[int],
+        activation_function: str,
+        resnet_dt: bool,
+        variables: dict,
+        suffix: str = "",
+        type_one_side: bool = False,
+    ) -> dict:
+        """Serialize network.
+
+        Parameters
+        ----------
+        ntypes : int
+            The number of types
+        ndim : int
+            The dimension of elements
+        in_dim : int
+            The input dimension
+        neuron : List[int]
+            The neuron list
+        activation_function : str
+            The activation function
+        resnet_dt : bool
+            Whether to use resnet
+        variables : dict
+            The input variables
+        suffix : str, optional
+            The suffix of the scope
+        type_one_side : bool, optional
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+
+        Returns
+        -------
+        dict
+            The converted network data
+        """
+        assert ndim == 0, "only supports descriptors with type embedding!"
+        embeddings = NetworkCollection(
+            ntypes=ntypes,
+            ndim=ndim,
+            network_type="embedding_network",
+        )
+        name_suffix = get_extra_embedding_net_suffix(type_one_side=type_one_side)
+        embedding_net_pattern_strip = str(
+            rf"filter_type_(all)/(matrix)_(\d+){name_suffix}|"
+            rf"filter_type_(all)/(bias)_(\d+){name_suffix}|"
+            rf"filter_type_(all)/(idt)_(\d+){name_suffix}|"
+        )[:-1]
+        if suffix != "":
+            embedding_net_pattern = (
+                embedding_net_pattern_strip.replace("/(idt)", suffix + "/(idt)")
+                .replace("/(bias)", suffix + "/(bias)")
+                .replace("/(matrix)", suffix + "/(matrix)")
+            )
+        else:
+            embedding_net_pattern = embedding_net_pattern_strip
+        for key, value in variables.items():
+            m = re.search(embedding_net_pattern, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            layer_idx = int(m[2]) - 1
+            weight_name = m[1]
+            network_idx = ()
+            if embeddings[network_idx] is None:
+                # initialize the network if it is not initialized
+                embeddings[network_idx] = EmbeddingNet(
+                    in_dim=in_dim,
+                    neuron=neuron,
+                    activation_function=activation_function,
+                    resnet_dt=resnet_dt,
+                    precision=self.precision.name,
+                )
+            assert embeddings[network_idx] is not None
+            if weight_name == "idt":
+                value = value.ravel()
+            embeddings[network_idx][layer_idx][weight_name] = value
+        return embeddings.serialize()
+
     @classmethod
     def deserialize_attention_layers(cls, data: dict, suffix: str = "") -> dict:
         """Deserialize attention layers.
@@ -1658,6 +1749,53 @@ class DescrptSeAtten(DescrptSeA):
         return attention_layer_variables
 
     @classmethod
+    def deserialize_network_strip(
+        cls, data: dict, suffix: str = "", type_one_side: bool = False
+    ) -> dict:
+        """Deserialize network.
+
+        Parameters
+        ----------
+        data : dict
+            The input network data
+        suffix : str, optional
+            The suffix of the scope
+        type_one_side : bool, optional
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+
+        Returns
+        -------
+        variables : dict
+            The input variables
+        """
+        embedding_net_variables = {}
+        embeddings = NetworkCollection.deserialize(data)
+        assert embeddings.ndim == 0, "only supports descriptors with type embedding!"
+        name_suffix = get_extra_embedding_net_suffix(type_one_side=type_one_side)
+        net_idx = ()
+        network = embeddings[net_idx]
+        assert network is not None
+        for layer_idx, layer in enumerate(network.layers):
+            embedding_net_variables[
+                f"filter_type_all{suffix}/matrix_{layer_idx + 1}{name_suffix}"
+            ] = layer.w
+            embedding_net_variables[
+                f"filter_type_all{suffix}/bias_{layer_idx + 1}{name_suffix}"
+            ] = layer.b
+            if layer.idt is not None:
+                embedding_net_variables[
+                    f"filter_type_all{suffix}/idt_{layer_idx + 1}{name_suffix}"
+                ] = layer.idt.reshape(1, -1)
+            else:
+                # prevent keyError
+                embedding_net_variables[
+                    f"filter_type_all{suffix}/idt_{layer_idx + 1}{name_suffix}"
+                ] = 0.0
+        return embedding_net_variables
+
+    @classmethod
     def deserialize(cls, data: dict, suffix: str = ""):
         """Deserialize the model.
 
@@ -1685,6 +1823,11 @@ class DescrptSeAtten(DescrptSeA):
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        tebd_input_mode = data["tebd_input_mode"]
+        if tebd_input_mode in ["strip"]:
+            raise NotImplementedError(
+                "deserialization is unsupported by the native model when tebd_input_mode=='strip'"
+            )
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables
@@ -1713,9 +1856,15 @@ class DescrptSeAtten(DescrptSeA):
             raise NotImplementedError(
                 "Not implemented in class %s" % self.__class__.__name__
             )
-        if self.stripped_type_embedding:
+        if self.stripped_type_embedding and type(self) is not DescrptDPA1Compat:
+            # only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(
-                "stripped_type_embedding is unsupported by the native model"
+                "serialization is unsupported by the native model when tebd_input_mode=='strip'"
+            )
+        # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
+        if self.stripped_type_embedding and self.type_one_side:
+            raise NotImplementedError(
+                "serialization is unsupported when tebd_input_mode=='strip' and type_one_side is True"
             )
         if (self.original_sel != self.sel_a).any():
             raise NotImplementedError(
@@ -1728,7 +1877,7 @@ class DescrptSeAtten(DescrptSeA):
         assert self.davg is not None
         assert self.dstd is not None
 
-        return {
+        data = {
             "@class": "Descriptor",
             "type": "se_atten",
             "@version": 1,
@@ -1746,6 +1895,7 @@ class DescrptSeAtten(DescrptSeA):
             "activation_function": self.activation_function_name,
             "resnet_dt": self.filter_resnet_dt,
             "smooth_type_embedding": self.smooth,
+            "tebd_input_mode": self.tebd_input_mode,
             "trainable_ln": self.trainable_ln,
             "ln_eps": self.ln_eps,
             "precision": self.filter_precision.name,
@@ -1785,6 +1935,27 @@ class DescrptSeAtten(DescrptSeA):
             "type_one_side": self.type_one_side,
             "spin": self.spin,
         }
+        if self.tebd_input_mode in ["strip"]:
+            assert (
+                type(self) is DescrptDPA1Compat
+            ), "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
+            data.update(
+                {
+                    "embeddings_strip": self.serialize_network_strip(
+                        ntypes=self.ntypes,
+                        ndim=0,
+                        in_dim=2
+                        * self.tebd_dim,  # only DescrptDPA1Compat has this attribute
+                        neuron=self.filter_neuron,
+                        activation_function=self.activation_function_name,
+                        resnet_dt=self.filter_resnet_dt,
+                        variables=self.two_side_embeeding_net_variables,
+                        suffix=suffix,
+                        type_one_side=self.type_one_side,
+                    )
+                }
+            )
+        return data
 
 
 class DescrptDPA1Compat(DescrptSeAtten):
@@ -1810,8 +1981,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            (Only support `concat` to keep consistent with other backend references.)
-            The way to mix the type embeddings.
+            The input mode of the type embedding. Supported modes are [`concat`, `strip`].
+            - `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -1902,10 +2074,6 @@ class DescrptDPA1Compat(DescrptSeAtten):
         seed: Optional[int] = None,
         uniform_seed: bool = False,
     ) -> None:
-        if tebd_input_mode != "concat":
-            raise NotImplementedError(
-                "Only support tebd_input_mode == `concat` in this version."
-            )
         if not normalize:
             raise NotImplementedError("Only support normalize == True in this version.")
         if temperature != 1.0:
@@ -1943,14 +2111,13 @@ class DescrptDPA1Compat(DescrptSeAtten):
             attn_dotr=attn_dotr,
             attn_mask=attn_mask,
             multi_task=True,
-            stripped_type_embedding=False,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             smooth_type_embedding=smooth_type_embedding,
+            tebd_input_mode=tebd_input_mode,
             env_protection=env_protection,
         )
         self.tebd_dim = tebd_dim
-        self.tebd_input_mode = tebd_input_mode
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2089,9 +2256,20 @@ class DescrptDPA1Compat(DescrptSeAtten):
         data.pop("env_mat")
         variables = data.pop("@variables")
         type_embedding = data.pop("type_embedding")
+        tebd_input_mode = data["tebd_input_mode"]
+        type_one_side = data["type_one_side"]
+        if tebd_input_mode in ["strip"]:
+            two_side_embeeding_net_variables = cls.deserialize_network_strip(
+                data.pop("embeddings_strip"),
+                suffix=suffix,
+                type_one_side=type_one_side,
+            )
+        else:
+            two_side_embeeding_net_variables = None
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables
+        descriptor.two_side_embeeding_net_variables = two_side_embeeding_net_variables
         descriptor.davg = variables["davg"].reshape(
             descriptor.ntypes, descriptor.ndescrpt
         )
@@ -2121,7 +2299,6 @@ class DescrptDPA1Compat(DescrptSeAtten):
             {
                 "type": "dpa1",
                 "tebd_dim": self.tebd_dim,
-                "tebd_input_mode": self.tebd_input_mode,
                 "scaling_factor": self.scaling_factor,
                 "normalize": self.normalize,
                 "temperature": self.temperature,

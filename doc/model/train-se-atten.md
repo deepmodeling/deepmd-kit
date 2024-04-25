@@ -156,7 +156,7 @@ An example of the DPA-1 descriptor is provided as follows
 We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications:
 
 ```json
-      "stripped_type_embedding": true,
+      "tebd_input_mode": 'strip',
       "smooth_type_embedding": true,
       "set_davg_zero": false
 ```

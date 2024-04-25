@@ -7,7 +7,7 @@
     ],
     "descriptor": {
       "type": "se_atten",
-      "stripped_type_embedding": false,
+      "tebd_input_mode": "concat",
       "sel": 120,
       "rcut_smth": 0.50,
       "rcut": 6.00,

@@ -79,7 +79,7 @@ def _init_models():
         jdata["model"]["descriptor"] = {}
         jdata["model"]["descriptor"]["type"] = "se_atten"
         jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["descriptor"]["smooth_type_embedding"] = tests[i][
@@ -128,7 +128,7 @@ def _init_models_exclude_types():
         jdata["model"]["descriptor"]["type"] = "se_atten"
         jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
         jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["type_embedding"] = {}

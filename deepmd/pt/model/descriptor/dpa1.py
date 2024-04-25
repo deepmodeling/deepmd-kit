@@ -117,8 +117,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The way to mix the type embeddings. Supported options are `concat`.
-            (TODO need to support stripped_type_embedding option)
+            The input mode of the type embedding. Supported modes are [`concat`, `strip`].
+            - `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -171,9 +172,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
     Limitations
     -----------
-    The currently implementation does not support the following features
-    1. tebd_input_mode != 'concat'
-
     The currently implementation will not support the following deprecated features
     1. spin is not None
     2. attn_mask == True
@@ -195,8 +193,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         axis_neuron: int = 16,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
-        # set_davg_zero: bool = False,
-        set_davg_zero: bool = True,  # TODO
+        set_davg_zero: bool = True,
         attn: int = 128,
         attn_layer: int = 2,
         attn_dotr: bool = True,
@@ -216,24 +213,18 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         # not implemented
-        stripped_type_embedding: bool = False,
         spin=None,
         type: Optional[str] = None,
         seed: Optional[int] = None,
         old_impl: bool = False,
     ):
         super().__init__()
-        if stripped_type_embedding:
-            raise NotImplementedError("stripped_type_embedding is not supported.")
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         if attn_mask:
             raise NotImplementedError(
                 "old implementation of attn_mask is not supported."
             )
-        # TODO
-        if tebd_input_mode != "concat":
-            raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
@@ -376,7 +367,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
     def serialize(self) -> dict:
         obj = self.se_atten
-        return {
+        data = {
             "@class": "Descriptor",
             "type": "dpa1",
             "@version": 1,
@@ -419,6 +410,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "trainable": True,
             "spin": None,
         }
+        if obj.tebd_input_mode in ["strip"]:
+            data.update({"embeddings_strip": obj.filter_layers_strip.serialize()})
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
@@ -431,6 +425,11 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         type_embedding = data.pop("type_embedding")
         attention_layers = data.pop("attention_layers")
         env_mat = data.pop("env_mat")
+        tebd_input_mode = data["tebd_input_mode"]
+        if tebd_input_mode in ["strip"]:
+            embeddings_strip = data.pop("embeddings_strip")
+        else:
+            embeddings_strip = None
         obj = cls(**data)
 
         def t_cvt(xx):
@@ -442,6 +441,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         obj.se_atten["davg"] = t_cvt(variables["davg"])
         obj.se_atten["dstd"] = t_cvt(variables["dstd"])
         obj.se_atten.filter_layers = NetworkCollection.deserialize(embeddings)
+        if tebd_input_mode in ["strip"]:
+            obj.se_atten.filter_layers_strip = NetworkCollection.deserialize(
+                embeddings_strip
+            )
         obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
             attention_layers
         )
