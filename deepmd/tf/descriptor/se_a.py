@@ -1058,7 +1058,7 @@ class DescrptSeA(DescrptSe):
                 )
                 if self.compress:
                     raise RuntimeError(
-                        "compression of type embedded descriptor is not supported when tebd_input_mode != 'strip'"
+                        "compression of type embedded descriptor is not supported when tebd_input_mode is not set to 'strip'"
                     )
         # natom x 4 x outputs_size
         if nvnmd_cfg.enable:
