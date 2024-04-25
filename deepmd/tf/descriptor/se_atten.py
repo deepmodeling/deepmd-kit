@@ -1825,8 +1825,8 @@ class DescrptSeAtten(DescrptSeA):
         variables = data.pop("@variables")
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
-            raise NotImplementedError(
-                "deserialization is unsupported by the native model when tebd_input_mode=='strip'"
+            raise ValueError(
+                "Deserialization is unsupported for `tebd_input_mode='strip'` in the native model."
             )
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
