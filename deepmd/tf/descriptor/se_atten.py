@@ -195,7 +195,7 @@ class DescrptSeAtten(DescrptSeA):
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
-        # to be compat with old option of `stripped_type_embedding`
+        # Ensure compatibility with the deprecated `stripped_type_embedding` option.
         stripped_type_embedding = tebd_input_mode == "strip"
         if not set_davg_zero and not (
             stripped_type_embedding and smooth_type_embedding
