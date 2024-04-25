@@ -248,8 +248,6 @@ def get_extra_embedding_net_nodes_from_graph_def(
             .replace("/(bias)", suffix + "/(bias)")
             .replace("/(matrix)", suffix + "/(matrix)")
         )
-    else:
-        embedding_net_pattern_strip = embedding_net_pattern_strip
 
     embedding_net_nodes_strip = get_pattern_nodes_from_graph_def(
         graph_def, embedding_net_pattern_strip
