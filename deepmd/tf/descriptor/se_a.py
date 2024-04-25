@@ -1427,7 +1427,7 @@ class DescrptSeA(DescrptSe):
             )
         if self.stripped_type_embedding:
             raise NotImplementedError(
-                "tebd_input_mode=='strip' is unsupported by the native model"
+                "Serialization is unsupported when tebd_input_mode is set to 'strip'"
             )
         if (self.original_sel != self.sel_a).any():
             raise NotImplementedError(
