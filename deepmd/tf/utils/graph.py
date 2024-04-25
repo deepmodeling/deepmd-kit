@@ -455,11 +455,11 @@ def get_attention_layer_nodes_from_graph_def(
     """
     if suffix != "":
         attention_layer_pattern = (
-            ATTENTION_LAYER_PATTERN.replace("/c_query", suffix + "/c_query")
-            .replace("/c_key", suffix + "/c_key")
-            .replace("/c_value", suffix + "/c_value")
-            .replace("/c_out", suffix + "/c_out")
-            .replace("/layer_normalization", suffix + "/layer_normalization")
+            ATTENTION_LAYER_PATTERN.replace("/(c_query)", suffix + "/(c_query)")
+            .replace("/(c_key)", suffix + "/(c_key)")
+            .replace("/(c_value)", suffix + "/(c_value)")
+            .replace("/(c_out)", suffix + "/(c_out)")
+            .replace("/(layer_normalization)", suffix + "/(layer_normalization)")
         )
     else:
         attention_layer_pattern = ATTENTION_LAYER_PATTERN

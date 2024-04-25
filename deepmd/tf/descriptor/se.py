@@ -296,7 +296,10 @@ class DescrptSe(Descriptor):
                 net_idx.append(rest_ii % embeddings.ntypes)
                 rest_ii //= embeddings.ntypes
             net_idx = tuple(net_idx)
-            if embeddings.ndim in (0, 1):
+            if embeddings.ndim == 0:
+                key0 = "all"
+                key1 = ""
+            elif embeddings.ndim == 1:
                 key0 = "all"
                 key1 = f"_{ii}"
             elif embeddings.ndim == 2:
