@@ -117,9 +117,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The input mode of the type embedding. Supported modes are [`concat`, `strip`].
-            - `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
-            - `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)

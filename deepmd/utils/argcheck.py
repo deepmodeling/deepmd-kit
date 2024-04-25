@@ -495,11 +495,11 @@ def descrpt_se_atten_args():
         "Whether to concat type embedding at the output of the descriptor."
     )
     doc_tebd_input_mode = (
-        "The input mode of the type embedding. Supported modes are [`concat`, `strip`]."
-        "- `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
         "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
-        "- `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
         f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
@@ -2314,9 +2314,11 @@ def gen_args(**kwargs) -> List[Argument]:
 def backend_compat(data):
     data = data.copy()
     # stripped_type_embedding in old DescrptSeAtten
-    if data["model"]["descriptor"].get("type", "se_e2_a") == "se_atten" and data[
-        "model"
-    ]["descriptor"].pop("stripped_type_embedding", False):
+    if (
+        "descriptor" in data["model"]
+        and data["model"]["descriptor"].get("type", "se_e2_a") == "se_atten"
+        and data["model"]["descriptor"].pop("stripped_type_embedding", False)
+    ):
         if "tebd_input_mode" not in data["model"]["descriptor"]:
             data["model"]["descriptor"]["tebd_input_mode"] = "strip"
         elif data["model"]["descriptor"]["tebd_input_mode"] != "strip":

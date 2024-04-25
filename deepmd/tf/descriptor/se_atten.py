@@ -145,9 +145,9 @@ class DescrptSeAtten(DescrptSeA):
     multi_task: bool
             If the model has multi fitting nets to train.
     tebd_input_mode: str
-            The input mode of the type embedding. Supported modes are [`concat`, `strip`].
-            - `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
-            - `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
             Default value will be `strip` in `se_atten_v2` descriptor.
     smooth_type_embedding: bool
             Whether to use smooth process in attention weights calculation.
@@ -1981,9 +1981,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The input mode of the type embedding. Supported modes are [`concat`, `strip`].
-            - `concat`: Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
-            - `strip`: Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
