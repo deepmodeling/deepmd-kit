@@ -2321,7 +2321,7 @@ def backend_compat(data):
             data["model"]["descriptor"]["tebd_input_mode"] = "strip"
         elif data["model"]["descriptor"]["tebd_input_mode"] != "strip":
             raise ValueError(
-                "When setting stripped_type_embedding == True, tebd_input_mode should be 'strip'!"
+                "Conflict detected: 'stripped_type_embedding' is set to True, but 'tebd_input_mode' is not 'strip'. Please ensure 'tebd_input_mode' is set to 'strip' when 'stripped_type_embedding' is True."
             )
         else:
             pass
