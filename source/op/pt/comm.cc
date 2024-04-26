@@ -90,7 +90,7 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size != 1) {
       int version, subversion;
-      MPI_Get_version(int* version, int* subversion);
+      MPI_Get_version(version, subversion);
       if (version >= 4) {
         cuda_aware = MPIX_Query_cuda_support();
       } else {
@@ -205,7 +205,7 @@ class Border : public torch::autograd::Function<Border> {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size != 1) {
       int version, subversion;
-      MPI_Get_version(int* version, int* subversion);
+      MPI_Get_version(version, subversion);
       if (version >= 4) {
         cuda_aware = MPIX_Query_cuda_support();
       } else {
