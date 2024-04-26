@@ -76,19 +76,21 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor recv_g1_tensor = g1;
 
 #ifdef USE_MPI
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    int cuda_aware = MPIX_Query_cuda_support();
-    if (cuda_aware == 0) {
-      recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
-      recv_g1_tensor.copy_(g1);
-    }
-#endif
+    int mpi_init;
+    MPI_Initialized(&mpi_init);
     int me;
     MPI_Comm_rank(MPI_COMM_WORLD, &me);
     MPI_Comm world;
     unpack_communicator(communicator_tensor, world);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    int cuda_aware = mpi_init ? MPIX_Query_cuda_support() : 1;
+    if (cuda_aware == 0) {
+      recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
+      recv_g1_tensor.copy_(g1);
+    }
+#endif
 #endif
     FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>() + nlocal * tensor_size;
     auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
@@ -178,19 +180,21 @@ class Border : public torch::autograd::Function<Border> {
 
     torch::Tensor d_local_g1_tensor = grad_output[0];
 #ifdef USE_MPI
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    int cuda_aware = MPIX_Query_cuda_support();
-    if (cuda_aware == 0) {
-      d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
-      d_local_g1_tensor.copy_(grad_output[0]);
-    }
-#endif
+    int mpi_init;
+    MPI_Initialized(&mpi_init);
     MPI_Comm world;
     unpack_communicator(communicator_tensor, world);
     int me;
     MPI_Comm_rank(world, &me);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
+    #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    int cuda_aware = mpi_init ? MPIX_Query_cuda_support(): 1;
+    if (cuda_aware == 0) {
+      d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
+      d_local_g1_tensor.copy_(grad_output[0]);
+    }
+#endif
 #endif
     int** recvlist = reinterpret_cast<int**>(sendlist_tensor.data_ptr());
     // swap send and recv here
