@@ -55,7 +55,8 @@ void DeepPotPT::init(const std::string& model,
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
-  //TODO: This should be fixed after implement api to decide whether need to message passing and rename this metadata
+  // TODO: This should be fixed after implement api to decide whether need to
+  // message passing and rename this metadata
   if (metadata["type"] == "dpa2") {
     do_message_passing = 1;
   } else {
