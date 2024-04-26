@@ -89,7 +89,12 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size != 1) {
-      cuda_aware = MPIX_Query_cuda_support();
+      int version, subversion;
+      MPI_Get_version(int *version, int *subversion);
+      if(version >=4)
+        cuda_aware = MPIX_Query_cuda_support();
+      else 
+        cuda_aware = 0;
       if (cuda_aware == 0) {
         recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
         recv_g1_tensor.copy_(g1);
@@ -198,7 +203,12 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size != 1) {
-      int cuda_aware = MPIX_Query_cuda_support();
+      int version, subversion;
+      MPI_Get_version(int *version, int *subversion);
+      if(version >= 4)
+        cuda_aware = MPIX_Query_cuda_support();
+      else 
+        cuda_aware = 0;
       if (cuda_aware == 0) {
         d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
         d_local_g1_tensor.copy_(grad_output[0]);
