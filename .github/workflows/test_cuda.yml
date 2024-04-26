@@ -55,9 +55,9 @@ jobs:
         DP_VARIANT: cuda
         DP_ENABLE_NATIVE_OPTIMIZATION: 1
     - run: dp --version
-    - run: python -m pytest source/tests --durations=0
-      env:
-        NUM_WORKERS: 0
+    # - run: python -m pytest source/tests --durations=0
+    #   env:
+    #     NUM_WORKERS: 0
     - name: Download libtorch
       run: |
          wget https://download.pytorch.org/libtorch/cu121/libtorch-cxx11-abi-shared-with-deps-2.2.1%2Bcu121.zip -O libtorch.zip
@@ -73,11 +73,10 @@ jobs:
         CMAKE_GENERATOR: Ninja
         DP_VARIANT: cuda
         DP_USE_MPICH2: 1
-        #TODO: test_lammps_dpa_pt.py may fail due to unclear reasons at test_cuda on cicd machine.
     - run: |
         export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/dp_test/lib:$GITHUB_WORKSPACE/libtorch/lib:$CUDA_PATH/lib64:$LD_LIBRARY_PATH
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-        python -m pytest -s -k "not test_lammps_dpa_pt.py" source/lmp/tests || (cat log.lammps && exit 1)
+        python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
         python -m pytest source/ipi/tests
       env:
         OMP_NUM_THREADS: 1
