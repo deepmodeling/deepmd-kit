@@ -78,18 +78,17 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
-    int cuda_aware;
-    if (!mpi_init) {
-      cuda_aware = 0;
-    }
+    int cuda_aware = 1;
     int me;
-    MPI_Comm_rank(MPI_COMM_WORLD, &me);
     MPI_Comm world;
+    int world_size = 0;
     unpack_communicator(communicator_tensor, world);
+    MPI_Comm_rank(world, &me);
+    MPI_Comm_size(world, &world_size);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (mpi_init) {
+    if (world_size != 1) {
       cuda_aware = MPIX_Query_cuda_support();
       if (cuda_aware == 0) {
         recv_g1_tensor = torch::empty_like(g1).to(torch::kCPU);
@@ -188,18 +187,17 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
-    int cuda_aware;
-    if (!mpi_init) {
-      cuda_aware = 0;
-    }
+    int world_size = 0;
+    int cuda_aware = 1;
     MPI_Comm world;
     unpack_communicator(communicator_tensor, world);
     int me;
     MPI_Comm_rank(world, &me);
+    MPI_Comm_size(world, &world_size);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (mpi_init) {
+    if (world_size != 1) {
       int cuda_aware = MPIX_Query_cuda_support();
       if (cuda_aware == 0) {
         d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
