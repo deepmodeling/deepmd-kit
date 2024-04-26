@@ -258,6 +258,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         if comm_dict is None:
+            assert mapping is not None
             assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
