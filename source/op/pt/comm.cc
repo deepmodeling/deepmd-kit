@@ -76,7 +76,7 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor recv_g1_tensor = g1;
 
 #ifdef USE_MPI
-    int mpi_init;
+    int mpi_init = 0;
     MPI_Initialized(&mpi_init);
     int cuda_aware;
     if (!mpi_init) {
@@ -186,7 +186,7 @@ class Border : public torch::autograd::Function<Border> {
 
     torch::Tensor d_local_g1_tensor = grad_output[0];
 #ifdef USE_MPI
-    int mpi_init;
+    int mpi_init = 0;
     MPI_Initialized(&mpi_init);
     int cuda_aware;
     if (!mpi_init) {
