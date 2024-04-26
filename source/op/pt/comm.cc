@@ -188,8 +188,8 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Comm_rank(world, &me);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
-    #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    int cuda_aware = mpi_init ? MPIX_Query_cuda_support(): 1;
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    int cuda_aware = mpi_init ? MPIX_Query_cuda_support() : 1;
     if (cuda_aware == 0) {
       d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
       d_local_g1_tensor.copy_(grad_output[0]);
