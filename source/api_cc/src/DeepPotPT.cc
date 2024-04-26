@@ -55,10 +55,11 @@ void DeepPotPT::init(const std::string& model,
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
+  //TODO: This should be fixed after implement api to decide whether need to message passing and rename this metadata
   if (metadata["type"] == "dpa2") {
-    model_type = 1;
+    do_message_passing = 1;
   } else {
-    model_type = 0;
+    do_message_passing = 0;
   }
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
@@ -160,7 +161,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-    if (model_type == 1) {
+    if (do_message_passing == 1) {
       int nswap = lmp_list.nswap;
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
@@ -210,7 +211,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      (model_type == 1)
+      (do_message_passing == 1)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
                             firstneigh_tensor, optional_tensor, fparam_tensor,
