@@ -154,8 +154,16 @@ def _init_models_exclude_types():
     return inputs, frozen_models, compressed_models
 
 
-INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
-INPUTS_ET, FROZEN_MODELS_ET, COMPRESSED_MODELS_ET = _init_models_exclude_types()
+def setUpModule():
+    global \
+        INPUTS, \
+        FROZEN_MODELS, \
+        COMPRESSED_MODELS, \
+        INPUTS_ET, \
+        FROZEN_MODELS_ET, \
+        COMPRESSED_MODELS_ET
+    INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
+    INPUTS_ET, FROZEN_MODELS_ET, COMPRESSED_MODELS_ET = _init_models_exclude_types()
 
 
 def _get_default_places(nth_test):
