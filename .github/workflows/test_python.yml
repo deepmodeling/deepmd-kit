@@ -14,13 +14,8 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        include:
-          - python: 3.8
-            tf:
-            torch:
-          - python: "3.11"
-            tf:
-            torch:
+        group: [1, 2, 3, 4, 5, 6]
+        python: ["3.8", "3.11"]
 
     steps:
     - uses: actions/checkout@v4
@@ -45,15 +40,52 @@ jobs:
         HOROVOD_WITHOUT_PYTORCH: 1
         HOROVOD_WITHOUT_GLOO: 1
     - run: dp --version
-    - run: pytest --cov=deepmd source/tests --durations=0
+    - name: Get durations from cache
+      uses: actions/cache@v4
+      with:
+        path: test_durations
+        # the key must never match, even when restarting workflows, as that
+        # will cause durations to get out of sync between groups, the
+        # combined durations will be loaded if available
+        key: test-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.group }}
+        restore-keys: |
+          test-durations-combined-${{ github.sha }}
+          test-durations-combined
+    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations_${{ matrix.group }}
       env:
         NUM_WORKERS: 0
+    - name: Upload partial durations
+      uses: actions/upload-artifact@v4
+      with:
+        name: split-${{ matrix.group }}
+        path: .test_durations_${{ matrix.group }}
     - uses: codecov/codecov-action@v4
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  update_durations:
+    name: Combine and update integration test durations
+    runs-on: ubuntu-22.04
+    needs: testpython
+    steps:
+    - name: Get durations from cache
+      uses: actions/cache@v4
+      with:
+        path: .test_durations
+        # key won't match during the first run for the given commit, but
+        # restore-key will if there's a previous stored durations file,
+        # so cache will both be loaded and stored
+        key: test-durations-combined-${{ github.sha }}
+        restore-keys: test-durations-combined
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: split-*
+        merge-multiple: true
+    - name: Combine test durations
+      run: jq '. + input' .test_durations_* > .test_durations
   pass:
     name: Pass testing Python
-    needs: [testpython]
+    needs: [testpython, update_durations]
     runs-on: ubuntu-latest
     if: always()
     steps:
