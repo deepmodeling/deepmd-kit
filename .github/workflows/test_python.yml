@@ -51,7 +51,7 @@ jobs:
         restore-keys: |
           test-durations-combined-${{ matrix.python }}-${{ github.sha }}
           test-durations-combined-${{ matrix.python }}
-    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations_${{ matrix.group }}
+    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations_${{ matrix.group }} --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
     - name: Upload partial durations
