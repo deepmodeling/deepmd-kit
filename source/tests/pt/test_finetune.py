@@ -33,47 +33,44 @@ from .model.test_permutation import (
     model_zbl,
 )
 
-
-def setUpModule():
-    global energy_data_requirement
-    energy_data_requirement = [
-        DataRequirementItem(
-            "energy",
-            ndof=1,
-            atomic=False,
-            must=False,
-            high_prec=True,
-        ),
-        DataRequirementItem(
-            "force",
-            ndof=3,
-            atomic=True,
-            must=False,
-            high_prec=False,
-        ),
-        DataRequirementItem(
-            "virial",
-            ndof=9,
-            atomic=False,
-            must=False,
-            high_prec=False,
-        ),
-        DataRequirementItem(
-            "atom_ener",
-            ndof=1,
-            atomic=True,
-            must=False,
-            high_prec=False,
-        ),
-        DataRequirementItem(
-            "atom_pref",
-            ndof=1,
-            atomic=True,
-            must=False,
-            high_prec=False,
-            repeat=3,
-        ),
-    ]
+energy_data_requirement = [
+    DataRequirementItem(
+        "energy",
+        ndof=1,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "force",
+        ndof=3,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "virial",
+        ndof=9,
+        atomic=False,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_ener",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+    ),
+    DataRequirementItem(
+        "atom_pref",
+        ndof=1,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        repeat=3,
+    ),
+]
 
 
 class FinetuneTest:
