@@ -2313,20 +2313,33 @@ def gen_args(**kwargs) -> List[Argument]:
 
 def backend_compat(data):
     data = data.copy()
-    # stripped_type_embedding in old DescrptSeAtten
-    if (
-        "descriptor" in data["model"]
-        and data["model"]["descriptor"].get("type", "se_e2_a") == "se_atten"
-        and data["model"]["descriptor"].pop("stripped_type_embedding", False)
-    ):
-        if "tebd_input_mode" not in data["model"]["descriptor"]:
-            data["model"]["descriptor"]["tebd_input_mode"] = "strip"
-        elif data["model"]["descriptor"]["tebd_input_mode"] != "strip":
-            raise ValueError(
-                "Conflict detected: 'stripped_type_embedding' is set to True, but 'tebd_input_mode' is not 'strip'. Please ensure 'tebd_input_mode' is set to 'strip' when 'stripped_type_embedding' is True."
+
+    def compat_stripped_type_embedding(descriptor_param):
+        # stripped_type_embedding in old DescrptSeAtten
+        descriptor_param = descriptor_param.copy()
+        if descriptor_param.get(
+            "type", "se_e2_a"
+        ) == "se_atten" and descriptor_param.pop("stripped_type_embedding", False):
+            if "tebd_input_mode" not in descriptor_param:
+                descriptor_param["tebd_input_mode"] = "strip"
+            elif descriptor_param["tebd_input_mode"] != "strip":
+                raise ValueError(
+                    "Conflict detected: 'stripped_type_embedding' is set to True, but 'tebd_input_mode' is not 'strip'. Please ensure 'tebd_input_mode' is set to 'strip' when 'stripped_type_embedding' is True."
+                )
+            else:
+                pass
+        return descriptor_param
+
+    if "descriptor" in data["model"]:
+        if "list" not in data["model"]["descriptor"]:
+            data["model"]["descriptor"] = compat_stripped_type_embedding(
+                data["model"]["descriptor"]
             )
         else:
-            pass
+            for ii, descriptor in enumerate(data["model"]["descriptor"]["list"]):
+                data["model"]["descriptor"]["list"][ii] = (
+                    compat_stripped_type_embedding(descriptor)
+                )
     return data
 
 
