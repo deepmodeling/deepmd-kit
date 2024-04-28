@@ -847,8 +847,8 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
 
     @pytest.mark.run(order=2)
     def test_wrap_qnn_v1(self):
-        # without calling test_model_qnn_v1, this test will fail when running individually
-        self.test_model_qnn_v1()
+        # without calling test_mapt_cnn_v1, this test will fail when running individually
+        self.test_mapt_cnn_v1()
 
         tf.reset_default_graph()
         jdata = {}
