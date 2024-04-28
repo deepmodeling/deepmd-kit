@@ -33,6 +33,7 @@ class TestCaseSingleFrameWithNlist:
             dtype=np.float64,
         ).reshape([1, self.nall, 3])
         self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
+        self.mapping = np.array([0, 1, 2, 0], dtype=int).reshape([1, self.nall])
         # sel = [5, 2]
         self.sel = [5, 2]
         self.sel_mix = [7]
@@ -57,6 +58,10 @@ class TestCaseSingleFrameWithNlist:
         self.atype_ext = np.concatenate(
             [self.atype_ext, self.atype_ext[:, self.perm]], axis=0
         )
+        self.mapping = np.concatenate(
+            [self.mapping, self.mapping[:, self.perm]], axis=0
+        )
+
         # permute the nlist
         nlist1 = self.nlist[:, self.perm[: self.nloc], :]
         mask = nlist1 == -1

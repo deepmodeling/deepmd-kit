@@ -28,6 +28,7 @@ except ImportError:
 
 from typing import (
     Any,
+    Callable,
     List,
     Optional,
     Tuple,
@@ -48,6 +49,9 @@ from deepmd.dpmodel.utils import (
 
 from .base_descriptor import (
     BaseDescriptor,
+)
+from .descriptor import (
+    DescriptorBlock,
 )
 
 
@@ -245,6 +249,292 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         if ln_eps is None:
             ln_eps = 1e-5
 
+        self.se_atten = DescrptBlockSeAtten(
+            rcut,
+            rcut_smth,
+            sel,
+            ntypes,
+            neuron=neuron,
+            axis_neuron=axis_neuron,
+            tebd_dim=tebd_dim,
+            tebd_input_mode=tebd_input_mode,
+            set_davg_zero=set_davg_zero,
+            attn=attn,
+            attn_layer=attn_layer,
+            attn_dotr=attn_dotr,
+            attn_mask=False,
+            activation_function=activation_function,
+            precision=precision,
+            resnet_dt=resnet_dt,
+            scaling_factor=scaling_factor,
+            normalize=normalize,
+            temperature=temperature,
+            smooth=smooth_type_embedding,
+            type_one_side=type_one_side,
+            exclude_types=exclude_types,
+            env_protection=env_protection,
+            trainable_ln=trainable_ln,
+            ln_eps=ln_eps,
+        )
+        self.type_embedding = TypeEmbedNet(
+            ntypes=ntypes,
+            neuron=[tebd_dim],
+            padding=True,
+            activation_function="Linear",
+            precision=precision,
+        )
+        self.tebd_dim = tebd_dim
+        self.concat_output_tebd = concat_output_tebd
+        self.trainable = trainable
+
+    def get_rcut(self) -> float:
+        """Returns the cut-off radius."""
+        return self.se_atten.get_rcut()
+
+    def get_nsel(self) -> int:
+        """Returns the number of selected atoms in the cut-off radius."""
+        return self.se_atten.get_nsel()
+
+    def get_sel(self) -> List[int]:
+        """Returns the number of selected atoms for each type."""
+        return self.se_atten.get_sel()
+
+    def get_ntypes(self) -> int:
+        """Returns the number of element types."""
+        return self.se_atten.get_ntypes()
+
+    def get_dim_out(self) -> int:
+        """Returns the output dimension."""
+        ret = self.se_atten.get_dim_out()
+        if self.concat_output_tebd:
+            ret += self.tebd_dim
+        return ret
+
+    def get_dim_emb(self) -> int:
+        return self.se_atten.dim_emb
+
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
+        """
+        return self.se_atten.mixed_types()
+
+    def share_params(self, base_class, shared_level, resume=False):
+        """
+        Share the parameters of self to the base_class with shared_level during multitask training.
+        If not start from checkpoint (resume is False),
+        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        """
+        raise NotImplementedError
+
+    @property
+    def dim_out(self):
+        return self.get_dim_out()
+
+    @property
+    def dim_emb(self):
+        return self.get_dim_emb()
+
+    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+        """Update mean and stddev for descriptor elements."""
+        raise NotImplementedError
+
+    def set_stat_mean_and_stddev(
+        self,
+        mean: np.ndarray,
+        stddev: np.ndarray,
+    ) -> None:
+        self.se_atten.mean = mean
+        self.se_atten.stddev = stddev
+
+    def call(
+        self,
+        coord_ext,
+        atype_ext,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+    ):
+        """Compute the descriptor.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        atype_ext
+            The extended aotm types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to lcoal region. not used by this descriptor.
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical representation.
+            this descriptor returns None
+        h2
+            The rotationally equivariant pair-partical representation.
+            this descriptor returns None
+        sw
+            The smooth switch function.
+        """
+        del mapping
+        nf, nloc, nnei = nlist.shape
+        nall = coord_ext.reshape(nf, -1).shape[1] // 3
+        # nf x nall x tebd_dim
+        atype_embd_ext = self.type_embedding.call()[atype_ext]
+        # nfnl x tebd_dim
+        atype_embd = atype_embd_ext[:, :nloc, :]
+        grrg, g2, h2, rot_mat, sw = self.se_atten(
+            nlist,
+            coord_ext,
+            atype_ext,
+            atype_embd_ext,
+            mapping=None,
+        )
+        # nf x nloc x (ng x ng1 + tebd_dim)
+        if self.concat_output_tebd:
+            grrg = np.concatenate([grrg, atype_embd.reshape(nf, nloc, -1)], axis=-1)
+        return grrg, rot_mat, None, None, sw
+
+    def serialize(self) -> dict:
+        """Serialize the descriptor to dict."""
+        obj = self.se_atten
+        data = {
+            "@class": "Descriptor",
+            "type": "dpa1",
+            "@version": 1,
+            "rcut": obj.rcut,
+            "rcut_smth": obj.rcut_smth,
+            "sel": obj.sel,
+            "ntypes": obj.ntypes,
+            "neuron": obj.neuron,
+            "axis_neuron": obj.axis_neuron,
+            "tebd_dim": obj.tebd_dim,
+            "tebd_input_mode": obj.tebd_input_mode,
+            "set_davg_zero": obj.set_davg_zero,
+            "attn": obj.attn,
+            "attn_layer": obj.attn_layer,
+            "attn_dotr": obj.attn_dotr,
+            "attn_mask": False,
+            "activation_function": obj.activation_function,
+            "resnet_dt": obj.resnet_dt,
+            "scaling_factor": obj.scaling_factor,
+            "normalize": obj.normalize,
+            "temperature": obj.temperature,
+            "trainable_ln": obj.trainable_ln,
+            "ln_eps": obj.ln_eps,
+            "smooth_type_embedding": obj.smooth,
+            "type_one_side": obj.type_one_side,
+            "concat_output_tebd": self.concat_output_tebd,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
+            "embeddings": obj.embeddings.serialize(),
+            "attention_layers": obj.dpa1_attention.serialize(),
+            "env_mat": obj.env_mat.serialize(),
+            "type_embedding": self.type_embedding.serialize(),
+            "exclude_types": obj.exclude_types,
+            "env_protection": obj.env_protection,
+            "@variables": {
+                "davg": obj["davg"],
+                "dstd": obj["dstd"],
+            },
+            ## to be updated when the options are supported.
+            "trainable": self.trainable,
+            "spin": None,
+        }
+        if obj.tebd_input_mode in ["strip"]:
+            data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptDPA1":
+        """Deserialize from dict."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        variables = data.pop("@variables")
+        embeddings = data.pop("embeddings")
+        type_embedding = data.pop("type_embedding")
+        attention_layers = data.pop("attention_layers")
+        env_mat = data.pop("env_mat")
+        tebd_input_mode = data["tebd_input_mode"]
+        if tebd_input_mode in ["strip"]:
+            embeddings_strip = data.pop("embeddings_strip")
+        else:
+            embeddings_strip = None
+        obj = cls(**data)
+
+        obj.se_atten["davg"] = variables["davg"]
+        obj.se_atten["dstd"] = variables["dstd"]
+        obj.se_atten.embeddings = NetworkCollection.deserialize(embeddings)
+        if tebd_input_mode in ["strip"]:
+            obj.se_atten.embeddings_strip = NetworkCollection.deserialize(
+                embeddings_strip
+            )
+        obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
+        obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
+            attention_layers
+        )
+        return obj
+
+    @classmethod
+    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        """Update the selection and perform neighbor statistics.
+
+        Parameters
+        ----------
+        global_jdata : dict
+            The global data, containing the training section
+        local_jdata : dict
+            The local data refer to the current class
+        """
+        local_jdata_cpy = local_jdata.copy()
+        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+
+
+@DescriptorBlock.register("se_atten")
+class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
+    def __init__(
+        self,
+        rcut: float,
+        rcut_smth: float,
+        sel: Union[List[int], int],
+        ntypes: int,
+        neuron: List[int] = [25, 50, 100],
+        axis_neuron: int = 8,
+        tebd_dim: int = 8,
+        tebd_input_mode: str = "concat",
+        resnet_dt: bool = False,
+        type_one_side: bool = False,
+        attn: int = 128,
+        attn_layer: int = 2,
+        attn_dotr: bool = True,
+        attn_mask: bool = False,
+        exclude_types: List[List[int]] = [],
+        env_protection: float = 0.0,
+        set_davg_zero: bool = False,
+        activation_function: str = "tanh",
+        precision: str = DEFAULT_PRECISION,
+        scaling_factor=1.0,
+        normalize: bool = True,
+        temperature: Optional[float] = None,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
+        smooth: bool = True,
+    ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         if isinstance(sel, int):
@@ -258,13 +548,13 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.tebd_dim = tebd_dim
         self.tebd_input_mode = tebd_input_mode
         self.resnet_dt = resnet_dt
-        self.trainable = trainable
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
         self.type_one_side = type_one_side
         self.attn = attn
         self.attn_layer = attn_layer
         self.attn_dotr = attn_dotr
+        self.attn_mask = attn_mask
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.set_davg_zero = set_davg_zero
@@ -273,18 +563,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
-        self.smooth = smooth_type_embedding
-        self.concat_output_tebd = concat_output_tebd
+        self.smooth = smooth
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
-        self.type_embedding = TypeEmbedNet(
-            ntypes=self.ntypes,
-            neuron=[self.tebd_dim],
-            padding=True,
-            activation_function="Linear",
-            precision=precision,
-        )
         self.tebd_dim_input = self.tebd_dim if self.type_one_side else self.tebd_dim * 2
         if self.tebd_input_mode in ["concat"]:
             self.embd_input_dim = 1 + self.tebd_dim_input
@@ -334,52 +616,55 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
-        self.davg = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
-        self.dstd = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
+        self.mean = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
+        self.stddev = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
+
+    def get_rcut(self) -> float:
+        """Returns the cut-off radius."""
+        return self.rcut
+
+    def get_nsel(self) -> int:
+        """Returns the number of selected atoms in the cut-off radius."""
+        return sum(self.sel)
+
+    def get_sel(self) -> List[int]:
+        """Returns the number of selected atoms for each type."""
+        return self.sel
+
+    def get_ntypes(self) -> int:
+        """Returns the number of element types."""
+        return self.ntypes
+
+    def get_dim_in(self) -> int:
+        """Returns the output dimension."""
+        return self.dim_in
+
+    def get_dim_out(self) -> int:
+        """Returns the output dimension."""
+        return self.dim_out
+
+    def get_dim_emb(self) -> int:
+        """Returns the output dimension of embedding."""
+        return self.filter_neuron[-1]
 
     def __setitem__(self, key, value):
         if key in ("avg", "data_avg", "davg"):
-            self.davg = value
+            self.mean = value
         elif key in ("std", "data_std", "dstd"):
-            self.dstd = value
+            self.stddev = value
         else:
             raise KeyError(key)
 
     def __getitem__(self, key):
         if key in ("avg", "data_avg", "davg"):
-            return self.davg
+            return self.mean
         elif key in ("std", "data_std", "dstd"):
-            return self.dstd
+            return self.stddev
         else:
             raise KeyError(key)
 
-    @property
-    def dim_out(self):
-        """Returns the output dimension of this descriptor."""
-        return self.get_dim_out()
-
-    def get_dim_out(self):
-        """Returns the output dimension of this descriptor."""
-        return (
-            self.neuron[-1] * self.axis_neuron + self.tebd_dim
-            if self.concat_output_tebd
-            else self.neuron[-1] * self.axis_neuron
-        )
-
-    def get_dim_emb(self):
-        """Returns the embedding (g2) dimension of this descriptor."""
-        return self.neuron[-1]
-
-    def get_rcut(self):
-        """Returns cutoff radius."""
-        return self.rcut
-
-    def get_sel(self):
-        """Returns cutoff radius."""
-        return self.sel
-
-    def mixed_types(self):
+    def mixed_types(self) -> bool:
         """If true, the discriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
@@ -391,21 +676,39 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         return True
 
-    def share_params(self, base_class, shared_level, resume=False):
-        """
-        Share the parameters of self to the base_class with shared_level during multitask training.
-        If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
-        """
+    @property
+    def dim_out(self):
+        """Returns the output dimension of this descriptor."""
+        return self.filter_neuron[-1] * self.axis_neuron
+
+    @property
+    def dim_in(self):
+        """Returns the atomic input dimension of this descriptor."""
+        return self.tebd_dim
+
+    @property
+    def dim_emb(self):
+        """Returns the output dimension of embedding."""
+        return self.get_dim_emb()
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
         raise NotImplementedError
 
-    def get_ntypes(self) -> int:
-        """Returns the number of element types."""
-        return self.ntypes
-
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
-        """Update mean and stddev for descriptor elements."""
+    def get_stats(self):
+        """Get the statistics of the descriptor."""
         raise NotImplementedError
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def cal_g(
         self,
@@ -430,53 +733,17 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         gg = self.embeddings_strip[embedding_idx].call(ss)
         return gg
 
-    def reinit_exclude(
-        self,
-        exclude_types: List[Tuple[int, int]] = [],
-    ):
-        self.exclude_types = exclude_types
-        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
-
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
+        nlist: np.ndarray,
+        coord_ext: np.ndarray,
+        atype_ext: np.ndarray,
+        atype_embd_ext: Optional[np.ndarray] = None,
         mapping: Optional[np.ndarray] = None,
     ):
-        """Compute the descriptor.
-
-        Parameters
-        ----------
-        coord_ext
-            The extended coordinates of atoms. shape: nf x (nallx3)
-        atype_ext
-            The extended aotm types. shape: nf x nall
-        nlist
-            The neighbor list. shape: nf x nloc x nnei
-        mapping
-            The index mapping from extended to lcoal region. not used by this descriptor.
-
-        Returns
-        -------
-        descriptor
-            The descriptor. shape: nf x nloc x (ng x axis_neuron)
-        gr
-            The rotationally equivariant and permutationally invariant single particle
-            representation. shape: nf x nloc x ng x 3
-        g2
-            The rotationally invariant pair-partical representation.
-            this descriptor returns None
-        h2
-            The rotationally equivariant pair-partical representation.
-            this descriptor returns None
-        sw
-            The smooth switch function.
-        """
-        del mapping
         # nf x nloc x nnei x 4
         dmatrix, sw = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.davg, self.dstd
+            coord_ext, atype_ext, nlist, self.mean, self.stddev
         )
         nf, nloc, nnei, _ = dmatrix.shape
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
@@ -486,10 +753,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         dmatrix = dmatrix.reshape(nf * nloc, nnei, 4)
         # nfnl x nnei x 1
         sw = sw.reshape(nf * nloc, nnei, 1)
-
-        # add type embedding into input
-        # nf x nall x tebd_dim
-        atype_embd_ext = self.type_embedding.call()[atype_ext]
         # nfnl x tebd_dim
         atype_embd = atype_embd_ext[:, :nloc, :].reshape(nf * nloc, -1)
         # nfnl x nnei x tebd_dim
@@ -504,7 +767,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype_embd_nlist = np.take_along_axis(atype_embd_ext, index, axis=1).reshape(
             nf * nloc, nnei, self.tebd_dim
         )
-
         ng = self.neuron[-1]
         # nfnl x nnei
         exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
@@ -561,101 +823,13 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron).astype(
             GLOBAL_NP_FLOAT_PRECISION
         )
-        # nf x nloc x (ng x ng1 + tebd_dim)
-        if self.concat_output_tebd:
-            grrg = np.concatenate([grrg, atype_embd.reshape(nf, nloc, -1)], axis=-1)
-        return grrg, gr[..., 1:], None, None, sw
-
-    def serialize(self) -> dict:
-        """Serialize the descriptor to dict."""
-        data = {
-            "@class": "Descriptor",
-            "type": "dpa1",
-            "@version": 1,
-            "rcut": self.rcut,
-            "rcut_smth": self.rcut_smth,
-            "sel": self.sel,
-            "ntypes": self.ntypes,
-            "neuron": self.neuron,
-            "axis_neuron": self.axis_neuron,
-            "tebd_dim": self.tebd_dim,
-            "tebd_input_mode": self.tebd_input_mode,
-            "set_davg_zero": self.set_davg_zero,
-            "attn": self.attn,
-            "attn_layer": self.attn_layer,
-            "attn_dotr": self.attn_dotr,
-            "attn_mask": False,
-            "activation_function": self.activation_function,
-            "resnet_dt": self.resnet_dt,
-            "scaling_factor": self.scaling_factor,
-            "normalize": self.normalize,
-            "temperature": self.temperature,
-            "trainable_ln": self.trainable_ln,
-            "ln_eps": self.ln_eps,
-            "smooth_type_embedding": self.smooth,
-            "type_one_side": self.type_one_side,
-            "concat_output_tebd": self.concat_output_tebd,
-            # make deterministic
-            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
-            "embeddings": self.embeddings.serialize(),
-            "attention_layers": self.dpa1_attention.serialize(),
-            "env_mat": self.env_mat.serialize(),
-            "type_embedding": self.type_embedding.serialize(),
-            "exclude_types": self.exclude_types,
-            "env_protection": self.env_protection,
-            "@variables": {
-                "davg": self.davg,
-                "dstd": self.dstd,
-            },
-            ## to be updated when the options are supported.
-            "trainable": True,
-            "spin": None,
-        }
-        if self.tebd_input_mode in ["strip"]:
-            data.update({"embeddings_strip": self.embeddings_strip.serialize()})
-        return data
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "DescrptDPA1":
-        """Deserialize from dict."""
-        data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
-        data.pop("@class")
-        data.pop("type")
-        variables = data.pop("@variables")
-        embeddings = data.pop("embeddings")
-        type_embedding = data.pop("type_embedding")
-        attention_layers = data.pop("attention_layers")
-        env_mat = data.pop("env_mat")
-        tebd_input_mode = data["tebd_input_mode"]
-        if tebd_input_mode in ["strip"]:
-            embeddings_strip = data.pop("embeddings_strip")
-        else:
-            embeddings_strip = None
-        obj = cls(**data)
-
-        obj["davg"] = variables["davg"]
-        obj["dstd"] = variables["dstd"]
-        obj.embeddings = NetworkCollection.deserialize(embeddings)
-        if tebd_input_mode in ["strip"]:
-            obj.embeddings_strip = NetworkCollection.deserialize(embeddings_strip)
-        obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
-        obj.dpa1_attention = NeighborGatedAttention.deserialize(attention_layers)
-        return obj
-
-    @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
-        """Update the selection and perform neighbor statistics.
-
-        Parameters
-        ----------
-        global_jdata : dict
-            The global data, containing the training section
-        local_jdata : dict
-            The local data refer to the current class
-        """
-        local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+        return (
+            grrg.reshape(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            gg.reshape(-1, nloc, self.nnei, self.filter_neuron[-1]),
+            dmatrix.reshape(-1, nloc, self.nnei, 4)[..., 1:],
+            gr[..., 1:].reshape(-1, nloc, self.filter_neuron[-1], 3),
+            sw,
+        )
 
 
 class NeighborGatedAttention(NativeOP):
@@ -838,7 +1012,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         sw: Optional[np.ndarray] = None,
     ):
         residual = x
-        x = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
+        x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
         x = self.attn_layer_norm(x)
         return x
@@ -891,6 +1065,7 @@ class GatedAttentionLayer(NativeOP):
         nnei: int,
         embed_dim: int,
         hidden_dim: int,
+        num_heads: int = 1,
         dotr: bool = False,
         do_mask: bool = False,
         scaling_factor: float = 1.0,
@@ -900,11 +1075,14 @@ class GatedAttentionLayer(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
-        """Construct a neighbor-wise attention net."""
+        """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
+        assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"
         self.nnei = nnei
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.head_dim = hidden_dim // num_heads
         self.dotr = dotr
         self.do_mask = do_mask
         self.bias = bias
@@ -912,10 +1090,11 @@ class GatedAttentionLayer(NativeOP):
         self.scaling_factor = scaling_factor
         self.temperature = temperature
         self.precision = precision
-        if temperature is None:
-            self.scaling = (self.hidden_dim * scaling_factor) ** -0.5
-        else:
-            self.scaling = temperature
+        self.scaling = (
+            (self.head_dim * scaling_factor) ** -0.5
+            if temperature is None
+            else temperature
+        )
         self.normalize = normalize
         self.in_proj = NativeLayer(
             embed_dim,
@@ -936,41 +1115,55 @@ class GatedAttentionLayer(NativeOP):
         # Linear projection
         q, k, v = np.split(self.in_proj(query), 3, axis=-1)
         # Reshape and normalize
-        q = q.reshape(-1, self.nnei, self.hidden_dim)
-        k = k.reshape(-1, self.nnei, self.hidden_dim)
-        v = v.reshape(-1, self.nnei, self.hidden_dim)
+        # (nf x nloc) x num_heads x nnei x head_dim
+        q = q.reshape(-1, self.nnei, self.num_heads, self.head_dim).transpose(
+            0, 2, 1, 3
+        )
+        k = k.reshape(-1, self.nnei, self.num_heads, self.head_dim).transpose(
+            0, 2, 1, 3
+        )
+        v = v.reshape(-1, self.nnei, self.num_heads, self.head_dim).transpose(
+            0, 2, 1, 3
+        )
         if self.normalize:
             q = np_normalize(q, axis=-1)
             k = np_normalize(k, axis=-1)
             v = np_normalize(v, axis=-1)
         q = q * self.scaling
         # Attention weights
-        attn_weights = q @ k.transpose(0, 2, 1)
+        # (nf x nloc) x num_heads x nnei x nnei
+        attn_weights = q @ k.transpose(0, 1, 3, 2)
         nei_mask = nei_mask.reshape(-1, self.nnei)
         if self.smooth:
-            sw = sw.reshape(-1, self.nnei)
-            attn_weights = (attn_weights + attnw_shift) * sw[:, None, :] * sw[
-                :, :, None
+            sw = sw.reshape(-1, 1, self.nnei)
+            attn_weights = (attn_weights + attnw_shift) * sw[:, :, :, None] * sw[
+                :, :, None, :
             ] - attnw_shift
         else:
-            attn_weights = np.where(nei_mask[:, None, :], attn_weights, -np.inf)
+            attn_weights = np.where(nei_mask[:, None, None, :], attn_weights, -np.inf)
         attn_weights = np_softmax(attn_weights, axis=-1)
-        attn_weights = np.where(nei_mask[:, :, None], attn_weights, 0.0)
+        attn_weights = np.where(nei_mask[:, None, :, None], attn_weights, 0.0)
         if self.smooth:
-            attn_weights = attn_weights * sw[:, None, :] * sw[:, :, None]
+            attn_weights = attn_weights * sw[:, :, :, None] * sw[:, :, None, :]
         if self.dotr:
-            angular_weight = input_r @ input_r.transpose(0, 2, 1)
+            angular_weight = (input_r @ input_r.transpose(0, 2, 1)).reshape(
+                -1, 1, self.nnei, self.nnei
+            )
             attn_weights = attn_weights * angular_weight
         # Output projection
+        # (nf x nloc) x num_heads x nnei x head_dim
         o = attn_weights @ v
+        # (nf x nloc) x nnei x (num_heads x head_dim)
+        o = o.transpose(0, 2, 1, 3).reshape(-1, self.nnei, self.hidden_dim)
         output = self.out_proj(o)
-        return output
+        return output, attn_weights
 
     def serialize(self):
         return {
             "nnei": self.nnei,
             "embed_dim": self.embed_dim,
             "hidden_dim": self.hidden_dim,
+            "num_heads": self.num_heads,
             "dotr": self.dotr,
             "do_mask": self.do_mask,
             "scaling_factor": self.scaling_factor,

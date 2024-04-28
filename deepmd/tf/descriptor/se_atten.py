@@ -2225,6 +2225,11 @@ class DescrptDPA1Compat(DescrptSeAtten):
             new_dict["attention_layers"][layer_idx]["attention_layer"].update(
                 update_info
             )
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                {
+                    "num_heads": 1,
+                }
+            )
         return new_dict
 
     @classmethod

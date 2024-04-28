@@ -2,16 +2,12 @@
 from typing import (
     Callable,
     List,
-    Optional,
 )
 
 import torch
 
-from deepmd.pt.model.network.layernorm import (
-    LayerNorm,
-)
-from deepmd.pt.model.network.mlp import (
-    MLPLayer,
+from deepmd.pt.model.network.network import (
+    SimpleLinear,
 )
 from deepmd.pt.utils import (
     env,
@@ -19,41 +15,21 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 
 
-# common ops
 def _make_nei_g1(
     g1_ext: torch.Tensor,
     nlist: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    Make neighbor-wise atomic invariant rep.
-
-    Parameters
-    ----------
-    g1_ext
-        Extended atomic invariant rep, with shape nf x nall x ng1.
-    nlist
-        Neighbor list, with shape nf x nloc x nnei.
-
-    Returns
-    -------
-    gg1: torch.Tensor
-        Neighbor-wise atomic invariant rep, with shape nf x nloc x nnei x ng1.
-
-    """
-    # nlist: nf x nloc x nnei
+    # nlist: nb x nloc x nnei
     nb, nloc, nnei = nlist.shape
-    # g1_ext: nf x nall x ng1
+    # g1_ext: nb x nall x ng1
     ng1 = g1_ext.shape[-1]
-    # index: nf x (nloc x nnei) x ng1
+    # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, ng1)
-    # gg1  : nf x (nloc x nnei) x ng1
+    # gg1  : nb x (nloc x nnei) x ng1
     gg1 = torch.gather(g1_ext, dim=1, index=index)
-    # gg1  : nf x nloc x nnei x ng1
+    # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.view(nb, nloc, nnei, ng1)
     return gg1
 
@@ -62,92 +38,82 @@ def _apply_nlist_mask(
     gg: torch.Tensor,
     nlist_mask: torch.Tensor,
 ) -> torch.Tensor:
-    """
-    Apply nlist mask to neighbor-wise rep tensors.
-
-    Parameters
-    ----------
-    gg
-        Neighbor-wise rep tensors, with shape nf x nloc x nnei x d.
-    nlist_mask
-        Neighbor list mask, where zero means no neighbor, with shape nf x nloc x nnei.
-    """
-    # gg:  nf x nloc x nnei x d
+    # gg:  nf x nloc x nnei x ng
     # msk: nf x nloc x nnei
     return gg.masked_fill(~nlist_mask.unsqueeze(-1), 0.0)
 
 
 def _apply_switch(gg: torch.Tensor, sw: torch.Tensor) -> torch.Tensor:
-    """
-    Apply switch function to neighbor-wise rep tensors.
-
-    Parameters
-    ----------
-    gg
-        Neighbor-wise rep tensors, with shape nf x nloc x nnei x d.
-    sw
-        The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
-        and remains 0 beyond rcut, with shape nf x nloc x nnei.
-    """
-    # gg:  nf x nloc x nnei x d
+    # gg:  nf x nloc x nnei x ng
     # sw:  nf x nloc x nnei
     return gg * sw.unsqueeze(-1)
+
+
+def _apply_h_norm(
+    hh: torch.Tensor,  # nf x nloc x nnei x 3
+) -> torch.Tensor:
+    """Normalize h by the std of vector length.
+    do not have an idea if this is a good way.
+    """
+    nf, nl, nnei, _ = hh.shape
+    # nf x nloc x nnei
+    normh = torch.linalg.norm(hh, dim=-1)
+    # nf x nloc
+    std = torch.std(normh, dim=-1)
+    # nf x nloc x nnei x 3
+    hh = hh[:, :, :, :] / (1.0 + std[:, :, None, None])
+    return hh
 
 
 class Atten2Map(torch.nn.Module):
     def __init__(
         self,
-        input_dim: int,
-        hidden_dim: int,
-        head_num: int,
+        ni: int,
+        nd: int,
+        nh: int,
         has_gate: bool = False,  # apply gate to attn map
         smooth: bool = True,
         attnw_shift: float = 20.0,
-        precision: str = "float64",
     ):
-        """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.head_num = head_num
-        self.mapqk = MLPLayer(
-            input_dim, hidden_dim * 2 * head_num, bias=False, precision=precision
-        )
+        self.ni = ni
+        self.nd = nd
+        self.nh = nh
+        self.mapqk = SimpleLinear(ni, nd * 2 * nh, bias=False)  # todo
         self.has_gate = has_gate
         self.smooth = smooth
         self.attnw_shift = attnw_shift
-        self.precision = precision
 
     def forward(
         self,
-        g2: torch.Tensor,  # nf x nloc x nnei x ng2
-        h2: torch.Tensor,  # nf x nloc x nnei x 3
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # nf x nloc x nnei
+        g2: torch.Tensor,  # nb x nloc x nnei x ng2
+        h2: torch.Tensor,  # nb x nloc x nnei x 3
+        nlist_mask: torch.Tensor,  # nb x nloc x nnei
+        sw: torch.Tensor,  # nb x nloc x nnei
     ) -> torch.Tensor:
         (
-            nf,
+            nb,
             nloc,
             nnei,
             _,
         ) = g2.shape
-        nd, nh = self.hidden_dim, self.head_num
-        # nf x nloc x nnei x nd x (nh x 2)
-        g2qk = self.mapqk(g2).view(nf, nloc, nnei, nd, nh * 2)
-        # nf x nloc x (nh x 2) x nnei x nd
+        nd, nh = self.nd, self.nh
+        # nb x nloc x nnei x nd x (nh x 2)
+        g2qk = self.mapqk(g2).view(nb, nloc, nnei, nd, nh * 2)
+        # nb x nloc x (nh x 2) x nnei x nd
         g2qk = torch.permute(g2qk, (0, 1, 4, 2, 3))
-        # nf x nloc x nh x nnei x nd
+        # nb x nloc x nh x nnei x nd
         g2q, g2k = torch.split(g2qk, nh, dim=2)
         # g2q = torch.nn.functional.normalize(g2q, dim=-1)
         # g2k = torch.nn.functional.normalize(g2k, dim=-1)
-        # nf x nloc x nh x nnei x nnei
+        # nb x nloc x nh x nnei x nnei
         attnw = torch.matmul(g2q, torch.transpose(g2k, -1, -2)) / nd**0.5
         if self.has_gate:
             gate = torch.matmul(h2, torch.transpose(h2, -1, -2)).unsqueeze(-3)
             attnw = attnw * gate
-        # mask the attenmap, nf x nloc x 1 x 1 x nnei
+        # mask the attenmap, nb x nloc x 1 x 1 x nnei
         attnw_mask = ~nlist_mask.unsqueeze(2).unsqueeze(2)
-        # mask the attenmap, nf x nloc x 1 x nnei x 1
+        # mask the attenmap, nb x nloc x 1 x nnei x 1
         attnw_mask_c = ~nlist_mask.unsqueeze(2).unsqueeze(-1)
         if self.smooth:
             attnw = (attnw + self.attnw_shift) * sw[:, :, None, :, None] * sw[
@@ -163,76 +129,34 @@ class Atten2Map(torch.nn.Module):
             attnw_mask,
             0.0,
         )
-        # nf x nloc x nh x nnei x nnei
+        # nb x nloc x nh x nnei x nnei
         attnw = attnw.masked_fill(
             attnw_mask_c,
             0.0,
         )
         if self.smooth:
             attnw = attnw * sw[:, :, None, :, None] * sw[:, :, None, None, :]
-        # nf x nloc x nnei x nnei
+        # nb x nloc x nnei x nnei
         h2h2t = torch.matmul(h2, torch.transpose(h2, -1, -2)) / 3.0**0.5
-        # nf x nloc x nh x nnei x nnei
+        # nb x nloc x nh x nnei x nnei
         ret = attnw * h2h2t[:, :, None, :, :]
         # ret = torch.softmax(g2qk, dim=-1)
-        # nf x nloc x nnei x nnei x nh
+        # nb x nloc x nnei x nnei x nh
         ret = torch.permute(ret, (0, 1, 3, 4, 2))
         return ret
-
-    def serialize(self) -> dict:
-        """Serialize the networks to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized networks.
-        """
-        return {
-            "@class": "Atten2Map",
-            "@version": 1,
-            "input_dim": self.input_dim,
-            "hidden_dim": self.hidden_dim,
-            "head_num": self.head_num,
-            "has_gate": self.has_gate,
-            "smooth": self.smooth,
-            "attnw_shift": self.attnw_shift,
-            "precision": self.precision,
-            "mapqk": self.mapqk.serialize(),
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "Atten2Map":
-        """Deserialize the networks from a dict.
-
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
-        data.pop("@class")
-        mapqk = data.pop("mapqk")
-        obj = cls(**data)
-        obj.mapqk = MLPLayer.deserialize(mapqk)
-        return obj
 
 
 class Atten2MultiHeadApply(torch.nn.Module):
     def __init__(
         self,
-        input_dim: int,
-        head_num: int,
-        precision: str = "float64",
+        ni: int,
+        nh: int,
     ):
         super().__init__()
-        self.input_dim = input_dim
-        self.head_num = head_num
-        self.mapv = MLPLayer(
-            input_dim, input_dim * head_num, bias=False, precision=precision
-        )
-        self.head_map = MLPLayer(input_dim * head_num, input_dim, precision=precision)
-        self.precision = precision
+        self.ni = ni
+        self.nh = nh
+        self.mapv = SimpleLinear(ni, ni * nh, bias=False)
+        self.head_map = SimpleLinear(ni * nh, ni)
 
     def forward(
         self,
@@ -240,7 +164,7 @@ class Atten2MultiHeadApply(torch.nn.Module):
         g2: torch.Tensor,  # nf x nloc x nnei x ng2
     ) -> torch.Tensor:
         nf, nloc, nnei, ng2 = g2.shape
-        nh = self.head_num
+        nh = self.nh
         # nf x nloc x nnei x ng2 x nh
         g2v = self.mapv(g2).view(nf, nloc, nnei, ng2, nh)
         # nf x nloc x nh x nnei x ng2
@@ -255,56 +179,17 @@ class Atten2MultiHeadApply(torch.nn.Module):
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
-    def serialize(self) -> dict:
-        """Serialize the networks to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized networks.
-        """
-        return {
-            "@class": "Atten2MultiHeadApply",
-            "@version": 1,
-            "input_dim": self.input_dim,
-            "head_num": self.head_num,
-            "precision": self.precision,
-            "mapv": self.mapv.serialize(),
-            "head_map": self.head_map.serialize(),
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "Atten2MultiHeadApply":
-        """Deserialize the networks from a dict.
-
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
-        data.pop("@class")
-        mapv = data.pop("mapv")
-        head_map = data.pop("head_map")
-        obj = cls(**data)
-        obj.mapv = MLPLayer.deserialize(mapv)
-        obj.head_map = MLPLayer.deserialize(head_map)
-        return obj
-
 
 class Atten2EquiVarApply(torch.nn.Module):
     def __init__(
         self,
-        input_dim: int,
-        head_num: int,
-        precision: str = "float64",
+        ni: int,
+        nh: int,
     ):
         super().__init__()
-        self.input_dim = input_dim
-        self.head_num = head_num
-        self.head_map = MLPLayer(head_num, 1, bias=False, precision=precision)
-        self.precision = precision
+        self.ni = ni
+        self.nh = nh
+        self.head_map = SimpleLinear(nh, 1, bias=False)
 
     def forward(
         self,
@@ -312,7 +197,7 @@ class Atten2EquiVarApply(torch.nn.Module):
         h2: torch.Tensor,  # nf x nloc x nnei x 3
     ) -> torch.Tensor:
         nf, nloc, nnei, _ = h2.shape
-        nh = self.head_num
+        nh = self.nh
         # nf x nloc x nh x nnei x nnei
         AA = torch.permute(AA, (0, 1, 4, 2, 3))
         h2m = torch.unsqueeze(h2, dim=2)
@@ -325,85 +210,42 @@ class Atten2EquiVarApply(torch.nn.Module):
         # nf x nloc x nnei x 3
         return torch.squeeze(self.head_map(ret), dim=-1)
 
-    def serialize(self) -> dict:
-        """Serialize the networks to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized networks.
-        """
-        return {
-            "@class": "Atten2EquiVarApply",
-            "@version": 1,
-            "input_dim": self.input_dim,
-            "head_num": self.head_num,
-            "precision": self.precision,
-            "head_map": self.head_map.serialize(),
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "Atten2EquiVarApply":
-        """Deserialize the networks from a dict.
-
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
-        data.pop("@class")
-        head_map = data.pop("head_map")
-        obj = cls(**data)
-        obj.head_map = MLPLayer.deserialize(head_map)
-        return obj
-
 
 class LocalAtten(torch.nn.Module):
     def __init__(
         self,
-        input_dim: int,
-        hidden_dim: int,
-        head_num: int,
+        ni: int,
+        nd: int,
+        nh: int,
         smooth: bool = True,
         attnw_shift: float = 20.0,
-        precision: str = "float64",
     ):
         super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.head_num = head_num
-        self.mapq = MLPLayer(
-            input_dim, hidden_dim * 1 * head_num, bias=False, precision=precision
-        )
-        self.mapkv = MLPLayer(
-            input_dim,
-            (hidden_dim + input_dim) * head_num,
-            bias=False,
-            precision=precision,
-        )
-        self.head_map = MLPLayer(input_dim * head_num, input_dim, precision=precision)
+        self.ni = ni
+        self.nd = nd
+        self.nh = nh
+        self.mapq = SimpleLinear(ni, nd * 1 * nh, bias=False)
+        self.mapkv = SimpleLinear(ni, (nd + ni) * nh, bias=False)
+        self.head_map = SimpleLinear(ni * nh, ni)
         self.smooth = smooth
         self.attnw_shift = attnw_shift
-        self.precision = precision
 
     def forward(
         self,
-        g1: torch.Tensor,  # nf x nloc x ng1
-        gg1: torch.Tensor,  # nf x nloc x nnei x ng1
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # nf x nloc x nnei
+        g1: torch.Tensor,  # nb x nloc x ng1
+        gg1: torch.Tensor,  # nb x nloc x nnei x ng1
+        nlist_mask: torch.Tensor,  # nb x nloc x nnei
+        sw: torch.Tensor,  # nb x nloc x nnei
     ) -> torch.Tensor:
         nb, nloc, nnei = nlist_mask.shape
-        ni, nd, nh = self.input_dim, self.hidden_dim, self.head_num
+        ni, nd, nh = self.ni, self.nd, self.nh
         assert ni == g1.shape[-1]
         assert ni == gg1.shape[-1]
-        # nf x nloc x nd x nh
+        # nb x nloc x nd x nh
         g1q = self.mapq(g1).view(nb, nloc, nd, nh)
-        # nf x nloc x nh x nd
+        # nb x nloc x nh x nd
         g1q = torch.permute(g1q, (0, 1, 3, 2))
-        # nf x nloc x nnei x (nd+ni) x nh
+        # nb x nloc x nnei x (nd+ni) x nh
         gg1kv = self.mapkv(gg1).view(nb, nloc, nnei, nd + ni, nh)
         gg1kv = torch.permute(gg1kv, (0, 1, 4, 2, 3))
         # nb x nloc x nh x nnei x nd, nb x nloc x nh x nnei x ng1
@@ -439,49 +281,6 @@ class LocalAtten(torch.nn.Module):
         ret = self.head_map(ret)
         return ret
 
-    def serialize(self) -> dict:
-        """Serialize the networks to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized networks.
-        """
-        return {
-            "@class": "LocalAtten",
-            "@version": 1,
-            "input_dim": self.input_dim,
-            "hidden_dim": self.hidden_dim,
-            "head_num": self.head_num,
-            "smooth": self.smooth,
-            "attnw_shift": self.attnw_shift,
-            "precision": self.precision,
-            "mapq": self.mapq.serialize(),
-            "mapkv": self.mapkv.serialize(),
-            "head_map": self.head_map.serialize(),
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "LocalAtten":
-        """Deserialize the networks from a dict.
-
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
-        data.pop("@class")
-        mapq = data.pop("mapq")
-        mapkv = data.pop("mapkv")
-        head_map = data.pop("head_map")
-        obj = cls(**data)
-        obj.mapq = MLPLayer.deserialize(mapq)
-        obj.mapkv = MLPLayer.deserialize(mapkv)
-        obj.head_map = MLPLayer.deserialize(head_map)
-        return obj
-
 
 class RepformerLayer(torch.nn.Module):
     def __init__(
@@ -510,10 +309,8 @@ class RepformerLayer(torch.nn.Module):
         attn2_has_gate: bool = False,
         activation_function: str = "tanh",
         update_style: str = "res_avg",
+        set_davg_zero: bool = True,  # TODO
         smooth: bool = True,
-        precision: str = "float64",
-        trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -523,12 +320,12 @@ class RepformerLayer(torch.nn.Module):
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
         assert len(sel) == 1
-        self.sel = sel
+        self.sel = torch.tensor(sel, device=env.DEVICE)
         self.sec = self.sel
         self.axis_neuron = axis_neuron
+        self.set_davg_zero = set_davg_zero
         self.do_bn_mode = do_bn_mode
         self.bn_momentum = bn_momentum
-        self.activation_function = activation_function
         self.act = ActivationFn(activation_function)
         self.update_g1_has_grrg = update_g1_has_grrg
         self.update_g1_has_drrd = update_g1_has_drrd
@@ -539,21 +336,13 @@ class RepformerLayer(torch.nn.Module):
         self.update_g2_has_attn = update_g2_has_attn if self.update_chnnl_2 else False
         self.update_h2 = update_h2 if self.update_chnnl_2 else False
         del update_g2_has_g1g1, update_g2_has_attn, update_h2
-        self.attn1_hidden = attn1_hidden
-        self.attn1_nhead = attn1_nhead
-        self.attn2_hidden = attn2_hidden
-        self.attn2_nhead = attn2_nhead
-        self.attn2_has_gate = attn2_has_gate
         self.update_style = update_style
         self.smooth = smooth
         self.g1_dim = g1_dim
         self.g2_dim = g2_dim
-        self.trainable_ln = trainable_ln
-        self.ln_eps = ln_eps
-        self.precision = precision
 
         g1_in_dim = self.cal_1_dim(g1_dim, g2_dim, self.axis_neuron)
-        self.linear1 = MLPLayer(g1_in_dim, g1_dim, precision=precision)
+        self.linear1 = SimpleLinear(g1_in_dim, g1_dim)
         self.linear2 = None
         self.proj_g1g2 = None
         self.proj_g1g1g2 = None
@@ -565,42 +354,29 @@ class RepformerLayer(torch.nn.Module):
         self.loc_attn = None
 
         if self.update_chnnl_2:
-            self.linear2 = MLPLayer(g2_dim, g2_dim, precision=precision)
+            self.linear2 = SimpleLinear(g2_dim, g2_dim)
         if self.update_g1_has_conv:
-            self.proj_g1g2 = MLPLayer(g1_dim, g2_dim, bias=False, precision=precision)
+            self.proj_g1g2 = SimpleLinear(g1_dim, g2_dim, bias=False)
         if self.update_g2_has_g1g1:
-            self.proj_g1g1g2 = MLPLayer(g1_dim, g2_dim, bias=False, precision=precision)
+            self.proj_g1g1g2 = SimpleLinear(g1_dim, g2_dim, bias=False)
         if self.update_g2_has_attn:
             self.attn2g_map = Atten2Map(
+                g2_dim, attn2_hidden, attn2_nhead, attn2_has_gate, self.smooth
+            )
+            self.attn2_mh_apply = Atten2MultiHeadApply(g2_dim, attn2_nhead)
+            self.attn2_lm = torch.nn.LayerNorm(
                 g2_dim,
-                attn2_hidden,
-                attn2_nhead,
-                attn2_has_gate,
-                self.smooth,
-                precision=precision,
-            )
-            self.attn2_mh_apply = Atten2MultiHeadApply(
-                g2_dim, attn2_nhead, precision=precision
-            )
-            self.attn2_lm = LayerNorm(
-                g2_dim, eps=ln_eps, trainable=trainable_ln, precision=precision
+                elementwise_affine=True,
+                device=env.DEVICE,
+                dtype=env.GLOBAL_PT_FLOAT_PRECISION,
             )
         if self.update_h2:
             self.attn2h_map = Atten2Map(
-                g2_dim,
-                attn2_hidden,
-                attn2_nhead,
-                attn2_has_gate,
-                self.smooth,
-                precision=precision,
+                g2_dim, attn2_hidden, attn2_nhead, attn2_has_gate, self.smooth
             )
-            self.attn2_ev_apply = Atten2EquiVarApply(
-                g2_dim, attn2_nhead, precision=precision
-            )
+            self.attn2_ev_apply = Atten2EquiVarApply(g2_dim, attn2_nhead)
         if self.update_g1_has_attn:
-            self.loc_attn = LocalAtten(
-                g1_dim, attn1_hidden, attn1_nhead, self.smooth, precision=precision
-            )
+            self.loc_attn = LocalAtten(g1_dim, attn1_hidden, attn1_nhead, self.smooth)
 
         if self.do_bn_mode == "uniform":
             self.bn1 = self._bn_layer()
@@ -664,7 +440,7 @@ class RepformerLayer(torch.nn.Module):
         else:
             gg1 = _apply_switch(gg1, sw)
             invnnei = (1.0 / float(nnei)) * torch.ones(
-                (nb, nloc, 1), dtype=gg1.dtype, device=gg1.device
+                (nb, nloc, 1), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=gg1.device
             )
         # nb x nloc x ng2
         g1_11 = torch.sum(g2 * gg1, dim=2) * invnnei
@@ -692,7 +468,7 @@ class RepformerLayer(torch.nn.Module):
         else:
             g2 = _apply_switch(g2, sw)
             invnnei = (1.0 / float(nnei)) * torch.ones(
-                (nb, nloc, 1, 1), dtype=g2.dtype, device=g2.device
+                (nb, nloc, 1, 1), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=g2.device
             )
         # nb x nloc x 3 x ng2
         h2g2 = torch.matmul(torch.transpose(h2, -1, -2), g2) * invnnei
@@ -853,6 +629,8 @@ class RepformerLayer(torch.nn.Module):
             g1 = self._apply_bn(1, g1)
         if self.bn2 is not None:
             g2 = self._apply_bn(2, g2)
+        if self.update_h2:
+            h2 = _apply_h_norm(h2)
 
         g2_update: List[torch.Tensor] = [g2]
         h2_update: List[torch.Tensor] = [h2]
@@ -963,143 +741,3 @@ class RepformerLayer(torch.nn.Module):
             device=env.DEVICE,
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
         )
-
-    def serialize(self) -> dict:
-        """Serialize the networks to a dict.
-
-        Returns
-        -------
-        dict
-            The serialized networks.
-        """
-        data = {
-            "@class": "RepformerLayer",
-            "@version": 1,
-            "rcut": self.rcut,
-            "rcut_smth": self.rcut_smth,
-            "sel": self.sel,
-            "ntypes": self.ntypes,
-            "g1_dim": self.g1_dim,
-            "g2_dim": self.g2_dim,
-            "axis_neuron": self.axis_neuron,
-            "update_chnnl_2": self.update_chnnl_2,
-            "do_bn_mode": self.do_bn_mode,
-            "bn_momentum": self.bn_momentum,
-            "update_g1_has_conv": self.update_g1_has_conv,
-            "update_g1_has_drrd": self.update_g1_has_drrd,
-            "update_g1_has_grrg": self.update_g1_has_grrg,
-            "update_g1_has_attn": self.update_g1_has_attn,
-            "update_g2_has_g1g1": self.update_g2_has_g1g1,
-            "update_g2_has_attn": self.update_g2_has_attn,
-            "update_h2": self.update_h2,
-            "attn1_hidden": self.attn1_hidden,
-            "attn1_nhead": self.attn1_nhead,
-            "attn2_hidden": self.attn2_hidden,
-            "attn2_nhead": self.attn2_nhead,
-            "attn2_has_gate": self.attn2_has_gate,
-            "activation_function": self.activation_function,
-            "update_style": self.update_style,
-            "smooth": self.smooth,
-            "precision": self.precision,
-            "trainable_ln": self.trainable_ln,
-            "ln_eps": self.ln_eps,
-            "linear1": self.linear1.serialize(),
-        }
-        if self.update_chnnl_2:
-            data.update(
-                {
-                    "linear2": self.linear2.serialize(),
-                }
-            )
-        if self.update_g1_has_conv:
-            data.update(
-                {
-                    "proj_g1g2": self.proj_g1g2.serialize(),
-                }
-            )
-        if self.update_g2_has_g1g1:
-            data.update(
-                {
-                    "proj_g1g1g2": self.proj_g1g1g2.serialize(),
-                }
-            )
-        if self.update_g2_has_attn:
-            data.update(
-                {
-                    "attn2g_map": self.attn2g_map.serialize(),
-                    "attn2_mh_apply": self.attn2_mh_apply.serialize(),
-                    "attn2_lm": self.attn2_lm.serialize(),
-                }
-            )
-        if self.update_h2:
-            data.update(
-                {
-                    "attn2h_map": self.attn2h_map.serialize(),
-                    "attn2_ev_apply": self.attn2_ev_apply.serialize(),
-                }
-            )
-        if self.update_g1_has_attn:
-            data.update(
-                {
-                    "loc_attn": self.loc_attn.serialize(),
-                }
-            )
-        return data
-
-    @classmethod
-    def deserialize(cls, data: dict) -> "RepformerLayer":
-        """Deserialize the networks from a dict.
-
-        Parameters
-        ----------
-        data : dict
-            The dict to deserialize from.
-        """
-        data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
-        data.pop("@class")
-        linear1 = data.pop("linear1")
-        update_chnnl_2 = data["update_chnnl_2"]
-        update_g1_has_conv = data["update_g1_has_conv"]
-        update_g2_has_g1g1 = data["update_g2_has_g1g1"]
-        update_g2_has_attn = data["update_g2_has_attn"]
-        update_h2 = data["update_h2"]
-        update_g1_has_attn = data["update_g1_has_attn"]
-
-        linear2 = data.pop("linear2", None)
-        proj_g1g2 = data.pop("proj_g1g2", None)
-        proj_g1g1g2 = data.pop("proj_g1g1g2", None)
-        attn2g_map = data.pop("attn2g_map", None)
-        attn2_mh_apply = data.pop("attn2_mh_apply", None)
-        attn2_lm = data.pop("attn2_lm", None)
-        attn2h_map = data.pop("attn2h_map", None)
-        attn2_ev_apply = data.pop("attn2_ev_apply", None)
-        loc_attn = data.pop("loc_attn", None)
-
-        obj = cls(**data)
-        obj.linear1 = MLPLayer.deserialize(linear1)
-        if update_chnnl_2:
-            assert isinstance(linear2, dict)
-            obj.linear2 = MLPLayer.deserialize(linear2)
-        if update_g1_has_conv:
-            assert isinstance(proj_g1g2, dict)
-            obj.proj_g1g2 = MLPLayer.deserialize(proj_g1g2)
-        if update_g2_has_g1g1:
-            assert isinstance(proj_g1g1g2, dict)
-            obj.proj_g1g1g2 = MLPLayer.deserialize(proj_g1g1g2)
-        if update_g2_has_attn:
-            assert isinstance(attn2g_map, dict)
-            assert isinstance(attn2_mh_apply, dict)
-            assert isinstance(attn2_lm, dict)
-            obj.attn2g_map = Atten2Map.deserialize(attn2g_map)
-            obj.attn2_mh_apply = Atten2MultiHeadApply.deserialize(attn2_mh_apply)
-            obj.attn2_lm = LayerNorm.deserialize(attn2_lm)
-        if update_h2:
-            assert isinstance(attn2h_map, dict)
-            assert isinstance(attn2_ev_apply, dict)
-            obj.attn2h_map = Atten2Map.deserialize(attn2h_map)
-            obj.attn2_ev_apply = Atten2EquiVarApply.deserialize(attn2_ev_apply)
-        if update_g1_has_attn:
-            assert isinstance(loc_attn, dict)
-            obj.loc_attn = LocalAtten.deserialize(loc_attn)
-        return obj

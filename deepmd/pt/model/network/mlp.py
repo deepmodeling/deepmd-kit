@@ -44,6 +44,28 @@ def empty_t(shape, precision):
     return torch.empty(shape, dtype=precision, device=device)
 
 
+class Identity(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        xx: torch.Tensor,
+    ) -> torch.Tensor:
+        """The Identity operation layer."""
+        return xx
+
+    def serialize(self) -> dict:
+        return {
+            "@class": "Identity",
+            "@version": 1,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "Identity":
+        return Identity()
+
+
 class MLPLayer(nn.Module):
     def __init__(
         self,
@@ -56,31 +78,47 @@ class MLPLayer(nn.Module):
         bavg: float = 0.0,
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
+        init: str = "default",
     ):
         super().__init__()
         # only use_timestep when skip connection is established.
         self.use_timestep = use_timestep and (
             num_out == num_in or num_out == num_in * 2
         )
+        self.num_in = num_in
+        self.num_out = num_out
         self.activate_name = activation_function
         self.activate = ActivationFn(self.activate_name)
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.matrix = nn.Parameter(data=empty_t((num_in, num_out), self.prec))
-        nn.init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
         if bias:
             self.bias = nn.Parameter(
                 data=empty_t([num_out], self.prec),
             )
-            nn.init.normal_(self.bias.data, mean=bavg, std=stddev)
         else:
             self.bias = None
         if self.use_timestep:
             self.idt = nn.Parameter(data=empty_t([num_out], self.prec))
-            nn.init.normal_(self.idt.data, mean=0.1, std=0.001)
         else:
             self.idt = None
         self.resnet = resnet
+        if init == "default":
+            self._default_normal_init(bavg=bavg, stddev=stddev)
+        elif init == "trunc_normal":
+            self._trunc_normal_init(1.0)
+        elif init == "relu":
+            self._trunc_normal_init(2.0)
+        elif init == "glorot":
+            self._glorot_uniform_init()
+        elif init == "gating":
+            self._zero_init(self.use_bias)
+        elif init == "kaiming_normal":
+            self._normal_init()
+        elif init == "final":
+            self._zero_init(False)
+        else:
+            raise ValueError(f"Unknown initialization method: {init}")
 
     def check_type_consistency(self):
         precision = self.precision
@@ -90,8 +128,8 @@ class MLPLayer(nn.Module):
                 # assertion "float64" == "double" would fail
                 assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
 
-        check_var(self.w)
-        check_var(self.b)
+        check_var(self.matrix)
+        check_var(self.bias)
         check_var(self.idt)
 
     def dim_in(self) -> int:
@@ -99,6 +137,36 @@ class MLPLayer(nn.Module):
 
     def dim_out(self) -> int:
         return self.matrix.shape[1]
+
+    def _default_normal_init(self, bavg: float = 0.0, stddev: float = 1.0):
+        nn.init.normal_(
+            self.matrix.data, std=stddev / np.sqrt(self.num_out + self.num_in)
+        )
+        if self.bias is not None:
+            nn.init.normal_(self.bias.data, mean=bavg, std=stddev)
+        if self.idt is not None:
+            nn.init.normal_(self.idt.data, mean=0.1, std=0.001)
+
+    def _trunc_normal_init(self, scale=1.0):
+        # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
+        TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
+        _, fan_in = self.matrix.shape
+        scale = scale / max(1, fan_in)
+        std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
+        nn.init.trunc_normal_(self.matrix, mean=0.0, std=std)
+
+    def _glorot_uniform_init(self):
+        nn.init.xavier_uniform_(self.matrix, gain=1)
+
+    def _zero_init(self, use_bias=True):
+        with torch.no_grad():
+            self.matrix.fill_(0.0)
+            if use_bias and self.bias is not None:
+                with torch.no_grad():
+                    self.bias.fill_(1.0)
+
+    def _normal_init(self):
+        nn.init.kaiming_normal_(self.matrix, nonlinearity="linear")
 
     def forward(
         self,

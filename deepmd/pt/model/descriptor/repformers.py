@@ -16,8 +16,8 @@ from deepmd.pt.model.descriptor.descriptor import (
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat,
 )
-from deepmd.pt.model.network.network import (
-    SimpleLinear,
+from deepmd.pt.model.network.mlp import (
+    MLPLayer,
 )
 from deepmd.pt.utils import (
     env,
@@ -41,17 +41,7 @@ from deepmd.utils.path import (
 from .repformer_layer import (
     RepformerLayer,
 )
-
-mydtype = env.GLOBAL_PT_FLOAT_PRECISION
-mydev = env.DEVICE
-
-
-def torch_linear(*args, **kwargs):
-    return torch.nn.Linear(*args, **kwargs, dtype=mydtype, device=mydev)
-
-
-simple_linear = SimpleLinear
-mylinear = simple_linear
+from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
 
 @DescriptorBlock.register("se_repformer")
@@ -66,7 +56,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         nlayers: int = 3,
         g1_dim=128,
         g2_dim=16,
-        axis_dim: int = 4,
+        axis_neuron: int = 4,
         direct_dist: bool = False,
         do_bn_mode: str = "no",
         bn_momentum: float = 0.1,
@@ -84,24 +74,97 @@ class DescrptBlockRepformers(DescriptorBlock):
         attn2_has_gate: bool = False,
         activation_function: str = "tanh",
         update_style: str = "res_avg",
-        set_davg_zero: bool = True,  # TODO
+        set_davg_zero: bool = True,
         smooth: bool = True,
-        add_type_ebd_to_seq: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
-        type: Optional[str] = None,
+        precision: str = "float64",
+        resnet_dt: bool = False,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
+        old_impl: bool = False,
     ):
-        """
-        smooth:
-            If strictly smooth, cannot be used with update_g1_has_attn
-        add_type_ebd_to_seq:
-            At the presence of seq_input (optional input to forward),
-            whether or not add an type embedding to seq_input.
-            If no seq_input is given, it has no effect.
+        r"""
+        The repformer descriptor block.
+
+        Parameters
+        ----------
+        rcut : float
+            The cut-off radius.
+        rcut_smth : float
+            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
+        sel : int
+            Maximally possible number of selected neighbors.
+        ntypes : int
+            Number of element types
+        nlayers : int, optional
+            Number of repformer layers.
+        g1_dim : int, optional
+            Dimension of the first graph convolution layer.
+        g2_dim : int, optional
+            Dimension of the second graph convolution layer.
+        axis_neuron : int, optional
+            Size of the submatrix of G (embedding matrix).
+        direct_dist : bool, optional
+            Whether to use direct distance information (1/r term) in the repformer block.
+        do_bn_mode : str, optional
+            The mode to do batch normalization in the repformer layers. Supported modes are:
+            -'no': Not do batch normalization.
+            -'uniform': Do batch normalization using scalar running momentum and learnable gamma/beta (num_features=1).
+            -'component': Do batch normalization using vector running momentum and learnable gamma/beta (num_features=d).
+        bn_momentum : float, optional
+            Momentum used in the batch normalization.
+        update_g1_has_conv : bool, optional
+            Whether to update the g1 rep with convolution term.
+        update_g1_has_drrd : bool, optional
+            Whether to update the g1 rep with the drrd term.
+        update_g1_has_grrg : bool, optional
+            Whether to update the g1 rep with the grrg term.
+        update_g1_has_attn : bool, optional
+            Whether to update the g1 rep with the localized self-attention.
+        update_g2_has_g1g1 : bool, optional
+            Whether to update the g2 rep with the g1xg1 term.
+        update_g2_has_attn : bool, optional
+            Whether to update the g2 rep with the gated self-attention.
+        update_h2 : bool, optional
+            Whether to update the h2 rep.
+        attn1_hidden : int, optional
+            The hidden dimension of localized self-attention to update the g1 rep.
+        attn1_nhead : int, optional
+            The number of heads in localized self-attention to update the g1 rep.
+        attn2_hidden : int, optional
+            The hidden dimension of gated self-attention to update the g2 rep.
+        attn2_nhead : int, optional
+            The number of heads in gated self-attention to update the g2 rep.
+        attn2_has_gate : bool, optional
+            Whether to use gate in the gated self-attention to update the g2 rep.
+        activation_function : str, optional
+            The activation function in the embedding net.
+        update_style : str, optional
+            Style to update a representation.
+            Supported options are:
+            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+        set_davg_zero : bool, optional
+            Set the normalization average to zero.
+        precision : str, optional
+            The precision of the embedding net parameters.
+        smooth : bool, optional
+            Whether to use smoothness in processes such as attention weights calculation.
+        exclude_types : List[List[int]], optional
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+        env_protection : float, optional
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+        resnet_dt : bool, optional
+            Whether to use a "Timestep" in the skip connection.
+        trainable_ln : bool, optional
+            Whether to use trainable shift and scale weights in layer normalization.
+        ln_eps : float, optional
+            The epsilon value for layer normalization.
         """
         super().__init__()
-        del type
-        self.epsilon = 1e-4  # protection of 1./nnei
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.ntypes = ntypes
@@ -113,54 +176,113 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
-        self.axis_dim = axis_dim
+        self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
         self.g1_dim = g1_dim
         self.g2_dim = g2_dim
-        self.act = ActivationFn(activation_function)
+        self.update_g1_has_conv = update_g1_has_conv
+        self.update_g1_has_drrd = update_g1_has_drrd
+        self.update_g1_has_grrg = update_g1_has_grrg
+        self.update_g1_has_attn = update_g1_has_attn
+        self.update_g2_has_g1g1 = update_g2_has_g1g1
+        self.update_g2_has_attn = update_g2_has_attn
+        self.update_h2 = update_h2
+        self.attn1_hidden = attn1_hidden
+        self.attn1_nhead = attn1_nhead
+        self.attn2_has_gate = attn2_has_gate
+        self.attn2_hidden = attn2_hidden
+        self.attn2_nhead = attn2_nhead
+        self.do_bn_mode = do_bn_mode
+        self.bn_momentum = bn_momentum
+        self.activation_function = activation_function
+        self.update_style = update_style
         self.direct_dist = direct_dist
-        self.add_type_ebd_to_seq = add_type_ebd_to_seq
+        self.act = ActivationFn(activation_function)
+        self.smooth = smooth
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
+        self.precision = precision
+        self.resnet_dt = resnet_dt
+        self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
+        self.old_impl = old_impl
 
-        self.g2_embd = mylinear(1, self.g2_dim)
+        self.g2_embd = MLPLayer(1, self.g2_dim)
         layers = []
         for ii in range(nlayers):
-            layers.append(
-                RepformerLayer(
-                    rcut,
-                    rcut_smth,
-                    sel,
-                    ntypes,
-                    self.g1_dim,
-                    self.g2_dim,
-                    axis_dim=self.axis_dim,
-                    update_chnnl_2=(ii != nlayers - 1),
-                    do_bn_mode=do_bn_mode,
-                    bn_momentum=bn_momentum,
-                    update_g1_has_conv=update_g1_has_conv,
-                    update_g1_has_drrd=update_g1_has_drrd,
-                    update_g1_has_grrg=update_g1_has_grrg,
-                    update_g1_has_attn=update_g1_has_attn,
-                    update_g2_has_g1g1=update_g2_has_g1g1,
-                    update_g2_has_attn=update_g2_has_attn,
-                    update_h2=update_h2,
-                    attn1_hidden=attn1_hidden,
-                    attn1_nhead=attn1_nhead,
-                    attn2_has_gate=attn2_has_gate,
-                    attn2_hidden=attn2_hidden,
-                    attn2_nhead=attn2_nhead,
-                    activation_function=activation_function,
-                    update_style=update_style,
-                    smooth=smooth,
+            if self.old_impl:
+                layers.append(
+                    RepformerLayerOld(
+                        self.rcut,
+                        self.rcut_smth,
+                        self.sel,
+                        self.ntypes,
+                        self.g1_dim,
+                        self.g2_dim,
+                        axis_neuron=self.axis_neuron,
+                        update_chnnl_2=(ii != nlayers - 1),
+                        do_bn_mode=self.do_bn_mode,
+                        bn_momentum=self.bn_momentum,
+                        update_g1_has_conv=self.update_g1_has_conv,
+                        update_g1_has_drrd=self.update_g1_has_drrd,
+                        update_g1_has_grrg=self.update_g1_has_grrg,
+                        update_g1_has_attn=self.update_g1_has_attn,
+                        update_g2_has_g1g1=self.update_g2_has_g1g1,
+                        update_g2_has_attn=self.update_g2_has_attn,
+                        update_h2=self.update_h2,
+                        attn1_hidden=self.attn1_hidden,
+                        attn1_nhead=self.attn1_nhead,
+                        attn2_has_gate=self.attn2_has_gate,
+                        attn2_hidden=self.attn2_hidden,
+                        attn2_nhead=self.attn2_nhead,
+                        activation_function=self.activation_function,
+                        update_style=self.update_style,
+                        smooth=self.smooth,
+                    )
                 )
-            )
+            else:
+                layers.append(
+                    RepformerLayer(
+                        self.rcut,
+                        self.rcut_smth,
+                        self.sel,
+                        self.ntypes,
+                        self.g1_dim,
+                        self.g2_dim,
+                        axis_neuron=self.axis_neuron,
+                        update_chnnl_2=(ii != nlayers - 1),
+                        do_bn_mode=self.do_bn_mode,
+                        bn_momentum=self.bn_momentum,
+                        update_g1_has_conv=self.update_g1_has_conv,
+                        update_g1_has_drrd=self.update_g1_has_drrd,
+                        update_g1_has_grrg=self.update_g1_has_grrg,
+                        update_g1_has_attn=self.update_g1_has_attn,
+                        update_g2_has_g1g1=self.update_g2_has_g1g1,
+                        update_g2_has_attn=self.update_g2_has_attn,
+                        update_h2=self.update_h2,
+                        attn1_hidden=self.attn1_hidden,
+                        attn1_nhead=self.attn1_nhead,
+                        attn2_has_gate=self.attn2_has_gate,
+                        attn2_hidden=self.attn2_hidden,
+                        attn2_nhead=self.attn2_nhead,
+                        activation_function=self.activation_function,
+                        update_style=self.update_style,
+                        smooth=self.smooth,
+                        trainable_ln=self.trainable_ln,
+                        ln_eps=self.ln_eps,
+                        precision=precision,
+                    )
+                )
         self.layers = torch.nn.ModuleList(layers)
 
-        sshape = (self.ntypes, self.nnei, 4)
-        mean = torch.zeros(sshape, dtype=mydtype, device=mydev)
-        stddev = torch.ones(sshape, dtype=mydtype, device=mydev)
+        wanted_shape = (self.ntypes, self.nnei, 4)
+        mean = torch.zeros(
+            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        )
+        stddev = torch.ones(
+            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
+        )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
@@ -192,6 +314,22 @@ class DescrptBlockRepformers(DescriptorBlock):
     def get_dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.g2_dim
+
+    def __setitem__(self, key, value):
+        if key in ("avg", "data_avg", "davg"):
+            self.mean = value
+        elif key in ("std", "data_std", "dstd"):
+            self.stddev = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("avg", "data_avg", "davg"):
+            return self.mean
+        elif key in ("std", "data_std", "dstd"):
+            return self.stddev
+        else:
+            raise KeyError(key)
 
     def mixed_types(self) -> bool:
         """If true, the discriptor
@@ -240,7 +378,10 @@ class DescrptBlockRepformers(DescriptorBlock):
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
-        # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
+        # # nf x nloc x nnei
+        exclude_mask = self.emask(nlist, extended_atype)
+        nlist = nlist * exclude_mask
+        # nf x nloc x nnei x 4, nf x nloc x nnei x 3, nf x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
