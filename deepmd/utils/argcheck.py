@@ -2328,6 +2328,7 @@ def backend_compat(data):
                 )
             else:
                 pass
+
         return descriptor_param
 
     if "descriptor" in data["model"]:
