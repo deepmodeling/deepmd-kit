@@ -208,6 +208,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             frame parameters, shape: nf x dim_fparam
         aparam
             atomic parameter, shape: nf x nloc x dim_aparam
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------

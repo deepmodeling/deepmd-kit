@@ -468,6 +468,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, not required by this descriptor.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------

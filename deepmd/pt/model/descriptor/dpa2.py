@@ -410,6 +410,8 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, mapps extended region index to local region.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------

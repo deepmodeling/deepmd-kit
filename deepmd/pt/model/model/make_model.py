@@ -234,6 +234,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 whether calculate atomic virial.
+            comm_dict
+                The data needed for communication for parallel inference.
 
             Returns
             -------
