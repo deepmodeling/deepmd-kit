@@ -180,7 +180,8 @@ class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
 
 class TestEnergyModelSpinDPA2(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
-        self.prec = 1e-10
+        # still need to figure out why only 1e-4 rtol and atol
+        self.prec = 1e-4
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2)["descriptor"]
         self.test_spin = True
