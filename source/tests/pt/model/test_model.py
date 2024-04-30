@@ -74,7 +74,7 @@ def torch2tf(torch_name, last_layer_id=None):
         else:
             ret = "final_layer_type_%d/%s:0" % (element_id, weight_type)
     else:
-        raise RuntimeError("Unexpected parameter name: %s" % torch_name)
+        raise RuntimeError(f"Unexpected parameter name: {torch_name}")
     return ret
 
 

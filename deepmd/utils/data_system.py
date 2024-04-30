@@ -661,7 +661,7 @@ def print_summary(
     )
     log.info("found %d system(s):" % nsystems)
     log.info(
-        ("%s  " % _format_name_length("system", sys_width))
+        ("{}  ".format(_format_name_length("system", sys_width)))
         + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
     )
     for ii in range(nsystems):

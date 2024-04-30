@@ -85,7 +85,7 @@ def _main():
     )
     args = parser.parse_args()
 
-    print("# copy the system by %s copies" % args.ncopies)  # noqa: T201
+    print(f"# copy the system by {args.ncopies} copies")  # noqa: T201
     assert np.all(
         np.array(args.ncopies, dtype=int) >= np.array([1, 1, 1], dtype=int)
     ), "number of copies should be larger than or equal to 1"
