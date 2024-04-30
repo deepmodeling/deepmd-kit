@@ -157,7 +157,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             #     err_msg=err_msg,
             # )
             # old impl
-            if prec == "float64" and rp1a is False and rp2a is False and rph is False:
+            if prec == "float64":
                 dd3 = DescrptDPA2(
                     self.nt,
                     repinit_rcut=self.rcut,
@@ -197,9 +197,15 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 ).to(env.DEVICE)
                 dd0_state_dict = dd0.state_dict()
                 dd3_state_dict = dd3.state_dict()
-                for i in dd0_state_dict:
-                    if ".bias" in i and (".linear1." in i or ".linear2." in i):
+                for i in list(dd0_state_dict.keys()):
+                    if ".bias" in i and (
+                        ".linear1." in i or ".linear2." in i or ".head_map." in i
+                    ):
                         dd0_state_dict[i] = dd0_state_dict[i].unsqueeze(0)
+                    if ".attn2_lm.matrix" in i:
+                        dd0_state_dict[
+                            i.replace(".attn2_lm.matrix", ".attn2_lm.weight")
+                        ] = dd0_state_dict.pop(i)
 
                 dd3.load_state_dict(dd0_state_dict)
                 rd3, _, _, _, _ = dd3(
