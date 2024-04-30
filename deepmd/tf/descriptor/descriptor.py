@@ -247,7 +247,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support compression!" % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support compression!"
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
@@ -263,8 +263,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support mixed precision training!"
-            % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support mixed precision training!"
         )
 
     @abstractmethod
@@ -315,8 +314,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         This method is called by others when the descriptor supported initialization from the given variables.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support initialization from the given variables!"
-            % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support initialization from the given variables!"
         )
 
     def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
@@ -333,7 +331,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             Names of tensors
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support this property!" % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support this property!"
         )
 
     def pass_tensors_from_frz_model(
@@ -353,7 +351,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         :meth:`get_tensor_names`.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support this method!" % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support this method!"
         )
 
     def build_type_exclude_mask(
@@ -498,7 +496,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             return Descriptor.get_class_by_type(
                 j_get_type(data, cls.__name__)
             ).deserialize(data, suffix=suffix)
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+        raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
     def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
@@ -513,4 +511,4 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         suffix : str, optional
             Name suffix to identify this descriptor
         """
-        raise NotImplementedError("Not implemented in class %s" % self.__name__)
+        raise NotImplementedError(f"Not implemented in class {self.__name__}")

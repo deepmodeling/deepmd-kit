@@ -244,7 +244,7 @@ class DPTrainer:
                     )
                 else:
                     log.info(
-                        "fitting net %s training without frame parameter" % fitting_key
+                        f"fitting net {fitting_key} training without frame parameter"
                     )
 
         if not self.is_compress:
@@ -440,8 +440,7 @@ class DPTrainer:
             _TF_VERSION = Version(TF_VERSION)
             if _TF_VERSION < Version("1.14.0"):
                 raise RuntimeError(
-                    "TensorFlow version %s is not compatible with the mixed precision setting. Please consider upgrading your TF version!"
-                    % TF_VERSION
+                    f"TensorFlow version {TF_VERSION} is not compatible with the mixed precision setting. Please consider upgrading your TF version!"
                 )
             elif _TF_VERSION < Version("2.4.0"):
                 optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(
@@ -505,14 +504,14 @@ class DPTrainer:
                     fp = open(self.disp_file, "w")
                     fp.close()
             elif self.run_opt.init_mode == "init_from_model":
-                log.info("initialize from model %s" % self.run_opt.init_model)
+                log.info(f"initialize from model {self.run_opt.init_model}")
                 run_sess(self.sess, init_op)
                 self.saver.restore(self.sess, self.run_opt.init_model)
                 run_sess(self.sess, self.global_step.assign(0))
                 fp = open(self.disp_file, "w")
                 fp.close()
             elif self.run_opt.init_mode == "restart":
-                log.info("restart from model %s" % self.run_opt.restart)
+                log.info(f"restart from model {self.run_opt.restart}")
                 run_sess(self.sess, init_op)
                 self.saver.restore(self.sess, self.run_opt.restart)
             elif self.run_opt.init_mode == "init_from_frz_model":
@@ -837,7 +836,7 @@ class DPTrainer:
         # make symlinks from prefix with step to that without step to break nothing
         # get all checkpoint files
         symlink_prefix_files(ckpt_prefix, self.save_ckpt)
-        log.info("saved checkpoint %s" % self.save_ckpt)
+        log.info(f"saved checkpoint {self.save_ckpt}")
 
     def get_feed_dict(self, batch, is_training):
         feed_dict = {}
@@ -963,7 +962,7 @@ class DPTrainer:
                 prop_fmt = "   %11.2e"
                 for k in train_results.keys():
                     print_str += prop_fmt % (train_results[k])
-            print_str += "   %8.1e\n" % cur_lr
+            print_str += f"   {cur_lr:8.1e}\n"
             log.info(
                 format_training_message_per_task(
                     batch=cur_batch,
@@ -995,7 +994,7 @@ class DPTrainer:
                     prop_fmt = "   %11.2e"
                     for k in train_results[fitting_key].keys():
                         print_str += prop_fmt % (train_results[fitting_key][k])
-                print_str += "   %8.1e\n" % cur_lr_dict[fitting_key]
+                print_str += f"   {cur_lr_dict[fitting_key]:8.1e}\n"
                 log.info(
                     format_training_message_per_task(
                         batch=cur_batch,
@@ -1090,9 +1089,8 @@ class DPTrainer:
         except GraphWithoutTensorError as e:
             # throw runtime error if the frozen_model has no model type information...
             raise RuntimeError(
-                "The input frozen model: %s has no 'model_type' information, "
+                f"The input frozen model: {self.run_opt.init_frz_model} has no 'model_type' information, "
                 "which is not supported by the 'dp train init-frz-model' interface. "
-                % self.run_opt.init_frz_model
             ) from e
         else:
             self.model_type = bytes.decode(t_model_type)
@@ -1144,9 +1142,8 @@ class DPTrainer:
         except GraphWithoutTensorError as e:
             # throw runtime error if the frozen_model has no model type information...
             raise RuntimeError(
-                "The input frozen pretrained model: %s has no 'model_type' information, "
+                f"The input frozen pretrained model: {self.run_opt.finetune} has no 'model_type' information, "
                 "which is not supported by the 'dp train finetune' interface. "
-                % self.run_opt.finetune
             ) from e
         else:
             self.model_type = bytes.decode(t_model_type)

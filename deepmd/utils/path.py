@@ -42,7 +42,7 @@ class DPPath(ABC):
             elif os.path.isfile(path.split("#")[0]):
                 # assume h5 if it is not dir
                 return super().__new__(DPH5Path)
-            raise FileNotFoundError("%s not found" % path)
+            raise FileNotFoundError(f"{path} not found")
         return super().__new__(cls)
 
     @abstractmethod

@@ -126,7 +126,7 @@ def train_nvnmd(
 ):
     # test input
     if not os.path.exists(INPUT):
-        log.warning("The input script %s does not exist" % (INPUT))
+        log.warning(f"The input script {INPUT} does not exist")
     # STEP1
     PATH_CNN = "nvnmd_cnn"
     CONFIG_CNN = os.path.join(PATH_CNN, "config.npy")
