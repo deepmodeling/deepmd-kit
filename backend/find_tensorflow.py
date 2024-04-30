@@ -149,7 +149,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
                 "tensorflow-cpu; platform_machine!='aarch64' and (platform_machine!='arm64' or platform_system != 'Darwin')",
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
                 # https://github.com/tensorflow/tensorflow/issues/61830
-                "tensorflow-cpu<2.15; platform_system=='Windows'",
+                "tensorflow-cpu!=2.15.*; platform_system=='Windows'",
                 *extra_requires,
             ],
             "gpu": [
