@@ -1,7 +1,7 @@
 # Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**:  TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
 ## Theory
@@ -71,6 +71,7 @@ In instances where the interaction at the cut-off distance is not delineated wit
 ::::{tab-set}
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```json
 "model": {
   "use_srtab": "H2O_tab_potential.txt",
@@ -80,6 +81,7 @@ In instances where the interaction at the cut-off distance is not delineated wit
   "_comment": "Below uses a normal DP model"
 }
 ```
+
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -96,6 +98,7 @@ In instances where the interaction at the cut-off distance is not delineated wit
   "_comment": "Below uses a normal DP model"
 }
 ```
+
 In the PyTorch backend, the `ZBLModel` accommodates mismatched `type_map`. The ultimate `type_map` utilized by the combined model is a union of the `type_map` from the individual models.
 :::
 
