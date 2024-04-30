@@ -18,6 +18,8 @@ from tensorflow.python.framework import (
 )
 
 from deepmd.common import (
+    VALID_ACTIVATION,
+    VALID_PRECISION,
     add_data_requirement,
     data_requirement,
     expand_sys_str,
@@ -69,6 +71,7 @@ PRECISION_DICT = {
     "float64": tf.float64,
     "bfloat16": tf.bfloat16,
 }
+assert VALID_PRECISION.issubset(PRECISION_DICT.keys())
 
 
 def gelu(x: tf.Tensor) -> tf.Tensor:
@@ -138,6 +141,7 @@ ACTIVATION_FN_DICT = {
     "linear": lambda x: x,
     "none": lambda x: x,
 }
+assert VALID_ACTIVATION.issubset(ACTIVATION_FN_DICT.keys())
 
 
 def get_activation_func(

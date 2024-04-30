@@ -70,11 +70,11 @@ class TensorLoss(Loss):
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
         polar_hat = label_dict[self.label_name]
-        atomic_polar_hat = label_dict["atomic_" + self.label_name]
+        atomic_polar_hat = label_dict["atom_" + self.label_name]
         polar = tf.reshape(model_dict[self.tensor_name], [-1])
 
         find_global = label_dict["find_" + self.label_name]
-        find_atomic = label_dict["find_atomic_" + self.label_name]
+        find_atomic = label_dict["find_atom_" + self.label_name]
 
         # YHT: added for global / local dipole combination
         l2_loss = global_cvt_2_tf_float(0.0)

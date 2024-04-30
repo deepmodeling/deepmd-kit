@@ -14,6 +14,10 @@ from dargs import (
     dargs,
 )
 
+from deepmd.common import (
+    VALID_ACTIVATION,
+    VALID_PRECISION,
+)
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
@@ -24,26 +28,8 @@ from deepmd.utils.plugin import (
 log = logging.getLogger(__name__)
 
 
-# TODO: import from a module outside tf/pt
-ACTIVATION_FN_DICT = {
-    "relu": None,
-    "relu6": None,
-    "softplus": None,
-    "sigmoid": None,
-    "tanh": None,
-    "gelu": None,
-    "gelu_tf": None,
-    "None": None,
-    "none": None,
-}
-# TODO: import from a module outside tf/pt
-PRECISION_DICT = {
-    "default": None,
-    "float16": None,
-    "float32": None,
-    "float64": None,
-    "bfloat16": None,
-}
+ACTIVATION_FN_DICT = dict.fromkeys(VALID_ACTIVATION)
+PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
@@ -93,7 +79,12 @@ def type_embedding_args():
 
 
 def spin_args():
-    doc_use_spin = "Whether to use atomic spin model for each atom type"
+    doc_use_spin = (
+        "Whether to use atomic spin model for each atom type. "
+        "List of boolean values with the shape of [ntypes] to specify which types use spin, "
+        f"or a list of integer values {doc_only_pt_supported} "
+        "to indicate the index of the type that uses spin."
+    )
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
     doc_virtual_scale = (
@@ -106,7 +97,7 @@ def spin_args():
     )
 
     return [
-        Argument("use_spin", List[bool], doc=doc_use_spin),
+        Argument("use_spin", [List[bool], List[int]], doc=doc_use_spin),
         Argument(
             "spin_norm",
             List[float],
@@ -121,7 +112,7 @@ def spin_args():
         ),
         Argument(
             "virtual_scale",
-            List[float],
+            [List[float], float],
             optional=True,
             doc=doc_only_pt_supported + doc_virtual_scale,
         ),
@@ -418,7 +409,7 @@ def descrpt_se_atten_common_args():
     )
     doc_type_one_side = (
         doc_only_tf_supported
-        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+        + r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
     )
     doc_precision = (
         doc_only_tf_supported
@@ -485,8 +476,12 @@ def descrpt_se_atten_common_args():
 @descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
     doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
-    doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
@@ -512,15 +507,20 @@ def descrpt_se_atten_args():
             doc=doc_only_tf_supported + doc_stripped_type_embedding,
         ),
         Argument(
-            "smooth_type_embdding",
+            "smooth_type_embedding",
             bool,
             optional=True,
             default=False,
-            doc=doc_only_tf_supported + doc_smooth_type_embdding,
+            alias=["smooth_type_embdding"],
+            doc=doc_smooth_type_embedding,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
         ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
+        ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
         # pt only
         Argument(
             "tebd_dim",
@@ -537,39 +537,11 @@ def descrpt_se_atten_args():
             doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
-            "post_ln",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "ffn",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "ffn_embed_dim",
-            int,
-            optional=True,
-            default=1024,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
             "scaling_factor",
             float,
             optional=True,
             default=1.0,
             doc=doc_only_pt_supported + doc_scaling_factor,
-        ),
-        Argument(
-            "head_num",
-            int,
-            optional=True,
-            default=1,
-            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "normalize",
@@ -583,13 +555,6 @@ def descrpt_se_atten_args():
             float,
             optional=True,
             doc=doc_only_pt_supported + doc_temperature,
-        ),
-        Argument(
-            "return_rot",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "concat_output_tebd",
@@ -1461,7 +1426,6 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
-        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1518,15 +1482,32 @@ def linear_ener_model_args() -> Argument:
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
     doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_stop_lr = (
+        "The desired learning rate at the end of the training. "
+        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
+        "this value will serve as the minimum learning rate during training. "
+        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
+    )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
+    )
+    doc_decay_rate = (
+        "The decay rate for the learning rate. "
+        "If this is provided, it will be used directly as the decay rate for learning rate "
+        "instead of calculating it through interpolation between start_lr and stop_lr."
     )
 
     args = [
         Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
         Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
+        Argument(
+            "decay_rate",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_decay_rate,
+        ),
     ]
     return args
 
@@ -2172,7 +2153,9 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_stat_file = (
         "The file path for saving the data statistics results. "
         "If set, the results will be saved and directly loaded during the next training session, "
-        "avoiding the need to recalculate the statistics"
+        "avoiding the need to recalculate the statistics. "
+        "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
+        "otherwise, a directory containing NumPy binary files are used."
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."
@@ -2386,10 +2369,10 @@ def normalize_multi_task(data):
                 data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
             )
         elif single_learning_rate:
-            data[
-                "learning_rate_dict"
-            ] = normalize_learning_rate_dict_with_single_learning_rate(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+            data["learning_rate_dict"] = (
+                normalize_learning_rate_dict_with_single_learning_rate(
+                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
+                )
             )
         fitting_weight = (
             data["training"]["fitting_weight"] if multi_fitting_weight else None
@@ -2432,11 +2415,7 @@ def normalize_data_dict(data_dict):
 def normalize_loss_dict(fitting_keys, loss_dict):
     # check the loss dict
     failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
-    assert (
-        not failed_loss_keys
-    ), "Loss dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_loss_keys), str(list(fitting_keys))
-    )
+    assert not failed_loss_keys, f"Loss dict key(s) {failed_loss_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     new_dict = {}
     base = Argument("base", dict, [], [loss_variant_type_args()], doc="")
     for item in loss_dict:
@@ -2451,9 +2430,7 @@ def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
     failed_learning_rate_keys = [
         item for item in learning_rate_dict if item not in fitting_keys
     ]
-    assert not failed_learning_rate_keys, "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_learning_rate_keys), str(list(fitting_keys))
-    )
+    assert not failed_learning_rate_keys, f"Learning rate dict key(s) {failed_learning_rate_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     new_dict = {}
     base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
     for item in learning_rate_dict:
@@ -2476,11 +2453,7 @@ def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learnin
 def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
     # check the mapping
     failed_data_keys = [item for item in data_keys if item not in fitting_keys]
-    assert (
-        not failed_data_keys
-    ), "Data dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_data_keys), str(list(fitting_keys))
-    )
+    assert not failed_data_keys, f"Data dict key(s) {failed_data_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
     empty_fitting_keys = []
     valid_fitting_keys = []
     for item in fitting_keys:
@@ -2490,9 +2463,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
             valid_fitting_keys.append(item)
     if empty_fitting_keys:
         log.warning(
-            "Fitting net(s) {} have no data and will not be used in training.".format(
-                str(empty_fitting_keys)
-            )
+            f"Fitting net(s) {empty_fitting_keys!s} have no data and will not be used in training."
         )
     num_pair = len(valid_fitting_keys)
     assert num_pair > 0, "No valid training data systems for fitting nets!"
@@ -2507,9 +2478,7 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
         failed_weight_keys = [
             item for item in fitting_weight if item not in fitting_keys
         ]
-        assert not failed_weight_keys, "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
-            str(failed_weight_keys), str(list(fitting_keys))
-        )
+        assert not failed_weight_keys, f"Fitting weight key(s) {failed_weight_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
         sum_prob = 0.0
         for item in fitting_keys:
             if item in valid_fitting_keys:

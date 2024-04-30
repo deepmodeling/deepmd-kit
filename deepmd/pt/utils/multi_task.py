@@ -115,7 +115,7 @@ def preprocess_shared_params(model_config):
                 type_map_keys.append(key_in_dict)
         else:
             if shared_key not in shared_links:
-                class_name = get_class_name(shared_type, shared_dict[key_in_dict])
+                class_name = get_class_name(shared_type, shared_dict[shared_key])
                 shared_links[shared_key] = {"type": class_name, "links": []}
             link_item = {
                 "model_key": model_key,

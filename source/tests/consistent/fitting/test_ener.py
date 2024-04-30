@@ -40,7 +40,7 @@ from deepmd.utils.argcheck import (
 
 @parameterized(
     (True, False),  # resnet_dt
-    ("float64", "float32"),  # precision
+    ("float64", "float32", "bfloat16"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
     ([], [-12345.6, None]),  # atom_ener
@@ -63,18 +63,6 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             "seed": 20240217,
             "atom_ener": atom_ener,
         }
-
-    @property
-    def skip_tf(self) -> bool:
-        (
-            resnet_dt,
-            precision,
-            mixed_types,
-            numb_fparam,
-            atom_ener,
-        ) = self.param
-        # TODO: mixed_types
-        return mixed_types or CommonTest.skip_pt
 
     @property
     def skip_pt(self) -> bool:
@@ -190,6 +178,8 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             return 1e-10
         elif precision == "float32":
             return 1e-4
+        elif precision == "bfloat16":
+            return 1e-1
         else:
             raise ValueError(f"Unknown precision: {precision}")
 
@@ -207,5 +197,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             return 1e-10
         elif precision == "float32":
             return 1e-4
+        elif precision == "bfloat16":
+            return 1e-1
         else:
             raise ValueError(f"Unknown precision: {precision}")

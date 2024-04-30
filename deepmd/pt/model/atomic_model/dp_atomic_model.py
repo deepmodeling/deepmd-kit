@@ -33,7 +33,8 @@ from .base_atomic_model import (
 log = logging.getLogger(__name__)
 
 
-class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
+@BaseAtomicModel.register("standard")
+class DPAtomicModel(BaseAtomicModel):
     """Model give atomic prediction of some physical property.
 
     Parameters
@@ -54,8 +55,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
-        torch.nn.Module.__init__(self)
-        self.model_def_script = ""
+        super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map
         self.ntypes = ntypes
@@ -63,9 +63,9 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
-        # order matters ntypes and type_map should be initialized first.
-        BaseAtomicModel.__init__(self, **kwargs)
+        super().init_out_stat()
 
+    @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return (
@@ -78,11 +78,6 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.rcut
-
-    @torch.jit.export
-    def get_type_map(self) -> List[str]:
-        """Get the type map."""
-        return self.type_map
 
     def get_sel(self) -> List[int]:
         """Get the neighbor selection."""
@@ -105,7 +100,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "standard",
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
@@ -117,13 +112,14 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
-        type_map = data.pop("type_map", None)
-        obj = cls(descriptor_obj, fitting_obj, type_map=type_map, **data)
+        data["descriptor"] = descriptor_obj
+        data["fitting"] = fitting_obj
+        obj = super().deserialize(data)
         return obj
 
     def forward_atomic(
@@ -181,6 +177,9 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
         )
         return fit_ret
 
+    def get_out_bias(self) -> torch.Tensor:
+        return self.out_bias
+
     def compute_or_load_stat(
         self,
         sampled_func,
@@ -220,8 +219,7 @@ class DPAtomicModel(torch.nn.Module, BaseAtomicModel):
             return sampled
 
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
-        if self.fitting_net is not None:
-            self.fitting_net.compute_output_stats(wrapped_sampler, stat_file_path)
+        self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""

@@ -82,6 +82,8 @@ class InvarFitting(GeneralFitting):
             Number of atomic parameter
     rcond
             The condition number for the regression of atomic energy.
+    bias_atom
+            Bias for each element.
     tot_ener_zero
             Force the total energy to zero. Useful for the charge fitting.
     trainable
@@ -117,10 +119,11 @@ class InvarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        bias_atom: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = [],
+        atom_ener: Optional[List[float]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: Optional[List[Optional[str]]] = None,
@@ -152,6 +155,7 @@ class InvarFitting(GeneralFitting):
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
             rcond=rcond,
+            bias_atom_e=bias_atom,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
             activation_function=activation_function,
@@ -185,10 +189,6 @@ class InvarFitting(GeneralFitting):
 
     def compute_output_stats(self, merged):
         """Update the output bias for fitting net."""
-        raise NotImplementedError
-
-    def init_fitting_stat(self, result_dict):
-        """Initialize the model bias by the statistics."""
         raise NotImplementedError
 
     def output_def(self):

@@ -30,7 +30,7 @@ class TestEwald : public ::testing::Test {
       1.9076542856278367e+00,  1.3101841366497322e+00, 1.9794445391572657e-01,
       -9.8010077026955389e-01, 1.9794445391572657e-01, 1.9232614011636004e+00};
 
-  void SetUp() override{};
+  void SetUp() override {};
 };
 
 TEST_F(TestEwald, cpu) {

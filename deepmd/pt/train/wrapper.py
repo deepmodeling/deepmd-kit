@@ -168,15 +168,20 @@ class ModelWrapper(torch.nn.Module):
             has_spin = has_spin()
         if has_spin:
             input_dict["spin"] = spin
-        model_pred = self.model[task_key](**input_dict)
-        natoms = atype.shape[-1]
-        if not self.inference_only and not inference_only:
-            loss, more_loss = self.loss[task_key](
-                model_pred, label, natoms=natoms, learning_rate=cur_lr
+
+        if self.inference_only or inference_only:
+            model_pred = self.model[task_key](**input_dict)
+            return model_pred, None, None
+        else:
+            natoms = atype.shape[-1]
+            model_pred, loss, more_loss = self.loss[task_key](
+                input_dict,
+                self.model[task_key],
+                label,
+                natoms=natoms,
+                learning_rate=cur_lr,
             )
             return model_pred, loss, more_loss
-        else:
-            return model_pred, None, None
 
     def set_extra_state(self, state: Dict):
         self.model_params = state["model_params"]

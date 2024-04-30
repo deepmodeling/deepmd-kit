@@ -15,8 +15,8 @@ class DeepPotBase {
   /**
    * @brief DP constructor without initialization.
    **/
-  DeepPotBase(){};
-  virtual ~DeepPotBase(){};
+  DeepPotBase() {};
+  virtual ~DeepPotBase() {};
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -628,6 +628,71 @@ class DeepPotModelDevi {
             const int& gpu_rank = 0,
             const std::vector<std::string>& file_contents =
                 std::vector<std::string>());
+
+  /**
+   * @brief Evaluate the energy, force and virial by using these DP models.
+   * @param[out] all_ener The system energies of all models.
+   * @param[out] all_force The forces on each atom of all models.
+   * @param[out] all_virial The virials of all models.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam. dim_aparam. Then all frames and atoms are provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE>
+  void compute(std::vector<ENERGYTYPE>& all_ener,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+
+  /**
+   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
+   *by using these DP models.
+   * @param[out] all_ener The system energies of all models.
+   * @param[out] all_force The forces on each atom of all models.
+   * @param[out] all_virial The virials of all models.
+   * @param[out] all_atom_energy The atomic energies of all models.
+   * @param[out] all_atom_virial The atomic virials of all models.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam. dim_aparam. Then all frames and atoms are provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE>
+  void compute(std::vector<ENERGYTYPE>& all_ener,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
+               std::vector<std::vector<VALUETYPE> >& all_atom_energy,
+               std::vector<std::vector<VALUETYPE> >& all_atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
 
   /**
    * @brief Evaluate the energy, force and virial by using these DP models.

@@ -172,6 +172,36 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
+        def get_out_bias(self) -> torch.Tensor:
+            return self.atomic_model.get_out_bias()
+
+        def change_out_bias(
+            self,
+            merged,
+            bias_adjust_mode="change-by-statistic",
+        ) -> None:
+            """Change the output bias of atomic model according to the input data and the pretrained model.
+
+            Parameters
+            ----------
+            merged : Union[Callable[[], List[dict]], List[dict]]
+                - List[dict]: A list of data samples from various data systems.
+                    Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                    originating from the `i`-th data system.
+                - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                    only when needed. Since the sampling process can be slow and memory-intensive,
+                    the lazy function helps by only sampling once.
+            bias_adjust_mode : str
+                The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+                'change-by-statistic' : perform predictions on labels of target dataset,
+                        and do least square on the errors to obtain the target shift as bias.
+                'set-by-statistic' : directly use the statistic output bias in the target dataset.
+            """
+            self.atomic_model.change_out_bias(
+                merged,
+                bias_adjust_mode=bias_adjust_mode,
+            )
+
         def forward_common_lower(
             self,
             extended_coord,
@@ -469,11 +499,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
 
-        @torch.jit.export
-        def get_model_def_script(self) -> str:
-            """Get the model definition script."""
-            return self.atomic_model.get_model_def_script()
-
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
@@ -501,5 +526,24 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             return self.atomic_model.mixed_types()
+
+        def forward(
+            self,
+            coord,
+            atype,
+            box: Optional[torch.Tensor] = None,
+            fparam: Optional[torch.Tensor] = None,
+            aparam: Optional[torch.Tensor] = None,
+            do_atomic_virial: bool = False,
+        ) -> Dict[str, torch.Tensor]:
+            # directly call the forward_common method when no specific transform rule
+            return self.forward_common(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+            )
 
     return CM

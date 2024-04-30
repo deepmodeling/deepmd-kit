@@ -46,6 +46,9 @@ from deepmd.tf.utils.network import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 log = logging.getLogger(__name__)
 
@@ -57,8 +60,10 @@ class DOSFitting(Fitting):
 
     Parameters
     ----------
-    descrpt
-            The descrptor :math:`\mathcal{D}`
+    ntypes
+            The ntypes of the descrptor :math:`\mathcal{D}`
+    dim_descrpt
+            The dimension of the descrptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -90,11 +95,15 @@ class DOSFitting(Fitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     """
 
     def __init__(
         self,
-        descrpt: tf.Tensor,
+        ntypes: int,
+        dim_descrpt: int,
         neuron: List[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -108,12 +117,13 @@ class DOSFitting(Fitting):
         uniform_seed: bool = False,
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
+        mixed_types: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
         # model param
-        self.ntypes = descrpt.get_ntypes()
-        self.dim_descrpt = descrpt.get_dim_out()
+        self.ntypes = ntypes
+        self.dim_descrpt = dim_descrpt
         self.use_aparam_as_mask = use_aparam_as_mask
 
         self.numb_fparam = numb_fparam
@@ -127,6 +137,7 @@ class DOSFitting(Fitting):
         self.seed = seed
         self.uniform_seed = uniform_seed
         self.seed_shift = one_layer_rand_seed_shift()
+        self.activation_function = activation_function
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
@@ -145,16 +156,16 @@ class DOSFitting(Fitting):
             add_data_requirement(
                 "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
             )
-            self.fparam_avg = None
-            self.fparam_std = None
-            self.fparam_inv_std = None
+        self.fparam_avg = None
+        self.fparam_std = None
+        self.fparam_inv_std = None
         if self.numb_aparam > 0:
             add_data_requirement(
                 "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
             )
-            self.aparam_avg = None
-            self.aparam_std = None
-            self.aparam_inv_std = None
+        self.aparam_avg = None
+        self.aparam_std = None
+        self.aparam_inv_std = None
 
         self.fitting_net_variables = None
         self.mixed_prec = None
@@ -164,6 +175,7 @@ class DOSFitting(Fitting):
             assert (
                 len(self.layer_name) == len(self.n_neuron) + 1
             ), "length of layer_name should be that of n_neuron + 1"
+        self.mixed_types = mixed_types
 
     def get_numb_fparam(self) -> int:
         """Get the number of frame parameters."""
@@ -497,13 +509,22 @@ class DOSFitting(Fitting):
             tf.slice(atype_nall, [0, 0], [-1, natoms[0]]), [-1]
         )  ## lammps will make error
         if type_embedding is not None:
+            # keep old behavior
+            self.mixed_types = True
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
             atype_embed = None
 
         self.atype_embed = atype_embed
+        if atype_embed is not None:
+            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat(
+                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
+            )
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
 
-        if atype_embed is None:
+        if not self.mixed_types:
             start_index = 0
             outs_list = []
             for type_i in range(self.ntypes):
@@ -521,7 +542,11 @@ class DOSFitting(Fitting):
 
                 final_layer = tf.reshape(
                     final_layer,
-                    [tf.shape(inputs)[0] * self.numb_dos, natoms[2 + type_i]],
+                    [
+                        tf.shape(inputs)[0],
+                        natoms[2 + type_i],
+                        self.numb_dos,
+                    ],
                 )
                 outs_list.append(final_layer)
                 start_index += natoms[2 + type_i]
@@ -530,13 +555,6 @@ class DOSFitting(Fitting):
             outs = tf.concat(outs_list, axis=1)
         # with type embedding
         else:
-            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
-            type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat(
-                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
-            )
-            original_dim_descrpt = self.dim_descrpt
-            self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
                 0,
@@ -550,7 +568,8 @@ class DOSFitting(Fitting):
             )
 
             outs = tf.reshape(
-                final_layer, [tf.shape(inputs)[0] * self.numb_dos, natoms[0]]
+                final_layer,
+                [tf.shape(inputs)[0], natoms[0], self.numb_dos],
             )
         # add bias
         # self.atom_ener_before = outs
@@ -562,7 +581,7 @@ class DOSFitting(Fitting):
         # self.atom_ener_after = outs
 
         tf.summary.histogram("fitting_net_output", outs)
-        return tf.reshape(outs, [-1])
+        return outs
 
     def init_variables(
         self,
@@ -641,3 +660,81 @@ class DOSFitting(Fitting):
         return DOSLoss(
             **loss, starter_learning_rate=lr.start_lr(), numb_dos=self.get_numb_dos()
         )
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data["numb_dos"] = data.pop("dim_out")
+        fitting = cls(**data)
+        fitting.fitting_net_variables = cls.deserialize_network(
+            data["nets"],
+            suffix=suffix,
+        )
+        fitting.bias_dos = data["@variables"]["bias_atom_e"]
+        if fitting.numb_fparam > 0:
+            fitting.fparam_avg = data["@variables"]["fparam_avg"]
+            fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
+        if fitting.numb_aparam > 0:
+            fitting.aparam_avg = data["@variables"]["aparam_avg"]
+            fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
+        return fitting
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = {
+            "@class": "Fitting",
+            "type": "dos",
+            "@version": 1,
+            "var_name": "dos",
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.dim_descrpt,
+            "mixed_types": self.mixed_types,
+            "dim_out": self.numb_dos,
+            "neuron": self.n_neuron,
+            "resnet_dt": self.resnet_dt,
+            "numb_fparam": self.numb_fparam,
+            "numb_aparam": self.numb_aparam,
+            "rcond": self.rcond,
+            "trainable": self.trainable,
+            "activation_function": self.activation_function,
+            "precision": self.fitting_precision.name,
+            "exclude_types": [],
+            "nets": self.serialize_network(
+                ntypes=self.ntypes,
+                ndim=0 if self.mixed_types else 1,
+                in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
+                out_dim=self.numb_dos,
+                neuron=self.n_neuron,
+                activation_function=self.activation_function,
+                resnet_dt=self.resnet_dt,
+                variables=self.fitting_net_variables,
+                suffix=suffix,
+            ),
+            "@variables": {
+                "bias_atom_e": self.bias_dos,
+                "fparam_avg": self.fparam_avg,
+                "fparam_inv_std": self.fparam_inv_std,
+                "aparam_avg": self.aparam_avg,
+                "aparam_inv_std": self.aparam_inv_std,
+            },
+        }
+        return data

@@ -1,0 +1,26 @@
+file(GLOB OP_SRC print_summary.cc)
+
+add_library(deepmd_op_pt MODULE ${OP_SRC})
+# link: libdeepmd libtorch
+target_link_libraries(deepmd_op_pt PRIVATE ${TORCH_LIBRARIES} ${LIB_DEEPMD})
+if(APPLE)
+  set_target_properties(deepmd_op_pt PROPERTIES INSTALL_RPATH "@loader_path")
+else()
+  set_target_properties(deepmd_op_pt PROPERTIES INSTALL_RPATH "$ORIGIN")
+endif()
+
+find_package(MPI)
+if(MPI_FOUND)
+  target_link_libraries(deepmd_op_pt PRIVATE MPI::MPI_CXX)
+  target_compile_definitions(deepmd_op_pt PRIVATE USE_MPI)
+endif()
+
+if(CMAKE_TESTING_ENABLED)
+  target_link_libraries(deepmd_op_pt PRIVATE coverage_config)
+endif()
+
+if(BUILD_PY_IF)
+  install(TARGETS deepmd_op_pt DESTINATION deepmd/lib/)
+else(BUILD_PY_IF)
+  install(TARGETS deepmd_op_pt DESTINATION lib/)
+endif(BUILD_PY_IF)

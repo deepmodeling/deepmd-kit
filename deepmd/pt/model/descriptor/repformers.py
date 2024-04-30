@@ -29,7 +29,7 @@ from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
 from deepmd.pt.utils.utils import (
-    get_activation_fn,
+    ActivationFn,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -117,7 +117,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.set_davg_zero = set_davg_zero
         self.g1_dim = g1_dim
         self.g2_dim = g2_dim
-        self.act = get_activation_fn(activation_function)
+        self.act = ActivationFn(activation_function)
         self.direct_dist = direct_dist
         self.add_type_ebd_to_seq = add_type_ebd_to_seq
         # order matters, placed after the assignment of self.ntypes

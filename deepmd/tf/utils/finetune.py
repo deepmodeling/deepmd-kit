@@ -63,9 +63,7 @@ def replace_model_params_with_pretrained_model(
     )
     if cur_type_map != pretrained_type_map:
         log.info(
-            "Change the type_map from {} to {}.".format(
-                str(cur_type_map), str(pretrained_type_map)
-            )
+            f"Change the type_map from {cur_type_map!s} to {pretrained_type_map!s}."
         )
         jdata["model"]["type_map"] = pretrained_type_map
 
@@ -102,7 +100,7 @@ def replace_model_params_with_pretrained_model(
         ):
             target_para = pretrained_jdata["model"][config_key]
             cur_para = jdata["model"][config_key]
-            # keep some params that are irrelevant to model structures (need to discuss) TODO
+            # TODO: keep some params that are irrelevant to model structures (need to discuss)
             if "trainable" in cur_para.keys():
                 target_para["trainable"] = cur_para["trainable"]
             log.info(f"Change the '{config_key}' from {cur_para!s} to {target_para!s}.")

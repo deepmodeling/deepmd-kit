@@ -59,16 +59,6 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
         }
 
     @property
-    def skip_tf(self) -> bool:
-        (
-            resnet_dt,
-            precision,
-            mixed_types,
-        ) = self.param
-        # TODO: mixed_types
-        return mixed_types or CommonTest.skip_pt
-
-    @property
     def skip_pt(self) -> bool:
         (
             resnet_dt,
@@ -104,7 +94,6 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             "ntypes": self.ntypes,
             "dim_descrpt": self.inputs.shape[-1],
             "mixed_types": mixed_types,
-            "var_name": "polar",
             "embedding_width": 30,
         }
 
@@ -136,7 +125,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 torch.from_numpy(self.gr).to(device=PT_DEVICE),
                 None,
-            )["polar"]
+            )["polarizability"]
             .detach()
             .cpu()
             .numpy()
@@ -153,7 +142,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.atype.reshape(1, -1),
             self.gr,
             None,
-        )["polar"]
+        )["polarizability"]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:

@@ -549,9 +549,7 @@ class DeepmdData:
                     atom_type_mix_ = self.type_idx_map[atom_type_mix].astype(np.int32)
                 except IndexError as e:
                     raise IndexError(
-                        "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
-                            set_name, self.get_ntypes()
-                        )
+                        f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
                     ) from e
                 atom_type_mix = atom_type_mix_
             real_type = atom_type_mix.reshape([nframes, self.natoms])
@@ -568,9 +566,7 @@ class DeepmdData:
             ).T
             assert (
                 atom_type_nums.sum(axis=-1) + ghost_nums.sum(axis=-1) == natoms
-            ).all(), "some types in 'real_atom_types.npy' of set {} are not contained in {} types!".format(
-                set_name, self.get_ntypes()
-            )
+            ).all(), f"some types in 'real_atom_types.npy' of set {set_name} are not contained in {self.get_ntypes()} types!"
             data["real_natoms_vec"] = np.concatenate(
                 (
                     np.tile(np.array([natoms, natoms], dtype=np.int32), (nframes, 1)),
@@ -581,6 +577,8 @@ class DeepmdData:
         else:
             data["type"] = np.tile(self.atom_type[self.idx_map], (nframes, 1))
 
+        # standardize keys
+        data = {kk.replace("atomic", "atom"): vv for kk, vv in data.items()}
         return data
 
     def _load_data(
@@ -647,6 +645,7 @@ class DeepmdData:
                                 pass
                             else:
                                 sel_mask = np.isin(self.atom_type, type_sel)
+                                data = data.reshape([nframes, natoms, ndof_])
                                 data = data[:, sel_mask]
                                 natoms = natoms_sel
                                 idx_map = idx_map_sel
@@ -673,7 +672,7 @@ class DeepmdData:
         elif must:
             raise RuntimeError("%s not found!" % path)
         else:
-            if type_sel is not None and not output_natoms_for_type_sel:
+            if atomic and type_sel is not None and not output_natoms_for_type_sel:
                 ndof = ndof_ * natoms_sel
             data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:

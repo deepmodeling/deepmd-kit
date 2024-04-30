@@ -2,13 +2,11 @@
 import copy
 import logging
 from typing import (
-    Callable,
     List,
     Optional,
     Union,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel import (
@@ -27,13 +25,6 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.utils.out_stat import (
-    compute_stats_from_atomic,
-    compute_stats_from_redu,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -47,8 +38,6 @@ class PolarFittingNet(GeneralFitting):
 
     Parameters
     ----------
-    var_name : str
-        The atomic property to fit, 'polar'.
     ntypes : int
         Element count.
     dim_descrpt : int
@@ -127,7 +116,7 @@ class PolarFittingNet(GeneralFitting):
             ntypes, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
         )
         super().__init__(
-            var_name=kwargs.pop("var_name", "polar"),
+            var_name="polar",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -180,13 +169,14 @@ class PolarFittingNet(GeneralFitting):
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
+        data.pop("var_name", None)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    self.var_name,
+                    "polarizability",
                     [3, 3],
                     reduciable=True,
                     r_differentiable=False,
@@ -194,82 +184,6 @@ class PolarFittingNet(GeneralFitting):
                 ),
             ]
         )
-
-    def compute_output_stats(
-        self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
-    ) -> None:
-        """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
-
-        Parameters
-        ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
-        """
-        if self.shift_diag:
-            if stat_file_path is not None:
-                stat_file_path = stat_file_path / "constant_matrix"
-            if stat_file_path is not None and stat_file_path.is_file():
-                constant_matrix = stat_file_path.load_numpy()
-            else:
-                if callable(merged):
-                    # only get data for once
-                    sampled = merged()
-                else:
-                    sampled = merged
-
-                sys_constant_matrix = []
-                for sys in range(len(sampled)):
-                    nframs = sampled[sys]["type"].shape[0]
-
-                    if sampled[sys]["find_atomic_polarizability"] > 0.0:
-                        sys_atom_polar = compute_stats_from_atomic(
-                            sampled[sys]["atomic_polarizability"].numpy(force=True),
-                            sampled[sys]["type"].numpy(force=True),
-                        )[0]
-                    else:
-                        if not sampled[sys]["find_polarizability"] > 0.0:
-                            continue
-                        sys_type_count = np.zeros(
-                            (nframs, self.ntypes), dtype=env.GLOBAL_NP_FLOAT_PRECISION
-                        )
-                        for itype in range(self.ntypes):
-                            type_mask = sampled[sys]["type"] == itype
-                            sys_type_count[:, itype] = type_mask.sum(dim=1).numpy(
-                                force=True
-                            )
-
-                        sys_bias_redu = sampled[sys]["polarizability"].numpy(force=True)
-
-                        sys_atom_polar = compute_stats_from_redu(
-                            sys_bias_redu, sys_type_count, rcond=self.rcond
-                        )[0]
-                    cur_constant_matrix = np.zeros(
-                        self.ntypes, dtype=env.GLOBAL_NP_FLOAT_PRECISION
-                    )
-
-                    for itype in range(self.ntypes):
-                        cur_constant_matrix[itype] = np.mean(
-                            np.diagonal(sys_atom_polar[itype].reshape(3, 3))
-                        )
-                    sys_constant_matrix.append(cur_constant_matrix)
-                constant_matrix = np.stack(sys_constant_matrix).mean(axis=0)
-
-                # handle nan values.
-                constant_matrix = np.nan_to_num(constant_matrix)
-            if stat_file_path is not None:
-                stat_file_path.save_numpy(constant_matrix)
-            self.constant_matrix = torch.tensor(constant_matrix, device=env.DEVICE)
 
     def forward(
         self,
@@ -303,19 +217,7 @@ class PolarFittingNet(GeneralFitting):
             "bim,bmj->bij", gr.transpose(1, 2), out
         )  # (nframes * nloc, 3, 3)
         out = out.view(nframes, nloc, 3, 3)
-        if self.shift_diag:
-            bias = self.constant_matrix[atype]
-
-            # (nframes, nloc, 1)
-            bias = bias.unsqueeze(-1) * self.scale[atype]
-
-            eye = torch.eye(3, device=env.DEVICE)
-            eye = eye.repeat(nframes, nloc, 1, 1)
-            # (nframes, nloc, 3, 3)
-            bias = bias.unsqueeze(-1) * eye
-            out = out + bias
-
-        return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        return {"polarizability": out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 
     # make jit happy with torch 2.0.0
     exclude_types: List[int]

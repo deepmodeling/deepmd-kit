@@ -51,7 +51,7 @@ from deepmd.tf.utils.learning_rate import (
     LearningRateExp,
 )
 
-from ..test_stat import (
+from ..test_finetune import (
     energy_data_requirement,
 )
 
@@ -338,34 +338,35 @@ class TestEnergy(unittest.TestCase):
         batch["natoms"] = torch.tensor(
             batch["natoms_vec"], device=batch["coord"].device
         ).unsqueeze(0)
-        model_predict = my_model(
-            batch["coord"].to(env.DEVICE),
-            batch["atype"].to(env.DEVICE),
-            batch["box"].to(env.DEVICE),
-            do_atomic_virial=True,
+        model_input = {
+            "coord": batch["coord"].to(env.DEVICE),
+            "atype": batch["atype"].to(env.DEVICE),
+            "box": batch["box"].to(env.DEVICE),
+            "do_atomic_virial": True,
+        }
+        model_input_1 = {
+            "coord": batch["coord"].to(env.DEVICE),
+            "atype": batch["atype"].to(env.DEVICE),
+            "box": batch["box"].to(env.DEVICE),
+            "do_atomic_virial": False,
+        }
+        label = {
+            "energy": batch["energy"].to(env.DEVICE),
+            "find_energy": 1.0,
+            "force": batch["force"].to(env.DEVICE),
+            "find_force": 1.0,
+        }
+        cur_lr = my_lr.value(self.wanted_step)
+        model_predict, loss, _ = my_loss(
+            model_input, my_model, label, int(batch["natoms"][0, 0]), cur_lr
         )
-        model_predict_1 = my_model(
-            batch["coord"].to(env.DEVICE),
-            batch["atype"].to(env.DEVICE),
-            batch["box"].to(env.DEVICE),
-            do_atomic_virial=False,
-        )
+        model_predict_1 = my_model(**model_input_1)
         p_energy, p_force, p_virial, p_atomic_virial = (
             model_predict["energy"],
             model_predict["force"],
             model_predict["virial"],
             model_predict["atom_virial"],
         )
-        cur_lr = my_lr.value(self.wanted_step)
-        model_pred = {
-            "energy": p_energy,
-            "force": p_force,
-        }
-        label = {
-            "energy": batch["energy"].to(env.DEVICE),
-            "force": batch["force"].to(env.DEVICE),
-        }
-        loss, _ = my_loss(model_pred, label, int(batch["natoms"][0, 0]), cur_lr)
         np.testing.assert_allclose(
             head_dict["energy"], p_energy.view(-1).cpu().detach().numpy()
         )

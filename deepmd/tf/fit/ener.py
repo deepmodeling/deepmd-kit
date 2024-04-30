@@ -141,6 +141,9 @@ class EnerFitting(Fitting):
     use_aparam_as_mask: bool, optional
             If True, the atomic parameters will be used as a mask that determines the atom is real/virtual.
             And the aparam will not be used as the atomic parameters for embedding.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     """
 
     def __init__(
@@ -162,6 +165,7 @@ class EnerFitting(Fitting):
         layer_name: Optional[List[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
+        mixed_types: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -238,6 +242,7 @@ class EnerFitting(Fitting):
             assert (
                 len(self.layer_name) == len(self.n_neuron) + 1
             ), "length of layer_name should be that of n_neuron + 1"
+        self.mixed_types = mixed_types
 
     def get_numb_fparam(self) -> int:
         """Get the number of frame parameters."""
@@ -585,6 +590,8 @@ class EnerFitting(Fitting):
                 )
             else:
                 inputs_zero = tf.zeros_like(inputs, dtype=GLOBAL_TF_FLOAT_PRECISION)
+        else:
+            inputs_zero = None
 
         if bias_atom_e is not None:
             assert len(bias_atom_e) == self.ntypes
@@ -628,13 +635,29 @@ class EnerFitting(Fitting):
         ):
             type_embedding = nvnmd_cfg.map["t_ebd"]
         if type_embedding is not None:
+            # keep old behavior
+            self.mixed_types = True
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc)
         else:
             atype_embed = None
 
         self.atype_embed = atype_embed
+        original_dim_descrpt = self.dim_descrpt
+        if atype_embed is not None:
+            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat(
+                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
+            )
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
+            if len(self.atom_ener):
+                assert inputs_zero is not None
+                inputs_zero = tf.concat(
+                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
+                    axis=1,
+                )
 
-        if atype_embed is None:
+        if not self.mixed_types:
             start_index = 0
             outs_list = []
             for type_i in range(ntypes_atom):
@@ -673,13 +696,6 @@ class EnerFitting(Fitting):
             outs = tf.concat(outs_list, axis=1)
         # with type embedding
         else:
-            atype_embed = tf.cast(atype_embed, GLOBAL_TF_FLOAT_PRECISION)
-            type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat(
-                [tf.reshape(inputs, [-1, self.dim_descrpt]), atype_embed], axis=1
-            )
-            original_dim_descrpt = self.dim_descrpt
-            self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
             final_layer = self._build_lower(
                 0,
@@ -693,10 +709,6 @@ class EnerFitting(Fitting):
             )
             if len(self.atom_ener):
                 # remove contribution in vacuum
-                inputs_zero = tf.concat(
-                    [tf.reshape(inputs_zero, [-1, original_dim_descrpt]), atype_embed],
-                    axis=1,
-                )
                 inputs_zero = tf.reshape(inputs_zero, [-1, natoms[0], self.dim_descrpt])
                 zero_layer = self._build_lower(
                     0,
@@ -793,11 +805,11 @@ class EnerFitting(Fitting):
         frozen_model,
         origin_type_map,
         full_type_map,
-        bias_shift="delta",
+        bias_adjust_mode="change-by-statistic",
         ntest=10,
     ) -> None:
         dp = None
-        if bias_shift == "delta":
+        if bias_adjust_mode == "change-by-statistic":
             # init model
             dp = DeepPotential(frozen_model)
         self.bias_atom_e = change_energy_bias_lower(
@@ -806,7 +818,7 @@ class EnerFitting(Fitting):
             origin_type_map,
             full_type_map,
             self.bias_atom_e,
-            bias_shift=bias_shift,
+            bias_adjust_mode=bias_adjust_mode,
             ntest=ntest,
         )
 
@@ -868,7 +880,7 @@ class EnerFitting(Fitting):
             data["nets"],
             suffix=suffix,
         )
-        fitting.bias_atom_e = data["@variables"]["bias_atom_e"]
+        fitting.bias_atom_e = data["@variables"]["bias_atom_e"].ravel()
         if fitting.numb_fparam > 0:
             fitting.fparam_avg = data["@variables"]["fparam_avg"]
             fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
@@ -892,9 +904,7 @@ class EnerFitting(Fitting):
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
-            # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class
-            "mixed_types": False,
+            "mixed_types": self.mixed_types,
             "dim_out": 1,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
@@ -912,8 +922,7 @@ class EnerFitting(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings
-                ndim=1,
+                ndim=0 if self.mixed_types else 1,
                 in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,
@@ -922,7 +931,7 @@ class EnerFitting(Fitting):
                 suffix=suffix,
             ),
             "@variables": {
-                "bias_atom_e": self.bias_atom_e,
+                "bias_atom_e": self.bias_atom_e.reshape(-1, 1),
                 "fparam_avg": self.fparam_avg,
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,

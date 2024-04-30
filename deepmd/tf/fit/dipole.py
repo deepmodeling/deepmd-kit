@@ -62,6 +62,9 @@ class DipoleFittingSeA(Fitting):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
     """
 
     def __init__(
@@ -76,6 +79,7 @@ class DipoleFittingSeA(Fitting):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
+        mixed_types: bool = False,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -100,6 +104,7 @@ class DipoleFittingSeA(Fitting):
         self.useBN = False
         self.fitting_net_variables = None
         self.mixed_prec = None
+        self.mixed_types = mixed_types
 
     def get_sel_type(self) -> int:
         """Get selected type."""
@@ -109,6 +114,7 @@ class DipoleFittingSeA(Fitting):
         """Get the output size. Should be 3."""
         return 3
 
+    @cast_precision
     def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
@@ -172,7 +178,6 @@ class DipoleFittingSeA(Fitting):
         final_layer = tf.reshape(final_layer, [tf.shape(inputs)[0], natoms, 3])
         return final_layer
 
-    @cast_precision
     def build(
         self,
         input_d: tf.Tensor,
@@ -215,8 +220,12 @@ class DipoleFittingSeA(Fitting):
         start_index = 0
         inputs = tf.reshape(input_d, [-1, natoms[0], self.dim_descrpt])
         rot_mat = tf.reshape(rot_mat, [-1, natoms[0], self.dim_rot_mat])
+        if nframes is None:
+            nframes = tf.shape(inputs)[0]
 
-        if type_embedding is not None:
+        if self.mixed_types or type_embedding is not None:
+            # keep old behavior
+            self.mixed_types = True
             nloc_mask = tf.reshape(
                 tf.tile(tf.repeat(self.sel_mask, natoms[2:]), [nframes]), [nframes, -1]
             )
@@ -228,13 +237,30 @@ class DipoleFittingSeA(Fitting):
             self.nloc_masked = tf.shape(
                 tf.reshape(self.atype_nloc_masked, [nframes, -1])
             )[1]
+
+        if type_embedding is not None:
             atype_embed = tf.nn.embedding_lookup(type_embedding, self.atype_nloc_masked)
         else:
             atype_embed = None
 
         self.atype_embed = atype_embed
+        if atype_embed is not None:
+            inputs = tf.reshape(
+                tf.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[nloc_mask],
+                [-1, self.dim_descrpt],
+            )
+            rot_mat = tf.reshape(
+                tf.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat_1 * 3])[
+                    nloc_mask
+                ],
+                [-1, self.dim_rot_mat_1, 3],
+            )
+            atype_embed = tf.cast(atype_embed, self.fitting_precision)
+            type_shape = atype_embed.get_shape().as_list()
+            inputs = tf.concat([inputs, atype_embed], axis=1)
+            self.dim_descrpt = self.dim_descrpt + type_shape[1]
 
-        if atype_embed is None:
+        if not self.mixed_types:
             count = 0
             outs_list = []
             for type_i in range(self.ntypes):
@@ -255,20 +281,6 @@ class DipoleFittingSeA(Fitting):
                 count += 1
             outs = tf.concat(outs_list, axis=1)
         else:
-            inputs = tf.reshape(
-                tf.reshape(inputs, [nframes, natoms[0], self.dim_descrpt])[nloc_mask],
-                [-1, self.dim_descrpt],
-            )
-            rot_mat = tf.reshape(
-                tf.reshape(rot_mat, [nframes, natoms[0], self.dim_rot_mat_1 * 3])[
-                    nloc_mask
-                ],
-                [-1, self.dim_rot_mat_1, 3],
-            )
-            atype_embed = tf.cast(atype_embed, self.fitting_precision)
-            type_shape = atype_embed.get_shape().as_list()
-            inputs = tf.concat([inputs, atype_embed], axis=1)
-            self.dim_descrpt = self.dim_descrpt + type_shape[1]
             inputs = tf.reshape(inputs, [nframes, self.nloc_masked, self.dim_descrpt])
             rot_mat = tf.reshape(
                 rot_mat, [nframes, self.nloc_masked, self.dim_rot_mat_1 * 3]
@@ -350,13 +362,10 @@ class DipoleFittingSeA(Fitting):
             "@class": "Fitting",
             "type": "dipole",
             "@version": 1,
-            "var_name": "dipole",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
-            # very bad design: type embedding is not passed to the class
-            # TODO: refactor the class
-            "mixed_types": False,
+            "mixed_types": self.mixed_types,
             "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
@@ -365,8 +374,7 @@ class DipoleFittingSeA(Fitting):
             "exclude_types": [],
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
-                # TODO: consider type embeddings
-                ndim=1,
+                ndim=0 if self.mixed_types else 1,
                 in_dim=self.dim_descrpt,
                 out_dim=self.dim_rot_mat_1,
                 neuron=self.n_neuron,

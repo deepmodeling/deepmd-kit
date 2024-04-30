@@ -36,6 +36,28 @@ model_se_e2_a = {
     "data_stat_nbatch": 20,
 }
 
+model_dos = {
+    "type_map": ["O", "H", "B"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [46, 92, 4],
+        "rcut_smth": 0.50,
+        "rcut": 4.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [24, 24, 24],
+        "resnet_dt": True,
+        "seed": 1,
+        "type": "dos",
+        "numb_dos": 250,
+    },
+    "data_stat_nbatch": 20,
+}
+
 model_zbl = {
     "type_map": ["O", "H", "B"],
     "type_map_dp": ["H", "B", "O"],
@@ -138,12 +160,8 @@ model_dpa1 = {
         "attn_layer": 2,
         "attn_dotr": True,
         "attn_mask": False,
-        "post_ln": True,
-        "ffn": False,
-        "ffn_embed_dim": 512,
         "activation_function": "tanh",
         "scaling_factor": 1.0,
-        "head_num": 1,
         "normalize": False,
         "temperature": 1.0,
         "set_davg_zero": True,
@@ -173,12 +191,8 @@ model_hybrid = {
                 "attn_layer": 0,
                 "attn_dotr": True,
                 "attn_mask": False,
-                "post_ln": True,
-                "ffn": False,
-                "ffn_embed_dim": 1024,
                 "activation_function": "tanh",
                 "scaling_factor": 1.0,
-                "head_num": 1,
                 "normalize": True,
                 "temperature": 1.0,
             },
@@ -276,6 +290,13 @@ class PermutationTest:
 class TestEnergyModelSeA(unittest.TestCase, PermutationTest):
     def setUp(self):
         model_params = copy.deepcopy(model_se_e2_a)
+        self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
+
+
+class TestDOSModelSeA(unittest.TestCase, PermutationTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dos)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 

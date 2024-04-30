@@ -1,24 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
-from deepmd.dpmodel.atomic_model import (
-    DPAtomicModel,
-)
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
-)
-from deepmd.dpmodel.model.base_model import (
-    BaseModel,
-)
-
-from .make_model import (
-    make_model,
 )
 
 
 # use "class" to resolve "Variable not allowed in type expression"
-@BaseModel.register("standard")
-class DPModel(make_model(DPAtomicModel)):
+class DPModelCommon:
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):
         """Update the selection and perform neighbor statistics.

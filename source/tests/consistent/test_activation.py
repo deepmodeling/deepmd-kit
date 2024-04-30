@@ -3,6 +3,9 @@ import unittest
 
 import numpy as np
 
+from deepmd.common import (
+    VALID_ACTIVATION,
+)
 from deepmd.dpmodel.utils.network import get_activation_fn as get_activation_fn_dp
 
 from .common import (
@@ -12,7 +15,7 @@ from .common import (
 )
 
 if INSTALLED_PT:
-    from deepmd.pt.utils.utils import get_activation_fn as get_activation_fn_pt
+    from deepmd.pt.utils.utils import ActivationFn as ActivationFn_pt
     from deepmd.pt.utils.utils import (
         to_numpy_array,
         to_torch_tensor,
@@ -25,17 +28,7 @@ if INSTALLED_TF:
 
 
 @parameterized(
-    (
-        "Relu",
-        "Relu6",
-        "Softplus",
-        "Sigmoid",
-        "Tanh",
-        "Gelu",
-        "Gelu_tf",
-        "Linear",
-        "None",
-    ),
+    tuple([x.capitalize() for x in VALID_ACTIVATION]),
 )
 class TestActivationFunctionConsistent(unittest.TestCase):
     def setUp(self):
@@ -56,8 +49,6 @@ class TestActivationFunctionConsistent(unittest.TestCase):
     def test_pt_consistent_with_ref(self):
         if INSTALLED_PT:
             test = to_numpy_array(
-                get_activation_fn_pt(self.activation)(
-                    to_torch_tensor(self.random_input)
-                )
+                ActivationFn_pt(self.activation)(to_torch_tensor(self.random_input))
             )
             np.testing.assert_allclose(self.ref, test, atol=1e-10)

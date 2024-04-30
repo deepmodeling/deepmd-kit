@@ -329,8 +329,8 @@ void deepmd::check_status(const tensorflow::Status& status) {
 
 void throw_env_not_set_warning(std::string env_name) {
   std::cerr << "DeePMD-kit WARNING: Environmental variable " << env_name
-            << " is not set. "
-            << "Tune " << env_name << " for the best performance. "
+            << " is not set. " << "Tune " << env_name
+            << " for the best performance. "
             << "See https://deepmd.rtfd.io/parallelism/ for more information."
             << std::endl;
 }
@@ -377,14 +377,12 @@ void deepmd::get_env_nthreads(int& num_intra_nthreads,
   }
 }
 
-void deepmd::load_op_library() {
-#ifdef BUILD_TENSORFLOW
-  tensorflow::Env* env = tensorflow::Env::Default();
+static inline void _load_single_op_library(std::string library_name) {
 #if defined(_WIN32)
-  std::string dso_path = "deepmd_op.dll";
+  std::string dso_path = library_name + ".dll";
   void* dso_handle = LoadLibrary(dso_path.c_str());
 #else
-  std::string dso_path = "libdeepmd_op.so";
+  std::string dso_path = "lib" + library_name + ".so";
   void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
   if (!dso_handle) {
@@ -392,6 +390,14 @@ void deepmd::load_op_library() {
         dso_path +
         " is not found! You can add the library directory to LD_LIBRARY_PATH");
   }
+}
+
+void deepmd::load_op_library() {
+#ifdef BUILD_TENSORFLOW
+  _load_single_op_library("deepmd_op");
+#endif
+#ifdef BUILD_PYTORCH
+  _load_single_op_library("deepmd_op_pt");
 #endif
 }
 
@@ -1341,14 +1347,11 @@ void deepmd::print_summary(const std::string& pre) {
   std::cout << pre << "source commit at:   " + global_git_date << "\n";
   std::cout << pre << "support model ver.: " + global_model_version << "\n";
 #if defined(GOOGLE_CUDA)
-  std::cout << pre << "build variant:      cuda"
-            << "\n";
+  std::cout << pre << "build variant:      cuda" << "\n";
 #elif defined(TENSORFLOW_USE_ROCM)
-  std::cout << pre << "build variant:      rocm"
-            << "\n";
+  std::cout << pre << "build variant:      rocm" << "\n";
 #else
-  std::cout << pre << "build variant:      cpu"
-            << "\n";
+  std::cout << pre << "build variant:      cpu" << "\n";
 #endif
 #ifdef BUILD_TENSORFLOW
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << "\n";

@@ -2,6 +2,7 @@
 """This module ensures input in the examples directory
 could pass the argument checking.
 """
+
 import unittest
 from pathlib import (
     Path,
@@ -40,6 +41,7 @@ input_files = (
     p_examples / "fparam" / "train" / "input_aparam.json",
     p_examples / "zinc_protein" / "zinc_se_a_mask.json",
     p_examples / "dos" / "train" / "input.json",
+    p_examples / "dos" / "train" / "input_torch.json",
     p_examples / "spin" / "se_e2_a" / "input_tf.json",
     p_examples / "spin" / "se_e2_a" / "input_torch.json",
     p_examples / "dprc" / "normal" / "input.json",

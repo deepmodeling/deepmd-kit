@@ -26,13 +26,13 @@ struct InputNlist {
   int* numneigh;
   /// Array stores the core region atom's neighbor index
   int** firstneigh;
-  InputNlist() : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL){};
+  InputNlist() : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL) {};
   InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
-        firstneigh(firstneigh_){};
-  ~InputNlist(){};
+        firstneigh(firstneigh_) {};
+  ~InputNlist() {};
 };
 
 /**

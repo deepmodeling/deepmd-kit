@@ -1,0 +1,20 @@
+name: TODO workflow
+on:
+  push:
+    branches:
+      - devel
+jobs:
+  build:
+    if: github.repository_owner == 'deepmodeling'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tdg-github-action
+      uses: ribtoks/tdg-github-action@master
+      with:
+        TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        SHA: ${{ github.sha }}
+        REF: ${{ github.ref }}
+        EXCLUDE_PATTERN: "(source/3rdparty|.git)/.*"
+        COMMENT_ON_ISSUES: 1

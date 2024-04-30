@@ -15,6 +15,7 @@ from deepmd.pt.utils import (
 )
 
 from .test_permutation import (  # model_dpau,
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_hybrid,
@@ -38,7 +39,9 @@ class SmoothTest:
 
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        atype = torch.randint(0, 3, [natoms], device=env.DEVICE)
+        atype0 = torch.arange(3, dtype=dtype, device=env.DEVICE)
+        atype1 = torch.randint(0, 3, [natoms - 3], device=env.DEVICE)
+        atype = torch.cat([atype0, atype1]).view([natoms])
         coord0 = torch.tensor(
             [
                 0.0,
@@ -139,10 +142,41 @@ class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
         self.epsilon, self.aprec = None, None
 
 
-# @unittest.skip("dpa-1 not smooth at the moment")
+class TestDOSModelSeA(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dos)
+        self.type_split = False
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.epsilon, self.aprec = None, None
+
+
 class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa1)
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
+
+
+class TestEnergyModelDPA1Excl1(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dpa1)
+        model_params["pair_exclude_types"] = [[0, 1]]
+        self.type_split = True
+        self.model = get_model(model_params).to(env.DEVICE)
+        # less degree of smoothness,
+        # error can be systematically removed by reducing epsilon
+        self.epsilon = 1e-5
+        self.aprec = 1e-5
+
+
+class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
+    def setUp(self):
+        model_params = copy.deepcopy(model_dpa1)
+        model_params["pair_exclude_types"] = [[0, 1], [0, 2]]
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
         # less degree of smoothness,

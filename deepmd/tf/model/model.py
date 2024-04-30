@@ -14,6 +14,8 @@ from typing import (
     Union,
 )
 
+import numpy as np
+
 from deepmd.common import (
     j_get_type,
 )
@@ -408,7 +410,7 @@ class Model(ABC, make_plugin_registry("model")):
         frozen_model: str,
         origin_type_map: list,
         full_type_map: str,
-        bias_shift: str = "delta",
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the energy bias according to the input data and the pretrained model.
 
@@ -422,11 +424,11 @@ class Model(ABC, make_plugin_registry("model")):
             The original type_map in dataset, they are targets to change the energy bias.
         full_type_map : str
             The full type_map in pretrained model
-        bias_shift : str
-            The mode for changing energy bias : ['delta', 'statistic']
-            'delta' : perform predictions on energies of target dataset,
+        bias_adjust_mode : str
+            The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on energies of target dataset,
                     and do least sqaure on the errors to obtain the target shift as bias.
-            'statistic' : directly use the statistic energy bias in the target dataset.
+            'set-by-statistic' : directly use the statistic energy bias in the target dataset.
         """
         raise RuntimeError("Not supported")
 
@@ -566,7 +568,8 @@ class Model(ABC, make_plugin_registry("model")):
         """
         if cls is Model:
             return Model.get_class_by_type(data.get("type", "standard")).deserialize(
-                data
+                data,
+                suffix=suffix,
             )
         raise NotImplementedError("Not implemented in class %s" % cls.__name__)
 
@@ -667,6 +670,7 @@ class StandardModel(Model):
                 spin=self.spin,
                 ntypes=self.descrpt.get_ntypes(),
                 dim_descrpt=self.descrpt.get_dim_out(),
+                mixed_types=type_embedding is not None or self.descrpt.explicit_ntypes,
             )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
@@ -676,6 +680,7 @@ class StandardModel(Model):
             self.typeebd = type_embedding
         elif type_embedding is not None:
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **type_embedding,
                 padding=self.descrpt.explicit_ntypes,
             )
@@ -684,6 +689,7 @@ class StandardModel(Model):
             default_args_dict = {i.name: i.default for i in default_args}
             default_args_dict["activation_function"] = None
             self.typeebd = TypeEmbedNet(
+                ntypes=self.ntypes,
                 **default_args_dict,
                 padding=True,
             )
@@ -781,11 +787,16 @@ class StandardModel(Model):
             The deserialized descriptor
         """
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        # BEGINE not supported keys
         data.pop("atom_exclude_types")
         data.pop("pair_exclude_types")
+        data.pop("rcond", None)
+        data.pop("preset_out_bias", None)
+        data.pop("@variables", None)
+        # END    not supported keys
         return cls(
             descriptor=descriptor,
             fitting_net=fitting,
@@ -809,14 +820,23 @@ class StandardModel(Model):
             raise NotImplementedError("type embedding is not supported")
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
+
+        ntypes = len(self.get_type_map())
+        dict_fit = self.fitting.serialize(suffix=suffix)
         return {
             "@class": "Model",
             "type": "standard",
-            "@version": 1,
+            "@version": 2,
             "type_map": self.type_map,
             "descriptor": self.descrpt.serialize(suffix=suffix),
-            "fitting": self.fitting.serialize(suffix=suffix),
+            "fitting": dict_fit,
             # not supported yet
             "atom_exclude_types": [],
             "pair_exclude_types": [],
+            "rcond": None,
+            "preset_out_bias": None,
+            "@variables": {
+                "out_bias": np.zeros([1, ntypes, dict_fit["dim_out"]]),
+                "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),
+            },
         }

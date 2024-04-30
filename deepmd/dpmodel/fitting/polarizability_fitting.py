@@ -39,8 +39,6 @@ class PolarFitting(GeneralFitting):
 
     Parameters
     ----------
-    var_name
-            The name of the output variable.
     ntypes
             The number of atom types.
     dim_descrpt
@@ -88,7 +86,6 @@ class PolarFitting(GeneralFitting):
 
     def __init__(
         self,
-        var_name: str,
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
@@ -145,7 +142,7 @@ class PolarFitting(GeneralFitting):
         self.shift_diag = shift_diag
         self.constant_matrix = np.zeros(ntypes, dtype=GLOBAL_NP_FLOAT_PRECISION)
         super().__init__(
-            var_name=var_name,
+            var_name="polar",
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=neuron,
@@ -201,13 +198,15 @@ class PolarFitting(GeneralFitting):
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
+        var_name = data.pop("var_name", None)
+        assert var_name == "polar"
         return super().deserialize(data)
 
     def output_def(self):
         return FittingOutputDef(
             [
                 OutputVariableDef(
-                    self.var_name,
+                    "polarizability",
                     [3, 3],
                     reduciable=True,
                     r_differentiable=False,
@@ -281,4 +280,4 @@ class PolarFitting(GeneralFitting):
             # (nframes, nloc, 3, 3)
             bias = np.expand_dims(bias, axis=-1) * eye
             out = out + bias
-        return {self.var_name: out}
+        return {"polarizability": out}

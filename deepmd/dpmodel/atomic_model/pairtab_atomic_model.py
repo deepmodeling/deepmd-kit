@@ -25,6 +25,7 @@ from .base_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(BaseAtomicModel):
     """Pairwise tabulation energy model.
 
@@ -58,9 +59,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         rcut: float,
         sel: Union[int, List[int]],
         type_map: List[str],
+        rcond: Optional[float] = None,
+        atom_ener: Optional[List[float]] = None,
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
         self.type_map = type_map
@@ -68,6 +72,8 @@ class PairTabAtomicModel(BaseAtomicModel):
         self.tab = PairTab(self.tab_file, rcut=rcut)
         self.type_map = type_map
         self.ntypes = len(type_map)
+        self.rcond = rcond
+        self.atom_ener = atom_ener
 
         if self.tab_file is not None:
             self.tab_info, self.tab_data = self.tab.get()
@@ -131,7 +137,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "type": "pairtab",
-                "@version": 1,
+                "@version": 2,
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
@@ -143,14 +149,13 @@ class PairTabAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
         data.pop("type")
-        rcut = data.pop("rcut")
-        sel = data.pop("sel")
-        type_map = data.pop("type_map")
         tab = PairTab.deserialize(data.pop("tab"))
-        tab_model = cls(None, rcut, sel, type_map, **data)
+        data["tab_file"] = None
+        tab_model = super().deserialize(data)
+
         tab_model.tab = tab
         tab_model.tab_info = tab_model.tab.tab_info
         nspline, ntypes = tab_model.tab_info[-2:].astype(int)

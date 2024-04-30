@@ -29,8 +29,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: Literal[False] = False,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    ...
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 @overload
@@ -40,8 +39,7 @@ def calc_model_devi_f(
     relative: Optional[float] = None,
     *,
     atomic: Literal[True],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    ...
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 def calc_model_devi_f(
@@ -305,7 +303,7 @@ def calc_model_devi(
     energies = []
     forces = []
     virials = []
-    natom = atype.shape[-1]
+    natom = np.array(atype).shape[-1]
     for dp in models:
         ret = dp.eval(
             coord,

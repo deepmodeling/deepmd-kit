@@ -136,6 +136,28 @@ def make_base_atomic_model(
         def deserialize(cls, data: dict):
             pass
 
+        def make_atom_mask(
+            self,
+            atype: t_tensor,
+        ) -> t_tensor:
+            """The atoms with type < 0 are treated as virutal atoms,
+            which serves as place-holders for multi-frame calculations
+            with different number of atoms in different frames.
+
+            Parameters
+            ----------
+            atype
+                Atom types. >= 0 for real atoms <0 for virtual atoms.
+
+            Returns
+            -------
+            mask
+                True for real atoms and False for virutal atoms.
+
+            """
+            # supposed to be supported by all backends
+            return atype >= 0
+
         def do_grad_r(
             self,
             var_name: Optional[str] = None,
@@ -177,10 +199,6 @@ def make_base_atomic_model(
             if base == "c":
                 return self.fitting_output_def()[var_name].c_differentiable
             return self.fitting_output_def()[var_name].r_differentiable
-
-        def get_model_def_script(self) -> str:
-            # TODO: implement this method; saved to model
-            raise NotImplementedError
 
     setattr(BAM, fwd_method_name, BAM.fwd)
     delattr(BAM, "fwd")

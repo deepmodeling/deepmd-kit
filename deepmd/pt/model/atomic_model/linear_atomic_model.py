@@ -1,14 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import sys
-from abc import (
-    abstractmethod,
-)
 from typing import (
+    Callable,
     Dict,
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import torch
@@ -43,7 +41,7 @@ from .pairtab_atomic_model import (
 )
 
 
-class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
+class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
     Parameters
@@ -61,7 +59,8 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
-        torch.nn.Module.__init__(self)
+        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.models = torch.nn.ModuleList(models)
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
@@ -76,13 +75,11 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
 
-        self.atomic_bias = None
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         self.rcuts = torch.tensor(
             self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
         )
         self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)
-        BaseAtomicModel.__init__(self, **kwargs)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -95,6 +92,9 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         """
         return True
+
+    def get_out_bias(self) -> torch.Tensor:
+        return self.out_bias
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
@@ -192,8 +192,9 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
 
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
+            # apply bias to each individual model
             ener_list.append(
-                model.forward_atomic(
+                model.forward_common_atomic(
                     extended_coord,
                     mapping[extended_atype],
                     nlists_[i],
@@ -202,25 +203,31 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
                     aparam,
                 )["energy"]
             )
-
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
-
-        atype = extended_atype[:, :nloc]
-        for idx, model in enumerate(self.models):
-            # TODO: provide interfaces for atomic models to access bias_atom_e
-            if isinstance(model, DPAtomicModel):
-                bias_atom_e = model.fitting_net.bias_atom_e
-            elif isinstance(model, PairTabAtomicModel):
-                bias_atom_e = model.bias_atom_e
-            else:
-                bias_atom_e = None
-            if bias_atom_e is not None:
-                ener_list[idx] += bias_atom_e[atype]
 
         fit_ret = {
             "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
         }  # (nframes, nloc, 1)
         return fit_ret
+
+    def apply_out_stat(
+        self,
+        ret: Dict[str, torch.Tensor],
+        atype: torch.Tensor,
+    ):
+        """Apply the stat to each atomic output.
+        The developer may override the method to define how the bias is applied
+        to the atomic output of the model.
+
+        Parameters
+        ----------
+        ret
+            The returned dict by the forward_atomic method
+        atype
+            The atom types. nf x nloc
+
+        """
+        return ret
 
     @staticmethod
     def remap_atype(ori_map: List[str], new_map: List[str]) -> torch.Tensor:
@@ -260,35 +267,43 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
-    @staticmethod
-    def serialize(models, type_map) -> dict:
-        return {
-            "@class": "Model",
-            "@version": 1,
-            "type": "linear",
-            "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models],
-            "type_map": type_map,
-        }
+    def serialize(self) -> dict:
+        dd = super().serialize()
+        dd.update(
+            {
+                "@class": "Model",
+                "@version": 2,
+                "type": "linear",
+                "models": [model.serialize() for model in self.models],
+                "type_map": self.type_map,
+            }
+        )
+        return dd
 
-    @staticmethod
-    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
+    @classmethod
+    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        model_names = data["model_name"]
-        type_map = data["type_map"]
+        check_version_compatibility(data.get("@version", 2), 2, 1)
+        data.pop("@class", None)
+        data.pop("type", None)
         models = [
-            getattr(sys.modules[__name__], name).deserialize(model)
-            for name, model in zip(model_names, data["models"])
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
         ]
-        return models, type_map
+        data["models"] = models
+        return super().deserialize(data)
 
-    @abstractmethod
     def _compute_weight(
         self, extended_coord, extended_atype, nlists_
     ) -> List[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        raise NotImplementedError
+        nmodels = len(self.models)
+        nframes, nloc, _ = nlists_[0].shape
+        return [
+            torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
+            / nmodels
+            for _ in range(nmodels)
+        ]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -326,6 +341,53 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         """
         return False
 
+    def compute_or_load_out_stat(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], List[dict]], List[dict]]
+            - List[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+
+        """
+        for md in self.models:
+            md.compute_or_load_out_stat(merged, stat_file_path)
+
+    def compute_or_load_stat(
+        self,
+        sampled_func,
+        stat_file_path: Optional[DPPath] = None,
+    ):
+        """
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        """
+        for md in self.models:
+            md.compute_or_load_stat(sampled_func, stat_file_path)
+
 
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
@@ -359,10 +421,9 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         **kwargs,
     ):
         models = [dp_model, zbl_model]
-        super().__init__(models, type_map, **kwargs)
-        self.model_def_script = ""
-        self.dp_model = dp_model
-        self.zbl_model = zbl_model
+        kwargs["models"] = models
+        kwargs["type_map"] = type_map
+        super().__init__(**kwargs)
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
@@ -371,43 +432,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         # this is a placeholder being updated in _compute_weight, to handle Jit attribute init error.
         self.zbl_weight = torch.empty(0, dtype=torch.float64, device=env.DEVICE)
 
-    def compute_or_load_stat(
-        self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
-    ):
-        """
-        Compute or load the statistics parameters of the model,
-        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
-        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
-        and saved in the `stat_file_path`(s).
-        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
-        and load the calculated statistics parameters.
-
-        Parameters
-        ----------
-        sampled_func
-            The lazy sampled function to get data frames from different data systems.
-        stat_file_path
-            The dictionary of paths to the statistics files.
-        """
-        self.dp_model.compute_or_load_stat(sampled_func, stat_file_path)
-        self.zbl_model.compute_or_load_stat(sampled_func, stat_file_path)
-
-    def change_energy_bias(self):
-        # need to implement
-        pass
-
     def serialize(self) -> dict:
-        dd = BaseAtomicModel.serialize(self)
+        dd = super().serialize()
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "zbl",
-                "models": LinearEnergyAtomicModel.serialize(
-                    [self.dp_model, self.zbl_model], self.type_map
-                ),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -418,26 +449,15 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        sw_rmin = data.pop("sw_rmin")
-        sw_rmax = data.pop("sw_rmax")
-        smin_alpha = data.pop("smin_alpha")
-
-        [dp_model, zbl_model], type_map = LinearEnergyAtomicModel.deserialize(
-            data.pop("models")
-        )
-
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        models = [
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
+        ]
+        data["dp_model"], data["zbl_model"] = models[0], models[1]
         data.pop("@class", None)
         data.pop("type", None)
-        return cls(
-            dp_model=dp_model,
-            zbl_model=zbl_model,
-            sw_rmin=sw_rmin,
-            sw_rmax=sw_rmax,
-            type_map=type_map,
-            smin_alpha=smin_alpha,
-            **data,
-        )
+        return super().deserialize(data)
 
     def _compute_weight(
         self,

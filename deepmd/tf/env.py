@@ -77,7 +77,8 @@ if platform.system() == "Linux":
 
 # keras 3 is incompatible with tf.compat.v1
 # https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# 2024/04/24: deepmd.tf doesn't import tf.keras any more
+
 # import tensorflow v1 compatability
 try:
     import tensorflow.compat.v1 as tf
@@ -157,7 +158,8 @@ FITTING_NET_PATTERN = str(
     r"(final)_layer_type_(\d+)/(matrix)|"
     r"(final)_layer/(bias)|"
     r"(final)_layer_type_(\d+)/(bias)|"
-    # TODO: not sure how to parse for shared layers...
+    # TODO: supporting extracting parameters for shared layers
+    # not sure how to parse for shared layers...
     # layer_name
     r"share_.+_type_\d/matrix|"
     r"share_.+_type_\d/bias|"
@@ -167,26 +169,29 @@ FITTING_NET_PATTERN = str(
     r"share_.+/idt|"
 )[:-1]
 
+# subpatterns:
+# \1: weight name
+# \2: layer index
 TYPE_EMBEDDING_PATTERN = str(
-    r"type_embed_net+/matrix_\d+|"
-    r"type_embed_net+/bias_\d+|"
-    r"type_embed_net+/idt_\d+|"
-)
+    r"type_embed_net/(matrix)_(\d+)|"
+    r"type_embed_net/(bias)_(\d+)|"
+    r"type_embed_net/(idt)_(\d+)|"
+)[:-1]
 
 ATTENTION_LAYER_PATTERN = str(
-    r"attention_layer_\d+/c_query/matrix|"
-    r"attention_layer_\d+/c_query/bias|"
-    r"attention_layer_\d+/c_key/matrix|"
-    r"attention_layer_\d+/c_key/bias|"
-    r"attention_layer_\d+/c_value/matrix|"
-    r"attention_layer_\d+/c_value/bias|"
-    r"attention_layer_\d+/c_out/matrix|"
-    r"attention_layer_\d+/c_out/bias|"
-    r"attention_layer_\d+/layer_normalization/beta|"
-    r"attention_layer_\d+/layer_normalization/gamma|"
-    r"attention_layer_\d+/layer_normalization_\d+/beta|"
-    r"attention_layer_\d+/layer_normalization_\d+/gamma|"
-)
+    r"attention_layer_(\d+)/(c_query)/(matrix)|"
+    r"attention_layer_(\d+)/(c_query)/(bias)|"
+    r"attention_layer_(\d+)/(c_key)/(matrix)|"
+    r"attention_layer_(\d+)/(c_key)/(bias)|"
+    r"attention_layer_(\d+)/(c_value)/(matrix)|"
+    r"attention_layer_(\d+)/(c_value)/(bias)|"
+    r"attention_layer_(\d+)/(c_out)/(matrix)|"
+    r"attention_layer_(\d+)/(c_out)/(bias)|"
+    r"attention_layer_(\d+)/(layer_normalization)/(beta)|"
+    r"attention_layer_(\d+)/(layer_normalization)/(gamma)|"
+    r"attention_layer_(\d+)/(layer_normalization)_\d+/(beta)|"
+    r"attention_layer_(\d+)/(layer_normalization)_\d+/(gamma)|"
+)[:-1]
 
 TRANSFER_PATTERN = (
     EMBEDDING_NET_PATTERN
@@ -376,20 +381,14 @@ def get_module(module_name: str) -> "ModuleType":
             if TF_VERSION != tf_py_version:
                 raise RuntimeError(
                     "The version of TensorFlow used to compile this "
-                    "deepmd-kit package is {}, but the version of TensorFlow "
-                    "runtime you are using is {}. These two versions are "
-                    "incompatible and thus an error is raised when loading {}. "
-                    "You need to install TensorFlow {}, or rebuild deepmd-kit "
-                    "against TensorFlow {}.\nIf you are using a wheel from "
+                    f"deepmd-kit package is {TF_VERSION}, but the version of TensorFlow "
+                    f"runtime you are using is {tf_py_version}. These two versions are "
+                    f"incompatible and thus an error is raised when loading {module_name}. "
+                    f"You need to install TensorFlow {TF_VERSION}, or rebuild deepmd-kit "
+                    f"against TensorFlow {tf_py_version}.\nIf you are using a wheel from "
                     "pypi, you may consider to install deepmd-kit execuating "
                     "`pip install deepmd-kit --no-binary deepmd-kit` "
-                    "instead.".format(
-                        TF_VERSION,
-                        tf_py_version,
-                        module_name,
-                        TF_VERSION,
-                        tf_py_version,
-                    )
+                    "instead."
                 ) from e
             error_message = (
                 "This deepmd-kit package is inconsitent with TensorFlow "

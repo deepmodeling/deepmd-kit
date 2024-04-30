@@ -11,10 +11,8 @@ from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model import (
+    EnergyModel,
     make_hessian_model,
-)
-from deepmd.pt.model.model.dp_model import (
-    DPModel,
 )
 from deepmd.pt.model.task.ener import (
     InvarFitting,
@@ -159,10 +157,10 @@ class TestDPModel(unittest.TestCase, HessianTest):
             neuron=[4, 4, 4],
         ).to(env.DEVICE)
         type_map = ["foo", "bar"]
-        self.model_hess = make_hessian_model(DPModel)(ds, ft0, type_map=type_map).to(
-            env.DEVICE
-        )
-        self.model_valu = DPModel.deserialize(self.model_hess.serialize())
+        self.model_hess = make_hessian_model(EnergyModel)(
+            ds, ft0, type_map=type_map
+        ).to(env.DEVICE)
+        self.model_valu = EnergyModel.deserialize(self.model_hess.serialize())
         self.model_hess.requires_hessian("energy")
 
     def test_output_def(self):

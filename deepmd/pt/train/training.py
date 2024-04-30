@@ -25,12 +25,13 @@ from deepmd.loggers.training import (
 )
 from deepmd.pt.loss import (
     DenoiseLoss,
+    DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    DPZBLModel,
+    EnergyModel,
     get_model,
     get_zbl_model,
 )
@@ -96,6 +97,7 @@ class Trainer:
         finetune_model=None,
         force_load=False,
         shared_links=None,
+        finetune_links=None,
         init_frz_model=None,
     ):
         """Construct a DeePMD trainer.
@@ -116,14 +118,18 @@ class Trainer:
         model_params = config["model"]
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
-        self.finetune_multi_task = model_params.pop(
-            "finetune_multi_task", False
-        )  # should use pop for next finetune
+        self.finetune_links = finetune_links
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
-        self.rank = dist.get_rank() if dist.is_initialized() else 0
-        self.world_size = dist.get_world_size() if dist.is_initialized() else 1
+        self.rank = (
+            dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+        )
+        self.world_size = (
+            dist.get_world_size()
+            if dist.is_available() and dist.is_initialized()
+            else 1
+        )
         self.num_model = len(self.model_keys)
 
         # Iteration config
@@ -169,7 +175,9 @@ class Trainer:
                     _data,
                     sampler=_sampler,
                     batch_size=None,
-                    num_workers=NUM_WORKERS,  # setting to 0 diverges the behavior of its iterator; should be >=1
+                    num_workers=NUM_WORKERS
+                    if dist.is_available()
+                    else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
                     pin_memory=True,
                 )
@@ -234,23 +242,24 @@ class Trainer:
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
+
+            @functools.lru_cache
+            def get_sample():
+                sampled = make_stat_input(
+                    _training_data.systems,
+                    _training_data.dataloaders,
+                    _data_stat_nbatch,
+                )
+                return sampled
+
             if not resuming and self.rank == 0:
-
-                @functools.lru_cache
-                def get_sample():
-                    sampled = make_stat_input(
-                        _training_data.systems,
-                        _training_data.dataloaders,
-                        _data_stat_nbatch,
-                    )
-                    return sampled
-
                 _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
                 )
                 if isinstance(_stat_file_path, DPH5Path):
                     _stat_file_path.root.close()
+            return get_sample
 
         def get_single_model(
             _model_params,
@@ -274,6 +283,10 @@ class Trainer:
             if loss_type == "ener":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergyStdLoss(**loss_params)
+            elif loss_type == "dos":
+                loss_params["starter_learning_rate"] = start_lr
+                loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
+                return DOSLoss(**loss_params)
             elif loss_type == "ener_spin":
                 loss_params["starter_learning_rate"] = start_lr
                 return EnergySpinLoss(**loss_params)
@@ -290,9 +303,10 @@ class Trainer:
                     tensor_name
                 ].output_size
                 label_name = tensor_name
-                if label_name == "polar":
-                    label_name = "polarizability"
+                if label_name == "polarizability":
+                    label_name = "polar"
                 loss_params["label_name"] = label_name
+                loss_params["tensor_name"] = label_name
                 return TensorLoss(**loss_params)
             else:
                 raise NotImplementedError
@@ -352,7 +366,7 @@ class Trainer:
         # Data
         dp_random.seed(training_params["seed"])
         if not self.multi_task:
-            single_model_stat(
+            self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
@@ -382,9 +396,10 @@ class Trainer:
                 self.validation_dataloader,
                 self.validation_data,
                 self.valid_numb_batch,
-            ) = {}, {}, {}, {}, {}
+                self.get_sample_func,
+            ) = {}, {}, {}, {}, {}, {}
             for model_key in self.model_keys:
-                single_model_stat(
+                self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
@@ -483,60 +498,116 @@ class Trainer:
                         log.warning(
                             f"Force load mode allowed! These keys are not in ckpt and will re-init: {slim_keys}"
                         )
-                elif self.finetune_multi_task:
+
+                if finetune_model is not None:
                     new_state_dict = {}
-                    model_branch_chosen = model_params.pop("model_branch_chosen")
-                    new_fitting = model_params.pop("new_fitting", False)
                     target_state_dict = self.wrapper.state_dict()
-                    target_keys = [
-                        i for i in target_state_dict.keys() if i != "_extra_state"
-                    ]
-                    for item_key in target_keys:
-                        if new_fitting and ".fitting_net." in item_key:
-                            # print(f'Keep {item_key} in old model!')
-                            new_state_dict[item_key] = (
-                                target_state_dict[item_key].clone().detach()
-                            )
-                        else:
-                            new_key = item_key.replace(
-                                ".Default.", f".{model_branch_chosen}."
-                            )
-                            # print(f'Replace {item_key} with {new_key} in pretrained_model!')
-                            new_state_dict[item_key] = (
-                                state_dict[new_key].clone().detach()
+
+                    def update_single_finetune_params(
+                        _model_key,
+                        _model_key_from,
+                        _new_state_dict,
+                        _origin_state_dict,
+                        _random_state_dict,
+                        _new_fitting=False,
+                    ):
+                        target_keys = [
+                            i
+                            for i in _random_state_dict.keys()
+                            if i != "_extra_state" and f".{_model_key}." in i
+                        ]
+                        for item_key in target_keys:
+                            if _new_fitting and ".fitting_net." in item_key:
+                                # print(f'Keep {item_key} in old model!')
+                                _new_state_dict[item_key] = (
+                                    _random_state_dict[item_key].clone().detach()
+                                )
+                            else:
+                                new_key = item_key.replace(
+                                    f".{_model_key}.", f".{_model_key_from}."
+                                )
+                                # print(f'Replace {item_key} with {new_key} in pretrained_model!')
+                                _new_state_dict[item_key] = (
+                                    _origin_state_dict[new_key].clone().detach()
+                                )
+
+                    if not self.multi_task:
+                        model_key = "Default"
+                        model_key_from = self.finetune_links[model_key]
+                        new_fitting = model_params.pop("new_fitting", False)
+                        update_single_finetune_params(
+                            model_key,
+                            model_key_from,
+                            new_state_dict,
+                            state_dict,
+                            target_state_dict,
+                            _new_fitting=new_fitting,
+                        )
+                    else:
+                        for model_key in self.model_keys:
+                            if model_key in self.finetune_links:
+                                model_key_from = self.finetune_links[model_key]
+                                new_fitting = model_params["model_dict"][model_key].pop(
+                                    "new_fitting", False
+                                )
+                            else:
+                                model_key_from = model_key
+                                new_fitting = False
+                            update_single_finetune_params(
+                                model_key,
+                                model_key_from,
+                                new_state_dict,
+                                state_dict,
+                                target_state_dict,
+                                _new_fitting=new_fitting,
                             )
                     state_dict = new_state_dict
-                if finetune_model is not None:
                     state_dict["_extra_state"] = self.wrapper.state_dict()[
                         "_extra_state"
                     ]
-
                 self.wrapper.load_state_dict(state_dict)
-                # finetune
-                if finetune_model is not None and model_params["fitting_net"].get(
-                    "type", "ener"
-                ) in ["ener", "direct_force_ener", "atten_vec_lcc"]:
-                    old_type_map, new_type_map = (
-                        model_params["type_map"],
-                        model_params["new_type_map"],
-                    )
-                    # TODO: need an interface instead of fetching fitting_net!!!!!!!!!
-                    if hasattr(self.model, "atomic_model") and hasattr(
-                        self.model.atomic_model, "fitting_net"
+
+                if finetune_model is not None:
+
+                    def single_model_finetune(
+                        _model,
+                        _model_params,
+                        _sample_func,
                     ):
-                        self.model.atomic_model.fitting_net.change_energy_bias(
-                            config,
-                            self.model,
-                            old_type_map,
-                            new_type_map,
-                            ntest=ntest,
-                            bias_shift=model_params.get("bias_shift", "delta"),
+                        old_type_map, new_type_map = (
+                            _model_params["type_map"],
+                            _model_params["new_type_map"],
                         )
-                    elif isinstance(self.model, DPZBLModel):
-                        # need to updated
-                        self.model.atomic_model.change_energy_bias()
+                        if isinstance(_model, EnergyModel):
+                            _model = _model_change_out_bias(
+                                _model, new_type_map, _sample_func, _model_params
+                            )
+                        else:
+                            # need to updated
+                            pass
+                        return _model
+
+                    # finetune
+                    if not self.multi_task:
+                        self.model = single_model_finetune(
+                            self.model, model_params, self.get_sample_func
+                        )
                     else:
-                        raise NotImplementedError
+                        for model_key in self.model_keys:
+                            if model_key in self.finetune_links:
+                                log.info(
+                                    f"Model branch {model_key} will be fine-tuned. This may take a long time..."
+                                )
+                                self.model[model_key] = single_model_finetune(
+                                    self.model[model_key],
+                                    model_params["model_dict"][model_key],
+                                    self.get_sample_func[model_key],
+                                )
+                            else:
+                                log.info(
+                                    f"Model branch {model_key} will resume training."
+                                )
+
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
             self.model.load_state_dict(frz_model.state_dict())
@@ -545,7 +616,7 @@ class Trainer:
         if shared_links is not None:
             self.wrapper.share_params(shared_links, resume=resuming or self.rank != 0)
 
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             torch.cuda.set_device(LOCAL_RANK)
             # DDP will guarantee the model parameters are identical across all processes
             self.wrapper = DDP(
@@ -555,14 +626,16 @@ class Trainer:
                 output_device=LOCAL_RANK,
             )
 
-        # TODO ZD add lr warmups for multitask
+        # TODO add lr warmups for multitask
+        # author: iProzd
         def warm_up_linear(step, warmup_steps):
             if step < warmup_steps:
                 return step / warmup_steps
             else:
                 return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
 
-        # TODO ZD add optimizers for multitask
+        # TODO add optimizers for multitask
+        # author: iProzd
         if self.opt_type == "Adam":
             self.optimizer = torch.optim.Adam(
                 self.wrapper.parameters(), lr=self.lr_exp.start_lr
@@ -609,7 +682,7 @@ class Trainer:
             record_file = f"Sample_rank_{self.rank}.txt"
             fout1 = open(record_file, mode="w", buffering=1)
         log.info("Start to train %d steps.", self.num_steps)
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             log.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
         if self.enable_tensorboard:
             from torch.utils.tensorboard import (
@@ -670,7 +743,11 @@ class Trainer:
             elif self.opt_type == "LKF":
                 if isinstance(self.loss, EnergyStdLoss):
                     KFOptWrapper = KFOptimizerWrapper(
-                        self.wrapper, self.optimizer, 24, 6, dist.is_initialized()
+                        self.wrapper,
+                        self.optimizer,
+                        24,
+                        6,
+                        dist.is_available() and dist.is_initialized(),
                     )
                     pref_e = self.opt_param["kf_start_pref_e"] * (
                         self.opt_param["kf_limit_pref_e"]
@@ -689,20 +766,33 @@ class Trainer:
                     # [coord, atype, natoms, mapping, shift, nlist, box]
                     model_pred = {"energy": p_energy, "force": p_force}
                     module = (
-                        self.wrapper.module if dist.is_initialized() else self.wrapper
+                        self.wrapper.module
+                        if dist.is_available() and dist.is_initialized()
+                        else self.wrapper
                     )
-                    loss, more_loss = module.loss[task_key](
-                        model_pred,
+
+                    def fake_model():
+                        return model_pred
+
+                    _, loss, more_loss = module.loss[task_key](
+                        {},
+                        fake_model,
                         label_dict,
                         int(input_dict["atype"].shape[-1]),
                         learning_rate=pref_lr,
                     )
                 elif isinstance(self.loss, DenoiseLoss):
                     KFOptWrapper = KFOptimizerWrapper(
-                        self.wrapper, self.optimizer, 24, 6, dist.is_initialized()
+                        self.wrapper,
+                        self.optimizer,
+                        24,
+                        6,
+                        dist.is_available() and dist.is_initialized(),
                     )
                     module = (
-                        self.wrapper.module if dist.is_initialized() else self.wrapper
+                        self.wrapper.module
+                        if dist.is_available() and dist.is_initialized()
+                        else self.wrapper
                     )
                     model_pred = KFOptWrapper.update_denoise_coord(
                         input_dict,
@@ -855,7 +945,11 @@ class Trainer:
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pt")
 
-                module = self.wrapper.module if dist.is_initialized() else self.wrapper
+                module = (
+                    self.wrapper.module
+                    if dist.is_available() and dist.is_initialized()
+                    else self.wrapper
+                )
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 log.info(f"Saved model to {self.latest_model}")
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
@@ -921,7 +1015,11 @@ class Trainer:
             prof.stop()
 
     def save_model(self, save_path, lr=0.0, step=0):
-        module = self.wrapper.module if dist.is_initialized() else self.wrapper
+        module = (
+            self.wrapper.module
+            if dist.is_available() and dist.is_initialized()
+            else self.wrapper
+        )
         module.train_infos["lr"] = lr
         module.train_infos["step"] = step
         torch.save(
@@ -1007,7 +1105,7 @@ class Trainer:
             if item_key in input_keys:
                 input_dict[item_key] = batch_data[item_key]
             else:
-                if item_key not in ["sid", "fid"] and "find_" not in item_key:
+                if item_key not in ["sid", "fid"]:
                     label_dict[item_key] = batch_data[item_key]
         log_dict = {}
         if "fid" in batch_data:
@@ -1042,6 +1140,7 @@ class Trainer:
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
         print_str += "   %8s\n" % "lr"
+        print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
 
@@ -1074,3 +1173,31 @@ class Trainer:
         print_str += "   %8.1e\n" % cur_lr
         fout.write(print_str)
         fout.flush()
+
+
+def _model_change_out_bias(
+    _model,
+    new_type_map,
+    _sample_func,
+    _model_params,
+):
+    old_bias = _model.get_out_bias()
+    _model.change_out_bias(
+        _sample_func,
+        bias_adjust_mode=_model_params.get("bias_adjust_mode", "change-by-statistic"),
+    )
+    new_bias = _model.get_out_bias()
+
+    model_type_map = _model.get_type_map()
+    sorter = np.argsort(model_type_map)
+    missing_types = [t for t in new_type_map if t not in model_type_map]
+    assert (
+        not missing_types
+    ), f"Some types are not in the pre-trained model: {list(missing_types)} !"
+    idx_type_map = sorter[np.searchsorted(model_type_map, new_type_map, sorter=sorter)]
+    log.info(
+        f"Change output bias of {new_type_map!s} "
+        f"from {to_numpy_array(old_bias[:,idx_type_map]).reshape(-1)!s} "
+        f"to {to_numpy_array(new_bias[:,idx_type_map]).reshape(-1)!s}."
+    )
+    return _model

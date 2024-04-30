@@ -2,6 +2,9 @@
 from .dipole_fitting import (
     DipoleFitting,
 )
+from .dos_fitting import (
+    DOSFittingNet,
+)
 from .ener_fitting import (
     EnergyFittingNet,
 )
@@ -21,4 +24,5 @@ __all__ = [
     "DipoleFitting",
     "EnergyFittingNet",
     "PolarFitting",
+    "DOSFittingNet",
 ]

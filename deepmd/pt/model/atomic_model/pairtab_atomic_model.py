@@ -17,9 +17,6 @@ from deepmd.dpmodel import (
 from deepmd.pt.utils import (
     env,
 )
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
 from deepmd.utils.pair_tab import (
     PairTab,
 )
@@ -35,7 +32,8 @@ from .base_atomic_model import (
 )
 
 
-class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
+@BaseAtomicModel.register("pairtab")
+class PairTabAtomicModel(BaseAtomicModel):
     """Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
@@ -73,19 +71,14 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         rcut: float,
         sel: Union[int, List[int]],
         type_map: List[str],
-        rcond: Optional[float] = None,
-        atom_ener: Optional[List[float]] = None,
         **kwargs,
     ):
-        torch.nn.Module.__init__(self)
-        self.model_def_script = ""
+        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
         self.tab = self._set_pairtab(tab_file, rcut)
 
-        BaseAtomicModel.__init__(self, **kwargs)
-        self.rcond = rcond
-        self.atom_ener = atom_ener
         self.type_map = type_map
         self.ntypes = len(type_map)
 
@@ -139,6 +132,9 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             ]
         )
 
+    def get_out_bias(self) -> torch.Tensor:
+        return self.out_bias
+
     def get_rcut(self) -> float:
         return self.rcut
 
@@ -169,14 +165,12 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 1,
+                "@version": 2,
                 "type": "pairtab",
                 "tab": self.tab.serialize(),
                 "rcut": self.rcut,
                 "sel": self.sel,
                 "type_map": self.type_map,
-                "rcond": self.rcond,
-                "atom_ener": self.atom_ener,
             }
         )
         return dd
@@ -184,16 +178,12 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        rcut = data.pop("rcut")
-        sel = data.pop("sel")
-        type_map = data.pop("type_map")
-        rcond = data.pop("rcond")
-        atom_ener = data.pop("atom_ener")
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)
         data.pop("type", None)
-        tab_model = cls(None, rcut, sel, type_map, rcond, atom_ener, **data)
+        data["tab_file"] = None
+        tab_model = super().deserialize(data)
 
         tab_model.tab = tab
         tab_model.register_buffer("tab_info", torch.from_numpy(tab_model.tab.tab_info))
@@ -227,16 +217,7 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
             The path to the stat file.
 
         """
-        bias_atom_e = compute_output_stats(
-            merged, self.ntypes, stat_file_path, self.rcond, self.atom_ener
-        )
-        self.bias_atom_e.copy_(
-            torch.tensor(bias_atom_e, device=env.DEVICE).view([self.ntypes, 1])
-        )
-
-    def change_energy_bias(self) -> None:
-        # need to implement
-        pass
+        self.compute_or_load_out_stat(merged, stat_file_path)
 
     def forward_atomic(
         self,
@@ -415,20 +396,28 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         # (nframes, nloc, nnei)
         expanded_i_type = i_type.unsqueeze(-1).expand(-1, -1, j_type.shape[-1])
 
-        # (nframes, nloc, nnei, nspline, 4)
-        expanded_tab_data = tab_data[expanded_i_type, j_type]
-
-        # (nframes, nloc, nnei, 1, 4)
-        expanded_idx = idx.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, -1, -1, 4)
-
         # handle the case where idx is beyond the number of splines
-        clipped_indices = torch.clamp(expanded_idx, 0, nspline - 1).to(torch.int64)
+        clipped_indices = torch.clamp(idx, 0, nspline - 1).to(torch.int64)
 
+        nframes = i_type.shape[0]
+        nloc = i_type.shape[1]
+        nnei = j_type.shape[2]
+        ntypes = tab_data.shape[0]
+        # tab_data_idx: (nframes, nloc, nnei)
+        tab_data_idx = (
+            expanded_i_type * ntypes * nspline + j_type * nspline + clipped_indices
+        )
+        # tab_data: (ntype, ntype, nspline, 4)
+        tab_data = tab_data.view(ntypes * ntypes * nspline, 4)
+        # tab_data_idx: (nframes * nloc * nnei, 4)
+        tab_data_idx = tab_data_idx.view(nframes * nloc * nnei, 1).expand(-1, 4)
         # (nframes, nloc, nnei, 4)
-        final_coef = torch.gather(expanded_tab_data, 3, clipped_indices).squeeze()
+        final_coef = torch.gather(tab_data, 0, tab_data_idx).view(
+            nframes, nloc, nnei, 4
+        )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
-        final_coef[expanded_idx.squeeze() > nspline] = 0
+        final_coef[idx > nspline] = 0
         return final_coef
 
     @staticmethod

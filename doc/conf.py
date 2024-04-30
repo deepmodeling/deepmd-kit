@@ -32,36 +32,8 @@ project = "DeePMD-kit"
 copyright = "2017-%d, DeepModeling" % date.today().year
 author = "DeepModeling"
 
-
-def run_apidoc(_):
-    import sys
-
-    from sphinx.ext.apidoc import (
-        main,
-    )
-
-    sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-    cur_dir = os.path.abspath(os.path.dirname(__file__))
-    module = os.path.join(cur_dir, "..")
-    main(
-        [
-            "-M",
-            "--tocfile",
-            "api_py",
-            "-H",
-            "Python API",
-            "-o",
-            os.path.join(cur_dir, "api_py"),
-            module,
-            "source/*",
-            "--force",
-        ]
-    )
-
-
-def setup(app):
-    # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", run_apidoc)
+autoapi_dirs = ["../deepmd"]
+autoapi_add_toctree_entry = False
 
 
 # -- General configuration ---------------------------------------------------
@@ -85,6 +57,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
+    "sphinx.ext.imgconverter",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinxarg.ext",
@@ -93,6 +66,7 @@ extensions = [
     "exhale",
     "sphinxcontrib.bibtex",
     "sphinx_design",
+    "autoapi.extension",
 ]
 
 # breathe_domain_by_extension = {

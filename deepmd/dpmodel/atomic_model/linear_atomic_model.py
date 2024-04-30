@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import sys
-from abc import (
-    abstractmethod,
-)
 from typing import (
     Dict,
     List,
@@ -56,6 +52,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         type_map: List[str],
         **kwargs,
     ):
+        super().__init__(type_map, **kwargs)
+        super().init_out_stat()
         self.models = models
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
@@ -70,7 +68,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
-        super().__init__(**kwargs)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -90,7 +87,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def get_type_map(self) -> List[str]:
         """Get the type map."""
-        raise self.type_map
+        return self.type_map
 
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
@@ -166,7 +163,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         ]
         ener_list = []
-
         for i, model in enumerate(self.models):
             mapping = self.mapping_list[i]
             ener_list.append(
@@ -180,13 +176,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 )["energy"]
             )
         self.weights = self._compute_weight(extended_coord, extended_atype, nlists_)
-        self.atomic_bias = None
-        if self.atomic_bias is not None:
-            raise NotImplementedError("Need to add bias in a future PR.")
-        else:
-            fit_ret = {
-                "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
-            }  # (nframes, nloc, 1)
+
+        fit_ret = {
+            "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
+        }  # (nframes, nloc, 1)
         return fit_ret
 
     @staticmethod
@@ -225,40 +218,42 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             ]
         )
 
-    @staticmethod
-    def serialize(models, type_map) -> dict:
-        return {
-            "@class": "Model",
-            "type": "linear",
-            "@version": 1,
-            "models": [model.serialize() for model in models],
-            "model_name": [model.__class__.__name__ for model in models],
-            "type_map": type_map,
-        }
+    def serialize(self) -> dict:
+        dd = super().serialize()
+        dd.update(
+            {
+                "@class": "Model",
+                "@version": 2,
+                "type": "linear",
+                "models": [model.serialize() for model in self.models],
+                "type_map": self.type_map,
+            }
+        )
+        return dd
 
-    @staticmethod
-    def deserialize(data) -> Tuple[List[BaseAtomicModel], List[str]]:
+    @classmethod
+    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class")
-        data.pop("type")
-        model_names = data["model_name"]
-        type_map = data["type_map"]
+        check_version_compatibility(data.pop("@version", 2), 2, 2)
+        data.pop("@class", None)
+        data.pop("type", None)
         models = [
-            getattr(sys.modules[__name__], name).deserialize(model)
-            for name, model in zip(model_names, data["models"])
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
         ]
-        return models, type_map
+        data["models"] = models
+        return super().deserialize(data)
 
-    @abstractmethod
     def _compute_weight(
         self,
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
         nlists_: List[np.ndarray],
-    ) -> np.ndarray:
+    ) -> List[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-        raise NotImplementedError
+        nmodels = len(self.models)
+        nframes, nloc, _ = nlists_[0].shape
+        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -321,24 +316,21 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         **kwargs,
     ):
         models = [dp_model, zbl_model]
-        super().__init__(models, type_map, **kwargs)
-        self.dp_model = dp_model
-        self.zbl_model = zbl_model
+        kwargs["models"] = models
+        kwargs["type_map"] = type_map
+        super().__init__(**kwargs)
 
         self.sw_rmin = sw_rmin
         self.sw_rmax = sw_rmax
         self.smin_alpha = smin_alpha
 
     def serialize(self) -> dict:
-        dd = BaseAtomicModel.serialize(self)
+        dd = super().serialize()
         dd.update(
             {
                 "@class": "Model",
+                "@version": 2,
                 "type": "zbl",
-                "@version": 1,
-                "models": LinearEnergyAtomicModel.serialize(
-                    [self.dp_model, self.zbl_model], self.type_map
-                ),
                 "sw_rmin": self.sw_rmin,
                 "sw_rmax": self.sw_rmax,
                 "smin_alpha": self.smin_alpha,
@@ -349,26 +341,15 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
-        data.pop("@class")
-        data.pop("type")
-        sw_rmin = data.pop("sw_rmin")
-        sw_rmax = data.pop("sw_rmax")
-        smin_alpha = data.pop("smin_alpha")
-
-        ([dp_model, zbl_model], type_map) = LinearEnergyAtomicModel.deserialize(
-            data.pop("models")
-        )
-
-        return cls(
-            dp_model=dp_model,
-            zbl_model=zbl_model,
-            sw_rmin=sw_rmin,
-            sw_rmax=sw_rmax,
-            type_map=type_map,
-            smin_alpha=smin_alpha,
-            **data,
-        )
+        check_version_compatibility(data.pop("@version", 1), 2, 2)
+        models = [
+            BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
+            for model in data["models"]
+        ]
+        data["dp_model"], data["zbl_model"] = models[0], models[1]
+        data.pop("@class", None)
+        data.pop("type", None)
+        return super().deserialize(data)
 
     def _compute_weight(
         self,

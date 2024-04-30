@@ -39,7 +39,7 @@ from .test_env_mat import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
-class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
+class TestPolarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
         self.rng = np.random.default_rng()
@@ -112,16 +112,16 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 aparam=to_numpy_array(iap),
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["polar"]),
-                ret1["polar"],
+                to_numpy_array(ret0["polarizability"]),
+                ret1["polarizability"],
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["polar"]),
-                to_numpy_array(ret2["polar"]),
+                to_numpy_array(ret0["polarizability"]),
+                to_numpy_array(ret2["polarizability"]),
             )
             np.testing.assert_allclose(
-                to_numpy_array(ret0["polar"]),
-                ret3["polar"],
+                to_numpy_array(ret0["polarizability"]),
+                ret3["polarizability"],
             )
 
     def test_jit(
@@ -217,7 +217,7 @@ class TestEquivalence(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
-                res.append(ret0["polar"])
+                res.append(ret0["polarizability"])
             np.testing.assert_allclose(
                 to_numpy_array(res[1]),
                 to_numpy_array(
@@ -260,7 +260,7 @@ class TestEquivalence(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, extended_atype, gr0, fparam=None, aparam=None)
-                res.append(ret0["polar"])
+                res.append(ret0["polarizability"])
 
             np.testing.assert_allclose(
                 to_numpy_array(res[0][:, idx_perm]),
@@ -304,12 +304,12 @@ class TestEquivalence(unittest.TestCase):
                 )
 
                 ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-                res.append(ret0["polar"])
+                res.append(ret0["polarizability"])
 
             np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
 
-class TestDipoleModel(unittest.TestCase):
+class TestPolarModel(unittest.TestCase):
     def setUp(self):
         self.natoms = 5
         self.rcut = 4.0

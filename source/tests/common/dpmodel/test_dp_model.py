@@ -9,8 +9,8 @@ from deepmd.dpmodel.descriptor import (
 from deepmd.dpmodel.fitting import (
     InvarFitting,
 )
-from deepmd.dpmodel.model import (
-    DPModel,
+from deepmd.dpmodel.model.ener_model import (
+    EnergyModel,
 )
 
 from .case_single_frame_with_nlist import (
@@ -40,8 +40,8 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             mixed_types=ds.mixed_types(),
         )
         type_map = ["foo", "bar"]
-        md0 = DPModel(ds, ft, type_map=type_map)
-        md1 = DPModel.deserialize(md0.serialize())
+        md0 = EnergyModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel.deserialize(md0.serialize())
 
         ret0 = md0.call_lower(self.coord_ext, self.atype_ext, self.nlist)
         ret1 = md1.call_lower(self.coord_ext, self.atype_ext, self.nlist)
@@ -70,7 +70,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
-        md1 = DPModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel(ds, ft, type_map=type_map)
 
         args64 = [self.coord_ext, self.atype_ext, self.nlist]
         args64[0] = args64[0].astype(np.float64)
@@ -87,7 +87,10 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
             else:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
-            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            if ii != "mask":
+                self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            else:
+                self.assertEqual(model_l_ret_64[ii].dtype, np.int32)
             np.testing.assert_allclose(
                 model_l_ret_32[ii],
                 model_l_ret_64[ii],
@@ -119,7 +122,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
 
-        md1 = DPModel(ds, ft, type_map=type_map)
+        md1 = EnergyModel(ds, ft, type_map=type_map)
 
         args64 = [self.coord, self.atype, self.cell]
         args64[0] = args64[0].astype(np.float64)
@@ -138,8 +141,10 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
             else:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
-            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
-            self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            if ii != "mask":
+                self.assertEqual(model_l_ret_64[ii].dtype, np.float64)
+            else:
+                self.assertEqual(model_l_ret_64[ii].dtype, np.int32)
             np.testing.assert_allclose(
                 model_l_ret_32[ii],
                 model_l_ret_64[ii],

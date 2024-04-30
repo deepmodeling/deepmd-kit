@@ -299,7 +299,10 @@ class TestModel(tf.test.TestCase):
         test_data = data.get_test()
         numb_test = 1
 
-        typeebd = TypeEmbedNet(**jdata["model"]["type_embeding"])
+        typeebd = TypeEmbedNet(
+            ntypes=len(jdata["model"]["descriptor"]["sel"]),
+            **jdata["model"]["type_embeding"],
+        )
         jdata["model"]["descriptor"].pop("type", None)
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()

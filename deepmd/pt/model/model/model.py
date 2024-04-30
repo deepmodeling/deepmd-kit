@@ -17,6 +17,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
     def __init__(self, *args, **kwargs):
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
+        self.model_def_script = ""
 
     def compute_or_load_stat(
         self,
@@ -39,3 +40,13 @@ class BaseModel(torch.nn.Module, make_base_model()):
             The path to the statistics files.
         """
         raise NotImplementedError
+
+    @torch.jit.export
+    def get_model_def_script(self) -> str:
+        """Get the model definition script."""
+        return self.model_def_script
+
+    @torch.jit.export
+    def get_ntypes(self):
+        """Returns the number of element types."""
+        return len(self.get_type_map())
