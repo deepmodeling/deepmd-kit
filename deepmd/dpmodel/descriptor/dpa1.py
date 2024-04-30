@@ -505,11 +505,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         # calculate gg
         gg = self.cal_g(ss, 0)
-        input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / (
+        input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
             np.linalg.norm(
                 dmatrix.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True
-            )
-            + 1e-12
+            ),
+            1e-12,
         )
         gg = self.dpa1_attention(
             gg, nlist_mask, input_r=input_r, sw=sw
