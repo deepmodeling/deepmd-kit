@@ -68,7 +68,6 @@ In instances where the interaction at the cut-off distance is not delineated wit
 
 ## Interpolation with a short-range pairwise potential
 
-
 ```json
 "model": {
   "use_srtab": "H2O_tab_potential.txt",
@@ -79,11 +78,9 @@ In instances where the interaction at the cut-off distance is not delineated wit
 }
 ```
 
-
 {ref}`sw_rmin <model/sw_rmin>` and {ref}`sw_rmax <model/sw_rmax>` must be smaller than the cutoff radius of the DP model.
 
 ## Combination with a pairwise potential {{ tensorflow_icon }}
-
 
 To combine with a pairwise potential, use the [linear model](./linear.md):
 
