@@ -163,6 +163,8 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
+Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter `attn_layer` set to 0.
+
 ### Fitting `"ener"`
 
 DPA-1 only supports `"ener"` fitting type, and you can refer [here](train-energy.md) for detailed information.
