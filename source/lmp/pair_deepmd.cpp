@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <string.h>
 
+#include <cassert>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -459,7 +460,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
                "centroid/stress/atom command for 9-element atomic virial.");
   }
   bool do_ghost = true;
-
+  assert(sizeof(MPI_Comm) == sizeof(int));
+  //  dpa2 communication
+  commdata_ = (CommBrickDeepMD *)comm;
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
@@ -550,8 +553,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
   multi_models_mod_devi =
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                       list->firstneigh);
+    deepmd_compat::InputNlist lmp_list(
+        list->inum, list->ilist, list->numneigh, list->firstneigh,
+        commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
+        commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
+        commdata_->recvproc, &world);
     deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,

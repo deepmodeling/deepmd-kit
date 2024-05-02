@@ -76,7 +76,7 @@ jobs:
     - run: |
         export LD_LIBRARY_PATH=$GITHUB_WORKSPACE/dp_test/lib:$GITHUB_WORKSPACE/libtorch/lib:$CUDA_PATH/lib64:$LD_LIBRARY_PATH
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
-        python -m pytest source/lmp/tests
+        python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
         python -m pytest source/ipi/tests
       env:
         OMP_NUM_THREADS: 1

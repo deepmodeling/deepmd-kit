@@ -53,8 +53,15 @@ void DeepPotPT::init(const std::string& model,
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }
-  module = torch::jit::load(model, device);
-
+  std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
+  module = torch::jit::load(model, device, metadata);
+  // TODO: This should be fixed after implement api to decide whether need to
+  // message passing and rename this metadata
+  if (metadata["type"] == "dpa2") {
+    do_message_passing = 1;
+  } else {
+    do_message_passing = 0;
+  }
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
   torch::jit::setFusionStrategy(strategy);
@@ -111,8 +118,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     options = torch::TensorOptions().dtype(torch::kFloat32);
     floatType = torch::kFloat32;
   }
-  auto int_options = torch::TensorOptions().dtype(torch::kInt64);
-  auto int32_options = torch::TensorOptions().dtype(torch::kInt32);
+  auto int32_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
+  auto int_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam_, datom_energy, datom_virial;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -123,6 +132,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
   int nframes = 1;
+  // TODO: dpa2 model may need a fake communication op to deal with nloc == 0.
+  // this should be fixed after wrapping comm op as a pure c++ implementation.
   if (nloc == 0) {
     // no backward map needed
     ener.resize(nframes);
@@ -146,11 +157,39 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
           .to(device);
   std::vector<int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
-      torch::from_blob(atype_64.data(), {1, nall_real}, int_options).to(device);
+      torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
+    if (do_message_passing == 1) {
+      int nswap = lmp_list.nswap;
+      torch::Tensor sendproc_tensor =
+          torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
+      torch::Tensor recvproc_tensor =
+          torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
+      torch::Tensor firstrecv_tensor =
+          torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
+      torch::Tensor recvnum_tensor =
+          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
+      torch::Tensor sendnum_tensor =
+          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
+      torch::Tensor communicator_tensor = torch::from_blob(
+          const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+      // torch::Tensor communicator_tensor =
+      //     torch::tensor(lmp_list.world, int32_option);
+      torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
+      int total_send =
+          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
+      torch::Tensor sendlist_tensor =
+          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
+      comm_dict.insert("send_list", sendlist_tensor);
+      comm_dict.insert("send_proc", sendproc_tensor);
+      comm_dict.insert("recv_proc", recvproc_tensor);
+      comm_dict.insert("send_num", sendnum_tensor);
+      comm_dict.insert("recv_num", recvnum_tensor);
+      comm_dict.insert("communicator", communicator_tensor);
+    }
   }
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
@@ -173,11 +212,17 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      module
-          .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                      firstneigh_tensor, optional_tensor, fparam_tensor,
-                      aparam_tensor, do_atom_virial_tensor)
-          .toGenericDict();
+      (do_message_passing == 1)
+          ? module
+                .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
+                            firstneigh_tensor, optional_tensor, fparam_tensor,
+                            aparam_tensor, do_atom_virial_tensor, comm_dict)
+                .toGenericDict()
+          : module
+                .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
+                            firstneigh_tensor, optional_tensor, fparam_tensor,
+                            aparam_tensor, do_atom_virial_tensor)
+                .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue virial_ = outputs.at("virial");
