@@ -7,6 +7,13 @@ extern "C" {
 #include <stdbool.h>
 #endif
 
+/** @file */
+
+/** C API version. Bumped whenever the API is changed.
+ * @since API version 22
+ */
+#define DP_C_API_VERSION 22
+
 /**
  * @brief Neighbor list.
  */
