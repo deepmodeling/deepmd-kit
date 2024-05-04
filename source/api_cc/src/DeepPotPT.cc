@@ -204,12 +204,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   }
   c10::optional<torch::Tensor> aparam_tensor;
   if (!aparam_.empty()) {
-    aparam_tensor = torch::from_blob(
-                        const_cast<VALUETYPE*>(aparam_.data()),
-                        {1, lmp_list.inum,
-                         static_cast<int64_t>(aparam_.size()) / lmp_list.inum},
-                        options)
-                        .to(device);
+    aparam_tensor =
+        torch::from_blob(const_cast<VALUETYPE*>(aparam_.data()),
+                         {1, lmp_list.inum,
+                          static_cast<int64_t>(aparam_.size()) / lmp_list.inum},
+                         options)
+            .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
       (do_message_passing == 1)
