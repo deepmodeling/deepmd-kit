@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-#include "device.h"
-#endif
-#include <torch/torch.h>
+
 #ifdef USE_MPI
 #include <mpi.h>
 #ifdef OMPI_MPI_H
 #include <mpi-ext.h>
 #endif
+#endif
+#include <torch/torch.h>
+
+#include <cstdint>
+
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+#include "device.h"
+#endif
+
+#ifdef USE_MPI
 template <typename T>
 static MPI_Datatype get_mpi_type();
 
@@ -21,6 +28,7 @@ MPI_Datatype get_mpi_type<double>() {
   return MPI_DOUBLE;
 }
 #endif
+
 class Border : public torch::autograd::Function<Border> {
  public:
   static torch::autograd::variable_list forward(
@@ -321,9 +329,9 @@ class Border : public torch::autograd::Function<Border> {
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
 #ifdef OMPI_MPI_H
-    long int* communicator = communicator_tensor.data_ptr<long int>();
+    std::int64_t* communicator = communicator_tensor.data_ptr<std::int64_t>();
 #else
-    long int* ptr = communicator_tensor.data_ptr<long int>();
+    std::int64_t* ptr = communicator_tensor.data_ptr<std::int64_t>();
     int* communicator = reinterpret_cast<int*>(ptr);
 #endif
     mpi_comm = reinterpret_cast<MPI_Comm>(*communicator);
