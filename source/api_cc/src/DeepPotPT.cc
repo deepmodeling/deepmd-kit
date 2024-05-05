@@ -2,9 +2,13 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
+#include <cstdint>
+
 #include "common.h"
 #include "device.h"
+
 using namespace deepmd;
+
 torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
   std::vector<torch::Tensor> row_tensors;
 
@@ -155,7 +159,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, nall_real, 3}, options)
           .to(device);
-  std::vector<int64_t> atype_64(datype.begin(), datype.end());
+  std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
   if (ago == 0) {
@@ -199,16 +203,17 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   if (!fparam.empty()) {
     fparam_tensor =
         torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
-                         {1, static_cast<int64_t>(fparam.size())}, options)
+                         {1, static_cast<std::int64_t>(fparam.size())}, options)
             .to(device);
   }
   c10::optional<torch::Tensor> aparam_tensor;
   if (!aparam_.empty()) {
     aparam_tensor =
-        torch::from_blob(const_cast<VALUETYPE*>(aparam_.data()),
-                         {1, lmp_list.inum,
-                          static_cast<int64_t>(aparam_.size()) / lmp_list.inum},
-                         options)
+        torch::from_blob(
+            const_cast<VALUETYPE*>(aparam_.data()),
+            {1, lmp_list.inum,
+             static_cast<std::int64_t>(aparam_.size()) / lmp_list.inum},
+            options)
             .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
@@ -340,7 +345,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::from_blob(coord_wrapped.data(), {1, natoms, 3}, options)
           .to(device);
   inputs.push_back(coord_wrapped_Tensor);
-  std::vector<int64_t> atype_64(atype.begin(), atype.end());
+  std::vector<std::int64_t> atype_64(atype.begin(), atype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, natoms}, int_options).to(device);
   inputs.push_back(atype_Tensor);
@@ -355,7 +360,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   if (!fparam.empty()) {
     fparam_tensor =
         torch::from_blob(const_cast<VALUETYPE*>(fparam.data()),
-                         {1, static_cast<int64_t>(fparam.size())}, options)
+                         {1, static_cast<std::int64_t>(fparam.size())}, options)
             .to(device);
   }
   inputs.push_back(fparam_tensor);
@@ -364,7 +369,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     aparam_tensor =
         torch::from_blob(
             const_cast<VALUETYPE*>(aparam.data()),
-            {1, natoms, static_cast<int64_t>(aparam.size()) / natoms}, options)
+            {1, natoms, static_cast<std::int64_t>(aparam.size()) / natoms},
+            options)
             .to(device);
   }
   inputs.push_back(aparam_tensor);
