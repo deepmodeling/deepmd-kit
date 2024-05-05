@@ -5,6 +5,7 @@
 #ifdef OMPI_MPI_H
 #include <mpi-ext.h>
 #endif
+#endif
 #include <torch/torch.h>
 
 #include <cstdint>
@@ -13,6 +14,7 @@
 #include "device.h"
 #endif
 
+#ifdef USE_MPI
 template <typename T>
 static MPI_Datatype get_mpi_type();
 
@@ -26,6 +28,7 @@ MPI_Datatype get_mpi_type<double>() {
   return MPI_DOUBLE;
 }
 #endif
+
 class Border : public torch::autograd::Function<Border> {
  public:
   static torch::autograd::variable_list forward(
