@@ -135,7 +135,7 @@ def make_base_descriptor(
             """
             if cls is BD:
                 return BD.get_class_by_type(data["type"]).deserialize(data)
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
         @classmethod
         @abstractmethod

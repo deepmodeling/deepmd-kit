@@ -63,8 +63,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         This method is called by others when the fitting supported initialization from the given variables.
         """
         raise NotImplementedError(
-            "Fitting %s doesn't support initialization from the given variables!"
-            % type(self).__name__
+            f"Fitting {type(self).__name__} doesn't support initialization from the given variables!"
         )
 
     @abstractmethod
@@ -107,7 +106,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
             return Fitting.get_class_by_type(
                 j_get_type(data, cls.__name__)
             ).deserialize(data, suffix=suffix)
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+        raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
     def serialize(self, suffix: str = "") -> dict:
         """Serialize the fitting.
@@ -122,7 +121,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         suffix : str, optional
             Name suffix to identify this fitting
         """
-        raise NotImplementedError("Not implemented in class %s" % self.__name__)
+        raise NotImplementedError(f"Not implemented in class {self.__name__}")
 
     def serialize_network(
         self,

@@ -126,7 +126,7 @@ def make_base_model() -> Type[object]:
                 if model_type == "standard":
                     model_type = data.get("fitting", {}).get("type", "ener")
                 return cls.get_class_by_type(model_type).deserialize(data)
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
         model_def_script: str
 

@@ -24,7 +24,24 @@ DP_Nlist* DP_NewNlist(int inum_,
             deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
-
+DP_Nlist* DP_NewNlist_comm(int inum_,
+                           int* ilist_,
+                           int* numneigh_,
+                           int** firstneigh_,
+                           int nswap,
+                           int* sendnum,
+                           int* recvnum,
+                           int* firstrecv,
+                           int** sendlist,
+                           int* sendproc,
+                           int* recvproc,
+                           void* world) {
+  deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_, nswap, sendnum,
+                        recvnum, firstrecv, sendlist, sendproc, recvproc,
+                        world);
+  DP_Nlist* new_nl = new DP_Nlist(nl);
+  return new_nl;
+}
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 DP_DeepPot::DP_DeepPot() {}

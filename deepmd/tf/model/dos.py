@@ -229,6 +229,6 @@ class DOSModel(StandardModel):
             self.fitting.init_variables(graph, graph_def, suffix=suffix)
             tf.constant("compressed_model", name="model_type", dtype=tf.string)
         else:
-            raise RuntimeError("Unknown model type %s" % model_type)
+            raise RuntimeError(f"Unknown model type {model_type}")
         if self.typeebd is not None:
             self.typeebd.init_variables(graph, graph_def, suffix=suffix)

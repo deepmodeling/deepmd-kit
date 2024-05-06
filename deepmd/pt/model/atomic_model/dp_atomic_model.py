@@ -130,6 +130,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -163,6 +164,7 @@ class DPAtomicModel(BaseAtomicModel):
             extended_atype,
             nlist,
             mapping=mapping,
+            comm_dict=comm_dict,
         )
         assert descriptor is not None
         # energy, force
