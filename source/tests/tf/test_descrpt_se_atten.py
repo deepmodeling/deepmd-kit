@@ -421,7 +421,7 @@ class TestModel(tf.test.TestCase):
             "resnet_dt": False,
             "seed": 1,
         }
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
 
         # init models
         typeebd = TypeEmbedNet(
@@ -588,7 +588,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["neuron"] = [5, 5, 5]
         jdata["model"]["descriptor"]["axis_neuron"] = 2
         jdata["model"]["descriptor"]["attn_layer"] = 0
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         typeebd_param = {
             "neuron": [5],
             "resnet_dt": False,

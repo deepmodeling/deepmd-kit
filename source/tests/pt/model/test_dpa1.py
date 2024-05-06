@@ -39,11 +39,12 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec, sm, to in itertools.product(
+        for idt, prec, sm, to, tm in itertools.product(
             [False, True],  # resnet_dt
             ["float64", "float32"],  # precision
             [False, True],  # smooth_type_embedding
             [False, True],  # type_one_side
+            ["concat", "strip"],  # tebd_input_mode
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -60,6 +61,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 resnet_dt=idt,
                 smooth_type_embedding=sm,
                 type_one_side=to,
+                tebd_input_mode=tm,
                 old_impl=False,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -98,7 +100,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 err_msg=err_msg,
             )
             # old impl
-            if idt is False and prec == "float64" and to is False:
+            if idt is False and prec == "float64" and to is False and tm == "concat":
                 dd3 = DescrptDPA1(
                     self.rcut,
                     self.rcut_smth,
@@ -163,16 +165,21 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec, sm, to in itertools.product(
-            [False, True],
-            ["float64", "float32"],
-            [False, True],
-            [False, True],
+        for idt, prec, sm, to, tm in itertools.product(
+            [
+                False,
+            ],  # resnet_dt
+            [
+                "float64",
+            ],  # precision
+            [False, True],  # smooth_type_embedding
+            [False, True],  # type_one_side
+            ["concat", "strip"],  # tebd_input_mode
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             err_msg = f"idt={idt} prec={prec}"
-            # sea new impl
+            # dpa1 new impl
             dd0 = DescrptDPA1(
                 self.rcut,
                 self.rcut_smth,
@@ -182,6 +189,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 resnet_dt=idt,
                 smooth_type_embedding=sm,
                 type_one_side=to,
+                tebd_input_mode=tm,
                 old_impl=False,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)

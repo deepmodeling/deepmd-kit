@@ -109,7 +109,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
             attn_dotr=attn_dotr,
             attn_mask=attn_mask,
             multi_task=multi_task,
-            stripped_type_embedding=True,
+            tebd_input_mode="strip",
             smooth_type_embedding=True,
             **kwargs,
         )

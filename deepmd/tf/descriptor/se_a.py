@@ -183,7 +183,7 @@ class DescrptSeA(DescrptSe):
         uniform_seed: bool = False,
         multi_task: bool = False,
         spin: Optional[Spin] = None,
-        stripped_type_embedding: bool = False,
+        tebd_input_mode: str = "concat",
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -194,6 +194,8 @@ class DescrptSeA(DescrptSe):
             )
         if env_protection != 0.0:
             raise NotImplementedError("env_protection != 0.0 is not supported.")
+        # to be compat with old option of `stripped_type_embedding`
+        stripped_type_embedding = tebd_input_mode == "strip"
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -1052,7 +1054,7 @@ class DescrptSeA(DescrptSe):
                 )
                 if self.compress:
                     raise RuntimeError(
-                        "compression of type embedded descriptor is not supported when stripped_type_embedding == False"
+                        "compression of type embedded descriptor is not supported when tebd_input_mode is not set to 'strip'"
                     )
         # natom x 4 x outputs_size
         if nvnmd_cfg.enable:
@@ -1357,7 +1359,6 @@ class DescrptSeA(DescrptSe):
                     graph_def,
                     suffix,
                     get_extra_embedding_net_suffix(self.type_one_side),
-                    self.layer_size,
                 )
             )
 
@@ -1422,7 +1423,7 @@ class DescrptSeA(DescrptSe):
             )
         if self.stripped_type_embedding:
             raise NotImplementedError(
-                "stripped_type_embedding is unsupported by the native model"
+                "Serialization is unsupported when tebd_input_mode is set to 'strip'"
             )
         if (self.original_sel != self.sel_a).any():
             raise NotImplementedError(
