@@ -135,8 +135,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     tebd_dim: int
             Dimension of the type embedding
     tebd_input_mode: str
-            The way to mix the type embeddings. Supported options are `concat`.
-            (TODO need to support stripped_type_embedding option)
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
     resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -182,6 +183,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
+    stripped_type_embedding: bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -189,9 +196,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
     Limitations
     -----------
-    The currently implementation does not support the following features
-    1. tebd_input_mode != 'concat'
-
     The currently implementation will not support the following deprecated features
     1. spin is not None
     2. attn_mask == True
@@ -233,19 +237,21 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
+        stripped_type_embedding: Optional[bool] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
+        # Ensure compatibility with the deprecated stripped_type_embedding option.
+        if stripped_type_embedding is not None:
+            # Use the user-set stripped_type_embedding parameter first
+            tebd_input_mode = "strip" if stripped_type_embedding else "concat"
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         if attn_mask:
             raise NotImplementedError(
                 "old implementation of attn_mask is not supported."
             )
-        # TODO
-        if tebd_input_mode != "concat":
-            raise NotImplementedError("tebd_input_mode != 'concat' not implemented")
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
@@ -290,25 +296,38 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             activation_function="Linear",
             precision=precision,
         )
+        self.tebd_dim_input = self.tebd_dim if self.type_one_side else self.tebd_dim * 2
         if self.tebd_input_mode in ["concat"]:
-            if not self.type_one_side:
-                in_dim = 1 + self.tebd_dim * 2
-            else:
-                in_dim = 1 + self.tebd_dim
+            self.embd_input_dim = 1 + self.tebd_dim_input
         else:
-            in_dim = 1
+            self.embd_input_dim = 1
         self.embeddings = NetworkCollection(
             ndim=0,
             ntypes=self.ntypes,
             network_type="embedding_network",
         )
         self.embeddings[0] = EmbeddingNet(
-            in_dim,
+            self.embd_input_dim,
             self.neuron,
             self.activation_function,
             self.resnet_dt,
             self.precision,
         )
+        if self.tebd_input_mode in ["strip"]:
+            self.embeddings_strip = NetworkCollection(
+                ndim=0,
+                ntypes=self.ntypes,
+                network_type="embedding_network",
+            )
+            self.embeddings_strip[0] = EmbeddingNet(
+                self.tebd_dim_input,
+                self.neuron,
+                self.activation_function,
+                self.resnet_dt,
+                self.precision,
+            )
+        else:
+            self.embeddings_strip = None
         self.dpa1_attention = NeighborGatedAttention(
             self.attn_layer,
             self.nnei,
@@ -410,6 +429,18 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
+    def cal_g_strip(
+        self,
+        ss,
+        embedding_idx,
+    ):
+        assert self.embeddings_strip is not None
+        nfnl, nnei = ss.shape[0:2]
+        ss = ss.reshape(nfnl, nnei, -1)
+        # nfnl x nnei x ng
+        gg = self.embeddings_strip[embedding_idx].call(ss)
+        return gg
+
     def reinit_exclude(
         self,
         exclude_types: List[Tuple[int, int]] = [],
@@ -500,11 +531,28 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             else:
                 # nfnl x nnei x (1 + tebd_dim)
                 ss = np.concatenate([ss, atype_embd_nlist], axis=-1)
+                # calculate gg
+                # nfnl x nnei x ng
+            gg = self.cal_g(ss, 0)
+        elif self.tebd_input_mode in ["strip"]:
+            # nfnl x nnei x ng
+            gg_s = self.cal_g(ss, 0)
+            assert self.embeddings_strip is not None
+            if not self.type_one_side:
+                # nfnl x nnei x (tebd_dim * 2)
+                tt = np.concatenate([atype_embd_nlist, atype_embd_nnei], axis=-1)
+            else:
+                # nfnl x nnei x tebd_dim
+                tt = atype_embd_nlist
+            # nfnl x nnei x ng
+            gg_t = self.cal_g_strip(tt, 0)
+            if self.smooth:
+                gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+            # nfnl x nnei x ng
+            gg = gg_s * gg_t + gg_s
         else:
             raise NotImplementedError
 
-        # calculate gg
-        gg = self.cal_g(ss, 0)
         input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
             np.linalg.norm(
                 dmatrix.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True
@@ -532,7 +580,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
-        return {
+        data = {
             "@class": "Descriptor",
             "type": "dpa1",
             "@version": 1,
@@ -575,6 +623,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "trainable": True,
             "spin": None,
         }
+        if self.tebd_input_mode in ["strip"]:
+            data.update({"embeddings_strip": self.embeddings_strip.serialize()})
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
@@ -588,11 +639,18 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_embedding = data.pop("type_embedding")
         attention_layers = data.pop("attention_layers")
         env_mat = data.pop("env_mat")
+        tebd_input_mode = data["tebd_input_mode"]
+        if tebd_input_mode in ["strip"]:
+            embeddings_strip = data.pop("embeddings_strip")
+        else:
+            embeddings_strip = None
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
+        if tebd_input_mode in ["strip"]:
+            obj.embeddings_strip = NetworkCollection.deserialize(embeddings_strip)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
         obj.dpa1_attention = NeighborGatedAttention.deserialize(attention_layers)
         return obj
