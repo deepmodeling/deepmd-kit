@@ -503,9 +503,20 @@ def descrpt_se_atten_args():
         f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
+    doc_stripped_type_embedding = (
+        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separated embedding network. "
+        "Setting this to `True` is equivalent to setting `tebd_input_mode` to 'strip'."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
+        Argument(
+            "stripped_type_embedding",
+            bool,
+            optional=True,
+            default=None,
+            doc=doc_stripped_type_embedding,
+        ),
         Argument(
             "smooth_type_embedding",
             bool,
@@ -2311,39 +2322,6 @@ def gen_args(**kwargs) -> List[Argument]:
     ]
 
 
-def backend_compat(data):
-    data = data.copy()
-
-    def compat_stripped_type_embedding(descriptor_param):
-        # stripped_type_embedding in old DescrptSeAtten
-        descriptor_param = descriptor_param.copy()
-        if descriptor_param.get(
-            "type", "se_e2_a"
-        ) == "se_atten" and descriptor_param.pop("stripped_type_embedding", False):
-            if "tebd_input_mode" not in descriptor_param:
-                descriptor_param["tebd_input_mode"] = "strip"
-            elif descriptor_param["tebd_input_mode"] != "strip":
-                raise ValueError(
-                    "Conflict detected: 'stripped_type_embedding' is set to True, but 'tebd_input_mode' is not 'strip'. Please ensure 'tebd_input_mode' is set to 'strip' when 'stripped_type_embedding' is True."
-                )
-            else:
-                pass
-
-        return descriptor_param
-
-    if "descriptor" in data["model"]:
-        if "list" not in data["model"]["descriptor"]:
-            data["model"]["descriptor"] = compat_stripped_type_embedding(
-                data["model"]["descriptor"]
-            )
-        else:
-            for ii, descriptor in enumerate(data["model"]["descriptor"]["list"]):
-                data["model"]["descriptor"]["list"][ii] = (
-                    compat_stripped_type_embedding(descriptor)
-                )
-    return data
-
-
 def normalize_multi_task(data):
     # single-task or multi-task mode
     if data["model"].get("type", "standard") not in ("standard", "multi"):
@@ -2540,7 +2518,6 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
 
 def normalize(data):
     data = normalize_multi_task(data)
-    data = backend_compat(data)
 
     base = Argument("base", dict, gen_args())
     data = base.normalize_value(data, trim_pattern="_*")

@@ -154,6 +154,10 @@ class DescrptSeAtten(DescrptSeA):
             And when using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
+    stripped_type_embedding: bool, Optional
+             (Deprecated, kept only for compatibility.)
+             Whether to strip the type embedding into a separated embedding network.
+             Setting this to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
 
     Raises
     ------
@@ -193,10 +197,15 @@ class DescrptSeAtten(DescrptSeA):
         ln_eps: Optional[float] = 1e-3,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
+        stripped_type_embedding: Optional[bool] = None,
         **kwargs,
     ) -> None:
-        # Ensure compatibility with the deprecated `stripped_type_embedding` option.
-        stripped_type_embedding = tebd_input_mode == "strip"
+        # Ensure compatibility with the deprecated stripped_type_embedding option.
+        if stripped_type_embedding is None:
+            stripped_type_embedding = tebd_input_mode == "strip"
+        else:
+            # Use the user-set stripped_type_embedding parameter first
+            tebd_input_mode = "strip" if stripped_type_embedding else "concat"
         if not set_davg_zero and not (
             stripped_type_embedding and smooth_type_embedding
         ):
