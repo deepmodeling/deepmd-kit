@@ -13,6 +13,9 @@ from typing import (
 )
 
 import tensorflow
+from packaging.version import (
+    Version,
+)
 from tensorflow.python.framework import (
     tensor_util,
 )
@@ -31,6 +34,7 @@ from deepmd.common import (
 )
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
+    TF_VERSION,
     op_module,
     tf,
 )
@@ -289,3 +293,8 @@ def clear_session():
     tf.reset_default_graph()
     # TODO: remove this line when data_requirement is not a global variable
     data_requirement.clear()
+    _TF_VERSION = Version(TF_VERSION)
+    if _TF_VERSION < Version("2.4.0"):
+        tf.train.experimental.disable_mixed_precision_graph_rewrite()
+    else:
+        tf.mixed_precision.disable_mixed_precision_graph_rewrite()
