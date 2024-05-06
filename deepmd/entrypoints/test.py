@@ -67,7 +67,6 @@ def test(
     model: str,
     system: str,
     datafile: str,
-    set_prefix: str,
     numb_test: int,
     rand_seed: Optional[int],
     shuffle_test: bool,
@@ -86,8 +85,6 @@ def test(
         system directory
     datafile : str
         the path to the list of systems to test
-    set_prefix : str
-        string prefix of set
     numb_test : int
         munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
@@ -137,7 +134,7 @@ def test(
         tmap = dp.get_type_map() if isinstance(dp, DeepPot) else None
         data = DeepmdData(
             system,
-            set_prefix,
+            set_prefix="set",
             shuffle_test=shuffle_test,
             type_map=tmap,
             sort_atoms=False,

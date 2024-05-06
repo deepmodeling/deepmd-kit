@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import textwrap
+import warnings
 from collections import (
     defaultdict,
 )
@@ -67,6 +68,24 @@ class BackendOption(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, BACKEND_TABLE[values])
+
+
+class DeprecateAction(argparse.Action):
+    # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
+    def __init__(self, *args, **kwargs):
+        self.call_count = 0
+        if "help" in kwargs:
+            kwargs["help"] = f'[DEPRECATED] {kwargs["help"]}'
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if self.call_count == 0:
+            warnings.warn(
+                f"The option `{option_string}` is deprecated. It will be ignored.",
+                FutureWarning,
+            )
+            delattr(namespace, self.dest)
+        self.call_count += 1
 
 
 def main_parser() -> argparse.ArgumentParser:
@@ -355,9 +374,8 @@ def main_parser() -> argparse.ArgumentParser:
     parser_tst.add_argument(
         "-S",
         "--set-prefix",
-        default="set",
-        type=str,
-        help="(Supported backend: TensorFlow) The set prefix",
+        action=DeprecateAction,
+        help="Deprecated argument.",
     )
     parser_tst.add_argument(
         "-n",
@@ -528,7 +546,7 @@ def main_parser() -> argparse.ArgumentParser:
         help="The system directory. Recursively detect systems in this directory.",
     )
     parser_model_devi.add_argument(
-        "-S", "--set-prefix", default="set", type=str, help="The set prefix"
+        "-S", "--set-prefix", action=DeprecateAction, help="Deprecated argument."
     )
     parser_model_devi.add_argument(
         "-o",

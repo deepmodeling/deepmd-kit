@@ -31,7 +31,7 @@ class TestModel(tf.test.TestCase):
         jfile = "water.json"
         jdata = j_loader(jfile)
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
 
