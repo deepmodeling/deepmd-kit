@@ -20,7 +20,6 @@ from .gaussian_lcc import (
     DescrptGaussianLcc,
 )
 from .hybrid import (
-    DescrptBlockHybrid,
     DescrptHybrid,
 )
 from .repformers import (
@@ -47,6 +46,5 @@ __all__ = [
     "DescrptHybrid",
     "prod_env_mat",
     "DescrptGaussianLcc",
-    "DescrptBlockHybrid",
     "DescrptBlockRepformers",
 ]
