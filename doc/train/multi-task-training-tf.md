@@ -65,7 +65,7 @@ The supported fitting nets for multi-task mode are listed:
 
 The output of `dp freeze` command in multi-task mode can be seen in [freeze command](../freeze/freeze.md).
 
-## Initialization from pretrained multi-task model
+## Initialization from pre-trained multi-task model
 
 For advance training in multi-task mode, one can first train the descriptor on several upstream datasets and then transfer it on new downstream ones with newly added fitting nets.
 At the second step, you can also inherit some fitting nets trained on upstream datasets, by merely adding fitting net keys in {ref}`fitting_net_dict <model/fitting_net_dict>` and
