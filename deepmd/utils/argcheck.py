@@ -64,8 +64,8 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: dict):
-        if key in data:
+    def deprecate_something(data: Optional[dict]):
+        if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
         return True
