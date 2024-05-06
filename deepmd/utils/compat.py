@@ -263,7 +263,8 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
         list of keys to copy
     """
     for k in keys:
-        dst[k] = src[k]
+        if k in src:
+            dst[k] = src[k]
 
 
 def remove_decay_rate(jdata: Dict[str, Any]):
