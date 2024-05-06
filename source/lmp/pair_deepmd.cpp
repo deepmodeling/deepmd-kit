@@ -460,7 +460,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
                "centroid/stress/atom command for 9-element atomic virial.");
   }
   bool do_ghost = true;
-  assert(sizeof(MPI_Comm) == sizeof(int));
   //  dpa2 communication
   commdata_ = (CommBrickDeepMD *)comm;
   double **x = atom->x;
