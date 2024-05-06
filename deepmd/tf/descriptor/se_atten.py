@@ -155,9 +155,11 @@ class DescrptSeAtten(DescrptSeA):
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
     stripped_type_embedding: bool, Optional
-             (Deprecated, kept only for compatibility.)
-             Whether to strip the type embedding into a separated embedding network.
-             Setting this to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
 
     Raises
     ------

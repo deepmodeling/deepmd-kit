@@ -504,8 +504,10 @@ def descrpt_se_atten_args():
         "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_stripped_type_embedding = (
-        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separated embedding network. "
-        "Setting this to `True` is equivalent to setting `tebd_input_mode` to 'strip'."
+        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
+        "Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'. "
+        "Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'."
+        "The default value is `None`, which means the `tebd_input_mode` setting will be used instead."
     )
 
     return [

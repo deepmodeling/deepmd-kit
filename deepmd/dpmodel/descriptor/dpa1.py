@@ -184,9 +184,11 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
     stripped_type_embedding: bool, Optional
-             (Deprecated, kept only for compatibility.)
-             Whether to strip the type embedding into a separated embedding network.
-             Setting this to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
