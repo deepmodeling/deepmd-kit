@@ -28,36 +28,36 @@ def _file_delete(file):
         os.remove(file)
 
 
-# 4 tests:
-# - type embedding FP64, se_atten FP64
-# - type embedding FP64, se_atten FP32
-# - type embedding FP32, se_atten FP64
-# - type embedding FP32, se_atten FP32
 tests = [
     {
         "se_atten precision": "float64",
         "type embedding precision": "float64",
         "smooth_type_embedding": True,
+        "precision_digit": 10,
     },
     {
         "se_atten precision": "float64",
         "type embedding precision": "float64",
         "smooth_type_embedding": False,
+        "precision_digit": 10,
     },
     {
         "se_atten precision": "float64",
         "type embedding precision": "float32",
         "smooth_type_embedding": True,
+        "precision_digit": 2,
     },
     {
         "se_atten precision": "float32",
         "type embedding precision": "float64",
         "smooth_type_embedding": True,
+        "precision_digit": 2,
     },
     {
         "se_atten precision": "float32",
         "type embedding precision": "float32",
         "smooth_type_embedding": True,
+        "precision_digit": 2,
     },
 ]
 
@@ -158,10 +158,6 @@ INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
 INPUTS_ET, FROZEN_MODELS_ET, COMPRESSED_MODELS_ET = _init_models_exclude_types()
 
 
-def _get_default_places(nth_test):
-    return 10 if nth_test == 0 else 3
-
-
 @unittest.skipIf(
     parse_version(tf.__version__) < parse_version("2"),
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
@@ -200,7 +196,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             self.assertEqual(dp_original.get_ntypes(), 2)
             self.assertAlmostEqual(dp_original.get_rcut(), 6.0, places=default_places)
@@ -218,7 +214,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=False
@@ -244,7 +240,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0, ae0, av0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=True
@@ -276,7 +272,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             coords2 = np.concatenate((self.coords, self.coords))
             box2 = np.concatenate((self.box, self.box))
@@ -346,7 +342,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=False
@@ -372,7 +368,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0, ae0, av0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=True
@@ -404,7 +400,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             coords2 = np.concatenate((self.coords, self.coords))
             ee0, ff0, vv0, ae0, av0 = dp_original.eval(
@@ -473,7 +469,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=False
@@ -505,7 +501,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0, ae0, av0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=True
@@ -535,7 +531,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 
     def test_ase(self):
         for i in range(len(tests)):
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
             from ase import (
                 Atoms,
             )
@@ -628,7 +624,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             self.assertEqual(dp_original.get_ntypes(), 2)
             self.assertAlmostEqual(dp_original.get_rcut(), 6.0, places=default_places)
@@ -646,7 +642,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=False
@@ -672,7 +668,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             ee0, ff0, vv0, ae0, av0 = dp_original.eval(
                 self.coords, self.box, self.atype, atomic=True
@@ -704,7 +700,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
-            default_places = _get_default_places(i)
+            default_places = tests[i]["precision_digit"]
 
             coords2 = np.concatenate((self.coords, self.coords))
             box2 = np.concatenate((self.box, self.box))

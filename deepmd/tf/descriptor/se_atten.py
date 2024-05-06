@@ -501,12 +501,8 @@ class DescrptSeAtten(DescrptSeA):
         )
         self.two_embd = make_data(self, self.final_type_embedding)
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def build(
         self,
@@ -1810,7 +1806,7 @@ class DescrptSeAtten(DescrptSeA):
             The deserialized model
         """
         if cls is not DescrptSeAtten:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
@@ -1854,7 +1850,7 @@ class DescrptSeAtten(DescrptSeA):
         """
         if type(self) not in [DescrptSeAtten, DescrptDPA1Compat]:
             raise NotImplementedError(
-                "Not implemented in class %s" % self.__class__.__name__
+                f"Not implemented in class {self.__class__.__name__}"
             )
         if self.stripped_type_embedding and type(self) is not DescrptDPA1Compat:
             # only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'
@@ -2242,7 +2238,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             The deserialized model
         """
         if cls is not DescrptDPA1Compat:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")

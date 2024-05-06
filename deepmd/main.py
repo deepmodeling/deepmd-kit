@@ -650,7 +650,7 @@ def main_parser() -> argparse.ArgumentParser:
 
     # --version
     parser.add_argument(
-        "--version", action="version", version="DeePMD-kit v%s" % __version__
+        "--version", action="version", version=f"DeePMD-kit v{__version__}"
     )
 
     # * train nvnmd script ******************************************************************
