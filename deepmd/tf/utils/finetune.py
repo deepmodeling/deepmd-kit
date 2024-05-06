@@ -99,7 +99,6 @@ def replace_model_params_with_pretrained_model(
         ):
             target_para = pretrained_jdata["model"][config_key]
             cur_para = jdata["model"][config_key]
-            # TODO: keep some params that are irrelevant to model structures (need to discuss)
             if "trainable" in cur_para.keys():
                 target_para["trainable"] = cur_para["trainable"]
             log.info(f"Change the '{config_key}' from {cur_para!s} to {target_para!s}.")
