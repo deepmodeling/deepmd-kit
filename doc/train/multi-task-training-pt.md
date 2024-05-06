@@ -74,7 +74,7 @@ An example input for multi-task training two models in water system is shown as 
 :linenos:
 ```
 
-## Finetune from the pretrained multi-task model
+## Finetune from the pre-trained multi-task model
 
 To finetune based on the checkpoint `model.pt` after the multi-task pre-training is completed,
 users can refer to [this section](./finetuning.md#fine-tuning-from-a-multi-task-pre-trained-model).

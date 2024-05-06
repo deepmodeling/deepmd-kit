@@ -1,4 +1,4 @@
-# Finetune the pretrained model {{ tensorflow_icon }} {{ pytorch_icon }}
+# Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }}
 
 :::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
@@ -7,16 +7,16 @@
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
 to vastly reduce the training cost, while it's not trivial in potential models.
 Compositions and configurations of data samples or even computational parameters in upstream software (such as VASP)
-may be different between the pretrained and target datasets, leading to energy shifts or other diversities of training data.
+may be different between the pre-trained and target datasets, leading to energy shifts or other diversities of training data.
 
 Recently the emerging of methods such as [DPA-1](https://arxiv.org/abs/2208.08236) has brought us to a new stage where we can
 perform similar pretraining-finetuning approaches.
-They can hopefully learn the common knowledge in the pretrained dataset (especially the `force` information)
+They can hopefully learn the common knowledge in the pre-trained dataset (especially the `force` information)
 and thus reduce the computational cost in downstream training tasks.
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
 
-If you have a pretrained model `pretrained.pb`
+If you have a pre-trained model `pretrained.pb`
 (here we support models using [`se_atten`](../model/train-se-atten.md) descriptor and [`ener`](../model/train-energy.md) fitting net)
 on a large dataset (for example, [OC2M](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md) in
 DPA-1 [paper](https://arxiv.org/abs/2208.08236)), a finetuning strategy can be performed by simply running:
@@ -29,7 +29,7 @@ The command above will change the energy bias in the last layer of the fitting n
 according to the training dataset in input.json.
 
 :::{warning}
-Note that the elements in the training dataset must be contained in the pretrained dataset.
+Note that the elements in the training dataset must be contained in the pre-trained dataset.
 :::
 
 The finetune procedure will inherit the model structures in `pretrained.pb`,
@@ -81,7 +81,7 @@ The model section in input.json can be simplified as follows:
 ```
 
 :::{warning}
-The `type_map` will be overwritten based on that in the pretrained model. Please ensure you are familiar with the `type_map` configuration in the pretrained model before starting the fine-tuning process.
+The `type_map` will be overwritten based on that in the pre-trained model. Please ensure you are familiar with the `type_map` configuration in the pre-trained model before starting the fine-tuning process.
 This issue will be addressed in the future version.
 :::
 
