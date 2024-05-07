@@ -79,7 +79,7 @@ def _init_models():
         jdata["model"]["descriptor"] = {}
         jdata["model"]["descriptor"]["type"] = "se_atten"
         jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["descriptor"]["smooth_type_embedding"] = tests[i][
@@ -128,7 +128,7 @@ def _init_models_exclude_types():
         jdata["model"]["descriptor"]["type"] = "se_atten"
         jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
         jdata["model"]["descriptor"]["precision"] = tests[i]["se_atten precision"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["sel"] = 120
         jdata["model"]["descriptor"]["attn_layer"] = 0
         jdata["model"]["type_embedding"] = {}
@@ -154,8 +154,16 @@ def _init_models_exclude_types():
     return inputs, frozen_models, compressed_models
 
 
-INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
-INPUTS_ET, FROZEN_MODELS_ET, COMPRESSED_MODELS_ET = _init_models_exclude_types()
+def setUpModule():
+    global \
+        INPUTS, \
+        FROZEN_MODELS, \
+        COMPRESSED_MODELS, \
+        INPUTS_ET, \
+        FROZEN_MODELS_ET, \
+        COMPRESSED_MODELS_ET
+    INPUTS, FROZEN_MODELS, COMPRESSED_MODELS = _init_models()
+    INPUTS_ET, FROZEN_MODELS_ET, COMPRESSED_MODELS_ET = _init_models_exclude_types()
 
 
 @unittest.skipIf(

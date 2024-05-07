@@ -293,7 +293,7 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
@@ -461,7 +461,7 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
         typeebd = TypeEmbedNet(
             ntypes=descrpt.get_ntypes(),
@@ -524,7 +524,7 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 2
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
@@ -695,7 +695,7 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 2
         typeebd = TypeEmbedNet(
             ntypes=descrpt.get_ntypes(),
@@ -763,7 +763,7 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["smooth_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0
@@ -909,7 +909,7 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["smooth_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0

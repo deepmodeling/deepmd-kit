@@ -128,7 +128,7 @@ class DescrptSeAMask(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        stripped_type_embedding: bool = False,
+        tebd_input_mode: str = "concat",
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -160,6 +160,8 @@ class DescrptSeAMask(DescrptSeA):
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei = self.nnei_a
+        # to be compat with old option of `stripped_type_embedding`
+        stripped_type_embedding = tebd_input_mode == "strip"
         self.stripped_type_embedding = stripped_type_embedding
 
         self.ndescrpt_a = self.nnei_a * 4

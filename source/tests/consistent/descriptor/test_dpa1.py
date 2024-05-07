@@ -40,7 +40,7 @@ from deepmd.utils.argcheck import (
 
 @parameterized(
     (4,),  # tebd_dim
-    ("concat",),  # tebd_input_mode
+    ("concat", "strip"),  # tebd_input_mode
     (True,),  # resnet_dt
     (True, False),  # type_one_side
     (20,),  # attn
@@ -181,6 +181,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             or not normalize
             or temperature != 1.0
             or (excluded_types != [] and attn_layer > 0)
+            or (type_one_side and tebd_input_mode == "strip")  # not consistent yet
         )
 
     tf_class = DescrptDPA1TF

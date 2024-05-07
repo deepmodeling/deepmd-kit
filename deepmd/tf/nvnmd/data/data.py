@@ -332,7 +332,7 @@ jdata_deepmd_input_v1 = {
         "descriptor": {
             "seed": 1,
             "type": "se_atten",
-            "stripped_type_embedding": True,
+            "tebd_input_mode": "strip",
             "sel": 128,
             "rcut": 7.0,
             "rcut_smth": 0.5,

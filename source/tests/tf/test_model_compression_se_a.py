@@ -73,8 +73,16 @@ def _init_models_exclude_types():
     return INPUT, frozen_model, compressed_model
 
 
-INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
-INPUT_ET, FROZEN_MODEL_ET, COMPRESSED_MODEL_ET = _init_models_exclude_types()
+def setUpModule():
+    global \
+        INPUT, \
+        FROZEN_MODEL, \
+        COMPRESSED_MODEL, \
+        INPUT_ET, \
+        FROZEN_MODEL_ET, \
+        COMPRESSED_MODEL_ET
+    INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
+    INPUT_ET, FROZEN_MODEL_ET, COMPRESSED_MODEL_ET = _init_models_exclude_types()
 
 
 class TestDeepPotAPBC(unittest.TestCase):

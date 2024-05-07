@@ -106,8 +106,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
         tebd_dim : int
             Dimension of the type embedding
         tebd_input_mode : str
-            The way to mix the type embeddings. Supported options are `concat`.
-            (TODO need to support stripped_type_embedding option)
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
         resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
@@ -191,6 +192,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         if self.old_impl:
+            assert self.tebd_input_mode in [
+                "concat"
+            ], "Old implementation does not support tebd_input_mode != 'concat'."
             self.dpa1_attention = NeighborWiseAttention(
                 self.attn_layer,
                 self.nnei,
@@ -230,16 +234,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
+        self.tebd_dim_input = self.tebd_dim if self.type_one_side else self.tebd_dim * 2
         if self.tebd_input_mode in ["concat"]:
-            if not self.type_one_side:
-                self.embd_input_dim = 1 + self.tebd_dim * 2
-            else:
-                self.embd_input_dim = 1 + self.tebd_dim
+            self.embd_input_dim = 1 + self.tebd_dim_input
         else:
             self.embd_input_dim = 1
 
         self.filter_layers_old = None
         self.filter_layers = None
+        self.filter_layers_strip = None
         if self.old_impl:
             filter_layers = []
             one = TypeFilter(
@@ -265,6 +268,18 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 resnet_dt=self.resnet_dt,
             )
             self.filter_layers = filter_layers
+            if self.tebd_input_mode in ["strip"]:
+                filter_layers_strip = NetworkCollection(
+                    ndim=0, ntypes=self.ntypes, network_type="embedding_network"
+                )
+                filter_layers_strip[0] = EmbeddingNet(
+                    self.tebd_dim_input,
+                    self.filter_neuron,
+                    activation_function=self.activation_function,
+                    precision=self.precision,
+                    resnet_dt=self.resnet_dt,
+                )
+                self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
     def get_rcut(self) -> float:
@@ -498,19 +513,36 @@ class DescrptBlockSeAtten(DescriptorBlock):
             rr = dmatrix
             rr = rr * exclude_mask[:, :, None]
             ss = rr[:, :, :1]
+            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
+            atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
             if self.tebd_input_mode in ["concat"]:
-                nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
-                atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
                 if not self.type_one_side:
                     # nfnl x nnei x (1 + tebd_dim * 2)
                     ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
                 else:
                     # nfnl x nnei x (1 + tebd_dim)
                     ss = torch.concat([ss, nlist_tebd], dim=2)
+                # nfnl x nnei x ng
+                gg = self.filter_layers.networks[0](ss)
+            elif self.tebd_input_mode in ["strip"]:
+                # nfnl x nnei x ng
+                gg_s = self.filter_layers.networks[0](ss)
+                assert self.filter_layers_strip is not None
+                if not self.type_one_side:
+                    # nfnl x nnei x (tebd_dim * 2)
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)
+                else:
+                    # nfnl x nnei x tebd_dim
+                    tt = nlist_tebd
+                # nfnl x nnei x ng
+                gg_t = self.filter_layers_strip.networks[0](tt)
+                if self.smooth:
+                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+                # nfnl x nnei x ng
+                gg = gg_s * gg_t + gg_s
             else:
                 raise NotImplementedError
-            # nfnl x nnei x ng
-            gg = self.filter_layers._networks[0](ss)
+
             input_r = torch.nn.functional.normalize(
                 dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
             )

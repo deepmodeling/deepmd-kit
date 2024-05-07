@@ -424,7 +424,7 @@ def descrpt_se_atten_common_args():
         + "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     )
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers."
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
@@ -475,7 +475,6 @@ def descrpt_se_atten_common_args():
 
 @descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
-    doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
     doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_trainable_ln = (
@@ -495,7 +494,21 @@ def descrpt_se_atten_args():
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
     )
-    doc_deprecated = "This feature will be removed in a future release."
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
+        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+    )
+    doc_stripped_type_embedding = (
+        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
+        "Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'. "
+        "Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'."
+        "The default value is `None`, which means the `tebd_input_mode` setting will be used instead."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
@@ -503,8 +516,8 @@ def descrpt_se_atten_args():
             "stripped_type_embedding",
             bool,
             optional=True,
-            default=False,
-            doc=doc_only_tf_supported + doc_stripped_type_embedding,
+            default=None,
+            doc=doc_stripped_type_embedding,
         ),
         Argument(
             "smooth_type_embedding",
@@ -534,7 +547,7 @@ def descrpt_se_atten_args():
             str,
             optional=True,
             default="concat",
-            doc=doc_only_pt_supported + doc_deprecated,
+            doc=doc_tebd_input_mode,
         ),
         Argument(
             "scaling_factor",
