@@ -44,7 +44,6 @@ from .repformer_layer import (
 )
 from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
-
 if not hasattr(torch.ops.deepmd, "border_op"):
 
     def border_op(
