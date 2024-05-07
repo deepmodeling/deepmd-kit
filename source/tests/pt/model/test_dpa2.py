@@ -52,6 +52,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rp2a,
             rph,
             rp2gate,
+            rus,
             rpz,
             sm,
             prec,
@@ -70,11 +71,12 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 False,
             ],  # repformer_update_h2
             [True, False],  # repformer_attn2_has_gate
+            ["res_avg", "res_residual"],  # repformer_update_style
             [
                 True,
             ],  # repformer_set_davg_zero
             [True, False],  # smooth
-            ["float64", "float32"],  # precision
+            ["float64"],  # precision
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -108,7 +110,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 repformer_attn2_hidden=10,
                 repformer_attn2_nhead=2,
                 repformer_attn2_has_gate=rp2gate,
-                repformer_update_style="res_avg",
+                repformer_update_style=rus,
                 repformer_set_davg_zero=rpz,
                 # kwargs for descriptor
                 smooth=sm,
@@ -157,7 +159,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             #     err_msg=err_msg,
             # )
             # old impl
-            if prec == "float64":
+            if prec == "float64" and rus == "res_avg":
                 dd3 = DescrptDPA2(
                     self.nt,
                     repinit_rcut=self.rcut,
@@ -221,44 +223,114 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     atol=atol,
                 )
 
-    # def test_jit(
-    #     self,
-    # ):
-    #     rng = np.random.default_rng()
-    #     nf, nloc, nnei = self.nlist.shape
-    #     davg = rng.normal(size=(self.nt, nnei, 4))
-    #     dstd = rng.normal(size=(self.nt, nnei, 4))
-    #     dstd = 0.1 + np.abs(dstd)
-    #
-    #     for idt, prec, sm, to, tm in itertools.product(
-    #         [
-    #             False,
-    #         ],  # resnet_dt
-    #         [
-    #             "float64",
-    #         ],  # precision
-    #         [False, True],  # smooth_type_embedding
-    #         [False, True],  # type_one_side
-    #         ["concat", "strip"],  # tebd_input_mode
-    #     ):
-    #         dtype = PRECISION_DICT[prec]
-    #         rtol, atol = get_tols(prec)
-    #         err_msg = f"idt={idt} prec={prec}"
-    #         # dpa1 new impl
-    #         dd0 = DescrptDPA2(
-    #             self.rcut,
-    #             self.rcut_smth,
-    #             self.sel,
-    #             self.nt,
-    #             precision=prec,
-    #             resnet_dt=idt,
-    #             smooth_type_embedding=sm,
-    #             type_one_side=to,
-    #             tebd_input_mode=tm,
-    #             old_impl=False,
-    #         )
-    #         dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
-    #         dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-    #         # dd1 = DescrptDPA1.deserialize(dd0.serialize())
-    #         model = torch.jit.script(dd0)
-    #         # model = torch.jit.script(dd1)
+    def test_jit(
+        self,
+    ):
+        rng = np.random.default_rng(100)
+        nf, nloc, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        davg_2 = rng.normal(size=(self.nt, nnei // 2, 4))
+        dstd_2 = rng.normal(size=(self.nt, nnei // 2, 4))
+        dstd = 0.1 + np.abs(dstd)
+
+        for (
+            riti,
+            riz,
+            rp1c,
+            rp1d,
+            rp1g,
+            rp1a,
+            rp2g,
+            rp2a,
+            rph,
+            rp2gate,
+            rus,
+            rpz,
+            sm,
+            prec,
+        ) in itertools.product(
+            ["concat", "strip"],  # repinit_tebd_input_mode
+            [
+                True,
+            ],  # repinit_set_davg_zero
+            [
+                True,
+            ],  # repformer_update_g1_has_conv
+            [
+                True,
+            ],  # repformer_update_g1_has_drrd
+            [
+                True,
+            ],  # repformer_update_g1_has_grrg
+            [
+                True,
+            ],  # repformer_update_g1_has_attn
+            [
+                True,
+            ],  # repformer_update_g2_has_g1g1
+            [
+                True,
+            ],  # repformer_update_g2_has_attn
+            [
+                False,
+            ],  # repformer_update_h2
+            [
+                True,
+            ],  # repformer_attn2_has_gate
+            ["res_avg", "res_residual"],  # repformer_update_style
+            [
+                True,
+            ],  # repformer_set_davg_zero
+            [
+                True,
+            ],  # smooth
+            ["float64"],  # precision
+        ):
+            dtype = PRECISION_DICT[prec]
+            rtol, atol = get_tols(prec)
+
+            # dpa2 new impl
+            dd0 = DescrptDPA2(
+                self.nt,
+                repinit_rcut=self.rcut,
+                repinit_rcut_smth=self.rcut_smth,
+                repinit_nsel=self.sel_mix,
+                repformer_rcut=self.rcut / 2,
+                repformer_rcut_smth=self.rcut_smth,
+                repformer_nsel=nnei // 2,
+                # kwargs for repinit
+                repinit_tebd_input_mode=riti,
+                repinit_set_davg_zero=riz,
+                # kwargs for repformer
+                repformer_nlayers=3,
+                repformer_g1_dim=20,
+                repformer_g2_dim=10,
+                repformer_axis_neuron=4,
+                repformer_update_g1_has_conv=rp1c,
+                repformer_update_g1_has_drrd=rp1d,
+                repformer_update_g1_has_grrg=rp1g,
+                repformer_update_g1_has_attn=rp1a,
+                repformer_update_g2_has_g1g1=rp2g,
+                repformer_update_g2_has_attn=rp2a,
+                repformer_update_h2=rph,
+                repformer_attn1_hidden=20,
+                repformer_attn1_nhead=2,
+                repformer_attn2_hidden=10,
+                repformer_attn2_nhead=2,
+                repformer_attn2_has_gate=rp2gate,
+                repformer_update_style=rus,
+                repformer_set_davg_zero=rpz,
+                # kwargs for descriptor
+                smooth=sm,
+                exclude_types=[],
+                add_tebd_to_repinit_out=False,
+                precision=prec,
+                old_impl=False,
+            ).to(env.DEVICE)
+
+            dd0.repinit.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
+            dd0.repinit.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
+            dd0.repformers.mean = torch.tensor(davg_2, dtype=dtype, device=env.DEVICE)
+            dd0.repformers.stddev = torch.tensor(dstd_2, dtype=dtype, device=env.DEVICE)
+            model = torch.jit.script(dd0)

@@ -670,6 +670,18 @@ def descrpt_dpa2_args():
         f"Supported options are: "
         "-'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) "
         "-'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
+        "-'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n) "
+        "where `r1`, `r2` ... `r3` are residual weights defined by `repformer_update_residual` "
+        "and `repformer_update_residual_init`."
+    )
+    doc_repformer_update_residual = (
+        f"{doc_repformer}When update using residual mode, "
+        "the initial std of residual vector weights."
+    )
+    doc_repformer_update_residual_init = (
+        f"{doc_repformer}When update using residual mode, "
+        "the initialization mode of residual vector weights."
+        "Supported modes are: ['norm', 'const']."
     )
     doc_repformer_set_davg_zero = (
         f"{doc_repformer}Set the normalization average to zero. "
@@ -891,6 +903,20 @@ def descrpt_dpa2_args():
             optional=True,
             default="res_avg",
             doc=doc_repformer_update_style,
+        ),
+        Argument(
+            "repformer_update_residual",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_repformer_update_residual,
+        ),
+        Argument(
+            "repformer_update_residual_init",
+            str,
+            optional=True,
+            default="norm",
+            doc=doc_repformer_update_residual_init,
         ),
         Argument(
             "repformer_set_davg_zero",

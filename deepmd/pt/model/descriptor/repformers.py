@@ -40,6 +40,7 @@ from deepmd.utils.path import (
 
 from .repformer_layer import (
     RepformerLayer,
+    _cal_hg,
 )
 from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
@@ -74,6 +75,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         attn2_has_gate: bool = False,
         activation_function: str = "tanh",
         update_style: str = "res_avg",
+        update_residual: float = 0.001,
+        update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         smooth: bool = True,
         exclude_types: List[Tuple[int, int]] = [],
@@ -145,6 +148,13 @@ class DescrptBlockRepformers(DescriptorBlock):
             Supported options are:
             -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
             -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+            and `update_residual_init`.
+        update_residual : float, optional
+            When update using residual mode, the initial std of residual vector weights.
+        update_residual_init : str, optional
+            When update using residual mode, the initialization mode of residual vector weights.
         set_davg_zero : bool, optional
             Set the normalization average to zero.
         precision : str, optional
@@ -196,6 +206,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.bn_momentum = bn_momentum
         self.activation_function = activation_function
         self.update_style = update_style
+        self.update_residual = update_residual
+        self.update_residual_init = update_residual_init
         self.direct_dist = direct_dist
         self.act = ActivationFn(activation_function)
         self.smooth = smooth
@@ -206,6 +218,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.resnet_dt = resnet_dt
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
+        self.epsilon = 1e-4
         self.old_impl = old_impl
 
         self.g2_embd = MLPLayer(1, self.g2_dim)
@@ -268,6 +281,8 @@ class DescrptBlockRepformers(DescriptorBlock):
                         attn2_nhead=self.attn2_nhead,
                         activation_function=self.activation_function,
                         update_style=self.update_style,
+                        update_residual=self.update_residual,
+                        update_residual_init=self.update_residual_init,
                         smooth=self.smooth,
                         trainable_ln=self.trainable_ln,
                         ln_eps=self.ln_eps,
@@ -402,24 +417,24 @@ class DescrptBlockRepformers(DescriptorBlock):
         assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
 
         g1 = self.act(atype_embd)
-        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
+        # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
         if not self.direct_dist:
             g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         else:
             g2, h2 = torch.linalg.norm(diff, dim=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
-        # nb x nloc x nnei x ng2
+        # nf x nloc x nnei x ng2
         g2 = self.act(self.g2_embd(g2))
 
         # set all padding positions to index of 0
         # if the a neighbor is real or not is indicated by nlist_mask
         nlist[nlist == -1] = 0
-        # nb x nall x ng1
+        # nf x nall x ng1
         mapping = mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.g1_dim)
         for idx, ll in enumerate(self.layers):
-            # g1:     nb x nloc x ng1
-            # g1_ext: nb x nall x ng1
+            # g1:     nf x nloc x ng1
+            # g1_ext: nf x nall x ng1
             g1_ext = torch.gather(g1, 1, mapping)
             g1, g2, h2 = ll.forward(
                 g1_ext,
@@ -430,10 +445,9 @@ class DescrptBlockRepformers(DescriptorBlock):
                 sw,
             )
 
-        # uses the last layer.
-        # nb x nloc x 3 x ng2
-        h2g2 = ll._cal_h2g2(g2, h2, nlist_mask, sw)
-        # (nb x nloc) x ng2 x 3
+        # nf x nloc x 3 x ng2
+        h2g2 = _cal_hg(g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon)
+        # (nf x nloc) x ng2 x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
