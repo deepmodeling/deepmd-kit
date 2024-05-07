@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import os
 import unittest
 
 import torch
@@ -13,8 +14,6 @@ from deepmd.pt.model.model import (
 from deepmd.pt.utils import (
     env,
 )
-
-import os
 
 CUR_DIR = os.path.dirname(__file__)
 
