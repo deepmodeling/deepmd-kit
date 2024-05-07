@@ -67,7 +67,6 @@
         "pt/dos/data/atomic_system/",
         "pt/dos/data/global_system/"
       ],
-      "set_prefix": "set",
       "batch_size": 1
     },
     "validation_data": {
@@ -75,7 +74,6 @@
         "pt/dos/data/atomic_system/",
         "pt/dos/data/global_system/"
       ],
-      "set_prefix": "set",
       "batch_size": 1
     }
   },

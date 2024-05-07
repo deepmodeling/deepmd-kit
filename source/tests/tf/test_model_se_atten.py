@@ -51,7 +51,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -205,7 +205,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -278,7 +278,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -434,7 +434,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -509,7 +509,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -668,7 +668,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -748,7 +748,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata, "batch_size")
         test_size = j_must_have(jdata, "numb_test")
         batch_size = 1
@@ -897,7 +897,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
         rcut = j_must_have(jdata["model"]["descriptor"], "rcut")

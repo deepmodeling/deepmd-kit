@@ -67,7 +67,6 @@
         "../data/heat-221-reformat/atomic_system/",
         "../data/heat-221-reformat/global_system/"
       ],
-      "set_prefix": "set",
       "batch_size": 1
     }
   },
