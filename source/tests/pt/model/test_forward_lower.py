@@ -82,7 +82,9 @@ class ForwardLowerTest:
         ) = extend_input_and_build_neighbor_list(
             coord.unsqueeze(0),
             atype.unsqueeze(0),
-            self.model.get_rcut(),
+            self.model.get_rcut() + 1.0
+            if test_spin
+            else self.model.get_rcut(),  # buffer region for spin nlist
             self.model.get_sel(),
             mixed_types=self.model.mixed_types(),
             box=cell.unsqueeze(0),
@@ -161,8 +163,7 @@ class TestEnergyModelZBL(unittest.TestCase, ForwardLowerTest):
 
 class TestEnergyModelSpinSeA(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
-        # still need to figure out why only 1e-5 rtol and atol
-        self.prec = 1e-5
+        self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -170,8 +171,7 @@ class TestEnergyModelSpinSeA(unittest.TestCase, ForwardLowerTest):
 
 class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
-        # still need to figure out why only 1e-4 rtol and atol
-        self.prec = 1e-4
+        self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa1)["descriptor"]
         self.test_spin = True
@@ -180,8 +180,7 @@ class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
 
 class TestEnergyModelSpinDPA2(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
-        # still need to figure out why only 1e-4 rtol and atol
-        self.prec = 1e-4
+        self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2)["descriptor"]
         self.test_spin = True
