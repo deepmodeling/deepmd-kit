@@ -376,12 +376,8 @@ class DescrptSeR(DescrptSe):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def build(
         self,
@@ -737,7 +733,7 @@ class DescrptSeR(DescrptSe):
             The deserialized model
         """
         if cls is not DescrptSeR:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         embedding_net_variables = cls.deserialize_network(
@@ -770,7 +766,7 @@ class DescrptSeR(DescrptSe):
         """
         if type(self) is not DescrptSeR:
             raise NotImplementedError(
-                "Not implemented in class %s" % self.__class__.__name__
+                f"Not implemented in class {self.__class__.__name__}"
             )
         if self.embedding_net_variables is None:
             raise RuntimeError("init_variables must be called before serialize")

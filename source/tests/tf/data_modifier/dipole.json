@@ -58,7 +58,6 @@
     "systems": [
       "data_modifier/sys_10"
     ],
-    "set_prefix": "set",
     "stop_batch": 1000000,
     "batch_size": 4,
 

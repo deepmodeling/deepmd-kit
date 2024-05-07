@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
+import warnings
 from typing import (
     Callable,
     List,
@@ -52,6 +53,24 @@ def make_link(content, ref_key):
         if not dargs.RAW_ANCHOR
         else f"`{content} <#{ref_key}>`_"
     )
+
+
+def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
+    """Generate an extra check to deprecate an argument in sub fields.
+
+    Parameters
+    ----------
+    key : str
+        The name of the deprecated argument.
+    """
+
+    def deprecate_something(data: Optional[dict]):
+        if data is not None and key in data:
+            warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
+            data.pop(key)
+        return True
+
+    return deprecate_something
 
 
 def type_embedding_args():
@@ -480,7 +499,7 @@ def descrpt_se_atten_common_args():
 
 @descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
-    doc_smooth_type_embedding = "Whether to use smooth process in attention weights calculation. When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_trainable_ln = (
         "Whether to use trainable shift and scale weights in layer normalization."
@@ -508,9 +527,22 @@ def descrpt_se_atten_args():
         f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
         "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
+    doc_stripped_type_embedding = (
+        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
+        "Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'. "
+        "Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'."
+        "The default value is `None`, which means the `tebd_input_mode` setting will be used instead."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
+        Argument(
+            "stripped_type_embedding",
+            bool,
+            optional=True,
+            default=None,
+            doc=doc_stripped_type_embedding,
+        ),
         Argument(
             "smooth_type_embedding",
             bool,
@@ -2048,7 +2080,6 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
-    doc_set_prefix = f"The prefix of the sets in the {link_sys}."
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -2070,7 +2101,6 @@ If MPI is used, the value should be considered as the batch size per task.'
         Argument(
             "systems", [List[str], str], optional=False, default=".", doc=doc_systems
         ),
-        Argument("set_prefix", str, optional=True, default="set", doc=doc_set_prefix),
         Argument(
             "batch_size",
             [List[int], int, str],
@@ -2106,6 +2136,7 @@ If MPI is used, the value should be considered as the batch size per task.'
         sub_fields=args,
         sub_variants=[],
         doc=doc_training_data,
+        extra_check=deprecate_argument_extra_check("set_prefix"),
     )
 
 
@@ -2116,7 +2147,6 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
-    doc_set_prefix = f"The prefix of the sets in the {link_sys}."
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -2137,7 +2167,6 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         Argument(
             "systems", [List[str], str], optional=False, default=".", doc=doc_systems
         ),
-        Argument("set_prefix", str, optional=True, default="set", doc=doc_set_prefix),
         Argument(
             "batch_size",
             [List[int], int, str],
@@ -2187,6 +2216,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         sub_fields=args,
         sub_variants=[],
         doc=doc_validation_data,
+        extra_check=deprecate_argument_extra_check("set_prefix"),
     )
 
 

@@ -34,7 +34,7 @@ class TestModel(tf.test.TestCase):
         jdata = j_loader(jfile)
 
         systems = j_must_have(jdata["training"], "systems")
-        set_pfx = j_must_have(jdata["training"], "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata["training"], "batch_size")
         test_size = j_must_have(jdata["training"], "numb_test")
         batch_size = 1

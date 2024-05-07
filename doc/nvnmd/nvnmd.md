@@ -153,7 +153,6 @@ The "training" section is defined as
   "save_freq": 10000,
   "training_data": {
     "systems": ["system1_path", "system2_path", "..."],
-    "set_prefix": "set",
     "batch_size": ["batch_size_of_system1", "batch_size_of_system2", "..."]
   }
 }
@@ -171,7 +170,6 @@ where items are defined as:
 | save_ckpt  | path prefix of check point files                    | a string           |
 | save_freq  | save frequency                                      | a positive integer |
 | systems    | a list of data directory which contains the dataset | string list        |
-| set_prefix | the prefix of dataset                               | a string           |
 | batch_size | a list of batch size of corresponding dataset       | a integer list     |
 
 ## Training

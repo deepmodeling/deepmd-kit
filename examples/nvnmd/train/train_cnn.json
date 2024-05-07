@@ -40,7 +40,6 @@
       "systems": [
         "../data"
       ],
-      "set_prefix": "set",
       "batch_size": [
         1
       ]

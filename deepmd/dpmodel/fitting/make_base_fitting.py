@@ -88,7 +88,7 @@ def make_base_fitting(
             """
             if cls is BF:
                 return BF.get_class_by_type(data["type"]).deserialize(data)
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
     setattr(BF, fwd_method_name, BF.fwd)
     delattr(BF, "fwd")

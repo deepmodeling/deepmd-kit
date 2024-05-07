@@ -65,7 +65,7 @@ class TestDataModifier(tf.test.TestCase):
         systems = j_must_have(jdata["training"], "systems")
         # systems[0] = tests_path / systems[0]
         systems = [tests_path / ii for ii in systems]
-        set_pfx = j_must_have(jdata["training"], "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata["training"], "batch_size")
         test_size = j_must_have(jdata["training"], "numb_test")
         data = DeepmdDataSystem(

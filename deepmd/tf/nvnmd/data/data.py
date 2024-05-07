@@ -319,7 +319,7 @@ jdata_deepmd_input_v0 = {
         "disp_training": True,
         "time_training": True,
         "profiling": False,
-        "training_data": {"systems": "dataset", "set_prefix": "set", "batch_size": 1},
+        "training_data": {"systems": "dataset", "batch_size": 1},
     },
 }
 
@@ -385,7 +385,7 @@ jdata_deepmd_input_v1 = {
         "disp_training": True,
         "time_training": True,
         "profiling": False,
-        "training_data": {"systems": "dataset", "set_prefix": "set", "batch_size": 1},
+        "training_data": {"systems": "dataset", "batch_size": 1},
     },
 }
 

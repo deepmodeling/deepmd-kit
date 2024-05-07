@@ -187,6 +187,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
+    stripped_type_embedding: bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -235,10 +241,15 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
+        stripped_type_embedding: Optional[bool] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
         ## seed, uniform_seed, multi_task, not included.
+        # Ensure compatibility with the deprecated stripped_type_embedding option.
+        if stripped_type_embedding is not None:
+            # Use the user-set stripped_type_embedding parameter first
+            tebd_input_mode = "strip" if stripped_type_embedding else "concat"
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         if attn_mask:
@@ -804,11 +815,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise NotImplementedError
 
-        input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / (
+        input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
             np.linalg.norm(
                 dmatrix.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True
-            )
-            + 1e-12
+            ),
+            1e-12,
         )
         gg = self.dpa1_attention(
             gg, nlist_mask, input_r=input_r, sw=sw

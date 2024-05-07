@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -631,6 +632,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -644,6 +646,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, mapps extended region index to local region.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------
@@ -689,11 +693,13 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
-        assert mapping is not None
-        mapping_ext = (
-            mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, g1.shape[-1])
-        )
-        g1_ext = torch.gather(g1, 1, mapping_ext)
+        if comm_dict is None:
+            assert mapping is not None
+            mapping_ext = (
+                mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, g1.shape[-1])
+            )
+            g1_ext = torch.gather(g1, 1, mapping_ext)
+            g1 = g1_ext
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
             nlist_dict[
@@ -703,8 +709,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ],
             extended_coord,
             extended_atype,
-            g1_ext,
+            g1,
             mapping,
+            comm_dict,
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)

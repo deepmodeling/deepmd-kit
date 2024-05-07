@@ -28,7 +28,6 @@ directory by modifying the input script, setting {ref}`tensorboard <training/ten
 ```json
     "training" : {
 	"systems":	["../data/"],
-	"set_prefix":	"set",
 	"stop_batch":	1000000,
 	"batch_size":	1,
 

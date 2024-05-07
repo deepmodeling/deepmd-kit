@@ -66,7 +66,7 @@ class TestDataModifier(tf.test.TestCase):
 
         # init data system
         systems = j_must_have(jdata["training"], "systems")
-        set_pfx = j_must_have(jdata["training"], "set_prefix")
+        set_pfx = "set"
         batch_size = j_must_have(jdata["training"], "batch_size")
         test_size = j_must_have(jdata["training"], "numb_test")
         data = DeepmdDataSystem(
@@ -176,7 +176,6 @@ class TestDataModifier(tf.test.TestCase):
             },
             "training": {
                 "systems": ["data_modifier/sys_test_0"],
-                "set_prefix": "set",
                 "stop_batch": 1000000,
                 "batch_size": 1,
                 "numb_test": 2,

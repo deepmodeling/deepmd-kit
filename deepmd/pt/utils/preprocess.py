@@ -185,7 +185,7 @@ def build_neighbor_list(
     distance[:nloc, :nloc] += torch.eye(nloc, dtype=torch.bool) * DISTANCE_INF
     if min_check:
         if distance.min().abs() < 1e-6:
-            RuntimeError("Atom dist too close!")
+            raise RuntimeError("Atom dist too close!")
     if not type_split:
         sec = sec[-1:]
     lst = []

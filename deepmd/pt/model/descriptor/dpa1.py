@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -165,6 +166,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
+    stripped_type_embedding: bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -212,6 +219,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         ln_eps: Optional[float] = 1e-5,
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
+        stripped_type_embedding: Optional[bool] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
@@ -219,6 +227,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         old_impl: bool = False,
     ):
         super().__init__()
+        # Ensure compatibility with the deprecated stripped_type_embedding option.
+        if stripped_type_embedding is not None:
+            # Use the user-set stripped_type_embedding parameter first
+            tebd_input_mode = "strip" if stripped_type_embedding else "concat"
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         if attn_mask:
@@ -456,6 +468,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -469,6 +482,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, not required by this descriptor.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------

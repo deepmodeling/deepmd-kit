@@ -154,6 +154,12 @@ class DescrptSeAtten(DescrptSeA):
             And when using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
+    stripped_type_embedding: bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
 
     Raises
     ------
@@ -193,10 +199,15 @@ class DescrptSeAtten(DescrptSeA):
         ln_eps: Optional[float] = 1e-3,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
+        stripped_type_embedding: Optional[bool] = None,
         **kwargs,
     ) -> None:
-        # Ensure compatibility with the deprecated `stripped_type_embedding` option.
-        stripped_type_embedding = tebd_input_mode == "strip"
+        # Ensure compatibility with the deprecated stripped_type_embedding option.
+        if stripped_type_embedding is None:
+            stripped_type_embedding = tebd_input_mode == "strip"
+        else:
+            # Use the user-set stripped_type_embedding parameter first
+            tebd_input_mode = "strip" if stripped_type_embedding else "concat"
         if not set_davg_zero and not (
             stripped_type_embedding and smooth_type_embedding
         ):
@@ -501,12 +512,8 @@ class DescrptSeAtten(DescrptSeA):
         )
         self.two_embd = make_data(self, self.final_type_embedding)
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def build(
         self,
@@ -1810,7 +1817,7 @@ class DescrptSeAtten(DescrptSeA):
             The deserialized model
         """
         if cls is not DescrptSeAtten:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
@@ -1854,7 +1861,7 @@ class DescrptSeAtten(DescrptSeA):
         """
         if type(self) not in [DescrptSeAtten, DescrptDPA1Compat]:
             raise NotImplementedError(
-                "Not implemented in class %s" % self.__class__.__name__
+                f"Not implemented in class {self.__class__.__name__}"
             )
         if self.stripped_type_embedding and type(self) is not DescrptDPA1Compat:
             # only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'
@@ -2247,7 +2254,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             The deserialized model
         """
         if cls is not DescrptDPA1Compat:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
