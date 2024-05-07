@@ -317,7 +317,6 @@ class TestParserOutput(unittest.TestCase):
         ARGS = {
             "--model": {"type": str, "value": "MODEL.PB"},
             "--system": {"type": str, "value": "SYSTEM_DIR"},
-            "--set-prefix": {"type": str, "value": "SET_PREFIX"},
             "--numb-test": {"type": int, "value": 1},
             "--rand-seed": {"type": (int, type(None)), "value": 12321},
             "--detail-file": {"type": (str, type(None)), "value": "TARGET.FILE"},
@@ -355,7 +354,6 @@ class TestParserOutput(unittest.TestCase):
                 "expected": ["GRAPH.000.pb", "GRAPH.001.pb"],
             },
             "--system": {"type": str, "value": "SYSTEM_DIR"},
-            "--set-prefix": {"type": str, "value": "SET_PREFIX"},
             "--output": {"type": str, "value": "OUTFILE"},
             "--frequency": {"type": int, "value": 1},
         }
