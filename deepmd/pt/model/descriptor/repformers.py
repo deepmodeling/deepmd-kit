@@ -210,7 +210,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.epsilon = 1e-4
         self.old_impl = old_impl
 
-        self.g2_embd = MLPLayer(1, self.g2_dim)
+        self.g2_embd = MLPLayer(1, self.g2_dim, precision=precision)
         layers = []
         for ii in range(nlayers):
             if self.old_impl:

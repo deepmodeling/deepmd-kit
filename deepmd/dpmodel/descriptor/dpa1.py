@@ -222,7 +222,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -523,7 +523,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -742,7 +742,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         mapping: Optional[np.ndarray] = None,
     ):
         # nf x nloc x nnei x 4
-        dmatrix, sw = self.env_mat.call(
+        dmatrix, diff, sw = self.env_mat.call(
             coord_ext, atype_ext, nlist, self.mean, self.stddev
         )
         nf, nloc, nnei, _ = dmatrix.shape

@@ -40,6 +40,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         davg_2 = rng.normal(size=(self.nt, nnei // 2, 4))
         dstd_2 = rng.normal(size=(self.nt, nnei // 2, 4))
         dstd = 0.1 + np.abs(dstd)
+        dstd_2 = 0.1 + np.abs(dstd_2)
 
         for (
             riti,

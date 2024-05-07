@@ -1,42 +1,414 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
-)
+import numpy as np
 
-import torch
-import torch.nn as nn
-
-from deepmd.pt.model.network.layernorm import (
+from deepmd.dpmodel.utils.network import (
     LayerNorm,
+    NativeLayer,
 )
-from deepmd.pt.model.network.mlp import (
-    MLPLayer,
-)
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.env import (
-    PRECISION_DICT,
-)
-from deepmd.pt.utils.utils import (
-    ActivationFn,
-    to_numpy_array,
-    to_torch_tensor,
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
 )
 
+try:
+    from deepmd._version import version as __version__
+except ImportError:
+    __version__ = "unknown"
 
+from typing import (
+    Callable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
+from deepmd.dpmodel import (
+    PRECISION_DICT,
+    NativeOP,
+)
+from deepmd.dpmodel.utils import (
+    EnvMat,
+    PairExcludeMask,
+)
+from deepmd.dpmodel.utils.network import (
+    get_activation_fn,
+)
+
+from .descriptor import (
+    DescriptorBlock,
+)
+from .dpa1 import (
+    np_softmax,
+)
+
+
+@DescriptorBlock.register("se_repformer")
+@DescriptorBlock.register("se_uni")
+class DescrptBlockRepformers(NativeOP, DescriptorBlock):
+    def __init__(
+        self,
+        rcut,
+        rcut_smth,
+        sel: int,
+        ntypes: int,
+        nlayers: int = 3,
+        g1_dim=128,
+        g2_dim=16,
+        axis_neuron: int = 4,
+        direct_dist: bool = False,
+        update_g1_has_conv: bool = True,
+        update_g1_has_drrd: bool = True,
+        update_g1_has_grrg: bool = True,
+        update_g1_has_attn: bool = True,
+        update_g2_has_g1g1: bool = True,
+        update_g2_has_attn: bool = True,
+        update_h2: bool = False,
+        attn1_hidden: int = 64,
+        attn1_nhead: int = 4,
+        attn2_hidden: int = 16,
+        attn2_nhead: int = 4,
+        attn2_has_gate: bool = False,
+        activation_function: str = "tanh",
+        update_style: str = "res_avg",
+        update_residual: float = 0.001,
+        update_residual_init: str = "norm",
+        set_davg_zero: bool = True,
+        smooth: bool = True,
+        exclude_types: List[Tuple[int, int]] = [],
+        env_protection: float = 0.0,
+        precision: str = "float64",
+        resnet_dt: bool = False,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
+    ):
+        r"""
+        The repformer descriptor block.
+
+        Parameters
+        ----------
+        rcut : float
+            The cut-off radius.
+        rcut_smth : float
+            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
+        sel : int
+            Maximally possible number of selected neighbors.
+        ntypes : int
+            Number of element types
+        nlayers : int, optional
+            Number of repformer layers.
+        g1_dim : int, optional
+            Dimension of the first graph convolution layer.
+        g2_dim : int, optional
+            Dimension of the second graph convolution layer.
+        axis_neuron : int, optional
+            Size of the submatrix of G (embedding matrix).
+        direct_dist : bool, optional
+            Whether to use direct distance information (1/r term) in the repformer block.
+        update_g1_has_conv : bool, optional
+            Whether to update the g1 rep with convolution term.
+        update_g1_has_drrd : bool, optional
+            Whether to update the g1 rep with the drrd term.
+        update_g1_has_grrg : bool, optional
+            Whether to update the g1 rep with the grrg term.
+        update_g1_has_attn : bool, optional
+            Whether to update the g1 rep with the localized self-attention.
+        update_g2_has_g1g1 : bool, optional
+            Whether to update the g2 rep with the g1xg1 term.
+        update_g2_has_attn : bool, optional
+            Whether to update the g2 rep with the gated self-attention.
+        update_h2 : bool, optional
+            Whether to update the h2 rep.
+        attn1_hidden : int, optional
+            The hidden dimension of localized self-attention to update the g1 rep.
+        attn1_nhead : int, optional
+            The number of heads in localized self-attention to update the g1 rep.
+        attn2_hidden : int, optional
+            The hidden dimension of gated self-attention to update the g2 rep.
+        attn2_nhead : int, optional
+            The number of heads in gated self-attention to update the g2 rep.
+        attn2_has_gate : bool, optional
+            Whether to use gate in the gated self-attention to update the g2 rep.
+        activation_function : str, optional
+            The activation function in the embedding net.
+        update_style : str, optional
+            Style to update a representation.
+            Supported options are:
+            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+            and `update_residual_init`.
+        update_residual : float, optional
+            When update using residual mode, the initial std of residual vector weights.
+        update_residual_init : str, optional
+            When update using residual mode, the initialization mode of residual vector weights.
+        set_davg_zero : bool, optional
+            Set the normalization average to zero.
+        precision : str, optional
+            The precision of the embedding net parameters.
+        smooth : bool, optional
+            Whether to use smoothness in processes such as attention weights calculation.
+        exclude_types : List[List[int]], optional
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+        env_protection : float, optional
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+        resnet_dt : bool, optional
+            Whether to use a "Timestep" in the skip connection.
+        trainable_ln : bool, optional
+            Whether to use trainable shift and scale weights in layer normalization.
+        ln_eps : float, optional
+            The epsilon value for layer normalization.
+        """
+        super().__init__()
+        self.rcut = rcut
+        self.rcut_smth = rcut_smth
+        self.ntypes = ntypes
+        self.nlayers = nlayers
+        sel = [sel] if isinstance(sel, int) else sel
+        self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4  # use full descriptor.
+        assert len(sel) == 1
+        self.sel = sel
+        self.sec = self.sel
+        self.split_sel = self.sel
+        self.axis_neuron = axis_neuron
+        self.set_davg_zero = set_davg_zero
+        self.g1_dim = g1_dim
+        self.g2_dim = g2_dim
+        self.update_g1_has_conv = update_g1_has_conv
+        self.update_g1_has_drrd = update_g1_has_drrd
+        self.update_g1_has_grrg = update_g1_has_grrg
+        self.update_g1_has_attn = update_g1_has_attn
+        self.update_g2_has_g1g1 = update_g2_has_g1g1
+        self.update_g2_has_attn = update_g2_has_attn
+        self.update_h2 = update_h2
+        self.attn1_hidden = attn1_hidden
+        self.attn1_nhead = attn1_nhead
+        self.attn2_has_gate = attn2_has_gate
+        self.attn2_hidden = attn2_hidden
+        self.attn2_nhead = attn2_nhead
+        self.activation_function = activation_function
+        self.update_style = update_style
+        self.update_residual = update_residual
+        self.update_residual_init = update_residual_init
+        self.direct_dist = direct_dist
+        self.act = get_activation_fn(self.activation_function)
+        self.smooth = smooth
+        # order matters, placed after the assignment of self.ntypes
+        self.reinit_exclude(exclude_types)
+        self.env_protection = env_protection
+        self.precision = precision
+        self.resnet_dt = resnet_dt
+        self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
+        self.epsilon = 1e-4
+
+        self.g2_embd = NativeLayer(1, self.g2_dim, precision=precision)
+        layers = []
+        for ii in range(nlayers):
+            layers.append(
+                RepformerLayer(
+                    self.rcut,
+                    self.rcut_smth,
+                    self.sel,
+                    self.ntypes,
+                    self.g1_dim,
+                    self.g2_dim,
+                    axis_neuron=self.axis_neuron,
+                    update_chnnl_2=(ii != nlayers - 1),
+                    update_g1_has_conv=self.update_g1_has_conv,
+                    update_g1_has_drrd=self.update_g1_has_drrd,
+                    update_g1_has_grrg=self.update_g1_has_grrg,
+                    update_g1_has_attn=self.update_g1_has_attn,
+                    update_g2_has_g1g1=self.update_g2_has_g1g1,
+                    update_g2_has_attn=self.update_g2_has_attn,
+                    update_h2=self.update_h2,
+                    attn1_hidden=self.attn1_hidden,
+                    attn1_nhead=self.attn1_nhead,
+                    attn2_has_gate=self.attn2_has_gate,
+                    attn2_hidden=self.attn2_hidden,
+                    attn2_nhead=self.attn2_nhead,
+                    activation_function=self.activation_function,
+                    update_style=self.update_style,
+                    update_residual=self.update_residual,
+                    update_residual_init=self.update_residual_init,
+                    smooth=self.smooth,
+                    trainable_ln=self.trainable_ln,
+                    ln_eps=self.ln_eps,
+                    precision=precision,
+                )
+            )
+        self.layers = layers
+
+        wanted_shape = (self.ntypes, self.nnei, 4)
+        self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
+        self.mean = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
+        self.stddev = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
+        self.orig_sel = self.sel
+
+    def get_rcut(self) -> float:
+        """Returns the cut-off radius."""
+        return self.rcut
+
+    def get_nsel(self) -> int:
+        """Returns the number of selected atoms in the cut-off radius."""
+        return sum(self.sel)
+
+    def get_sel(self) -> List[int]:
+        """Returns the number of selected atoms for each type."""
+        return self.sel
+
+    def get_ntypes(self) -> int:
+        """Returns the number of element types."""
+        return self.ntypes
+
+    def get_dim_in(self) -> int:
+        """Returns the output dimension."""
+        return self.dim_in
+
+    def get_dim_out(self) -> int:
+        """Returns the output dimension."""
+        return self.dim_out
+
+    def get_dim_emb(self) -> int:
+        """Returns the embedding dimension g2."""
+        return self.g2_dim
+
+    def __setitem__(self, key, value):
+        if key in ("avg", "data_avg", "davg"):
+            self.mean = value
+        elif key in ("std", "data_std", "dstd"):
+            self.stddev = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("avg", "data_avg", "davg"):
+            return self.mean
+        elif key in ("std", "data_std", "dstd"):
+            return self.stddev
+        else:
+            raise KeyError(key)
+
+    def mixed_types(self) -> bool:
+        """If true, the discriptor
+        1. assumes total number of atoms aligned across frames;
+        2. requires a neighbor list that does not distinguish different atomic types.
+
+        If false, the discriptor
+        1. assumes total number of atoms of each atom type aligned across frames;
+        2. requires a neighbor list that distinguishes different atomic types.
+
+        """
+        return True
+
+    @property
+    def dim_out(self):
+        """Returns the output dimension of this descriptor."""
+        return self.g1_dim
+
+    @property
+    def dim_in(self):
+        """Returns the atomic input dimension of this descriptor."""
+        return self.g1_dim
+
+    @property
+    def dim_emb(self):
+        """Returns the embedding dimension g2."""
+        return self.get_dim_emb()
+
+    def compute_input_stats(
+        self,
+        merged: Union[Callable[[], List[dict]], List[dict]],
+        path: Optional[DPPath] = None,
+    ):
+        """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
+        raise NotImplementedError
+
+    def get_stats(self):
+        """Get the statistics of the descriptor."""
+        raise NotImplementedError
+
+    def reinit_exclude(
+        self,
+        exclude_types: List[Tuple[int, int]] = [],
+    ):
+        self.exclude_types = exclude_types
+        self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def call(
+        self,
+        nlist: np.ndarray,
+        coord_ext: np.ndarray,
+        atype_ext: np.ndarray,
+        atype_embd_ext: Optional[np.ndarray] = None,
+        mapping: Optional[np.ndarray] = None,
+    ):
+        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
+        nlist = nlist * exclude_mask
+        # nf x nloc x nnei x 4
+        dmatrix, diff, sw = self.env_mat.call(
+            coord_ext, atype_ext, nlist, self.mean, self.stddev
+        )
+        nf, nloc, nnei, _ = dmatrix.shape
+        # nf x nloc x nnei
+        nlist_mask = nlist != -1
+        # nf x nloc x nnei
+        sw = sw.reshape(nf, nloc, nnei)
+        sw = np.where(nlist_mask, sw, 0.0)
+        # nf x nloc x tebd_dim
+        atype_embd = atype_embd_ext[:, :nloc, :]
+        assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
+
+        g1 = self.act(atype_embd)
+        # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
+        if not self.direct_dist:
+            g2, h2 = np.split(dmatrix, [1], axis=-1)
+        else:
+            g2, h2 = np.linalg.norm(diff, axis=-1, keepdims=True), diff
+            g2 = g2 / self.rcut
+            h2 = h2 / self.rcut
+        # nf x nloc x nnei x ng2
+        g2 = self.act(self.g2_embd(g2))
+        # set all padding positions to index of 0
+        # if a neighbor is real or not is indicated by nlist_mask
+        nlist[nlist == -1] = 0
+        # nf x nall x ng1
+        mapping = np.tile(mapping.reshape(nf, -1, 1), (1, 1, self.g1_dim))
+        for idx, ll in enumerate(self.layers):
+            # g1:     nf x nloc x ng1
+            # g1_ext: nf x nall x ng1
+            g1_ext = np.take_along_axis(g1, mapping, axis=1)
+            g1, g2, h2 = ll.call(
+                g1_ext,
+                g2,
+                h2,
+                nlist,
+                nlist_mask,
+                sw,
+            )
+
+        # nf x nloc x 3 x ng2
+        h2g2 = _cal_hg(g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon)
+        # (nf x nloc) x ng2 x 3
+        rot_mat = np.transpose(h2g2, (0, 1, 3, 2))
+        return g1, g2, h2, rot_mat.reshape(-1, nloc, self.dim_emb, 3), sw
+
+
+# translated by GPT and modified
 def get_residual(
     _dim: int,
     _scale: float,
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-) -> torch.Tensor:
-    r"""
+) -> np.ndarray:
+    """
     Get residual tensor for one update vector.
 
     Parameters
@@ -54,111 +426,109 @@ def get_residual(
     precision
         The precision of the residual tensor.
     """
-    residual = nn.Parameter(
-        data=torch.zeros(_dim, dtype=PRECISION_DICT[precision], device=env.DEVICE),
-        requires_grad=trainable,
-    )
-    if _mode == "norm":
-        nn.init.normal_(residual.data, std=_scale)
-    elif _mode == "const":
-        nn.init.constant_(residual.data, val=_scale)
-    else:
-        raise RuntimeError(f"Unsupported initialization mode '{_mode}'!")
+    residual = np.zeros(_dim, dtype=PRECISION_DICT[precision])
+    rng = np.random.default_rng()
+    if trainable:
+        if _mode == "norm":
+            residual = rng.normal(scale=_scale, size=_dim).astype(
+                PRECISION_DICT[precision]
+            )
+        elif _mode == "const":
+            residual.fill(_scale)
+        else:
+            raise RuntimeError(f"Unsupported initialization mode '{_mode}'!")
     return residual
 
 
-# common ops
 def _make_nei_g1(
-    g1_ext: torch.Tensor,
-    nlist: torch.Tensor,
-) -> torch.Tensor:
+    g1_ext: np.ndarray,
+    nlist: np.ndarray,
+) -> np.ndarray:
     """
     Make neighbor-wise atomic invariant rep.
 
     Parameters
     ----------
     g1_ext
-        Extended atomic invariant rep, with shape nf x nall x ng1.
+        Extended atomic invariant rep, with shape [nf, nall, ng1].
     nlist
-        Neighbor list, with shape nf x nloc x nnei.
+        Neighbor list, with shape [nf, nloc, nnei].
 
     Returns
     -------
-    gg1: torch.Tensor
-        Neighbor-wise atomic invariant rep, with shape nf x nloc x nnei x ng1.
-
+    gg1: np.ndarray
+        Neighbor-wise atomic invariant rep, with shape [nf, nloc, nnei, ng1].
     """
     # nlist: nf x nloc x nnei
     nf, nloc, nnei = nlist.shape
     # g1_ext: nf x nall x ng1
     ng1 = g1_ext.shape[-1]
     # index: nf x (nloc x nnei) x ng1
-    index = nlist.reshape(nf, nloc * nnei).unsqueeze(-1).expand(-1, -1, ng1)
+    index = np.tile(nlist.reshape(nf, nloc * nnei, 1), (1, 1, ng1))
     # gg1  : nf x (nloc x nnei) x ng1
-    gg1 = torch.gather(g1_ext, dim=1, index=index)
+    gg1 = np.take_along_axis(g1_ext, index, axis=1)
     # gg1  : nf x nloc x nnei x ng1
-    gg1 = gg1.view(nf, nloc, nnei, ng1)
+    gg1 = gg1.reshape(nf, nloc, nnei, ng1)
     return gg1
 
 
 def _apply_nlist_mask(
-    gg: torch.Tensor,
-    nlist_mask: torch.Tensor,
-) -> torch.Tensor:
+    gg: np.ndarray,
+    nlist_mask: np.ndarray,
+) -> np.ndarray:
     """
     Apply nlist mask to neighbor-wise rep tensors.
 
     Parameters
     ----------
     gg
-        Neighbor-wise rep tensors, with shape nf x nloc x nnei x d.
+        Neighbor-wise rep tensors, with shape [nf, nloc, nnei, d].
     nlist_mask
-        Neighbor list mask, where zero means no neighbor, with shape nf x nloc x nnei.
+        Neighbor list mask, where zero means no neighbor, with shape [nf, nloc, nnei].
     """
-    # gg:  nf x nloc x nnei x d
-    # msk: nf x nloc x nnei
-    return gg.masked_fill(~nlist_mask.unsqueeze(-1), 0.0)
+    masked_gg = np.where(nlist_mask[:, :, :, None], gg, 0.0)
+    return masked_gg
 
 
-def _apply_switch(gg: torch.Tensor, sw: torch.Tensor) -> torch.Tensor:
+def _apply_switch(gg: np.ndarray, sw: np.ndarray) -> np.ndarray:
     """
     Apply switch function to neighbor-wise rep tensors.
 
     Parameters
     ----------
     gg
-        Neighbor-wise rep tensors, with shape nf x nloc x nnei x d.
+        Neighbor-wise rep tensors, with shape [nf, nloc, nnei, d].
     sw
         The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
-        and remains 0 beyond rcut, with shape nf x nloc x nnei.
+        and remains 0 beyond rcut, with shape [nf, nloc, nnei].
     """
-    # gg:  nf x nloc x nnei x d
-    # sw:  nf x nloc x nnei
-    return gg * sw.unsqueeze(-1)
+    # gg: nf x nloc x nnei x d
+    # sw: nf x nloc x nnei
+    return gg * sw[:, :, :, None]
 
 
 def _cal_hg(
-    g: torch.Tensor,
-    h: torch.Tensor,
-    nlist_mask: torch.Tensor,
-    sw: torch.Tensor,
+    g: np.ndarray,
+    h: np.ndarray,
+    nlist_mask: np.ndarray,
+    sw: np.ndarray,
     smooth: bool = True,
     epsilon: float = 1e-4,
-) -> torch.Tensor:
+) -> np.ndarray:
     """
     Calculate the transposed rotation matrix.
 
     Parameters
     ----------
     g
-        Neighbor-wise/Pair-wise invariant rep tensors, with shape nf x nloc x nnei x ng.
+        Neighbor-wise/Pair-wise invariant rep tensors, with shape [nf, nloc, nnei, ng].
     h
-        Neighbor-wise/Pair-wise equivariant rep tensors, with shape nf x nloc x nnei x 3.
+        Neighbor-wise/Pair-wise equivariant rep tensors, with shape [nf, nloc, nnei, 3].
     nlist_mask
-        Neighbor list mask, where zero means no neighbor, with shape nf x nloc x nnei.
+        Neighbor list mask, where zero means no neighbor, with shape [nf, nloc, nnei].
     sw
         The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
-        and remains 0 beyond rcut, with shape nf x nloc x nnei.
+        and remains 0 beyond rcut, with shape [nf, nloc, nnei].
     smooth
         Whether to use smoothness in processes such as attention weights calculation.
     epsilon
@@ -167,10 +537,10 @@ def _cal_hg(
     Returns
     -------
     hg
-        The transposed rotation matrix, with shape nf x nloc x 3 x ng.
+        The transposed rotation matrix, with shape [nf, nloc, 3, ng].
     """
-    # g:  nf x nloc x nnei x ng
-    # h:  nf x nloc x nnei x 3
+    # g: nf x nloc x nnei x ng
+    # h: nf x nloc x nnei x 3
     # msk: nf x nloc x nnei
     nf, nloc, nnei, _ = g.shape
     ng = g.shape[-1]
@@ -178,70 +548,67 @@ def _cal_hg(
     g = _apply_nlist_mask(g, nlist_mask)
     if not smooth:
         # nf x nloc
-        # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
-        invnnei = 1.0 / (epsilon + torch.sum(nlist_mask.type_as(g), dim=-1))
+        invnnei = 1.0 / (epsilon + np.sum(nlist_mask, axis=-1))
         # nf x nloc x 1 x 1
-        invnnei = invnnei.unsqueeze(-1).unsqueeze(-1)
+        invnnei = invnnei[:, :, np.newaxis, np.newaxis]
     else:
         g = _apply_switch(g, sw)
-        invnnei = (1.0 / float(nnei)) * torch.ones(
-            (nf, nloc, 1, 1), dtype=g.dtype, device=g.device
-        )
+        invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1, 1), dtype=g.dtype)
     # nf x nloc x 3 x ng
-    hg = torch.matmul(torch.transpose(h, -1, -2), g) * invnnei
+    hg = np.matmul(np.transpose(h, axes=(0, 1, 3, 2)), g) * invnnei
     return hg
 
 
-def _cal_grrg(hg: torch.Tensor, axis_neuron: int) -> torch.Tensor:
+def _cal_grrg(hg: np.ndarray, axis_neuron: int) -> np.ndarray:
     """
     Calculate the atomic invariant rep.
 
     Parameters
     ----------
     hg
-        The transposed rotation matrix, with shape nf x nloc x 3 x ng.
+        The transposed rotation matrix, with shape [nf, nloc, 3, ng].
     axis_neuron
         Size of the submatrix.
 
     Returns
     -------
     grrg
-        Atomic invariant rep, with shape nf x nloc x (axis_neuron x ng)
+        Atomic invariant rep, with shape [nf, nloc, (axis_neuron * ng)].
     """
     # nf x nloc x 3 x ng
     nf, nloc, _, ng = hg.shape
     # nf x nloc x 3 x axis
-    hgm = torch.split(hg, axis_neuron, dim=-1)[0]
+    hgm = np.split(hg, [axis_neuron], axis=-1)[0]
     # nf x nloc x axis_neuron x ng
-    grrg = torch.matmul(torch.transpose(hgm, -1, -2), hg) / (3.0**1)
-    # nf x nloc x (axis_neuron x ng)
-    grrg = grrg.view(nf, nloc, axis_neuron * ng)
+    grrg = np.matmul(np.transpose(hgm, axes=(0, 1, 3, 2)), hg) / (3.0**1)
+    # nf x nloc x (axis_neuron * ng)
+    grrg = grrg.reshape(nf, nloc, axis_neuron * ng)
     return grrg
 
 
 def symmetrization_op(
-    g: torch.Tensor,
-    h: torch.Tensor,
-    nlist_mask: torch.Tensor,
-    sw: torch.Tensor,
+    g: np.ndarray,
+    h: np.ndarray,
+    nlist_mask: np.ndarray,
+    sw: np.ndarray,
     axis_neuron: int,
     smooth: bool = True,
     epsilon: float = 1e-4,
-) -> torch.Tensor:
+) -> np.ndarray:
     """
     Symmetrization operator to obtain atomic invariant rep.
 
     Parameters
     ----------
     g
-        Neighbor-wise/Pair-wise invariant rep tensors, with shape nf x nloc x nnei x ng.
+        Neighbor-wise/Pair-wise invariant rep tensors, with shape [nf, nloc, nnei, ng].
     h
-        Neighbor-wise/Pair-wise equivariant rep tensors, with shape nf x nloc x nnei x 3.
+        Neighbor-wise/Pair-wise equivariant rep tensors, with shape [nf, nloc, nnei, 3].
     nlist_mask
-        Neighbor list mask, where zero means no neighbor, with shape nf x nloc x nnei.
+        Neighbor list mask, where zero means no neighbor, with shape [nf, nloc, nnei].
     sw
         The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
-        and remains 0 beyond rcut, with shape nf x nloc x nnei.
+        and remains 0 beyond rcut, with shape [nf, nloc, nnei].
     axis_neuron
         Size of the submatrix.
     smooth
@@ -252,10 +619,10 @@ def symmetrization_op(
     Returns
     -------
     grrg
-        Atomic invariant rep, with shape nf x nloc x (axis_neuron x ng)
+        Atomic invariant rep, with shape [nf, nloc, (axis_neuron * ng)].
     """
-    # g:  nf x nloc x nnei x ng
-    # h:  nf x nloc x nnei x 3
+    # g: nf x nloc x nnei x ng
+    # h: nf x nloc x nnei x 3
     # msk: nf x nloc x nnei
     nf, nloc, nnei, _ = g.shape
     # nf x nloc x 3 x ng
@@ -265,7 +632,7 @@ def symmetrization_op(
     return grrg
 
 
-class Atten2Map(torch.nn.Module):
+class Atten2Map(NativeOP):
     def __init__(
         self,
         input_dim: int,
@@ -281,7 +648,7 @@ class Atten2Map(torch.nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.head_num = head_num
-        self.mapqk = MLPLayer(
+        self.mapqk = NativeLayer(
             input_dim, hidden_dim * 2 * head_num, bias=False, precision=precision
         )
         self.has_gate = has_gate
@@ -289,13 +656,13 @@ class Atten2Map(torch.nn.Module):
         self.attnw_shift = attnw_shift
         self.precision = precision
 
-    def forward(
+    def call(
         self,
-        g2: torch.Tensor,  # nf x nloc x nnei x ng2
-        h2: torch.Tensor,  # nf x nloc x nnei x 3
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # nf x nloc x nnei
-    ) -> torch.Tensor:
+        g2: np.ndarray,  # nf x nloc x nnei x ng2
+        h2: np.ndarray,  # nf x nloc x nnei x 3
+        nlist_mask: np.ndarray,  # nf x nloc x nnei
+        sw: np.ndarray,  # nf x nloc x nnei
+    ) -> np.ndarray:
         (
             nf,
             nloc,
@@ -304,50 +671,43 @@ class Atten2Map(torch.nn.Module):
         ) = g2.shape
         nd, nh = self.hidden_dim, self.head_num
         # nf x nloc x nnei x nd x (nh x 2)
-        g2qk = self.mapqk(g2).view(nf, nloc, nnei, nd, nh * 2)
+        g2qk = self.mapqk(g2).reshape(nf, nloc, nnei, nd, nh * 2)
         # nf x nloc x (nh x 2) x nnei x nd
-        g2qk = torch.permute(g2qk, (0, 1, 4, 2, 3))
+        g2qk = np.transpose(g2qk, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x nd
-        g2q, g2k = torch.split(g2qk, nh, dim=2)
-        # g2q = torch.nn.functional.normalize(g2q, dim=-1)
-        # g2k = torch.nn.functional.normalize(g2k, dim=-1)
+        g2q, g2k = np.split(g2qk, [nh], axis=2)
+        # g2q = np.linalg.norm(g2q, axis=-1)
+        # g2k = np.linalg.norm(g2k, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        attnw = torch.matmul(g2q, torch.transpose(g2k, -1, -2)) / nd**0.5
+        attnw = np.matmul(g2q, np.transpose(g2k, axes=(0, 1, 2, 4, 3))) / nd**0.5
         if self.has_gate:
-            gate = torch.matmul(h2, torch.transpose(h2, -1, -2)).unsqueeze(-3)
+            gate = np.matmul(h2, np.transpose(h2, axes=(0, 1, 3, 2))).reshape(
+                nf, nloc, 1, nnei, nnei
+            )
             attnw = attnw * gate
         # mask the attenmap, nf x nloc x 1 x 1 x nnei
-        attnw_mask = ~nlist_mask.unsqueeze(2).unsqueeze(2)
+        attnw_mask = ~np.expand_dims(np.expand_dims(nlist_mask, axis=2), axis=2)
         # mask the attenmap, nf x nloc x 1 x nnei x 1
-        attnw_mask_c = ~nlist_mask.unsqueeze(2).unsqueeze(-1)
+        attnw_mask_c = ~np.expand_dims(np.expand_dims(nlist_mask, axis=2), axis=-1)
         if self.smooth:
             attnw = (attnw + self.attnw_shift) * sw[:, :, None, :, None] * sw[
                 :, :, None, None, :
             ] - self.attnw_shift
         else:
-            attnw = attnw.masked_fill(
-                attnw_mask,
-                float("-inf"),
-            )
-        attnw = torch.softmax(attnw, dim=-1)
-        attnw = attnw.masked_fill(
-            attnw_mask,
-            0.0,
-        )
+            attnw = np.where(attnw_mask, -np.inf, attnw)
+        attnw = np_softmax(attnw, axis=-1)
+        attnw = np.where(attnw_mask, 0.0, attnw)
         # nf x nloc x nh x nnei x nnei
-        attnw = attnw.masked_fill(
-            attnw_mask_c,
-            0.0,
-        )
+        attnw = np.where(attnw_mask_c, 0.0, attnw)
         if self.smooth:
             attnw = attnw * sw[:, :, None, :, None] * sw[:, :, None, None, :]
         # nf x nloc x nnei x nnei
-        h2h2t = torch.matmul(h2, torch.transpose(h2, -1, -2)) / 3.0**0.5
+        h2h2t = np.matmul(h2, np.transpose(h2, axes=(0, 1, 3, 2))) / 3.0**0.5
         # nf x nloc x nh x nnei x nnei
         ret = attnw * h2h2t[:, :, None, :, :]
-        # ret = torch.softmax(g2qk, dim=-1)
+        # ret = np.exp(g2qk - np.max(g2qk, axis=-1, keepdims=True))
         # nf x nloc x nnei x nnei x nh
-        ret = torch.permute(ret, (0, 1, 3, 4, 2))
+        ret = np.transpose(ret, (0, 1, 3, 4, 2))
         return ret
 
     def serialize(self) -> dict:
@@ -385,11 +745,11 @@ class Atten2Map(torch.nn.Module):
         data.pop("@class")
         mapqk = data.pop("mapqk")
         obj = cls(**data)
-        obj.mapqk = MLPLayer.deserialize(mapqk)
+        obj.mapqk = NativeLayer.deserialize(mapqk)
         return obj
 
 
-class Atten2MultiHeadApply(torch.nn.Module):
+class Atten2MultiHeadApply(NativeOP):
     def __init__(
         self,
         input_dim: int,
@@ -399,30 +759,32 @@ class Atten2MultiHeadApply(torch.nn.Module):
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
-        self.mapv = MLPLayer(
+        self.mapv = NativeLayer(
             input_dim, input_dim * head_num, bias=False, precision=precision
         )
-        self.head_map = MLPLayer(input_dim * head_num, input_dim, precision=precision)
+        self.head_map = NativeLayer(
+            input_dim * head_num, input_dim, precision=precision
+        )
         self.precision = precision
 
-    def forward(
+    def call(
         self,
-        AA: torch.Tensor,  # nf x nloc x nnei x nnei x nh
-        g2: torch.Tensor,  # nf x nloc x nnei x ng2
-    ) -> torch.Tensor:
+        AA: np.ndarray,  # nf x nloc x nnei x nnei x nh
+        g2: np.ndarray,  # nf x nloc x nnei x ng2
+    ) -> np.ndarray:
         nf, nloc, nnei, ng2 = g2.shape
         nh = self.head_num
         # nf x nloc x nnei x ng2 x nh
-        g2v = self.mapv(g2).view(nf, nloc, nnei, ng2, nh)
+        g2v = self.mapv(g2).reshape(nf, nloc, nnei, ng2, nh)
         # nf x nloc x nh x nnei x ng2
-        g2v = torch.permute(g2v, (0, 1, 4, 2, 3))
-        # g2v = torch.nn.functional.normalize(g2v, dim=-1)
+        g2v = np.transpose(g2v, (0, 1, 4, 2, 3))
+        # g2v = np.linalg.norm(g2v, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        AA = torch.permute(AA, (0, 1, 4, 2, 3))
+        AA = np.transpose(AA, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x ng2
-        ret = torch.matmul(AA, g2v)
+        ret = np.matmul(AA, g2v)
         # nf x nloc x nnei x ng2 x nh
-        ret = torch.permute(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, (ng2 * nh))
+        ret = np.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, (ng2 * nh))
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
@@ -459,12 +821,12 @@ class Atten2MultiHeadApply(torch.nn.Module):
         mapv = data.pop("mapv")
         head_map = data.pop("head_map")
         obj = cls(**data)
-        obj.mapv = MLPLayer.deserialize(mapv)
-        obj.head_map = MLPLayer.deserialize(head_map)
+        obj.mapv = NativeLayer.deserialize(mapv)
+        obj.head_map = NativeLayer.deserialize(head_map)
         return obj
 
 
-class Atten2EquiVarApply(torch.nn.Module):
+class Atten2EquiVarApply(NativeOP):
     def __init__(
         self,
         input_dim: int,
@@ -474,27 +836,27 @@ class Atten2EquiVarApply(torch.nn.Module):
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
-        self.head_map = MLPLayer(head_num, 1, bias=False, precision=precision)
+        self.head_map = NativeLayer(head_num, 1, bias=False, precision=precision)
         self.precision = precision
 
-    def forward(
+    def call(
         self,
-        AA: torch.Tensor,  # nf x nloc x nnei x nnei x nh
-        h2: torch.Tensor,  # nf x nloc x nnei x 3
-    ) -> torch.Tensor:
+        AA: np.ndarray,  # nf x nloc x nnei x nnei x nh
+        h2: np.ndarray,  # nf x nloc x nnei x 3
+    ) -> np.ndarray:
         nf, nloc, nnei, _ = h2.shape
         nh = self.head_num
         # nf x nloc x nh x nnei x nnei
-        AA = torch.permute(AA, (0, 1, 4, 2, 3))
-        h2m = torch.unsqueeze(h2, dim=2)
+        AA = np.transpose(AA, (0, 1, 4, 2, 3))
+        h2m = np.expand_dims(h2, axis=2)
         # nf x nloc x nh x nnei x 3
-        h2m = torch.tile(h2m, [1, 1, nh, 1, 1])
+        h2m = np.tile(h2m, (1, 1, nh, 1, 1))
         # nf x nloc x nh x nnei x 3
-        ret = torch.matmul(AA, h2m)
+        ret = np.matmul(AA, h2m)
         # nf x nloc x nnei x 3 x nh
-        ret = torch.permute(ret, (0, 1, 3, 4, 2)).view(nf, nloc, nnei, 3, nh)
+        ret = np.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, 3, nh)
         # nf x nloc x nnei x 3
-        return torch.squeeze(self.head_map(ret), dim=-1)
+        return np.squeeze(self.head_map(ret), axis=-1)
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
@@ -527,11 +889,11 @@ class Atten2EquiVarApply(torch.nn.Module):
         data.pop("@class")
         head_map = data.pop("head_map")
         obj = cls(**data)
-        obj.head_map = MLPLayer.deserialize(head_map)
+        obj.head_map = NativeLayer.deserialize(head_map)
         return obj
 
 
-class LocalAtten(torch.nn.Module):
+class LocalAtten(NativeOP):
     def __init__(
         self,
         input_dim: int,
@@ -545,66 +907,71 @@ class LocalAtten(torch.nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.head_num = head_num
-        self.mapq = MLPLayer(
+        self.mapq = NativeLayer(
             input_dim, hidden_dim * 1 * head_num, bias=False, precision=precision
         )
-        self.mapkv = MLPLayer(
+        self.mapkv = NativeLayer(
             input_dim,
             (hidden_dim + input_dim) * head_num,
             bias=False,
             precision=precision,
         )
-        self.head_map = MLPLayer(input_dim * head_num, input_dim, precision=precision)
+        self.head_map = NativeLayer(
+            input_dim * head_num, input_dim, precision=precision
+        )
         self.smooth = smooth
         self.attnw_shift = attnw_shift
         self.precision = precision
 
-    def forward(
+    def call(
         self,
-        g1: torch.Tensor,  # nf x nloc x ng1
-        gg1: torch.Tensor,  # nf x nloc x nnei x ng1
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # nf x nloc x nnei
-    ) -> torch.Tensor:
+        g1: np.ndarray,  # nf x nloc x ng1
+        gg1: np.ndarray,  # nf x nloc x nnei x ng1
+        nlist_mask: np.ndarray,  # nf x nloc x nnei
+        sw: np.ndarray,  # nf x nloc x nnei
+    ) -> np.ndarray:
         nf, nloc, nnei = nlist_mask.shape
         ni, nd, nh = self.input_dim, self.hidden_dim, self.head_num
         assert ni == g1.shape[-1]
         assert ni == gg1.shape[-1]
         # nf x nloc x nd x nh
-        g1q = self.mapq(g1).view(nf, nloc, nd, nh)
+        g1q = self.mapq(g1).reshape(nf, nloc, nd, nh)
         # nf x nloc x nh x nd
-        g1q = torch.permute(g1q, (0, 1, 3, 2))
+        g1q = np.transpose(g1q, (0, 1, 3, 2))
         # nf x nloc x nnei x (nd+ni) x nh
-        gg1kv = self.mapkv(gg1).view(nf, nloc, nnei, nd + ni, nh)
-        gg1kv = torch.permute(gg1kv, (0, 1, 4, 2, 3))
+        gg1kv = self.mapkv(gg1).reshape(nf, nloc, nnei, nd + ni, nh)
+        gg1kv = np.transpose(gg1kv, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x nd, nf x nloc x nh x nnei x ng1
-        gg1k, gg1v = torch.split(gg1kv, [nd, ni], dim=-1)
+        gg1k, gg1v = np.split(gg1kv, [nd], axis=-1)
 
         # nf x nloc x nh x 1 x nnei
-        attnw = torch.matmul(g1q.unsqueeze(-2), torch.transpose(gg1k, -1, -2)) / nd**0.5
-        # nf x nloc x nh x nnei
-        attnw = attnw.squeeze(-2)
-        # mask the attenmap, nf x nloc x 1 x nnei
-        attnw_mask = ~nlist_mask.unsqueeze(-2)
-        # nf x nloc x nh x nnei
-        if self.smooth:
-            attnw = (attnw + self.attnw_shift) * sw.unsqueeze(-2) - self.attnw_shift
-        else:
-            attnw = attnw.masked_fill(
-                attnw_mask,
-                float("-inf"),
+        attnw = (
+            np.matmul(
+                np.expand_dims(g1q, axis=-2), np.transpose(gg1k, axes=(0, 1, 2, 4, 3))
             )
-        attnw = torch.softmax(attnw, dim=-1)
-        attnw = attnw.masked_fill(
-            attnw_mask,
-            0.0,
+            / nd**0.5
         )
+        # nf x nloc x nh x nnei
+        attnw = np.squeeze(attnw, axis=-2)
+        # mask the attenmap, nf x nloc x 1 x nnei
+        attnw_mask = ~np.expand_dims(nlist_mask, axis=-2)
+        # nf x nloc x nh x nnei
         if self.smooth:
-            attnw = attnw * sw.unsqueeze(-2)
+            attnw = (attnw + self.attnw_shift) * np.expand_dims(
+                sw, axis=-2
+            ) - self.attnw_shift
+        else:
+            attnw = np.where(attnw_mask, -np.inf, attnw)
+        attnw = np_softmax(attnw, axis=-1)
+        attnw = np.where(attnw_mask, 0.0, attnw)
+        if self.smooth:
+            attnw = attnw * np.expand_dims(sw, axis=-2)
 
         # nf x nloc x nh x ng1
         ret = (
-            torch.matmul(attnw.unsqueeze(-2), gg1v).squeeze(-2).view(nf, nloc, nh * ni)
+            np.matmul(np.expand_dims(attnw, axis=-2), gg1v)
+            .squeeze(-2)
+            .reshape(nf, nloc, nh * ni)
         )
         # nf x nloc x ng1
         ret = self.head_map(ret)
@@ -648,13 +1015,13 @@ class LocalAtten(torch.nn.Module):
         mapkv = data.pop("mapkv")
         head_map = data.pop("head_map")
         obj = cls(**data)
-        obj.mapq = MLPLayer.deserialize(mapq)
-        obj.mapkv = MLPLayer.deserialize(mapkv)
-        obj.head_map = MLPLayer.deserialize(head_map)
+        obj.mapq = NativeLayer.deserialize(mapq)
+        obj.mapkv = NativeLayer.deserialize(mapkv)
+        obj.head_map = NativeLayer.deserialize(head_map)
         return obj
 
 
-class RepformerLayer(torch.nn.Module):
+class RepformerLayer(NativeOP):
     def __init__(
         self,
         rcut,
@@ -698,7 +1065,7 @@ class RepformerLayer(torch.nn.Module):
         self.sec = self.sel
         self.axis_neuron = axis_neuron
         self.activation_function = activation_function
-        self.act = ActivationFn(activation_function)
+        self.act = get_activation_fn(self.activation_function)
         self.update_g1_has_grrg = update_g1_has_grrg
         self.update_g1_has_drrd = update_g1_has_drrd
         self.update_g1_has_conv = update_g1_has_conv
@@ -744,7 +1111,7 @@ class RepformerLayer(torch.nn.Module):
             )
 
         g1_in_dim = self.cal_1_dim(g1_dim, g2_dim, self.axis_neuron)
-        self.linear1 = MLPLayer(g1_in_dim, g1_dim, precision=precision)
+        self.linear1 = NativeLayer(g1_in_dim, g1_dim, precision=precision)
         self.linear2 = None
         self.proj_g1g2 = None
         self.proj_g1g1g2 = None
@@ -755,7 +1122,7 @@ class RepformerLayer(torch.nn.Module):
         self.loc_attn = None
 
         if self.update_chnnl_2:
-            self.linear2 = MLPLayer(g2_dim, g2_dim, precision=precision)
+            self.linear2 = NativeLayer(g2_dim, g2_dim, precision=precision)
             if self.update_style == "res_residual":
                 self.g2_residual.append(
                     get_residual(
@@ -766,9 +1133,13 @@ class RepformerLayer(torch.nn.Module):
                     )
                 )
         if self.update_g1_has_conv:
-            self.proj_g1g2 = MLPLayer(g1_dim, g2_dim, bias=False, precision=precision)
+            self.proj_g1g2 = NativeLayer(
+                g1_dim, g2_dim, bias=False, precision=precision
+            )
         if self.update_g2_has_g1g1:
-            self.proj_g1g1g2 = MLPLayer(g1_dim, g2_dim, bias=False, precision=precision)
+            self.proj_g1g1g2 = NativeLayer(
+                g1_dim, g2_dim, bias=False, precision=precision
+            )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
                     get_residual(
@@ -831,10 +1202,6 @@ class RepformerLayer(torch.nn.Module):
                     )
                 )
 
-        self.g1_residual = nn.ParameterList(self.g1_residual)
-        self.g2_residual = nn.ParameterList(self.g2_residual)
-        self.h2_residual = nn.ParameterList(self.h2_residual)
-
     def cal_1_dim(self, g1d: int, g2d: int, ax: int) -> int:
         ret = g1d
         if self.update_g1_has_grrg:
@@ -847,9 +1214,9 @@ class RepformerLayer(torch.nn.Module):
 
     def _update_h2(
         self,
-        h2: torch.Tensor,
-        attn: torch.Tensor,
-    ) -> torch.Tensor:
+        h2: np.ndarray,
+        attn: np.ndarray,
+    ) -> np.ndarray:
         """
         Calculate the attention weights update for pair-wise equivariant rep.
 
@@ -867,11 +1234,11 @@ class RepformerLayer(torch.nn.Module):
 
     def _update_g1_conv(
         self,
-        gg1: torch.Tensor,
-        g2: torch.Tensor,
-        nlist_mask: torch.Tensor,
-        sw: torch.Tensor,
-    ) -> torch.Tensor:
+        gg1: np.ndarray,
+        g2: np.ndarray,
+        nlist_mask: np.ndarray,
+        sw: np.ndarray,
+    ) -> np.ndarray:
         """
         Calculate the convolution update for atomic invariant rep.
 
@@ -892,32 +1259,29 @@ class RepformerLayer(torch.nn.Module):
         ng1 = gg1.shape[-1]
         ng2 = g2.shape[-1]
         # gg1  : nf x nloc x nnei x ng2
-        gg1 = self.proj_g1g2(gg1).view(nf, nloc, nnei, ng2)
+        gg1 = self.proj_g1g2(gg1).reshape(nf, nloc, nnei, ng2)
         # nf x nloc x nnei x ng2
         gg1 = _apply_nlist_mask(gg1, nlist_mask)
         if not self.smooth:
             # normalized by number of neighbors, not smooth
+            # nf x nloc
+            invnnei = 1.0 / (self.epsilon + np.sum(nlist_mask, axis=-1))
             # nf x nloc x 1
-            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
-            invnnei = 1.0 / (
-                self.epsilon + torch.sum(nlist_mask.type_as(gg1), dim=-1)
-            ).unsqueeze(-1)
+            invnnei = invnnei[:, :, np.newaxis]
         else:
             gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * torch.ones(
-                (nf, nloc, 1), dtype=gg1.dtype, device=gg1.device
-            )
+            invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1), dtype=gg1.dtype)
         # nf x nloc x ng2
-        g1_11 = torch.sum(g2 * gg1, dim=2) * invnnei
+        g1_11 = np.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
     def _update_g2_g1g1(
         self,
-        g1: torch.Tensor,  # nf x nloc x ng1
-        gg1: torch.Tensor,  # nf x nloc x nnei x ng1
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # nf x nloc x nnei
-    ) -> torch.Tensor:
+        g1: np.ndarray,  # nf x nloc x ng1
+        gg1: np.ndarray,  # nf x nloc x nnei x ng1
+        nlist_mask: np.ndarray,  # nf x nloc x nnei
+        sw: np.ndarray,  # nf x nloc x nnei
+    ) -> np.ndarray:
         """
         Update the g2 using element-wise dot g1_i * g1_j.
 
@@ -933,21 +1297,21 @@ class RepformerLayer(torch.nn.Module):
             The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
             and remains 0 beyond rcut, with shape nf x nloc x nnei.
         """
-        ret = g1.unsqueeze(-2) * gg1
+        ret = np.expand_dims(g1, axis=-2) * gg1
         # nf x nloc x nnei x ng1
         ret = _apply_nlist_mask(ret, nlist_mask)
         if self.smooth:
             ret = _apply_switch(ret, sw)
         return ret
 
-    def forward(
+    def call(
         self,
-        g1_ext: torch.Tensor,  # nf x nall x ng1
-        g2: torch.Tensor,  # nf x nloc x nnei x ng2
-        h2: torch.Tensor,  # nf x nloc x nnei x 3
-        nlist: torch.Tensor,  # nf x nloc x nnei
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # switch func, nf x nloc x nnei
+        g1_ext: np.ndarray,  # nf x nall x ng1
+        g2: np.ndarray,  # nf x nloc x nnei x ng2
+        h2: np.ndarray,  # nf x nloc x nnei x 3
+        nlist: np.ndarray,  # nf x nloc x nnei
+        nlist_mask: np.ndarray,  # nf x nloc x nnei
+        sw: np.ndarray,  # switch func, nf x nloc x nnei
     ):
         """
         Parameters
@@ -974,14 +1338,14 @@ class RepformerLayer(torch.nn.Module):
 
         nf, nloc, nnei, _ = g2.shape
         nall = g1_ext.shape[1]
-        g1, _ = torch.split(g1_ext, [nloc, nall - nloc], dim=1)
+        g1, _ = np.split(g1_ext, [nloc], axis=1)
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: List[torch.Tensor] = [g2]
-        h2_update: List[torch.Tensor] = [h2]
-        g1_update: List[torch.Tensor] = [g1]
-        g1_mlp: List[torch.Tensor] = [g1]
+        g2_update: List[np.ndarray] = [g2]
+        h2_update: List[np.ndarray] = [h2]
+        g1_update: List[np.ndarray] = [g1]
+        g1_mlp: List[np.ndarray] = [g1]
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -1052,9 +1416,9 @@ class RepformerLayer(torch.nn.Module):
                 )
             )
 
-        # nf x nloc x [ng1+ng2+(axisxng2)+(axisxng1)]
-        #                  conv   grrg      drrd
-        g1_1 = self.act(self.linear1(torch.cat(g1_mlp, dim=-1)))
+            # nf x nloc x [ng1+ng2+(axisxng2)+(axisxng1)]
+            #                  conv   grrg      drrd
+        g1_1 = self.act(self.linear1(np.concatenate(g1_mlp, axis=-1)))
         g1_update.append(g1_1)
 
         if self.update_g1_has_attn:
@@ -1071,19 +1435,17 @@ class RepformerLayer(torch.nn.Module):
         g1_new = self.list_update(g1_update, "g1")
         return g1_new, g2_new, h2_new
 
-    @torch.jit.export
     def list_update_res_avg(
         self,
-        update_list: List[torch.Tensor],
-    ) -> torch.Tensor:
+        update_list: List[np.ndarray],
+    ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         for ii in range(1, nitem):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    @torch.jit.export
-    def list_update_res_incr(self, update_list: List[torch.Tensor]) -> torch.Tensor:
+    def list_update_res_incr(self, update_list: List[np.ndarray]) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1091,13 +1453,11 @@ class RepformerLayer(torch.nn.Module):
             uu = uu + scale * update_list[ii]
         return uu
 
-    @torch.jit.export
     def list_update_res_residual(
-        self, update_list: List[torch.Tensor], update_name: str = "g1"
-    ) -> torch.Tensor:
+        self, update_list: List[np.ndarray], update_name: str = "g1"
+    ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
-        # make jit happy
         if update_name == "g1":
             for ii, vv in enumerate(self.g1_residual):
                 uu = uu + vv * update_list[ii + 1]
@@ -1111,10 +1471,9 @@ class RepformerLayer(torch.nn.Module):
             raise NotImplementedError
         return uu
 
-    @torch.jit.export
     def list_update(
-        self, update_list: List[torch.Tensor], update_name: str = "g1"
-    ) -> torch.Tensor:
+        self, update_list: List[np.ndarray], update_name: str = "g1"
+    ) -> np.ndarray:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":
@@ -1210,9 +1569,9 @@ class RepformerLayer(torch.nn.Module):
         if self.update_style == "res_residual":
             data.update(
                 {
-                    "g1_residual": [to_numpy_array(t) for t in self.g1_residual],
-                    "g2_residual": [to_numpy_array(t) for t in self.g2_residual],
-                    "h2_residual": [to_numpy_array(t) for t in self.h2_residual],
+                    "g1_residual": self.g1_residual,
+                    "g2_residual": self.g2_residual,
+                    "h2_residual": self.h2_residual,
                 }
             )
         return data
@@ -1251,16 +1610,16 @@ class RepformerLayer(torch.nn.Module):
         h2_residual = data.pop("h2_residual", [])
 
         obj = cls(**data)
-        obj.linear1 = MLPLayer.deserialize(linear1)
+        obj.linear1 = NativeLayer.deserialize(linear1)
         if update_chnnl_2:
             assert isinstance(linear2, dict)
-            obj.linear2 = MLPLayer.deserialize(linear2)
+            obj.linear2 = NativeLayer.deserialize(linear2)
         if update_g1_has_conv:
             assert isinstance(proj_g1g2, dict)
-            obj.proj_g1g2 = MLPLayer.deserialize(proj_g1g2)
+            obj.proj_g1g2 = NativeLayer.deserialize(proj_g1g2)
         if update_g2_has_g1g1:
             assert isinstance(proj_g1g1g2, dict)
-            obj.proj_g1g1g2 = MLPLayer.deserialize(proj_g1g1g2)
+            obj.proj_g1g1g2 = NativeLayer.deserialize(proj_g1g1g2)
         if update_g2_has_attn or update_h2:
             assert isinstance(attn2g_map, dict)
             obj.attn2g_map = Atten2Map.deserialize(attn2g_map)
@@ -1276,10 +1635,7 @@ class RepformerLayer(torch.nn.Module):
             assert isinstance(loc_attn, dict)
             obj.loc_attn = LocalAtten.deserialize(loc_attn)
         if update_style == "res_residual":
-            for ii, t in enumerate(obj.g1_residual):
-                t.data = to_torch_tensor(g1_residual[ii])
-            for ii, t in enumerate(obj.g2_residual):
-                t.data = to_torch_tensor(g2_residual[ii])
-            for ii, t in enumerate(obj.h2_residual):
-                t.data = to_torch_tensor(h2_residual[ii])
+            obj.g1_residual = g1_residual
+            obj.g2_residual = g2_residual
+            obj.h2_residual = h2_residual
         return obj
