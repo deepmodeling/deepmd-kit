@@ -485,7 +485,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       }
     }
   }
- // make mapping array
+  // make mapping array
   int *mapping = new int[nall];
   for (int i = 0; i < nall; ++i) {
     mapping[i] = atom->map(tag_array[i]);

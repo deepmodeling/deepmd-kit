@@ -154,7 +154,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = true;
-   c10::optional<torch::Tensor> mapping_tensor;
+  c10::optional<torch::Tensor> mapping_tensor;
   if (lmp_list.mapping != nullptr) {
     mapping_tensor =
         torch::from_blob(lmp_list.mapping, {1, nall_real}, int32_options)
