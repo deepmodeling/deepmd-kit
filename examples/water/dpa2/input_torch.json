@@ -7,7 +7,7 @@
     ],
     "descriptor": {
       "type": "dpa2",
-      "tebd_dim": 8,
+      "repinit_tebd_dim": 8,
       "repinit_rcut": 9.0,
       "repinit_rcut_smth": 8.0,
       "repinit_nsel": 120,
@@ -20,7 +20,7 @@
         100
       ],
       "repinit_axis_neuron": 12,
-      "repinit_activation": "tanh",
+      "repinit_activation_function": "tanh",
       "repformer_nlayers": 12,
       "repformer_g1_dim": 128,
       "repformer_g2_dim": 32,
@@ -28,7 +28,7 @@
       "repformer_attn2_nhead": 4,
       "repformer_attn1_hidden": 128,
       "repformer_attn1_nhead": 4,
-      "repformer_axis_dim": 4,
+      "repformer_axis_neuron": 4,
       "repformer_update_h2": false,
       "repformer_update_g1_has_conv": true,
       "repformer_update_g1_has_grrg": true,
@@ -37,7 +37,7 @@
       "repformer_update_g2_has_g1g1": true,
       "repformer_update_g2_has_attn": true,
       "repformer_attn2_has_gate": true,
-      "repformer_add_type_ebd_to_seq": false
+      "add_tebd_to_repinit_out": false
     },
     "fitting_net": {
       "neuron": [

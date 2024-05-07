@@ -753,6 +753,7 @@ def descrpt_dpa2_args():
             int,
             optional=True,
             default=8,
+            alias=["tebd_dim"],
             doc=doc_repinit_tebd_dim,
         ),
         Argument(
