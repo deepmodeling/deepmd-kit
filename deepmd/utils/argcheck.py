@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
+import warnings
 from typing import (
     Callable,
     List,
@@ -52,6 +53,24 @@ def make_link(content, ref_key):
         if not dargs.RAW_ANCHOR
         else f"`{content} <#{ref_key}>`_"
     )
+
+
+def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
+    """Generate an extra check to deprecate an argument in sub fields.
+
+    Parameters
+    ----------
+    key : str
+        The name of the deprecated argument.
+    """
+
+    def deprecate_something(data: Optional[dict]):
+        if data is not None and key in data:
+            warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
+            data.pop(key)
+        return True
+
+    return deprecate_something
 
 
 def type_embedding_args():
@@ -409,7 +428,7 @@ def descrpt_se_atten_common_args():
     )
     doc_type_one_side = (
         doc_only_tf_supported
-        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+        + r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
     )
     doc_precision = (
         doc_only_tf_supported
@@ -424,7 +443,7 @@ def descrpt_se_atten_common_args():
         + "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     )
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and stripped_type_embedding is True"
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
@@ -475,9 +494,12 @@ def descrpt_se_atten_common_args():
 
 @descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
-    doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
-    doc_smooth_type_embedding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
@@ -491,7 +513,21 @@ def descrpt_se_atten_args():
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
     )
-    doc_deprecated = "This feature will be removed in a future release."
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
+        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+    )
+    doc_stripped_type_embedding = (
+        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
+        "Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'. "
+        "Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'."
+        "The default value is `None`, which means the `tebd_input_mode` setting will be used instead."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
@@ -499,8 +535,8 @@ def descrpt_se_atten_args():
             "stripped_type_embedding",
             bool,
             optional=True,
-            default=False,
-            doc=doc_only_tf_supported + doc_stripped_type_embedding,
+            default=None,
+            doc=doc_stripped_type_embedding,
         ),
         Argument(
             "smooth_type_embedding",
@@ -508,11 +544,15 @@ def descrpt_se_atten_args():
             optional=True,
             default=False,
             alias=["smooth_type_embdding"],
-            doc=doc_only_tf_supported + doc_smooth_type_embedding,
+            doc=doc_smooth_type_embedding,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
         ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
+        ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
         # pt only
         Argument(
             "tebd_dim",
@@ -526,28 +566,7 @@ def descrpt_se_atten_args():
             str,
             optional=True,
             default="concat",
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "post_ln",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "ffn",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_deprecated,
-        ),
-        Argument(
-            "ffn_embed_dim",
-            int,
-            optional=True,
-            default=1024,
-            doc=doc_only_pt_supported + doc_deprecated,
+            doc=doc_tebd_input_mode,
         ),
         Argument(
             "scaling_factor",
@@ -555,13 +574,6 @@ def descrpt_se_atten_args():
             optional=True,
             default=1.0,
             doc=doc_only_pt_supported + doc_scaling_factor,
-        ),
-        Argument(
-            "head_num",
-            int,
-            optional=True,
-            default=1,
-            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "normalize",
@@ -575,13 +587,6 @@ def descrpt_se_atten_args():
             float,
             optional=True,
             doc=doc_only_pt_supported + doc_temperature,
-        ),
-        Argument(
-            "return_rot",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_deprecated,
         ),
         Argument(
             "concat_output_tebd",
@@ -1965,7 +1970,6 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
-    doc_set_prefix = f"The prefix of the sets in the {link_sys}."
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -1987,7 +1991,6 @@ If MPI is used, the value should be considered as the batch size per task.'
         Argument(
             "systems", [List[str], str], optional=False, default=".", doc=doc_systems
         ),
-        Argument("set_prefix", str, optional=True, default="set", doc=doc_set_prefix),
         Argument(
             "batch_size",
             [List[int], int, str],
@@ -2023,6 +2026,7 @@ If MPI is used, the value should be considered as the batch size per task.'
         sub_fields=args,
         sub_variants=[],
         doc=doc_training_data,
+        extra_check=deprecate_argument_extra_check("set_prefix"),
     )
 
 
@@ -2033,7 +2037,6 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
-    doc_set_prefix = f"The prefix of the sets in the {link_sys}."
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -2054,7 +2057,6 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         Argument(
             "systems", [List[str], str], optional=False, default=".", doc=doc_systems
         ),
-        Argument("set_prefix", str, optional=True, default="set", doc=doc_set_prefix),
         Argument(
             "batch_size",
             [List[int], int, str],
@@ -2104,6 +2106,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         sub_fields=args,
         sub_variants=[],
         doc=doc_validation_data,
+        extra_check=deprecate_argument_extra_check("set_prefix"),
     )
 
 

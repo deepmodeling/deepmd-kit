@@ -283,11 +283,11 @@ class Model(ABC, make_plugin_registry("model")):
         else:
             tf.constant(
                 self.rcut,
-                name="descrpt_attr%s/rcut" % suffix,
+                name=f"descrpt_attr{suffix}/rcut",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
             tf.constant(
-                self.ntypes, name="descrpt_attr%s/ntypes" % suffix, dtype=tf.int32
+                self.ntypes, name=f"descrpt_attr{suffix}/ntypes", dtype=tf.int32
             )
             if "global_feed_dict" in input_dict:
                 feed_dict = input_dict["global_feed_dict"]
@@ -302,7 +302,7 @@ class Model(ABC, make_plugin_registry("model")):
                 )
             return_elements = [
                 *self.descrpt.get_tensor_names(suffix=suffix),
-                "o_descriptor%s:0" % suffix,
+                f"o_descriptor{suffix}:0",
             ]
             if frz_model is not None:
                 imported_tensors = self._import_graph_def_from_frz_model(
@@ -571,7 +571,7 @@ class Model(ABC, make_plugin_registry("model")):
                 data,
                 suffix=suffix,
             )
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+        raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
     def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
@@ -586,7 +586,7 @@ class Model(ABC, make_plugin_registry("model")):
         suffix : str, optional
             Name suffix to identify this descriptor
         """
-        raise NotImplementedError("Not implemented in class %s" % self.__name__)
+        raise NotImplementedError(f"Not implemented in class {self.__name__}")
 
 
 @Model.register("standard")

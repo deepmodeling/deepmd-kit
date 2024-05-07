@@ -77,7 +77,8 @@ if platform.system() == "Linux":
 
 # keras 3 is incompatible with tf.compat.v1
 # https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# 2024/04/24: deepmd.tf doesn't import tf.keras any more
+
 # import tensorflow v1 compatability
 try:
     import tensorflow.compat.v1 as tf
@@ -178,19 +179,19 @@ TYPE_EMBEDDING_PATTERN = str(
 )[:-1]
 
 ATTENTION_LAYER_PATTERN = str(
-    r"attention_layer_\d+/c_query/matrix|"
-    r"attention_layer_\d+/c_query/bias|"
-    r"attention_layer_\d+/c_key/matrix|"
-    r"attention_layer_\d+/c_key/bias|"
-    r"attention_layer_\d+/c_value/matrix|"
-    r"attention_layer_\d+/c_value/bias|"
-    r"attention_layer_\d+/c_out/matrix|"
-    r"attention_layer_\d+/c_out/bias|"
-    r"attention_layer_\d+/layer_normalization/beta|"
-    r"attention_layer_\d+/layer_normalization/gamma|"
-    r"attention_layer_\d+/layer_normalization_\d+/beta|"
-    r"attention_layer_\d+/layer_normalization_\d+/gamma|"
-)
+    r"attention_layer_(\d+)/(c_query)/(matrix)|"
+    r"attention_layer_(\d+)/(c_query)/(bias)|"
+    r"attention_layer_(\d+)/(c_key)/(matrix)|"
+    r"attention_layer_(\d+)/(c_key)/(bias)|"
+    r"attention_layer_(\d+)/(c_value)/(matrix)|"
+    r"attention_layer_(\d+)/(c_value)/(bias)|"
+    r"attention_layer_(\d+)/(c_out)/(matrix)|"
+    r"attention_layer_(\d+)/(c_out)/(bias)|"
+    r"attention_layer_(\d+)/(layer_normalization)/(beta)|"
+    r"attention_layer_(\d+)/(layer_normalization)/(gamma)|"
+    r"attention_layer_(\d+)/(layer_normalization)_\d+/(beta)|"
+    r"attention_layer_(\d+)/(layer_normalization)_\d+/(gamma)|"
+)[:-1]
 
 TRANSFER_PATTERN = (
     EMBEDDING_NET_PATTERN

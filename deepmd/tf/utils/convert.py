@@ -77,8 +77,7 @@ def convert_to_21(input_model: str, output_model: str, version: Optional[str] = 
         convert_pb_to_pbtxt(input_model, "frozen_model.pbtxt")
     if version is None:
         raise ValueError(
-            "The version of the DP graph %s cannot be detected. Please do the conversion manually."
-            % (input_model)
+            f"The version of the DP graph {input_model} cannot be detected. Please do the conversion manually."
         )
     if version in SpecifierSet("<1.0"):
         convert_dp012_to_dp10("frozen_model.pbtxt")

@@ -77,7 +77,6 @@
       "batch_size": 1,
       "numb_btch": 1
     },
-    "set_prefix": "set",
     "numb_steps": 1,
     "seed": 1,
     "disp_file": "lcurve.out",

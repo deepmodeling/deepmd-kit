@@ -204,10 +204,10 @@ class TestEnerStdLoss(unittest.TestCase):
         for key in ["ener", "force", "virial"]:
             self.assertTrue(
                 np.allclose(
-                    base_more_loss["l2_%s_loss" % key], my_more_loss["l2_%s_loss" % key]
+                    base_more_loss[f"l2_{key}_loss"], my_more_loss[f"l2_{key}_loss"]
                 )
             )
-            self.assertTrue(np.isnan(my_more_loss_absent["l2_%s_loss" % key]))
+            self.assertTrue(np.isnan(my_more_loss_absent[f"l2_{key}_loss"]))
 
 
 class TestEnerSpinLoss(unittest.TestCase):
@@ -401,10 +401,10 @@ class TestEnerSpinLoss(unittest.TestCase):
         for key in ["ener", "force_r", "force_m"]:
             self.assertTrue(
                 np.allclose(
-                    base_more_loss["l2_%s_loss" % key], my_more_loss["l2_%s_loss" % key]
+                    base_more_loss[f"l2_{key}_loss"], my_more_loss[f"l2_{key}_loss"]
                 )
             )
-            self.assertTrue(np.isnan(my_more_loss_absent["l2_%s_loss" % key]))
+            self.assertTrue(np.isnan(my_more_loss_absent[f"l2_{key}_loss"]))
 
 
 if __name__ == "__main__":

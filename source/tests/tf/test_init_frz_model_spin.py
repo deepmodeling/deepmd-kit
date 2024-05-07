@@ -57,7 +57,6 @@ def _init_models():
     jdata["training"]["training_data"]["systems"] = [str(tests_path / "model_spin/")]
     jdata["training"]["validation_data"]["systems"] = [str(tests_path / "model_spin/")]
 
-    del jdata["training"]["set_prefix"]
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
     ret = run_dp("dp train " + INPUT)
@@ -72,7 +71,6 @@ def _init_models():
     jdata["training"]["save_ckpt"] = ckpt
     jdata["training"]["training_data"]["systems"] = [str(tests_path / "model_spin/")]
     jdata["training"]["validation_data"]["systems"] = [str(tests_path / "model_spin/")]
-    del jdata["training"]["set_prefix"]
     jdata["loss"]["type"] = "ener_spin"
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
     jdata = normalize(jdata)

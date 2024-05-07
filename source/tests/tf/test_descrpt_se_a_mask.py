@@ -232,7 +232,6 @@ class TestModel(tf.test.TestCase):
             str(tests_path / "data_dp_mask")
         ]
         systems = j_must_have(jdata["training"]["validation_data"], "systems")
-        # set_pfx = j_must_have(jdata['validation_data'], "set_prefix")
         set_pfx = "set"
         batch_size = 2
         test_size = 1

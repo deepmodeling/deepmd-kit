@@ -191,6 +191,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -204,6 +205,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, not required by this descriptor.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------
@@ -624,34 +627,3 @@ class DescrptBlockSeA(DescriptorBlock):
             None,
             sw,
         )
-
-
-def analyze_descrpt(matrix, ndescrpt, natoms):
-    """Collect avg, square avg and count of descriptors in a batch."""
-    ntypes = natoms.shape[1] - 2
-    start_index = 0
-    sysr = []
-    sysa = []
-    sysn = []
-    sysr2 = []
-    sysa2 = []
-    for type_i in range(ntypes):
-        end_index = start_index + natoms[0, 2 + type_i]
-        dd = matrix[:, start_index:end_index]  # all descriptors for this element
-        start_index = end_index
-        dd = np.reshape(
-            dd, [-1, 4]
-        )  # Shape is [nframes*natoms[2+type_id]*self.nnei, 4]
-        ddr = dd[:, :1]
-        dda = dd[:, 1:]
-        sumr = np.sum(ddr)
-        suma = np.sum(dda) / 3.0
-        sumn = dd.shape[0]  # Value is nframes*natoms[2+type_id]*self.nnei
-        sumr2 = np.sum(np.multiply(ddr, ddr))
-        suma2 = np.sum(np.multiply(dda, dda)) / 3.0
-        sysr.append(sumr)
-        sysa.append(suma)
-        sysn.append(sumn)
-        sysr2.append(sumr2)
-        sysa2.append(suma2)
-    return sysr, sysr2, sysa, sysa2, sysn

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+
 import numpy as np
 
 from deepmd.tf.common import (
@@ -103,6 +104,100 @@ def one_layer(
         if mixed_prec is not None:
             hidden = tf.cast(hidden, get_precision(mixed_prec["output_prec"]))
         return hidden
+
+
+def layer_norm_tf(x, shape, weight=None, bias=None, eps=1e-5):
+    """
+    Layer normalization implementation in TensorFlow.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        The input tensor.
+    shape : tuple
+        The shape of the weight and bias tensors.
+    weight : tf.Tensor
+        The weight tensor.
+    bias : tf.Tensor
+        The bias tensor.
+    eps : float
+        A small value added to prevent division by zero.
+
+    Returns
+    -------
+    tf.Tensor
+        The normalized output tensor.
+    """
+    # Calculate the mean and variance
+    mean = tf.reduce_mean(x, axis=list(range(-len(shape), 0)), keepdims=True)
+    variance = tf.reduce_mean(
+        tf.square(x - mean), axis=list(range(-len(shape), 0)), keepdims=True
+    )
+
+    # Normalize the input
+    x_ln = (x - mean) / tf.sqrt(variance + eps)
+
+    # Scale and shift the normalized input
+    if weight is not None and bias is not None:
+        x_ln = x_ln * weight + bias
+
+    return x_ln
+
+
+def layernorm(
+    inputs,
+    outputs_size,
+    precision=GLOBAL_TF_FLOAT_PRECISION,
+    name="linear",
+    scope="",
+    reuse=None,
+    seed=None,
+    uniform_seed=False,
+    uni_init=True,
+    eps=1e-5,
+    trainable=True,
+    initial_variables=None,
+):
+    with tf.variable_scope(name, reuse=reuse):
+        shape = inputs.get_shape().as_list()
+        if uni_init:
+            gamma_initializer = tf.ones_initializer()
+            beta_initializer = tf.zeros_initializer()
+        else:
+            gamma_initializer = tf.random_normal_initializer(
+                seed=seed if (seed is None or uniform_seed) else seed + 0
+            )
+            beta_initializer = tf.random_normal_initializer(
+                seed=seed if (seed is None or uniform_seed) else seed + 1
+            )
+        if initial_variables is not None:
+            gamma_initializer = tf.constant_initializer(
+                initial_variables[scope + name + "/gamma"]
+            )
+            beta_initializer = tf.constant_initializer(
+                initial_variables[scope + name + "/beta"]
+            )
+        gamma = tf.get_variable(
+            "gamma",
+            [outputs_size],
+            precision,
+            gamma_initializer,
+            trainable=trainable,
+        )
+        variable_summaries(gamma, "gamma")
+        beta = tf.get_variable(
+            "beta", [outputs_size], precision, beta_initializer, trainable=trainable
+        )
+        variable_summaries(beta, "beta")
+
+        output = layer_norm_tf(
+            inputs,
+            (outputs_size,),
+            weight=gamma,
+            bias=beta,
+            eps=eps,
+        )
+        return output
 
 
 def embedding_net_rand_seed_shift(network_size):

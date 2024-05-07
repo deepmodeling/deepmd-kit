@@ -133,7 +133,6 @@ An example of the DPA-1 descriptor is provided as follows
           "attn_layer":	2,
           "attn_mask": false,
           "attn_dotr": true,
-          "post_ln": true
 	}
 ```
 
@@ -147,7 +146,6 @@ An example of the DPA-1 descriptor is provided as follows
 - {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
 - {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
 - {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
-- {ref}`post_ln <model/descriptor[se_atten]/post_ln>` determines whether to perform post layer norm.
 
 :::
 
@@ -158,12 +156,14 @@ An example of the DPA-1 descriptor is provided as follows
 We highly recommend using the version 2.0 of the attention-based descriptor `"se_atten_v2"`, which is inherited from `"se_atten"` but with the following parameter modifications:
 
 ```json
-      "stripped_type_embedding": true,
+      "tebd_input_mode": "strip",
       "smooth_type_embedding": true,
       "set_davg_zero": false
 ```
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
+
+Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model/descriptor[se_atten_v2]/attn_layer>` set to 0.
 
 ### Fitting `"ener"`
 

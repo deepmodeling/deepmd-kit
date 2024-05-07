@@ -572,6 +572,34 @@ struct InputNlist {
         nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
+  InputNlist(int inum_,
+             int *ilist_,
+             int *numneigh_,
+             int **firstneigh_,
+             int nswap,
+             int *sendnum,
+             int *recvnum,
+             int *firstrecv,
+             int **sendlist,
+             int *sendproc,
+             int *recvproc,
+             void *world)
+      : inum(inum_),
+        ilist(ilist_),
+        numneigh(numneigh_),
+        firstneigh(firstneigh_),
+        nl(DP_NewNlist_comm(inum_,
+                            ilist_,
+                            numneigh_,
+                            firstneigh_,
+                            nswap,
+                            sendnum,
+                            recvnum,
+                            firstrecv,
+                            sendlist,
+                            sendproc,
+                            recvproc,
+                            world)) {};
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist *nl;

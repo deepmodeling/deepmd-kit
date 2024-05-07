@@ -651,7 +651,7 @@ class Trainer:
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
             )
         else:
-            raise ValueError("Not supported optimizer type '%s'" % self.opt_type)
+            raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
         # Get model prob for multi-task
         if self.multi_task:
@@ -808,7 +808,7 @@ class Trainer:
                         learning_rate=pref_lr,
                     )
             else:
-                raise ValueError("Not supported optimizer type '%s'" % self.opt_type)
+                raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
             # Log and persist
             if _step_id % self.disp_freq == 0:
@@ -1170,7 +1170,7 @@ class Trainer:
                     prop_fmt = "   %11.2e"
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (train_results[model_key][k])
-        print_str += "   %8.1e\n" % cur_lr
+        print_str += f"   {cur_lr:8.1e}\n"
         fout.write(print_str)
         fout.flush()
 

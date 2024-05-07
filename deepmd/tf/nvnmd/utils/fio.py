@@ -180,7 +180,7 @@ class FioBin:
             buff.extend(list(bytearray.fromhex(si))[::-1])
         #
         with open(file_name, "wb") as fp:
-            fp.write(struct.pack("%sB" % len(buff), *buff))
+            fp.write(struct.pack(f"{len(buff)}B", *buff))
 
 
 class FioTxt:

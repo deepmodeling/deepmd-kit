@@ -141,12 +141,8 @@ class DescrptSe(Descriptor):
         self.embedding_net_variables = get_embedding_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     @property
     def precision(self) -> tf.DType:
@@ -296,7 +292,10 @@ class DescrptSe(Descriptor):
                 net_idx.append(rest_ii % embeddings.ntypes)
                 rest_ii //= embeddings.ntypes
             net_idx = tuple(net_idx)
-            if embeddings.ndim in (0, 1):
+            if embeddings.ndim == 0:
+                key0 = "all"
+                key1 = ""
+            elif embeddings.ndim == 1:
                 key0 = "all"
                 key1 = f"_{ii}"
             elif embeddings.ndim == 2:
