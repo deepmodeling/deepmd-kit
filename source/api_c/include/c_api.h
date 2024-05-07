@@ -24,6 +24,7 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int* ilist_,
                              int* numneigh_,
                              int** firstneigh_);
+extern DP_Nlist* DP_NewNlist_mapping(int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int* mapping);
 
 /**
  * @brief Delete a neighbor list.
