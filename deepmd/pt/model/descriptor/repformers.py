@@ -59,8 +59,6 @@ class DescrptBlockRepformers(DescriptorBlock):
         g2_dim=16,
         axis_neuron: int = 4,
         direct_dist: bool = False,
-        do_bn_mode: str = "no",
-        bn_momentum: float = 0.1,
         update_g1_has_conv: bool = True,
         update_g1_has_drrd: bool = True,
         update_g1_has_grrg: bool = True,
@@ -110,13 +108,6 @@ class DescrptBlockRepformers(DescriptorBlock):
             Size of the submatrix of G (embedding matrix).
         direct_dist : bool, optional
             Whether to use direct distance information (1/r term) in the repformer block.
-        do_bn_mode : str, optional
-            The mode to do batch normalization in the repformer layers. Supported modes are:
-            -'no': Not do batch normalization.
-            -'uniform': Do batch normalization using scalar running momentum and learnable gamma/beta (num_features=1).
-            -'component': Do batch normalization using vector running momentum and learnable gamma/beta (num_features=d).
-        bn_momentum : float, optional
-            Momentum used in the batch normalization.
         update_g1_has_conv : bool, optional
             Whether to update the g1 rep with convolution term.
         update_g1_has_drrd : bool, optional
@@ -202,8 +193,6 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.attn2_has_gate = attn2_has_gate
         self.attn2_hidden = attn2_hidden
         self.attn2_nhead = attn2_nhead
-        self.do_bn_mode = do_bn_mode
-        self.bn_momentum = bn_momentum
         self.activation_function = activation_function
         self.update_style = update_style
         self.update_residual = update_residual
@@ -235,8 +224,6 @@ class DescrptBlockRepformers(DescriptorBlock):
                         self.g2_dim,
                         axis_neuron=self.axis_neuron,
                         update_chnnl_2=(ii != nlayers - 1),
-                        do_bn_mode=self.do_bn_mode,
-                        bn_momentum=self.bn_momentum,
                         update_g1_has_conv=self.update_g1_has_conv,
                         update_g1_has_drrd=self.update_g1_has_drrd,
                         update_g1_has_grrg=self.update_g1_has_grrg,
@@ -265,8 +252,6 @@ class DescrptBlockRepformers(DescriptorBlock):
                         self.g2_dim,
                         axis_neuron=self.axis_neuron,
                         update_chnnl_2=(ii != nlayers - 1),
-                        do_bn_mode=self.do_bn_mode,
-                        bn_momentum=self.bn_momentum,
                         update_g1_has_conv=self.update_g1_has_conv,
                         update_g1_has_drrd=self.update_g1_has_drrd,
                         update_g1_has_grrg=self.update_g1_has_grrg,

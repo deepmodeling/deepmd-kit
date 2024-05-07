@@ -75,8 +75,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repformer_g2_dim: int = 16,
         repformer_axis_neuron: int = 4,
         repformer_direct_dist: bool = False,
-        repformer_do_bn_mode: str = "no",
-        repformer_bn_momentum: float = 0.1,
         repformer_update_g1_has_conv: bool = True,
         repformer_update_g1_has_drrd: bool = True,
         repformer_update_g1_has_grrg: bool = True,
@@ -166,15 +164,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repformer_direct_dist : bool, optional
             (Used in the repformer block.)
             Whether to use direct distance information (1/r term) in the repformer block.
-        repformer_do_bn_mode : str, optional
-            (Used in the repformer block.)
-            The mode to do batch normalization in the repformer layers. Supported modes are:
-            -'no': Not do batch normalization.
-            -'uniform': Do batch normalization using scalar running momentum and learnable gamma/beta (num_features=1).
-            -'component': Do batch normalization using vector running momentum and learnable gamma/beta (num_features=d).
-        repformer_bn_momentum : float, optional
-            (Used in the repformer block.)
-            Momentum used in the batch normalization.
         repformer_update_g1_has_conv : bool, optional
             (Used in the repformer block.)
             Whether to update the g1 rep with convolution term.
@@ -309,8 +298,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             g2_dim=repformer_g2_dim,
             axis_neuron=repformer_axis_neuron,
             direct_dist=repformer_direct_dist,
-            do_bn_mode=repformer_do_bn_mode,
-            bn_momentum=repformer_bn_momentum,
             update_g1_has_conv=repformer_update_g1_has_conv,
             update_g1_has_drrd=repformer_update_g1_has_drrd,
             update_g1_has_grrg=repformer_update_g1_has_grrg,
@@ -518,8 +505,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             "repformer_g2_dim": repformers.g2_dim,
             "repformer_axis_neuron": repformers.axis_neuron,
             "repformer_direct_dist": repformers.direct_dist,
-            "repformer_do_bn_mode": repformers.do_bn_mode,
-            "repformer_bn_momentum": repformers.bn_momentum,
             "repformer_update_g1_has_conv": repformers.update_g1_has_conv,
             "repformer_update_g1_has_drrd": repformers.update_g1_has_drrd,
             "repformer_update_g1_has_grrg": repformers.update_g1_has_grrg,

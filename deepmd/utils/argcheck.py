@@ -630,16 +630,6 @@ def descrpt_dpa2_args():
     )
     doc_repformer_axis_neuron = f"{doc_repformer}The number of dimension of submatrix in the symmetrization ops."
     doc_repformer_direct_dist = f"{doc_repformer}Whether or not use direct distance as input for the embedding net to get g2 instead of smoothed 1/r."
-    doc_repformer_do_bn_mode = (
-        f"{doc_repformer}The mode to do batch normalization in the repformer layers. "
-        f"Supported options are: "
-        f"-'no': Not do batch normalization."
-        f"-'uniform': Do batch normalization using scalar running momentum and learnable gamma/beta (num_features=1)."
-        f"-'component': Do batch normalization using vector running momentum and learnable gamma/beta (num_features=d)."
-    )
-    doc_repformer_bn_momentum = (
-        f"{doc_repformer}Momentum used in the batch normalization."
-    )
     doc_repformer_update_g1_has_conv = (
         f"{doc_repformer}Update the g1 rep with convolution term."
     )
@@ -790,20 +780,6 @@ def descrpt_dpa2_args():
             optional=True,
             default=False,
             doc=doc_repformer_direct_dist,
-        ),
-        Argument(
-            "repformer_do_bn_mode",
-            str,
-            optional=True,
-            default="no",
-            doc=doc_repformer_do_bn_mode,
-        ),
-        Argument(
-            "repformer_bn_momentum",
-            float,
-            optional=True,
-            default=0.1,
-            doc=doc_repformer_bn_momentum,
         ),
         Argument(
             "repformer_update_g1_has_conv",

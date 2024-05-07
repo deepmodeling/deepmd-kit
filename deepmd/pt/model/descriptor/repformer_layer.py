@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Callable,
     List,
     Optional,
 )
@@ -665,8 +664,6 @@ class RepformerLayer(torch.nn.Module):
         g2_dim=16,
         axis_neuron: int = 4,
         update_chnnl_2: bool = True,
-        do_bn_mode: str = "no",
-        bn_momentum: float = 0.1,
         update_g1_has_conv: bool = True,
         update_g1_has_drrd: bool = True,
         update_g1_has_grrg: bool = True,
@@ -699,8 +696,6 @@ class RepformerLayer(torch.nn.Module):
         self.sel = sel
         self.sec = self.sel
         self.axis_neuron = axis_neuron
-        self.do_bn_mode = do_bn_mode
-        self.bn_momentum = bn_momentum
         self.activation_function = activation_function
         self.act = ActivationFn(activation_function)
         self.update_g1_has_grrg = update_g1_has_grrg
@@ -835,17 +830,6 @@ class RepformerLayer(torch.nn.Module):
                     )
                 )
 
-        if self.do_bn_mode == "uniform":
-            self.bn1 = self._bn_layer()
-            self.bn2 = self._bn_layer()
-        elif self.do_bn_mode == "component":
-            self.bn1 = self._bn_layer(nf=g1_dim)
-            self.bn2 = self._bn_layer(nf=g2_dim)
-        elif self.do_bn_mode == "no":
-            self.bn1, self.bn2 = None, None
-        else:
-            raise RuntimeError(f"unknown bn_mode {self.do_bn_mode}")
-
         self.g1_residual = nn.ParameterList(self.g1_residual)
         self.g2_residual = nn.ParameterList(self.g2_residual)
         self.h2_residual = nn.ParameterList(self.h2_residual)
@@ -952,73 +936,6 @@ class RepformerLayer(torch.nn.Module):
             ret = _apply_switch(ret, sw)
         return ret
 
-    def _apply_bn(
-        self,
-        bn_number: int,
-        gg: torch.Tensor,
-    ):
-        if self.do_bn_mode == "uniform":
-            return self._apply_bn_uni(bn_number, gg)
-        elif self.do_bn_mode == "component":
-            return self._apply_bn_comp(bn_number, gg)
-        else:
-            return gg
-
-    def _apply_nb_1(self, bn_number: int, gg: torch.Tensor) -> torch.Tensor:
-        nf, nl, nf = gg.shape
-        gg = gg.view([nf, 1, nl * nf])
-        if bn_number == 1:
-            assert self.bn1 is not None
-            gg = self.bn1(gg)
-        else:
-            assert self.bn2 is not None
-            gg = self.bn2(gg)
-        return gg.view([nf, nl, nf])
-
-    def _apply_nb_2(
-        self,
-        bn_number: int,
-        gg: torch.Tensor,
-    ) -> torch.Tensor:
-        nf, nl, nnei, nf = gg.shape
-        gg = gg.view([nf, 1, nl * nnei * nf])
-        if bn_number == 1:
-            assert self.bn1 is not None
-            gg = self.bn1(gg)
-        else:
-            assert self.bn2 is not None
-            gg = self.bn2(gg)
-        return gg.view([nf, nl, nnei, nf])
-
-    def _apply_bn_uni(
-        self,
-        bn_number: int,
-        gg: torch.Tensor,
-        mode: str = "1",
-    ) -> torch.Tensor:
-        if len(gg.shape) == 3:
-            return self._apply_nb_1(bn_number, gg)
-        elif len(gg.shape) == 4:
-            return self._apply_nb_2(bn_number, gg)
-        else:
-            raise RuntimeError(f"unsupported input shape {gg.shape}")
-
-    def _apply_bn_comp(
-        self,
-        bn_number: int,
-        gg: torch.Tensor,
-    ) -> torch.Tensor:
-        ss = gg.shape
-        nf = ss[-1]
-        gg = gg.view([-1, nf])
-        if bn_number == 1:
-            assert self.bn1 is not None
-            gg = self.bn1(gg).view(ss)
-        else:
-            assert self.bn2 is not None
-            gg = self.bn2(gg).view(ss)
-        return gg
-
     def forward(
         self,
         g1_ext: torch.Tensor,  # nf x nall x ng1
@@ -1056,14 +973,6 @@ class RepformerLayer(torch.nn.Module):
         g1, _ = torch.split(g1_ext, [nloc, nall - nloc], dim=1)
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
-        ng1 = g1.shape[-1]
-        ng2 = g2.shape[-1]
-        nh2 = h2.shape[-1]
-
-        if self.bn1 is not None:
-            g1 = self._apply_bn(1, g1)
-        if self.bn2 is not None:
-            g2 = self._apply_bn(2, g2)
 
         g2_update: List[torch.Tensor] = [g2]
         h2_update: List[torch.Tensor] = [h2]
@@ -1211,20 +1120,6 @@ class RepformerLayer(torch.nn.Module):
         else:
             raise RuntimeError(f"unknown update style {self.update_style}")
 
-    def _bn_layer(
-        self,
-        nf: int = 1,
-    ) -> Callable:
-        return torch.nn.BatchNorm1d(
-            nf,
-            eps=1e-5,
-            momentum=self.bn_momentum,
-            affine=False,
-            track_running_stats=True,
-            device=env.DEVICE,
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-        )
-
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
 
@@ -1244,8 +1139,6 @@ class RepformerLayer(torch.nn.Module):
             "g2_dim": self.g2_dim,
             "axis_neuron": self.axis_neuron,
             "update_chnnl_2": self.update_chnnl_2,
-            "do_bn_mode": self.do_bn_mode,
-            "bn_momentum": self.bn_momentum,
             "update_g1_has_conv": self.update_g1_has_conv,
             "update_g1_has_drrd": self.update_g1_has_drrd,
             "update_g1_has_grrg": self.update_g1_has_grrg,
