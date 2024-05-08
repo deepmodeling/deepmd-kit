@@ -62,7 +62,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 model_mixed_type.append(m)
         if len(model_mixed_type) > 0:
             raise ValueError(
-                f"LinearAtomicModel only supports AtomicModel of mixed type, the following models are not mixed type: {err_msg}."
+                f"LinearAtomicModel only supports AtomicModel of mixed type, the following models are not mixed type: {model_mixed_type}."
             )
 
         self.models = models
