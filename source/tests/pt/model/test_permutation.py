@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import os
 import unittest
 
 import torch
@@ -13,6 +14,8 @@ from deepmd.pt.model.model import (
 from deepmd.pt.utils import (
     env,
 )
+
+CUR_DIR = os.path.dirname(__file__)
 
 dtype = torch.float64
 
@@ -60,7 +63,7 @@ model_dos = {
 
 model_zbl = {
     "type_map": ["O", "H", "B"],
-    "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
+    "use_srtab": f"{CUR_DIR}/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
     "sw_rmin": 0.2,
     "sw_rmax": 1.0,
