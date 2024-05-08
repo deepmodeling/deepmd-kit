@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import torch
 
-# from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DPDescrptDPA2
+from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DPDescrptDPA2
 from deepmd.pt.model.descriptor.dpa2 import (
     DescrptDPA2,
 )
@@ -146,19 +146,16 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
             )
             # dp impl
-            # dd2 = DPDescrptDPA1.deserialize(dd0.serialize())
-            # rd2, _, _, _, _ = dd2.call(
-            #     self.coord_ext,
-            #     self.atype_ext,
-            #     self.nlist,
-            # )
-            # np.testing.assert_allclose(
-            #     rd0.detach().cpu().numpy(),
-            #     rd2,
-            #     rtol=rtol,
-            #     atol=atol,
-            #     err_msg=err_msg,
-            # )
+            dd2 = DPDescrptDPA2.deserialize(dd0.serialize())
+            rd2, _, _, _, _ = dd2.call(
+                self.coord_ext, self.atype_ext, self.nlist, self.mapping
+            )
+            np.testing.assert_allclose(
+                rd0.detach().cpu().numpy(),
+                rd2,
+                rtol=rtol,
+                atol=atol,
+            )
             # old impl
             if prec == "float64" and rus == "res_avg":
                 dd3 = DescrptDPA2(
