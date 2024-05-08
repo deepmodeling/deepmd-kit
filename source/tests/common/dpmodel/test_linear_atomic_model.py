@@ -139,7 +139,7 @@ class TestIntegration(unittest.TestCase):
             self.rcut,
             self.rcut_smth,
             sum(self.sel),
-            self.nt, 
+            self.nt,
         )
         ft = InvarFitting(
             "energy",
