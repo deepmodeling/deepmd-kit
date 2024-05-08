@@ -464,7 +464,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
             protection=self.env_protection,
         )
         nlist_mask = nlist != -1
-        nlist[nlist == -1] = 0
+        nlist_copy = nlist.detach().clone()
+        nlist_copy[nlist == -1] = 0
         sw = torch.squeeze(sw, -1)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
@@ -475,13 +476,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
         nt = extended_atype_embd.shape[-1]
         atype_tebd_ext = extended_atype_embd
         # nb x (nloc x nnei) x nt
-        index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
+        index = nlist_copy.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
         # nb x (nloc x nnei) x nt
         atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         # (nb x nloc) x nnei
-        exclude_mask = self.emask(nlist, extended_atype).view(nb * nloc, nnei)
+        exclude_mask = self.emask(nlist_copy, extended_atype).view(nb * nloc, nnei)
         if self.old_impl:
             assert self.filter_layers_old is not None
             dmatrix = dmatrix.view(
