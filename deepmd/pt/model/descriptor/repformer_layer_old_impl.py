@@ -436,7 +436,9 @@ class RepformerLayer(torch.nn.Module):
         if not self.smooth:
             # normalized by number of neighbors, not smooth
             # nb x nloc x 1
-            invnnei = 1.0 / (self.epsilon + torch.sum(nlist_mask, dim=-1)).unsqueeze(-1)
+            invnnei = 1.0 / (
+                self.epsilon + torch.sum(nlist_mask.type_as(gg1), dim=-1)
+            ).unsqueeze(-1)
         else:
             gg1 = _apply_switch(gg1, sw)
             invnnei = (1.0 / float(nnei)) * torch.ones(
@@ -462,7 +464,7 @@ class RepformerLayer(torch.nn.Module):
         g2 = _apply_nlist_mask(g2, nlist_mask)
         if not self.smooth:
             # nb x nloc
-            invnnei = 1.0 / (self.epsilon + torch.sum(nlist_mask, dim=-1))
+            invnnei = 1.0 / (self.epsilon + torch.sum(nlist_mask.type_as(g2), dim=-1))
             # nb x nloc x 1 x 1
             invnnei = invnnei.unsqueeze(-1).unsqueeze(-1)
         else:
