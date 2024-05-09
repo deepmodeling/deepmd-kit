@@ -400,10 +400,10 @@ class DescrptBlockRepformers(DescriptorBlock):
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         atype = extended_atype[:, :nloc]
-        # # nf x nloc x nnei
+        # nf x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
         nlist = nlist * exclude_mask
-        # nf x nloc x nnei x 4, nf x nloc x nnei x 3, nf x nloc x nnei x 1
+        # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
