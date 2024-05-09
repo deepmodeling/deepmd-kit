@@ -30,7 +30,3 @@ $ dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
 ```
 
 The output model is called `model_branch1.pth` being the specific frozen model with `CHOSEN_BRANCH` head.
-
-:::
-
-::::
