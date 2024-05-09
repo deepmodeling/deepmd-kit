@@ -428,14 +428,14 @@ class DescrptBlockRepformers(DescriptorBlock):
             atype_embd = extended_atype_embd
         assert isinstance(atype_embd, torch.Tensor)  # for jit
         g1 = self.act(atype_embd)
-        # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
+        # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         if not self.direct_dist:
             g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         else:
             g2, h2 = torch.linalg.norm(diff, dim=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
-        # nf x nloc x nnei x ng2
+        # nb x nloc x nnei x ng2
         g2 = self.act(self.g2_embd(g2))
 
         # set all padding positions to index of 0
@@ -448,8 +448,8 @@ class DescrptBlockRepformers(DescriptorBlock):
                 mapping.view(nframes, nall).unsqueeze(-1).expand(-1, -1, self.g1_dim)
             )
         for idx, ll in enumerate(self.layers):
-            # g1:     nf x nloc x ng1
-            # g1_ext: nf x nall x ng1
+            # g1:     nb x nloc x ng1
+            # g1_ext: nb x nall x ng1
             if comm_dict is None:
                 assert mapping is not None
                 g1_ext = torch.gather(g1, 1, mapping)
@@ -485,9 +485,9 @@ class DescrptBlockRepformers(DescriptorBlock):
                 sw,
             )
 
-        # nf x nloc x 3 x ng2
+        # nb x nloc x 3 x ng2
         h2g2 = _cal_hg(g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon)
-        # (nf x nloc) x ng2 x 3
+        # (nb x nloc) x ng2 x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 
         return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw

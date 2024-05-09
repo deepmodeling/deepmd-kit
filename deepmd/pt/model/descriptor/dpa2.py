@@ -255,7 +255,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         Returns
         -------
         descriptor:         torch.Tensor
-            the descriptor of shape nf x nloc x g1_dim.
+            the descriptor of shape nb x nloc x g1_dim.
             invariant single-atom representation.
         g2:                 torch.Tensor
             invariant pair-atom representation.
