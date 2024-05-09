@@ -40,7 +40,6 @@ from deepmd.utils.path import (
 
 from .repformer_layer import (
     RepformerLayer,
-    _cal_hg,
 )
 from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
@@ -486,7 +485,9 @@ class DescrptBlockRepformers(DescriptorBlock):
             )
 
         # nb x nloc x 3 x ng2
-        h2g2 = _cal_hg(g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon)
+        h2g2 = RepformerLayer._cal_hg(
+            g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon
+        )
         # (nb x nloc) x ng2 x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 
