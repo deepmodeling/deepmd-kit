@@ -152,8 +152,6 @@ class DescrptSeA(DescrptSe):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
-    multi_task
-            If the model has multi fitting nets to train.
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
 
@@ -181,7 +179,6 @@ class DescrptSeA(DescrptSe):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        multi_task: bool = False,
         spin: Optional[Spin] = None,
         tebd_input_mode: str = "concat",
         env_protection: float = 0.0,  # not implement!!
@@ -304,15 +301,6 @@ class DescrptSeA(DescrptSe):
                 self.stat_descrpt *= tf.reshape(mask, tf.shape(self.stat_descrpt))
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
         self.original_sel = None
-        self.multi_task = multi_task
-        if multi_task:
-            self.stat_dict = {
-                "sumr": [],
-                "suma": [],
-                "sumn": [],
-                "sumr2": [],
-                "suma2": [],
-            }
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -392,21 +380,14 @@ class DescrptSeA(DescrptSe):
                 sumn.append(sysn)
                 sumr2.append(sysr2)
                 suma2.append(sysa2)
-            if not self.multi_task:
-                stat_dict = {
-                    "sumr": sumr,
-                    "suma": suma,
-                    "sumn": sumn,
-                    "sumr2": sumr2,
-                    "suma2": suma2,
-                }
-                self.merge_input_stats(stat_dict)
-            else:
-                self.stat_dict["sumr"] += sumr
-                self.stat_dict["suma"] += suma
-                self.stat_dict["sumn"] += sumn
-                self.stat_dict["sumr2"] += sumr2
-                self.stat_dict["suma2"] += suma2
+            stat_dict = {
+                "sumr": sumr,
+                "suma": suma,
+                "sumn": sumn,
+                "sumr2": sumr2,
+                "suma2": suma2,
+            }
+            self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict):
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.

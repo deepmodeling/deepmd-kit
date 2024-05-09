@@ -119,8 +119,6 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
             The precision of the embedding net parameters. Supported options are |PRECISION|
-    multi_task
-            If the model has multi fitting nets to train.
     spin
             The deepspin object.
 
@@ -159,7 +157,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
-        ## seed, uniform_seed, multi_task, not included.
+        ## seed, uniform_seed, not included.
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
 
