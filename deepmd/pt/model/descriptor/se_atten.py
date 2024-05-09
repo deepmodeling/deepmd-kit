@@ -464,7 +464,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             protection=self.env_protection,
         )
         nlist_mask = nlist != -1
-        nlist[nlist == -1] = 0
+        nlist = torch.where(nlist == -1, 0, nlist)
         sw = torch.squeeze(sw, -1)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
