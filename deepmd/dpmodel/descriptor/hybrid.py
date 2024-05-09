@@ -100,6 +100,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         # may not be a good idea...
+        # Note: Using the minimum rcut_smth might not be appropriate in all scenarios. Consider using a different approach or provide detailed documentation on why the minimum value is chosen.
         return np.min([descrpt.get_rcut_smth() for descrpt in self.descrpt_list]).item()
 
     def get_sel(self) -> List[int]:
