@@ -66,7 +66,6 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
             env_protection=0.1,
         )
         em0 = DescrptHybrid(list=[ddsub0, ddsub1, ddsub3])
-        self.assertAlmostEqual(em0.get_env_protection(), 0.0)
         with self.assertRaises(ValueError):
             self.assertAlmostEqual(em0.get_env_protection(), 0.0)
 
