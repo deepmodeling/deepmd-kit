@@ -299,7 +299,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.ntypes
 
     def get_dim_in(self) -> int:
-        """Returns the output dimension."""
+        """Returns the input dimension."""
         return self.dim_in
 
     def get_dim_out(self) -> int:

@@ -80,7 +80,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     @abstractmethod
     def get_dim_in(self) -> int:
-        """Returns the output dimension."""
+        """Returns the input dimension."""
         pass
 
     @abstractmethod
