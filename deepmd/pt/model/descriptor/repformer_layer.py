@@ -834,7 +834,7 @@ class RepformerLayer(torch.nn.Module):
             invnnei = (1.0 / float(nnei)) * torch.ones(
                 (nb, nloc, 1, 1), dtype=g2.dtype, device=g2.device
             )
-        # nb x nloc x 3 x ng
+        # nb x nloc x 3 x ng2
         h2g2 = torch.matmul(torch.transpose(h2, -1, -2), g2) * invnnei
         return h2g2
 
