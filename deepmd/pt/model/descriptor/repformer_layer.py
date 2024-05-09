@@ -717,6 +717,72 @@ class RepformerLayer(torch.nn.Module):
             ret += g2d
         return ret
 
+    def _update_h2(
+        self,
+        h2: torch.Tensor,
+        attn: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Calculate the attention weights update for pair-wise equivariant rep.
+
+        Parameters
+        ----------
+        h2
+            Pair-wise equivariant rep tensors, with shape nf x nloc x nnei x 3.
+        attn
+            Attention weights from g2 attention, with shape nf x nloc x nnei x nnei x nh2.
+        """
+        assert self.attn2_ev_apply is not None
+        # nf x nloc x nnei x nh2
+        h2_1 = self.attn2_ev_apply(attn, h2)
+        return h2_1
+
+    def _update_g1_conv(
+        self,
+        gg1: torch.Tensor,
+        g2: torch.Tensor,
+        nlist_mask: torch.Tensor,
+        sw: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Calculate the convolution update for atomic invariant rep.
+
+        Parameters
+        ----------
+        gg1
+            Neighbor-wise atomic invariant rep, with shape nb x nloc x nnei x ng1.
+        g2
+            Pair invariant rep, with shape nb x nloc x nnei x ng2.
+        nlist_mask
+            Neighbor list mask, where zero means no neighbor, with shape nb x nloc x nnei.
+        sw
+            The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
+            and remains 0 beyond rcut, with shape nb x nloc x nnei.
+        """
+        assert self.proj_g1g2 is not None
+        nb, nloc, nnei, _ = g2.shape
+        ng1 = gg1.shape[-1]
+        ng2 = g2.shape[-1]
+        # gg1  : nb x nloc x nnei x ng2
+        gg1 = self.proj_g1g2(gg1).view(nb, nloc, nnei, ng2)
+        # nb x nloc x nnei x ng2
+        gg1 = _apply_nlist_mask(gg1, nlist_mask)
+        if not self.smooth:
+            # normalized by number of neighbors, not smooth
+            # nb x nloc x 1
+            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
+            invnnei = 1.0 / (
+                self.epsilon + torch.sum(nlist_mask.type_as(gg1), dim=-1)
+            ).unsqueeze(-1)
+        else:
+            gg1 = _apply_switch(gg1, sw)
+            invnnei = (1.0 / float(nnei)) * torch.ones(
+                (nb, nloc, 1), dtype=gg1.dtype, device=gg1.device
+            )
+        # nb x nloc x ng2
+        g1_11 = torch.sum(g2 * gg1, dim=2) * invnnei
+        return g1_11
+
     @staticmethod
     def _cal_hg(
         g: torch.Tensor,
@@ -844,72 +910,6 @@ class RepformerLayer(torch.nn.Module):
         # nf x nloc x (axis_neuron x ng)
         grrg = self._cal_grrg(hg, axis_neuron)
         return grrg
-
-    def _update_h2(
-        self,
-        h2: torch.Tensor,
-        attn: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Calculate the attention weights update for pair-wise equivariant rep.
-
-        Parameters
-        ----------
-        h2
-            Pair-wise equivariant rep tensors, with shape nf x nloc x nnei x 3.
-        attn
-            Attention weights from g2 attention, with shape nf x nloc x nnei x nnei x nh2.
-        """
-        assert self.attn2_ev_apply is not None
-        # nf x nloc x nnei x nh2
-        h2_1 = self.attn2_ev_apply(attn, h2)
-        return h2_1
-
-    def _update_g1_conv(
-        self,
-        gg1: torch.Tensor,
-        g2: torch.Tensor,
-        nlist_mask: torch.Tensor,
-        sw: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Calculate the convolution update for atomic invariant rep.
-
-        Parameters
-        ----------
-        gg1
-            Neighbor-wise atomic invariant rep, with shape nb x nloc x nnei x ng1.
-        g2
-            Pair invariant rep, with shape nb x nloc x nnei x ng2.
-        nlist_mask
-            Neighbor list mask, where zero means no neighbor, with shape nb x nloc x nnei.
-        sw
-            The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
-            and remains 0 beyond rcut, with shape nb x nloc x nnei.
-        """
-        assert self.proj_g1g2 is not None
-        nb, nloc, nnei, _ = g2.shape
-        ng1 = gg1.shape[-1]
-        ng2 = g2.shape[-1]
-        # gg1  : nb x nloc x nnei x ng2
-        gg1 = self.proj_g1g2(gg1).view(nb, nloc, nnei, ng2)
-        # nb x nloc x nnei x ng2
-        gg1 = _apply_nlist_mask(gg1, nlist_mask)
-        if not self.smooth:
-            # normalized by number of neighbors, not smooth
-            # nb x nloc x 1
-            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
-            invnnei = 1.0 / (
-                self.epsilon + torch.sum(nlist_mask.type_as(gg1), dim=-1)
-            ).unsqueeze(-1)
-        else:
-            gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * torch.ones(
-                (nb, nloc, 1), dtype=gg1.dtype, device=gg1.device
-            )
-        # nb x nloc x ng2
-        g1_11 = torch.sum(g2 * gg1, dim=2) * invnnei
-        return g1_11
 
     def _update_g2_g1g1(
         self,
