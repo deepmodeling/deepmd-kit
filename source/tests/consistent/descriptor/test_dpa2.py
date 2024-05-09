@@ -40,6 +40,7 @@ from deepmd.utils.argcheck import (
 @parameterized(
     ("concat", "strip"),  # repinit_tebd_input_mode
     (True,),  # repinit_set_davg_zero
+    (False,),  # repinit_type_one_side
     (True, False),  # repformer_direct_dist
     (True,),  # repformer_update_g1_has_conv
     (True,),  # repformer_update_g1_has_drrd
@@ -52,12 +53,11 @@ from deepmd.utils.argcheck import (
     ("res_avg", "res_residual"),  # repformer_update_style
     ("norm", "const"),  # repformer_update_residual_init
     (True,),  # repformer_set_davg_zero
+    (True,),  # repformer_trainable_ln
+    (1e-5,),  # repformer_ln_eps
     (True, False),  # smooth
     ([], [[0, 1]]),  # exclude_types
     ("float64",),  # precision
-    (True,),  # trainable_lns
-    (1e-5,),  # ln_eps
-    (False,),  # type_one_side
     (True, False),  # add_tebd_to_repinit_out
 )
 class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
@@ -66,6 +66,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -78,12 +79,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
         return {
@@ -101,6 +101,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             "repinit_tebd_input_mode": repinit_tebd_input_mode,
             "repinit_set_davg_zero": repinit_set_davg_zero,
             "repinit_activation_function": "tanh",
+            "repinit_type_one_side": repinit_type_one_side,
             # kwargs for repformer
             "repformer_nlayers": 3,
             "repformer_g1_dim": 20,
@@ -124,6 +125,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             "repformer_update_residual": 0.001,
             "repformer_update_residual_init": repformer_update_residual_init,
             "repformer_set_davg_zero": True,
+            "repformer_trainable_ln": repformer_trainable_ln,
+            "repformer_ln_eps": repformer_ln_eps,
             # kwargs for descriptor
             "concat_output_tebd": True,
             "precision": precision,
@@ -131,9 +134,6 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             "exclude_types": exclude_types,
             "env_protection": 0.0,
             "trainable": True,
-            "trainable_ln": trainable_ln,
-            "ln_eps": ln_eps,
-            "type_one_side": type_one_side,
             "add_tebd_to_repinit_out": add_tebd_to_repinit_out,
         }
 
@@ -142,6 +142,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -154,12 +155,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
         return CommonTest.skip_pt
@@ -169,6 +169,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -181,12 +182,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
         return CommonTest.skip_pt
@@ -196,6 +196,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -208,12 +209,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
         return True
@@ -259,6 +259,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -271,12 +272,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
 
@@ -319,6 +319,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -331,12 +332,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
         if precision == "float64":
@@ -352,6 +352,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         (
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
+            repinit_type_one_side,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -364,12 +365,11 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_update_style,
             repformer_update_residual_init,
             repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
             smooth,
             exclude_types,
             precision,
-            trainable_ln,
-            ln_eps,
-            type_one_side,
             add_tebd_to_repinit_out,
         ) = self.param
         if precision == "float64":

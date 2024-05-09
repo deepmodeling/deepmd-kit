@@ -73,6 +73,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repinit_tebd_input_mode: str = "concat",
         repinit_set_davg_zero: bool = True,
         repinit_activation_function="tanh",
+        repinit_resnet_dt: bool = False,
+        repinit_type_one_side: bool = False,
         # kwargs for repformer
         repformer_nlayers: int = 3,
         repformer_g1_dim: int = 128,
@@ -96,6 +98,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repformer_update_residual: float = 0.001,
         repformer_update_residual_init: str = "norm",
         repformer_set_davg_zero: bool = True,
+        repformer_trainable_ln: bool = True,
+        repformer_ln_eps: Optional[float] = 1e-5,
         # kwargs for descriptor
         concat_output_tebd: bool = True,
         precision: str = "float64",
@@ -104,10 +108,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         trainable: bool = True,
         seed: Optional[int] = None,
-        resnet_dt: bool = False,
-        trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        type_one_side: bool = False,
         add_tebd_to_repinit_out: bool = False,
         old_impl: bool = False,
     ):
@@ -144,6 +144,12 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repinit_activation_function : str, optional
             (Used in the repinit block.)
             The activation function in the embedding net.
+        repinit_resnet_dt : bool, optional
+            (Used in the repinit block.)
+            Whether to use a "Timestep" in the skip connection.
+        repinit_type_one_side : bool, optional
+            (Used in the repinit block.)
+            Whether to use one-side type embedding.
         repformer_rcut : float
             (Used in the repformer block.)
             The cut-off radius.
@@ -225,6 +231,12 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repformer_set_davg_zero : bool, optional
             (Used in the repformer block.)
             Set the normalization average to zero.
+        repformer_trainable_ln : bool, optional
+            (Used in the repformer block.)
+            Whether to use trainable shift and scale weights in layer normalization.
+        repformer_ln_eps : float, optional
+            (Used in the repformer block.)
+            The epsilon value for layer normalization.
         concat_output_tebd : bool, optional
             Whether to concat type embedding at the output of the descriptor.
         precision : str, optional
@@ -241,14 +253,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             If the parameters are trainable.
         seed : int, optional
             (Unused yet) Random seed for parameter initialization.
-        resnet_dt : bool, optional
-            Whether to use a "Timestep" in the skip connection.
-        trainable_ln : bool, optional
-            Whether to use trainable shift and scale weights in layer normalization.
-        ln_eps : float, optional
-            The epsilon value for layer normalization.
-        type_one_side : bool, optional
-            Whether to use one-side type embedding.
         add_tebd_to_repinit_out : bool, optional
             Whether to add type embedding to the output representation from repinit before inputting it into repformer.
 
@@ -269,8 +273,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """
         super().__init__()
         #  to keep consistent with default value in this backends
-        if ln_eps is None:
-            ln_eps = 1e-5
+        if repformer_ln_eps is None:
+            repformer_ln_eps = 1e-5
         self.repinit = DescrptBlockSeAtten(
             repinit_rcut,
             repinit_rcut_smth,
@@ -286,11 +290,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             activation_function=repinit_activation_function,
             precision=precision,
-            resnet_dt=resnet_dt,
-            trainable_ln=trainable_ln,
-            ln_eps=ln_eps,
+            resnet_dt=repinit_resnet_dt,
             smooth=smooth,
-            type_one_side=type_one_side,
+            type_one_side=repinit_type_one_side,
         )
         self.repformers = DescrptBlockRepformers(
             repformer_rcut,
@@ -323,9 +325,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,
-            resnet_dt=resnet_dt,
-            trainable_ln=trainable_ln,
-            ln_eps=ln_eps,
+            trainable_ln=repformer_trainable_ln,
+            ln_eps=repformer_ln_eps,
             old_impl=old_impl,
         )
         self.type_embedding = TypeEmbedNet(
@@ -337,10 +338,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.trainable = trainable
-        self.resnet_dt = resnet_dt
-        self.trainable_ln = trainable_ln
-        self.ln_eps = ln_eps
-        self.type_one_side = type_one_side
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
 
         if self.repinit.dim_out == self.repformers.dim_in:
@@ -504,6 +501,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             "repinit_tebd_input_mode": repinit.tebd_input_mode,
             "repinit_set_davg_zero": repinit.set_davg_zero,
             "repinit_activation_function": repinit.activation_function,
+            "repinit_resnet_dt": repinit.resnet_dt,
+            "repinit_type_one_side": repinit.type_one_side,
             "repformer_nlayers": repformers.nlayers,
             "repformer_g1_dim": repformers.g1_dim,
             "repformer_g2_dim": repformers.g2_dim,
@@ -524,16 +523,14 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             "repformer_activation_function": repformers.activation_function,
             "repformer_update_style": repformers.update_style,
             "repformer_set_davg_zero": repformers.set_davg_zero,
+            "repformer_trainable_ln": repformers.trainable_ln,
+            "repformer_ln_eps": repformers.ln_eps,
             "concat_output_tebd": self.concat_output_tebd,
             "precision": self.precision,
             "smooth": self.smooth,
             "exclude_types": self.exclude_types,
             "env_protection": self.env_protection,
             "trainable": self.trainable,
-            "resnet_dt": self.resnet_dt,
-            "trainable_ln": self.trainable_ln,
-            "ln_eps": self.ln_eps,
-            "type_one_side": self.type_one_side,
             "add_tebd_to_repinit_out": self.add_tebd_to_repinit_out,
             "type_embedding": self.type_embedding.embedding.serialize(),
             "g1_shape_tranform": self.g1_shape_tranform.serialize(),

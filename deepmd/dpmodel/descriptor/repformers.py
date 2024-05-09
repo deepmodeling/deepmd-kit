@@ -80,7 +80,6 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
-        resnet_dt: bool = False,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
     ):
@@ -157,8 +156,6 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         env_protection : float, optional
             Protection parameter to prevent division by zero errors during environment matrix calculations.
             For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        resnet_dt : bool, optional
-            Whether to use a "Timestep" in the skip connection.
         trainable_ln : bool, optional
             Whether to use trainable shift and scale weights in layer normalization.
         ln_eps : float, optional
@@ -203,7 +200,6 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
         self.precision = precision
-        self.resnet_dt = resnet_dt
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
         self.epsilon = 1e-4

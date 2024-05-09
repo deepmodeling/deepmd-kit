@@ -645,6 +645,13 @@ def descrpt_dpa2_args():
         f"This option should be set when `atom_ener` in the energy fitting is used."
     )
     doc_repinit_activation_function = f"{doc_repinit}The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_repinit_type_one_side = (
+        f"{doc_repinit}"
+        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    )
+    doc_repinit_resnet_dt = (
+        f'{doc_repinit}Whether to use a "Timestep" in the skip connection.'
+    )
 
     # repformer args
     doc_repformer = "(Used in the repformer block.) "
@@ -709,6 +716,10 @@ def descrpt_dpa2_args():
         f"{doc_repformer}Set the normalization average to zero. "
         f"This option should be set when `atom_ener` in the energy fitting is used."
     )
+    doc_repformer_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_repformer_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
 
     # descriptor args
     doc_concat_output_tebd = (
@@ -722,12 +733,6 @@ def descrpt_dpa2_args():
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_trainable = "If the parameters in the embedding net is trainable."
     doc_seed = "Random seed for parameter initialization."
-    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
-    doc_trainable_ln = (
-        "Whether to use trainable shift and scale weights in layer normalization."
-    )
-    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
-    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
     return [
         # repinit args
@@ -777,6 +782,20 @@ def descrpt_dpa2_args():
             default="tanh",
             alias=["repinit_activation"],
             doc=doc_repinit_activation_function,
+        ),
+        Argument(
+            "repinit_type_one_side",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repinit_type_one_side,
+        ),
+        Argument(
+            "repinit_resnet_dt",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repinit_resnet_dt,
         ),
         # repformer args
         Argument("repformer_rcut", float, doc=doc_repformer_rcut),
@@ -934,6 +953,20 @@ def descrpt_dpa2_args():
             default=True,
             doc=doc_repformer_set_davg_zero,
         ),
+        Argument(
+            "repformer_trainable_ln",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_trainable_ln,
+        ),
+        Argument(
+            "repformer_ln_eps",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_repformer_ln_eps,
+        ),
         # descriptor args
         Argument(
             "concat_output_tebd",
@@ -960,14 +993,6 @@ def descrpt_dpa2_args():
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
-        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
-        Argument(
-            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
-        ),
-        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
-        Argument(
-            "type_one_side", bool, optional=True, default=False, doc=doc_type_one_side
-        ),
         Argument(
             "add_tebd_to_repinit_out",
             bool,
