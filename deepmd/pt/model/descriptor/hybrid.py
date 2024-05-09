@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import math
 from typing import (
     Any,
     Dict,
@@ -101,6 +102,11 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         # do not use numpy here - jit is not happy
         return max([descrpt.get_rcut() for descrpt in self.descrpt_list])
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        # may not be a good idea...
+        return min([descrpt.get_rcut_smth() for descrpt in self.descrpt_list])
+
     def get_sel(self) -> List[int]:
         """Returns the number of selected atoms for each type."""
         if self.mixed_types():
@@ -131,6 +137,17 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         atomic types or not.
         """
         return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix. All descriptors should be the same."""
+        all_protection = [descrpt.get_env_protection() for descrpt in self.descrpt_list]
+        same_as_0 = [math.isclose(ii, all_protection[0]) for ii in all_protection]
+        if not all(same_as_0):
+            raise ValueError(
+                "Hybrid descriptor requires the environment matrix protection being the same ",
+                "for all the descriptors.",
+            )
+        return all_protection[0]
 
     def share_params(self, base_class, shared_level, resume=False):
         """

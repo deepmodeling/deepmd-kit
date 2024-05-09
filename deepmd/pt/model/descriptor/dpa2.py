@@ -263,6 +263,7 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.tebd_dim = tebd_dim
         self.rcut = self.repinit.get_rcut()
+        self.rcut_smth = self.repinit.get_rcut_smth()
         self.ntypes = ntypes
         self.sel = self.repinit.sel
         # set trainable
@@ -272,6 +273,10 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
+
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
@@ -307,6 +312,11 @@ class DescrptDPA2(torch.nn.Module, BaseDescriptor):
 
         """
         return True
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        # the env_protection of repinit is the same as that of the repformer
+        return self.repinit.get_env_protection()
 
     def share_params(self, base_class, shared_level, resume=False):
         """

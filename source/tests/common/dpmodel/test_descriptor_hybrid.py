@@ -26,6 +26,50 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
         unittest.TestCase.setUp(self)
         TestCaseSingleFrameWithNlist.setUp(self)
 
+    def test_get_parameters(
+        self,
+    ):
+        rng = np.random.default_rng()
+        nf, nloc, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
+        ddsub0 = DescrptSeA(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=self.sel,
+        )
+        ddsub0.davg = davg
+        ddsub0.dstd = dstd
+        ddsub1 = DescrptDPA1(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=np.sum(self.sel).item() - 1,
+            ntypes=len(self.sel),
+        )
+        ddsub1.davg = davg[:, :6]
+        ddsub1.dstd = dstd[:, :6]
+        ddsub2 = DescrptSeR(
+            rcut=self.rcut / 2,
+            rcut_smth=self.rcut_smth - 0.1,
+            sel=[3, 1],
+        )
+        ddsub2.davg = davg[:, :4, :1]
+        ddsub2.dstd = dstd[:, :4, :1]
+        em0 = DescrptHybrid(list=[ddsub0, ddsub1, ddsub2])
+        self.assertAlmostEqual(em0.get_env_protection(), 0.0)
+        self.assertAlmostEqual(em0.get_rcut_smth(), self.rcut_smth - 0.1)
+        ddsub3 = DescrptSeR(
+            rcut=self.rcut / 2,
+            rcut_smth=self.rcut_smth - 0.1,
+            sel=[3, 1],
+            env_protection=0.1,
+        )
+        em0 = DescrptHybrid(list=[ddsub0, ddsub1, ddsub3])
+        self.assertAlmostEqual(em0.get_env_protection(), 0.0)
+        with self.assertRaises(ValueError):
+            self.assertAlmostEqual(em0.get_env_protection(), 0.0)
+
     def test_self_consistency(
         self,
     ):
@@ -52,7 +96,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ddsub1.dstd = dstd[:, :6]
         ddsub2 = DescrptSeR(
             rcut=self.rcut / 2,
-            rcut_smth=self.rcut_smth,
+            rcut_smth=self.rcut_smth / 2,
             sel=[3, 1],
         )
         ddsub2.davg = davg[:, :4, :1]
