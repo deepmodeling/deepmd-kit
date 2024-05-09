@@ -135,13 +135,13 @@ where $\bm{R}_{i^p}$, $\bm{R}_i$, and $\bm{S}_i$ denote the virtual atomic coord
 
 We list the details about spin system data format in TensorFlow backend:
 
-| ID        | Property                                            | Raw file   | Unit | Shape                    | Description                               |
-| --------- | --------------------------------------------------- | ---------- | ---- | ------------------------ | ----------------------------------------- |
-| type     | Atom type indexes   | type.raw     | \          | Natoms + Nspins   | Integers that start with 0. The first `Natoms` entries represent real atom types, followed by `Nspins` entries representing virtual atom types. |
-| coord     | Coordinates        | coord.raw  | Å    | Nframes \* (Natoms + Nspins) \* 3   | The first `3 \* Natoms` columns represent the coordinates of real atoms, followed by `3 \* Nspins` columns representing the coordinates of virtual atoms. |
-| box       | Boxes                                               | box.raw    | Å    | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
-| energy    | Frame energies                                                                   | energy.raw                | eV   | Nframes                               |
-| force     | Atomic and magnetic forces                                                       | force.raw                 | eV/Å | Nframes \* (Natoms + Nspins) \* 3                | The first `3 \* Natoms` columns represent atomic forces, followed by `3 \* Nspins` columns representing magnetic forces. |
+| ID     | Property                   | Raw file   | Unit | Shape                             | Description                                                                                                                                               |
+| ------ | -------------------------- | ---------- | ---- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| type   | Atom type indexes          | type.raw   | \    | Natoms + Nspins                   | Integers that start with 0. The first `Natoms` entries represent real atom types, followed by `Nspins` entries representing virtual atom types.           |
+| coord  | Coordinates                | coord.raw  | Å    | Nframes \* (Natoms + Nspins) \* 3 | The first `3 \* Natoms` columns represent the coordinates of real atoms, followed by `3 \* Nspins` columns representing the coordinates of virtual atoms. |
+| box    | Boxes                      | box.raw    | Å    | Nframes \* 3 \* 3                 | in the order `XX XY XZ YX YY YZ ZX ZY ZZ`                                                                                                                 |
+| energy | Frame energies             | energy.raw | eV   | Nframes                           |
+| force  | Atomic and magnetic forces | force.raw  | eV/Å | Nframes \* (Natoms + Nspins) \* 3 | The first `3 \* Natoms` columns represent atomic forces, followed by `3 \* Nspins` columns representing magnetic forces.                                  |
 
 ### Spin data format in PyTorch/DP
 
@@ -159,7 +159,7 @@ set.*/force_mag.npy
 
 This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
 
-| ID        | Property                                            | Raw file   | Unit | Shape                    | Description                               |
-| --------- | --------------------------------------------------- | ---------- | ---- | ------------------------ | ----------------------------------------- |
-| spin     | Magnetic moments        | spin.raw  | $\mu_B$    | Nframes \* Natoms \* 3   | Spin for magnetic atoms and zero for non-magnetic atoms. |
-| magnetic force     | Magnetic forces    | force_mag.raw     | eV/Å | Nframes \* Natoms  \* 3                | Magnetic forces for magnetic atoms and zero for non-magnetic atoms. |
+| ID             | Property         | Raw file      | Unit    | Shape                  | Description                                                         |
+| -------------- | ---------------- | ------------- | ------- | ---------------------- | ------------------------------------------------------------------- |
+| spin           | Magnetic moments | spin.raw      | $\mu_B$ | Nframes \* Natoms \* 3 | Spin for magnetic atoms and zero for non-magnetic atoms.            |
+| magnetic force | Magnetic forces  | force_mag.raw | eV/Å    | Nframes \* Natoms \* 3 | Magnetic forces for magnetic atoms and zero for non-magnetic atoms. |
