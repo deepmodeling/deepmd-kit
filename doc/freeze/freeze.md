@@ -29,4 +29,4 @@ to specify which model branch you want to freeze:
 $ dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
 ```
 
-The output model is called `model_branch1.pth` being the specific frozen model with `CHOSEN_BRANCH` head.
+The output model is called `model_branch1.pth`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.
