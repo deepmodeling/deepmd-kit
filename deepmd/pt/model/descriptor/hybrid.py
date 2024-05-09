@@ -144,8 +144,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         same_as_0 = [math.isclose(ii, all_protection[0]) for ii in all_protection]
         if not all(same_as_0):
             raise ValueError(
-                "Hybrid descriptor requires the environment matrix protection being the same ",
-                "for all the descriptors.",
+                "Hybrid descriptor requires the same environment matrix protection for all descriptors. Found differing values."
             )
         return all_protection[0]
 
