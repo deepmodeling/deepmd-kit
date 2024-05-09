@@ -2452,25 +2452,6 @@ def gen_args(**kwargs) -> List[Argument]:
     ]
 
 
-def backend_compat(data):
-    data = data.copy()
-    # stripped_type_embedding in old DescrptSeAtten
-    if (
-        "descriptor" in data["model"]
-        and data["model"]["descriptor"].get("type", "se_e2_a") == "se_atten"
-        and data["model"]["descriptor"].pop("stripped_type_embedding", False)
-    ):
-        if "tebd_input_mode" not in data["model"]["descriptor"]:
-            data["model"]["descriptor"]["tebd_input_mode"] = "strip"
-        elif data["model"]["descriptor"]["tebd_input_mode"] != "strip":
-            raise ValueError(
-                "Conflict detected: 'stripped_type_embedding' is set to True, but 'tebd_input_mode' is not 'strip'. Please ensure 'tebd_input_mode' is set to 'strip' when 'stripped_type_embedding' is True."
-            )
-        else:
-            pass
-    return data
-
-
 def normalize_multi_task(data):
     # single-task or multi-task mode
     if data["model"].get("type", "standard") not in ("standard", "multi"):
@@ -2667,7 +2648,6 @@ def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
 
 def normalize(data):
     data = normalize_multi_task(data)
-    data = backend_compat(data)
 
     base = Argument("base", dict, gen_args())
     data = base.normalize_value(data, trim_pattern="_*")
