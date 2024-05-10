@@ -273,6 +273,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
+        self.trainable = trainable
         # set trainable
         for param in self.parameters():
             param.requires_grad = trainable
@@ -426,8 +427,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
             },
-            ## to be updated when the options are supported.
-            "trainable": True,
+            "trainable": self.trainable,
             "spin": None,
         }
         if obj.tebd_input_mode in ["strip"]:

@@ -26,7 +26,12 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = 0.1 + np.abs(dstd)
         em0 = EnvMat(self.rcut, self.rcut_smth)
         em1 = EnvMat.deserialize(em0.serialize())
-        mm0, ww0 = em0.call(self.coord_ext, self.atype_ext, self.nlist, davg, dstd)
-        mm1, ww1 = em1.call(self.coord_ext, self.atype_ext, self.nlist, davg, dstd)
+        mm0, diff0, ww0 = em0.call(
+            self.coord_ext, self.atype_ext, self.nlist, davg, dstd
+        )
+        mm1, diff1, ww1 = em1.call(
+            self.coord_ext, self.atype_ext, self.nlist, davg, dstd
+        )
         np.testing.assert_allclose(mm0, mm1)
+        np.testing.assert_allclose(diff0, diff1)
         np.testing.assert_allclose(ww0, ww1)

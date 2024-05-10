@@ -303,7 +303,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.ntypes
 
     def get_dim_in(self) -> int:
-        """Returns the output dimension."""
+        """Returns the input dimension."""
         return self.dim_in
 
     def get_dim_out(self) -> int:
@@ -472,7 +472,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             protection=self.env_protection,
         )
         nlist_mask = nlist != -1
-        nlist[nlist == -1] = 0
+        nlist = torch.where(nlist == -1, 0, nlist)
         sw = torch.squeeze(sw, -1)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
@@ -769,7 +769,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         sw: Optional[torch.Tensor] = None,
     ):
         residual = x
-        x = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
+        x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
         x = self.attn_layer_norm(x)
         return x
@@ -822,6 +822,7 @@ class GatedAttentionLayer(nn.Module):
         nnei: int,
         embed_dim: int,
         hidden_dim: int,
+        num_heads: int = 1,
         dotr: bool = False,
         do_mask: bool = False,
         scaling_factor: float = 1.0,
@@ -831,11 +832,14 @@ class GatedAttentionLayer(nn.Module):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
     ):
-        """Construct a neighbor-wise attention net."""
+        """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
+        assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"
         self.nnei = nnei
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.head_dim = hidden_dim // num_heads
         self.dotr = dotr
         self.do_mask = do_mask
         self.bias = bias
@@ -843,10 +847,11 @@ class GatedAttentionLayer(nn.Module):
         self.scaling_factor = scaling_factor
         self.temperature = temperature
         self.precision = precision
-        if temperature is None:
-            self.scaling = (self.hidden_dim * scaling_factor) ** -0.5
-        else:
-            self.scaling = temperature
+        self.scaling = (
+            (self.head_dim * scaling_factor) ** -0.5
+            if temperature is None
+            else temperature
+        )
         self.normalize = normalize
         self.in_proj = MLPLayer(
             embed_dim,
@@ -875,7 +880,7 @@ class GatedAttentionLayer(nn.Module):
         sw: Optional[torch.Tensor] = None,
         attnw_shift: float = 20.0,
     ):
-        """Compute the gated self-attention.
+        """Compute the multi-head gated self-attention.
 
         Parameters
         ----------
@@ -891,43 +896,66 @@ class GatedAttentionLayer(nn.Module):
             The attention weight shift to preserve smoothness when doing padding before softmax.
         """
         q, k, v = self.in_proj(query).chunk(3, dim=-1)
-        #  [nframes * nloc, nnei, hidden_dim]
-        q = q.view(-1, self.nnei, self.hidden_dim)
-        k = k.view(-1, self.nnei, self.hidden_dim)
-        v = v.view(-1, self.nnei, self.hidden_dim)
+
+        # Reshape for multi-head attention: (nf x nloc) x num_heads x nnei x head_dim
+        q = q.view(-1, self.nnei, self.num_heads, self.head_dim).transpose(1, 2)
+        k = k.view(-1, self.nnei, self.num_heads, self.head_dim).transpose(1, 2)
+        v = v.view(-1, self.nnei, self.num_heads, self.head_dim).transpose(1, 2)
+
         if self.normalize:
             q = torch_func.normalize(q, dim=-1)
             k = torch_func.normalize(k, dim=-1)
             v = torch_func.normalize(v, dim=-1)
+
         q = q * self.scaling
-        k = k.transpose(1, 2)
-        #  [nframes * nloc, nnei, nnei]
-        attn_weights = torch.bmm(q, k)
-        #  [nframes * nloc, nnei]
+        # (nf x nloc) x num_heads x head_dim x nnei
+        k = k.transpose(-2, -1)
+
+        # Compute attention scores
+        # (nf x nloc) x num_heads x nnei x nnei
+        attn_weights = torch.matmul(q, k)
+        # (nf x nloc) x nnei
         nei_mask = nei_mask.view(-1, self.nnei)
+
         if self.smooth:
-            # [nframes * nloc, nnei]
             assert sw is not None
-            sw = sw.view([-1, self.nnei])
-            attn_weights = (attn_weights + attnw_shift) * sw[:, :, None] * sw[
-                :, None, :
+            # (nf x nloc) x 1 x nnei
+            sw = sw.view(-1, 1, self.nnei)
+            attn_weights = (attn_weights + attnw_shift) * sw[:, :, :, None] * sw[
+                :, :, None, :
             ] - attnw_shift
         else:
+            # (nf x nloc) x 1 x 1 x nnei
             attn_weights = attn_weights.masked_fill(
-                ~nei_mask.unsqueeze(1), float("-inf")
+                ~nei_mask.unsqueeze(1).unsqueeze(1), float("-inf")
             )
+
         attn_weights = torch_func.softmax(attn_weights, dim=-1)
-        attn_weights = attn_weights.masked_fill(~nei_mask.unsqueeze(-1), 0.0)
+        attn_weights = attn_weights.masked_fill(
+            ~nei_mask.unsqueeze(1).unsqueeze(-1), 0.0
+        )
         if self.smooth:
             assert sw is not None
-            attn_weights = attn_weights * sw[:, :, None] * sw[:, None, :]
+            attn_weights = attn_weights * sw[:, :, :, None] * sw[:, :, None, :]
+
         if self.dotr:
+            # (nf x nloc) x nnei x 3
             assert input_r is not None, "input_r must be provided when dotr is True!"
-            angular_weight = torch.bmm(input_r, input_r.transpose(1, 2))
+            # (nf x nloc) x 1 x nnei x nnei
+            angular_weight = torch.matmul(input_r, input_r.transpose(-2, -1)).view(
+                -1, 1, self.nnei, self.nnei
+            )
             attn_weights = attn_weights * angular_weight
-        o = torch.bmm(attn_weights, v)
+
+        # Apply attention to values
+        # (nf x nloc) x nnei x (num_heads x head_dim)
+        o = (
+            torch.matmul(attn_weights, v)
+            .transpose(1, 2)
+            .reshape(-1, self.nnei, self.hidden_dim)
+        )
         output = self.out_proj(o)
-        return output
+        return output, attn_weights
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
@@ -937,12 +965,11 @@ class GatedAttentionLayer(nn.Module):
         dict
             The serialized networks.
         """
-        # network_type_map_inv = {v: k for k, v in self.NETWORK_TYPE_MAP.items()}
-        # network_type_name = network_type_map_inv[self.network_type]
         return {
             "nnei": self.nnei,
             "embed_dim": self.embed_dim,
             "hidden_dim": self.hidden_dim,
+            "num_heads": self.num_heads,
             "dotr": self.dotr,
             "do_mask": self.do_mask,
             "scaling_factor": self.scaling_factor,
