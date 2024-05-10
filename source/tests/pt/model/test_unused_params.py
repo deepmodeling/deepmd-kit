@@ -41,15 +41,15 @@ class TestUnusedParamsDPA2(unittest.TestCase):
                 # skip the case g2 is not envolved
                 continue
             model = copy.deepcopy(model_dpa2)
-            model["descriptor"]["repformer_nlayers"] = 2
+            model["descriptor"]["repformer"]["nlayers"] = 2
             # model["descriptor"]["combine_grrg"] = cmbg2
-            model["descriptor"]["repformer_update_g1_has_conv"] = conv
-            model["descriptor"]["repformer_update_g1_has_drrd"] = drrd
-            model["descriptor"]["repformer_update_g1_has_grrg"] = grrg
-            model["descriptor"]["repformer_update_g1_has_attn"] = attn1
-            model["descriptor"]["repformer_update_g2_has_g1g1"] = g1g1
-            model["descriptor"]["repformer_update_g2_has_attn"] = attn2
-            model["descriptor"]["repformer_update_h2"] = h2
+            model["descriptor"]["repformer"]["update_g1_has_conv"] = conv
+            model["descriptor"]["repformer"]["update_g1_has_drrd"] = drrd
+            model["descriptor"]["repformer"]["update_g1_has_grrg"] = grrg
+            model["descriptor"]["repformer"]["update_g1_has_attn"] = attn1
+            model["descriptor"]["repformer"]["update_g2_has_g1g1"] = g1g1
+            model["descriptor"]["repformer"]["update_g2_has_attn"] = attn2
+            model["descriptor"]["repformer"]["update_h2"] = h2
             model["fitting_net"]["neuron"] = [12, 12, 12]
             self._test_unused(model)
 
