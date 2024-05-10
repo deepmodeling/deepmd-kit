@@ -734,18 +734,18 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """
         local_jdata_cpy = local_jdata.copy()
         update_sel = UpdateSel()
-        local_jdata_cpy = update_sel.update_one_sel(
+        local_jdata_cpy["repinit"] = update_sel.update_one_sel(
             global_jdata,
-            local_jdata_cpy,
+            local_jdata_cpy["repinit"],
             True,
-            rcut_key="repinit_rcut",
-            sel_key="repinit_nsel",
+            rcut_key="rcut",
+            sel_key="nsel",
         )
-        local_jdata_cpy = update_sel.update_one_sel(
+        local_jdata_cpy["repformer"] = update_sel.update_one_sel(
             global_jdata,
-            local_jdata_cpy,
+            local_jdata_cpy["repformer"],
             True,
-            rcut_key="repformer_rcut",
-            sel_key="repformer_nsel",
+            rcut_key="rcut",
+            sel_key="nsel",
         )
         return local_jdata_cpy

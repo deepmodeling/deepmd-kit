@@ -408,8 +408,8 @@ class TestEnergyModelSpinDPA2(unittest.TestCase, SpinTest):
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2["descriptor"])
-        self.rcut = model_params["descriptor"]["repinit_rcut"]
-        self.nsel = model_params["descriptor"]["repinit_nsel"]
+        self.rcut = model_params["descriptor"]["repinit"]["rcut"]
+        self.nsel = model_params["descriptor"]["repinit"]["nsel"]
         self.type_map = model_params["type_map"]
         # not implement serialize and deserialize
         self.serial_test = False
