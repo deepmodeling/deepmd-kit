@@ -12,17 +12,8 @@ from typing import (
     Union,
 )
 
-import torch
+import numpy as np
 
-from deepmd.pt.model.network.network import (
-    TypeEmbedNet,
-)
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.env_mat_stat import (
-    EnvMatStatSe,
-)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -36,7 +27,7 @@ from deepmd.utils.plugin import (
 log = logging.getLogger(__name__)
 
 
-class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBlock")):
+class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     """The building block of descriptor.
     Given the input descriptor, provide with the atomic coordinates,
     atomic types and neighbor list, calculate the new descriptor.
@@ -121,48 +112,16 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         If not start from checkpoint (resume is False),
         some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
-        assert (
-            self.__class__ == base_class.__class__
-        ), "Only descriptors of the same type can share params!"
-        if shared_level == 0:
-            # link buffers
-            if hasattr(self, "mean"):
-                if not resume:
-                    # in case of change params during resume
-                    base_env = EnvMatStatSe(base_class)
-                    base_env.stats = base_class.stats
-                    for kk in base_class.get_stats():
-                        base_env.stats[kk] += self.get_stats()[kk]
-                    mean, stddev = base_env()
-                    if not base_class.set_davg_zero:
-                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
-                # must share, even if not do stat
-                self.mean = base_class.mean
-                self.stddev = base_class.stddev
-            # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
-            # the following will successfully link all the params except buffers
-            for item in self._modules:
-                self._modules[item] = base_class._modules[item]
-        else:
-            raise NotImplementedError
+        raise NotImplementedError
 
     @abstractmethod
-    def forward(
+    def call(
         self,
-        nlist: torch.Tensor,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
+        nlist: np.ndarray,
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        extended_atype_embd: Optional[np.ndarray] = None,
+        mapping: Optional[np.ndarray] = None,
     ):
         """Calculate DescriptorBlock."""
         pass
-
-
-def make_default_type_embedding(
-    ntypes,
-):
-    aux = {}
-    aux["tebd_dim"] = 8
-    return TypeEmbedNet(ntypes, aux["tebd_dim"]), aux

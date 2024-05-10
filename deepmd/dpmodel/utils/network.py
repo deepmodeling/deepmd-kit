@@ -33,6 +33,25 @@ from deepmd.dpmodel import (
 )
 
 
+class Identity(NativeOP):
+    def __init__(self):
+        super().__init__()
+
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """The Identity operation layer."""
+        return x
+
+    def serialize(self) -> dict:
+        return {
+            "@class": "Identity",
+            "@version": 1,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "Identity":
+        return Identity()
+
+
 class NativeLayer(NativeOP):
     """Native representation of a layer.
 

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -15,14 +16,14 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
-from .mlp import (
-    MLPLayer,
-)
-
 device = env.DEVICE
 
 
-class LayerNorm(MLPLayer):
+def empty_t(shape, precision):
+    return torch.empty(shape, dtype=precision, device=device)
+
+
+class LayerNorm(nn.Module):
     def __init__(
         self,
         num_in,
@@ -33,24 +34,22 @@ class LayerNorm(MLPLayer):
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
     ):
+        super().__init__()
         self.eps = eps
         self.uni_init = uni_init
         self.num_in = num_in
-        super().__init__(
-            num_in=1,
-            num_out=num_in,
-            bias=True,
-            use_timestep=False,
-            activation_function=None,
-            resnet=False,
-            bavg=bavg,
-            stddev=stddev,
-            precision=precision,
+        self.precision = precision
+        self.prec = PRECISION_DICT[self.precision]
+        self.matrix = nn.Parameter(data=empty_t((num_in,), self.prec))
+        self.bias = nn.Parameter(
+            data=empty_t([num_in], self.prec),
         )
-        self.matrix = torch.nn.Parameter(self.matrix.squeeze(0))
         if self.uni_init:
             nn.init.ones_(self.matrix.data)
             nn.init.zeros_(self.bias.data)
+        else:
+            nn.init.normal_(self.bias.data, mean=bavg, std=stddev)
+            nn.init.normal_(self.matrix.data, std=stddev / np.sqrt(self.num_in))
         self.trainable = trainable
         if not self.trainable:
             self.matrix.requires_grad = False
@@ -75,8 +74,11 @@ class LayerNorm(MLPLayer):
         yy: torch.Tensor
             The output.
         """
-        mean = xx.mean(dim=-1, keepdim=True)
-        variance = xx.var(dim=-1, unbiased=False, keepdim=True)
+        # mean = xx.mean(dim=-1, keepdim=True)
+        # variance = xx.var(dim=-1, unbiased=False, keepdim=True)
+        # The following operation is the same as above, but will not raise error when using jit model to inference.
+        # See https://github.com/pytorch/pytorch/issues/85792
+        variance, mean = torch.var_mean(xx, dim=-1, unbiased=False, keepdim=True)
         yy = (xx - mean) / torch.sqrt(variance + self.eps)
         if self.matrix is not None and self.bias is not None:
             yy = yy * self.matrix + self.bias
