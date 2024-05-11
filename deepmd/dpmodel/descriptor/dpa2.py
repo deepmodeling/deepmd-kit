@@ -370,7 +370,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         return self.rcut
 
     def get_rcut_smth(self) -> float:
-        """Returns the cut-off radius."""
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
     def get_nsel(self) -> int:
