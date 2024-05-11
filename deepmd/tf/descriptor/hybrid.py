@@ -46,7 +46,6 @@ class DescrptHybrid(Descriptor):
     def __init__(
         self,
         list: List[Union[Descriptor, Dict[str, Any]]],
-        multi_task: bool = False,
         ntypes: Optional[int] = None,
         spin: Optional[Spin] = None,
         **kwargs,
@@ -59,13 +58,12 @@ class DescrptHybrid(Descriptor):
                 "cannot build descriptor from an empty list of descriptors."
             )
         formatted_descript_list = []
-        self.multi_task = multi_task
         for ii in descrpt_list:
             if isinstance(ii, Descriptor):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
                 formatted_descript_list.append(
-                    Descriptor(**ii, ntypes=ntypes, spin=spin, multi_task=multi_task)
+                    Descriptor(**ii, ntypes=ntypes, spin=spin)
                 )
             else:
                 raise NotImplementedError

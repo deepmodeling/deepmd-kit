@@ -245,7 +245,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
-        ## seed, uniform_seed, multi_task, not included.
+        ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is not None:
             # Use the user-set stripped_type_embedding parameter first
