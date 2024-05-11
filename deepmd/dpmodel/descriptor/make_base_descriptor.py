@@ -52,6 +52,11 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
+        def get_rcut_smth(self) -> float:
+            """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+            pass
+
+        @abstractmethod
         def get_sel(self) -> List[int]:
             """Returns the number of selected neighboring atoms for each type."""
             pass
@@ -84,6 +89,11 @@ def make_base_descriptor(
             """Returns if the descriptor requires a neighbor list that distinguish different
             atomic types or not.
             """
+            pass
+
+        @abstractmethod
+        def get_env_protection(self) -> float:
+            """Returns the protection of building environment matrix."""
             pass
 
         @abstractmethod

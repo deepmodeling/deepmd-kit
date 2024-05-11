@@ -193,6 +193,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns cutoff radius."""
         return self.rcut
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
+
     def get_sel(self):
         """Returns cutoff radius."""
         return self.sel
@@ -202,6 +206,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         atomic types or not.
         """
         return False
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
 
     def share_params(self, base_class, shared_level, resume=False):
         """
