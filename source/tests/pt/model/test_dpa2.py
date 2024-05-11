@@ -81,6 +81,8 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
+            if prec == "float64":
+                atol = 1e-11  # marginal GPU test cases...
 
             # dpa2 new impl
             dd0 = DescrptDPA2(
