@@ -33,6 +33,7 @@ class TestCaseSingleFrameWithNlist:
             dtype=np.float64,
         ).reshape([1, self.nall, 3])
         self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
+        self.mapping = np.array([0, 1, 2, 0], dtype=int).reshape([1, self.nall])
         # sel = [5, 2]
         self.sel = [5, 2]
         self.sel_mix = [7]
@@ -57,6 +58,10 @@ class TestCaseSingleFrameWithNlist:
         self.atype_ext = np.concatenate(
             [self.atype_ext, self.atype_ext[:, self.perm]], axis=0
         )
+        self.mapping = np.concatenate(
+            [self.mapping, self.mapping[:, self.perm]], axis=0
+        )
+
         # permute the nlist
         nlist1 = self.nlist[:, self.perm[: self.nloc], :]
         mask = nlist1 == -1
@@ -156,8 +161,10 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
         em0 = EnvMat(self.rcut, self.rcut_smth)
-        mm0, ww0 = em0.call(self.coord_ext, self.atype_ext, self.nlist, davg, dstd)
-        mm1, _, ww1 = prod_env_mat(
+        mm0, diff0, ww0 = em0.call(
+            self.coord_ext, self.atype_ext, self.nlist, davg, dstd
+        )
+        mm1, diff1, ww1 = prod_env_mat(
             torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
             torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
             torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE),
@@ -167,5 +174,6 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
         )
         np.testing.assert_allclose(mm0, mm1.detach().cpu().numpy())
+        np.testing.assert_allclose(diff0, diff1.detach().cpu().numpy())
         np.testing.assert_allclose(ww0, ww1.detach().cpu().numpy())
         np.testing.assert_allclose(mm0[0][self.perm[: self.nloc]], mm0[1])

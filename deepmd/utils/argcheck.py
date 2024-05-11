@@ -281,7 +281,7 @@ def descrpt_se_a_args():
             float,
             optional=True,
             default=0.0,
-            doc=doc_only_tf_supported + doc_env_protection,
+            doc=doc_only_pt_supported + doc_env_protection,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
@@ -360,6 +360,7 @@ def descrpt_se_r_args():
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
         Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
@@ -392,6 +393,13 @@ def descrpt_se_r_args():
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
     ]
 
 
@@ -423,25 +431,15 @@ def descrpt_se_atten_common_args():
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
-    doc_resnet_dt = (
-        doc_only_tf_supported + 'Whether to use a "Timestep" in the skip connection'
-    )
-    doc_type_one_side = (
-        doc_only_tf_supported
-        + r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
-    )
-    doc_precision = (
-        doc_only_tf_supported
-        + f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    )
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_type_one_side = r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = (
         doc_only_tf_supported + "If the parameters in the embedding net is trainable"
     )
     doc_seed = "Random seed for parameter initialization"
-    doc_exclude_types = (
-        doc_only_tf_supported
-        + "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
-    )
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_attn = "The length of hidden vectors in attention layers"
     doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
@@ -484,6 +482,13 @@ def descrpt_se_atten_common_args():
             optional=True,
             default=[],
             doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
         ),
         Argument("attn", int, optional=True, default=128, doc=doc_attn),
         Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
@@ -612,87 +617,128 @@ def descrpt_se_atten_v2_args():
 
 @descrpt_args_plugin.register("dpa2", doc=doc_only_pt_supported)
 def descrpt_dpa2_args():
-    # Generate by GitHub Copilot
-    doc_repinit_rcut = "The cut-off radius of the repinit block"
-    doc_repinit_rcut_smth = "From this position the inverse distance smoothly decays to 0 at the cut-off. Use in the repinit block."
-    doc_repinit_nsel = "Maximally possible number of neighbors for repinit block."
-    doc_repformer_rcut = "The cut-off radius of the repformer block"
-    doc_repformer_rcut_smth = "From this position the inverse distance smoothly decays to 0 at the cut-off. Use in the repformer block."
-    doc_repformer_nsel = "Maximally possible number of neighbors for repformer block."
-    doc_tebd_dim = "The dimension of atom type embedding"
+    # repinit args
+    doc_repinit = "(Used in the repinit block.) "
+    doc_repinit_rcut = f"{doc_repinit}The cut-off radius."
+    doc_repinit_rcut_smth = f"{doc_repinit}Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_repinit_nsel = f"{doc_repinit}Maximally possible number of selected neighbors."
+    doc_repinit_neuron = (
+        f"{doc_repinit}Number of neurons in each hidden layers of the embedding net."
+        f"When two layers are of the same size or one layer is twice as large as the previous layer, "
+        f"a skip connection is built."
+    )
+    doc_repinit_axis_neuron = (
+        f"{doc_repinit}Size of the submatrix of G (embedding matrix)."
+    )
+    doc_repinit_tebd_dim = f"{doc_repinit}The dimension of atom type embedding."
+    doc_repinit_tebd_input_mode = (
+        f"{doc_repinit}The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
+        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+    )
+    doc_repinit_set_davg_zero = (
+        f"{doc_repinit}Set the normalization average to zero. "
+        f"This option should be set when `atom_ener` in the energy fitting is used."
+    )
+    doc_repinit_activation_function = f"{doc_repinit}The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_repinit_type_one_side = (
+        f"{doc_repinit}"
+        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    )
+    doc_repinit_resnet_dt = (
+        f'{doc_repinit}Whether to use a "Timestep" in the skip connection.'
+    )
+
+    # repformer args
+    doc_repformer = "(Used in the repformer block.) "
+    doc_repformer_rcut = f"{doc_repformer}The cut-off radius."
+    doc_repformer_rcut_smth = f"{doc_repformer}Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_repformer_nsel = (
+        f"{doc_repformer}Maximally possible number of selected neighbors."
+    )
+    doc_repformer_nlayers = f"{doc_repformer}The number of repformer layers."
+    doc_repformer_g1_dim = (
+        f"{doc_repformer}The dimension of invariant single-atom representation."
+    )
+    doc_repformer_g2_dim = (
+        f"{doc_repformer}The dimension of invariant pair-atom representation."
+    )
+    doc_repformer_axis_neuron = f"{doc_repformer}The number of dimension of submatrix in the symmetrization ops."
+    doc_repformer_direct_dist = f"{doc_repformer}Whether or not use direct distance as input for the embedding net to get g2 instead of smoothed 1/r."
+    doc_repformer_update_g1_has_conv = (
+        f"{doc_repformer}Update the g1 rep with convolution term."
+    )
+    doc_repformer_update_g1_has_drrd = (
+        f"{doc_repformer}Update the g1 rep with the drrd term."
+    )
+    doc_repformer_update_g1_has_grrg = (
+        f"{doc_repformer}Update the g1 rep with the grrg term."
+    )
+    doc_repformer_update_g1_has_attn = (
+        f"{doc_repformer}Update the g1 rep with the localized self-attention."
+    )
+    doc_repformer_update_g2_has_g1g1 = (
+        f"{doc_repformer}Update the g2 rep with the g1xg1 term."
+    )
+    doc_repformer_update_g2_has_attn = (
+        f"{doc_repformer}Update the g2 rep with the gated self-attention."
+    )
+    doc_repformer_update_h2 = f"{doc_repformer}Update the h2 rep."
+    doc_repformer_attn1_hidden = f"{doc_repformer}The hidden dimension of localized self-attention to update the g1 rep."
+    doc_repformer_attn1_nhead = f"{doc_repformer}The number of heads in localized self-attention to update the g1 rep."
+    doc_repformer_attn2_hidden = f"{doc_repformer}The hidden dimension of gated self-attention to update the g2 rep."
+    doc_repformer_attn2_nhead = f"{doc_repformer}The number of heads in gated self-attention to update the g2 rep."
+    doc_repformer_attn2_has_gate = f"{doc_repformer}Whether to use gate in the gated self-attention to update the g2 rep."
+    doc_repformer_activation_function = f"{doc_repformer}The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_repformer_update_style = (
+        f"{doc_repformer}Style to update a representation. "
+        f"Supported options are: "
+        "-'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) "
+        "-'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
+        "-'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n) "
+        "where `r1`, `r2` ... `r3` are residual weights defined by `repformer_update_residual` "
+        "and `repformer_update_residual_init`."
+    )
+    doc_repformer_update_residual = (
+        f"{doc_repformer}When update using residual mode, "
+        "the initial std of residual vector weights."
+    )
+    doc_repformer_update_residual_init = (
+        f"{doc_repformer}When update using residual mode, "
+        "the initialization mode of residual vector weights."
+        "Supported modes are: ['norm', 'const']."
+    )
+    doc_repformer_set_davg_zero = (
+        f"{doc_repformer}Set the normalization average to zero. "
+        f"This option should be set when `atom_ener` in the energy fitting is used."
+    )
+    doc_repformer_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_repformer_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+
+    # descriptor args
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
     )
-    doc_repinit_neuron = "repinit block: the number of neurons in the embedding net."
-    doc_repinit_axis_neuron = (
-        "repinit block: the number of dimension of split in the symmetrization op."
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_smooth = (
+        "Whether to use smoothness in processes such as attention weights calculation."
     )
-    doc_repinit_activation = (
-        "repinit block: the activation function in the embedding net"
-    )
-    doc_repformer_nlayers = "repformers block: the number of repformer layers"
-    doc_repformer_g1_dim = "repformers block: the dimension of single-atom rep"
-    doc_repformer_g2_dim = "repformers block: the dimension of invariant pair-atom rep"
-    doc_repformer_axis_dim = (
-        "repformers block: the number of dimension of split in the symmetrization ops."
-    )
-    doc_repformer_do_bn_mode = "repformers block: do batch norm in the repformer layers"
-    doc_repformer_bn_momentum = "repformers block: moment in the batch normalization"
-    doc_repformer_update_g1_has_conv = (
-        "repformers block: update the g1 rep with convolution term"
-    )
-    doc_repformer_update_g1_has_drrd = (
-        "repformers block: update the g1 rep with the drrd term"
-    )
-    doc_repformer_update_g1_has_grrg = (
-        "repformers block: update the g1 rep with the grrg term"
-    )
-    doc_repformer_update_g1_has_attn = (
-        "repformers block: update the g1 rep with the localized self-attention"
-    )
-    doc_repformer_update_g2_has_g1g1 = (
-        "repformers block: update the g2 rep with the g1xg1 term"
-    )
-    doc_repformer_update_g2_has_attn = (
-        "repformers block: update the g2 rep with the gated self-attention"
-    )
-    doc_repformer_update_h2 = "repformers block: update the h2 rep"
-    doc_repformer_attn1_hidden = (
-        "repformers block: the hidden dimension of localized self-attention"
-    )
-    doc_repformer_attn1_nhead = (
-        "repformers block: the number of heads in localized self-attention"
-    )
-    doc_repformer_attn2_hidden = (
-        "repformers block: the hidden dimension of gated self-attention"
-    )
-    doc_repformer_attn2_nhead = (
-        "repformers block: the number of heads in gated self-attention"
-    )
-    doc_repformer_attn2_has_gate = (
-        "repformers block: has gate in the gated self-attention"
-    )
-    doc_repformer_activation = "repformers block: the activation function in the MLPs."
-    doc_repformer_update_style = "repformers block: style of update a rep. can be res_avg or res_incr. res_avg updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) res_incr updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
-    doc_repformer_set_davg_zero = "repformers block: set the avg to zero in statistics"
-    doc_repformer_add_type_ebd_to_seq = (
-        "repformers block: concatenate the type embedding at the output"
-    )
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
+    doc_trainable = "If the parameters in the embedding net is trainable."
+    doc_seed = "Random seed for parameter initialization."
+    doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
     return [
+        # repinit args
         Argument("repinit_rcut", float, doc=doc_repinit_rcut),
         Argument("repinit_rcut_smth", float, doc=doc_repinit_rcut_smth),
         Argument("repinit_nsel", int, doc=doc_repinit_nsel),
-        Argument("repformer_rcut", float, doc=doc_repformer_rcut),
-        Argument("repformer_rcut_smth", float, doc=doc_repformer_rcut_smth),
-        Argument("repformer_nsel", int, doc=doc_repformer_nsel),
-        Argument("tebd_dim", int, optional=True, default=8, doc=doc_tebd_dim),
-        Argument(
-            "concat_output_tebd",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_concat_output_tebd,
-        ),
         Argument(
             "repinit_neuron",
             list,
@@ -707,14 +753,54 @@ def descrpt_dpa2_args():
             default=16,
             doc=doc_repinit_axis_neuron,
         ),
-        Argument("repinit_set_davg_zero", bool, optional=True, default=True),
         Argument(
-            "repinit_activation",
+            "repinit_tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            alias=["tebd_dim"],
+            doc=doc_repinit_tebd_dim,
+        ),
+        Argument(
+            "repinit_tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_repinit_tebd_input_mode,
+        ),
+        Argument(
+            "repinit_set_davg_zero",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repinit_set_davg_zero,
+        ),
+        Argument(
+            "repinit_activation_function",
             str,
             optional=True,
             default="tanh",
-            doc=doc_repinit_activation,
+            alias=["repinit_activation"],
+            doc=doc_repinit_activation_function,
         ),
+        Argument(
+            "repinit_type_one_side",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repinit_type_one_side,
+        ),
+        Argument(
+            "repinit_resnet_dt",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_repinit_resnet_dt,
+        ),
+        # repformer args
+        Argument("repformer_rcut", float, doc=doc_repformer_rcut),
+        Argument("repformer_rcut_smth", float, doc=doc_repformer_rcut_smth),
+        Argument("repformer_nsel", int, doc=doc_repformer_nsel),
         Argument(
             "repformer_nlayers",
             int,
@@ -733,25 +819,19 @@ def descrpt_dpa2_args():
             "repformer_g2_dim", int, optional=True, default=16, doc=doc_repformer_g2_dim
         ),
         Argument(
-            "repformer_axis_dim",
+            "repformer_axis_neuron",
             int,
             optional=True,
             default=4,
-            doc=doc_repformer_axis_dim,
+            alias=["repformer_axis_dim"],
+            doc=doc_repformer_axis_neuron,
         ),
         Argument(
-            "repformer_do_bn_mode",
-            str,
+            "repformer_direct_dist",
+            bool,
             optional=True,
-            default="no",
-            doc=doc_repformer_do_bn_mode,
-        ),
-        Argument(
-            "repformer_bn_momentum",
-            float,
-            optional=True,
-            default=0.1,
-            doc=doc_repformer_bn_momentum,
+            default=False,
+            doc=doc_repformer_direct_dist,
         ),
         Argument(
             "repformer_update_g1_has_conv",
@@ -838,11 +918,12 @@ def descrpt_dpa2_args():
             doc=doc_repformer_attn2_has_gate,
         ),
         Argument(
-            "repformer_activation",
+            "repformer_activation_function",
             str,
             optional=True,
             default="tanh",
-            doc=doc_repformer_activation,
+            alias=["repformer_activation"],
+            doc=doc_repformer_activation_function,
         ),
         Argument(
             "repformer_update_style",
@@ -852,6 +933,20 @@ def descrpt_dpa2_args():
             doc=doc_repformer_update_style,
         ),
         Argument(
+            "repformer_update_residual",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_repformer_update_residual,
+        ),
+        Argument(
+            "repformer_update_residual_init",
+            str,
+            optional=True,
+            default="norm",
+            doc=doc_repformer_update_residual_init,
+        ),
+        Argument(
             "repformer_set_davg_zero",
             bool,
             optional=True,
@@ -859,11 +954,52 @@ def descrpt_dpa2_args():
             doc=doc_repformer_set_davg_zero,
         ),
         Argument(
-            "repformer_add_type_ebd_to_seq",
+            "repformer_trainable_ln",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_repformer_trainable_ln,
+        ),
+        Argument(
+            "repformer_ln_eps",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_repformer_ln_eps,
+        ),
+        # descriptor args
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_concat_output_tebd,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("smooth", bool, optional=True, default=False, doc=doc_smooth),
+        Argument(
+            "exclude_types",
+            List[List[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument(
+            "add_tebd_to_repinit_out",
             bool,
             optional=True,
             default=False,
-            doc=doc_repformer_add_type_ebd_to_seq,
+            alias=["repformer_add_type_ebd_to_seq"],
+            doc=doc_add_tebd_to_repinit_out,
         ),
     ]
 
@@ -1372,7 +1508,6 @@ def model_args(exclude_hybrid=False):
                 "type",
                 [
                     standard_model_args(),
-                    multi_model_args(),
                     frozen_model_args(),
                     pairtab_model_args(),
                     *hybrid_models,
@@ -1404,29 +1539,6 @@ def standard_model_args() -> Argument:
             ),
         ],
         doc="Stardard model, which contains a descriptor and a fitting.",
-    )
-    return ca
-
-
-def multi_model_args() -> Argument:
-    doc_descrpt = "The descriptor of atomic environment. See model[standard]/descriptor for details."
-    doc_fitting_net_dict = "The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`."
-
-    ca = Argument(
-        "multi",
-        dict,
-        [
-            Argument(
-                "descriptor",
-                dict,
-                [],
-                [descrpt_variant_type_args()],
-                doc=doc_descrpt,
-                fold_subdoc=True,
-            ),
-            Argument("fitting_net_dict", dict, doc=doc_fitting_net_dict),
-        ],
-        doc=doc_only_tf_supported + "Multiple-task model.",
     )
     return ca
 
@@ -1575,17 +1687,6 @@ def learning_rate_args():
         optional=True,
         doc=doc_lr,
     )
-
-
-def learning_rate_dict_args():
-    doc_learning_rate_dict = (
-        "The dictionary of definitions of learning rates in multi-task mode. "
-        "Each learning_rate_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of learning rate.\n"
-    )
-    ca = Argument(
-        "learning_rate_dict", dict, [], [], optional=True, doc=doc_learning_rate_dict
-    )
-    return ca
 
 
 #  --- Loss configurations: --- #
@@ -1953,15 +2054,6 @@ def loss_args():
     return ca
 
 
-def loss_dict_args():
-    doc_loss_dict = (
-        "The dictionary of definitions of multiple loss functions in multi-task mode. "
-        "Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n"
-    )
-    ca = Argument("loss_dict", dict, [], [], optional=True, doc=doc_loss_dict)
-    return ca
-
-
 #  --- Training configurations: --- #
 def training_data_args():  # ! added by Ziyao: new specification style for data systems.
     link_sys = make_link("systems", "training/training_data/systems")
@@ -2158,18 +2250,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
-    doc_data_dict = (
-        "The dictionary of multi DataSystems in multi-task mode. "
-        "Each data_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, "
-        "contains training data and optional validation data definitions."
-    )
-    doc_fitting_weight = (
-        "Each fitting_weight[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, "
-        "is the training weight of fitting net `fitting_key`. "
-        "Fitting nets with higher weights will be selected with higher probabilities to be trained in one step. "
-        "Weights will be normalized and minus ones will be ignored. "
-        "If not set, each fitting net will be equally selected when training."
-    )
     doc_warmup_steps = (
         "The number of steps for learning rate warmup. During warmup, "
         "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
@@ -2251,8 +2331,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument(
             "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
         ),
-        Argument("data_dict", dict, optional=True, doc=doc_data_dict),
-        Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
         Argument(
             "warmup_steps",
             int,
@@ -2333,211 +2411,13 @@ def gen_args(**kwargs) -> List[Argument]:
     return [
         model_args(),
         learning_rate_args(),
-        learning_rate_dict_args(),
         loss_args(),
-        loss_dict_args(),
         training_args(),
         nvnmd_args(),
     ]
 
 
-def normalize_multi_task(data):
-    # single-task or multi-task mode
-    if data["model"].get("type", "standard") not in ("standard", "multi"):
-        return data
-    single_fitting_net = "fitting_net" in data["model"].keys()
-    single_training_data = "training_data" in data["training"].keys()
-    single_valid_data = "validation_data" in data["training"].keys()
-    single_loss = "loss" in data.keys()
-    single_learning_rate = "learning_rate" in data.keys()
-    multi_fitting_net = "fitting_net_dict" in data["model"].keys()
-    multi_training_data = "data_dict" in data["training"].keys()
-    multi_loss = "loss_dict" in data.keys()
-    multi_fitting_weight = "fitting_weight" in data["training"].keys()
-    multi_learning_rate = "learning_rate_dict" in data.keys()
-    assert (single_fitting_net == single_training_data) and (
-        multi_fitting_net == multi_training_data
-    ), (
-        "In single-task mode, 'model/fitting_net' and 'training/training_data' must be defined at the same time! "
-        "While in multi-task mode, 'model/fitting_net_dict', 'training/data_dict' "
-        "must be defined at the same time! Please check your input script. "
-    )
-    assert not (single_fitting_net and multi_fitting_net), (
-        "Single-task mode and multi-task mode can not be performed together. "
-        "Please check your input script and choose just one format! "
-    )
-    assert (
-        single_fitting_net or multi_fitting_net
-    ), "Please define your fitting net and training data! "
-    if multi_fitting_net:
-        assert not single_valid_data, (
-            "In multi-task mode, 'training/validation_data' should not appear "
-            "outside 'training/data_dict'! Please check your input script."
-        )
-        assert (
-            not single_loss
-        ), "In multi-task mode, please use 'model/loss_dict' in stead of 'model/loss'! "
-        assert (
-            "type_map" in data["model"]
-        ), "In multi-task mode, 'model/type_map' must be defined! "
-        data["model"]["type"] = "multi"
-        data["model"]["fitting_net_dict"] = normalize_fitting_net_dict(
-            data["model"]["fitting_net_dict"]
-        )
-        data["training"]["data_dict"] = normalize_data_dict(
-            data["training"]["data_dict"]
-        )
-        data["loss_dict"] = (
-            normalize_loss_dict(
-                data["model"]["fitting_net_dict"].keys(), data["loss_dict"]
-            )
-            if multi_loss
-            else {}
-        )
-        if multi_learning_rate:
-            data["learning_rate_dict"] = normalize_learning_rate_dict(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
-            )
-        elif single_learning_rate:
-            data["learning_rate_dict"] = (
-                normalize_learning_rate_dict_with_single_learning_rate(
-                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
-                )
-            )
-        fitting_weight = (
-            data["training"]["fitting_weight"] if multi_fitting_weight else None
-        )
-        data["training"]["fitting_weight"] = normalize_fitting_weight(
-            data["model"]["fitting_net_dict"].keys(),
-            data["training"]["data_dict"].keys(),
-            fitting_weight=fitting_weight,
-        )
-    else:
-        assert not multi_loss, "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
-        assert not multi_learning_rate, "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
-    return data
-
-
-def normalize_fitting_net_dict(fitting_net_dict):
-    new_dict = {}
-    base = Argument("base", dict, [], [fitting_variant_type_args()], doc="")
-    for fitting_key_item in fitting_net_dict:
-        data = base.normalize_value(
-            fitting_net_dict[fitting_key_item], trim_pattern="_*"
-        )
-        base.check_value(data, strict=True)
-        new_dict[fitting_key_item] = data
-    return new_dict
-
-
-def normalize_data_dict(data_dict):
-    new_dict = {}
-    base = Argument(
-        "base", dict, [training_data_args(), validation_data_args()], [], doc=""
-    )
-    for data_system_key_item in data_dict:
-        data = base.normalize_value(data_dict[data_system_key_item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[data_system_key_item] = data
-    return new_dict
-
-
-def normalize_loss_dict(fitting_keys, loss_dict):
-    # check the loss dict
-    failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
-    assert not failed_loss_keys, f"Loss dict key(s) {failed_loss_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-    new_dict = {}
-    base = Argument("base", dict, [], [loss_variant_type_args()], doc="")
-    for item in loss_dict:
-        data = base.normalize_value(loss_dict[item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[item] = data
-    return new_dict
-
-
-def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
-    # check the learning_rate dict
-    failed_learning_rate_keys = [
-        item for item in learning_rate_dict if item not in fitting_keys
-    ]
-    assert not failed_learning_rate_keys, f"Learning rate dict key(s) {failed_learning_rate_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-    new_dict = {}
-    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
-    for item in learning_rate_dict:
-        data = base.normalize_value(learning_rate_dict[item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[item] = data
-    return new_dict
-
-
-def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
-    new_dict = {}
-    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
-    data = base.normalize_value(learning_rate, trim_pattern="_*")
-    base.check_value(data, strict=True)
-    for fitting_key in fitting_keys:
-        new_dict[fitting_key] = data
-    return new_dict
-
-
-def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
-    # check the mapping
-    failed_data_keys = [item for item in data_keys if item not in fitting_keys]
-    assert not failed_data_keys, f"Data dict key(s) {failed_data_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-    empty_fitting_keys = []
-    valid_fitting_keys = []
-    for item in fitting_keys:
-        if item not in data_keys:
-            empty_fitting_keys.append(item)
-        else:
-            valid_fitting_keys.append(item)
-    if empty_fitting_keys:
-        log.warning(
-            f"Fitting net(s) {empty_fitting_keys!s} have no data and will not be used in training."
-        )
-    num_pair = len(valid_fitting_keys)
-    assert num_pair > 0, "No valid training data systems for fitting nets!"
-
-    # check and normalize the fitting weight
-    new_weight = {}
-    if fitting_weight is None:
-        equal_weight = 1.0 / num_pair
-        for item in fitting_keys:
-            new_weight[item] = equal_weight if item in valid_fitting_keys else 0.0
-    else:
-        failed_weight_keys = [
-            item for item in fitting_weight if item not in fitting_keys
-        ]
-        assert not failed_weight_keys, f"Fitting weight key(s) {failed_weight_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-        sum_prob = 0.0
-        for item in fitting_keys:
-            if item in valid_fitting_keys:
-                if (
-                    item in fitting_weight
-                    and isinstance(fitting_weight[item], (int, float))
-                    and fitting_weight[item] > 0.0
-                ):
-                    sum_prob += fitting_weight[item]
-                    new_weight[item] = fitting_weight[item]
-                else:
-                    valid_fitting_keys.remove(item)
-                    log.warning(
-                        f"Fitting net '{item}' has zero or invalid weight "
-                        "and will not be used in training."
-                    )
-                    new_weight[item] = 0.0
-            else:
-                new_weight[item] = 0.0
-        assert sum_prob > 0.0, "No valid training weight for fitting nets!"
-        # normalize
-        for item in new_weight:
-            new_weight[item] /= sum_prob
-    return new_weight
-
-
 def normalize(data):
-    data = normalize_multi_task(data)
-
     base = Argument("base", dict, gen_args())
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)

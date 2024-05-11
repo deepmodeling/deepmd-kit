@@ -124,9 +124,9 @@ class TestDPA2(unittest.TestCase):
         target_dict = des.state_dict()
         source_dict = torch.load(self.file_model_param)
         # type_embd of repformer is removed
-        source_dict.pop("descriptor_list.1.type_embd.embedding.weight")
+        source_dict.pop("type_embedding.embedding.embedding_net.layers.0.bias")
         type_embd_dict = torch.load(self.file_type_embed)
-        target_dict = translate_hybrid_and_type_embd_dicts_to_dpa2(
+        target_dict = translate_type_embd_dicts_to_dpa2(
             target_dict,
             source_dict,
             type_embd_dict,
@@ -176,7 +176,7 @@ class TestDPA2(unittest.TestCase):
         self.assertEqual(descriptor.shape[-1], des.get_dim_out())
 
 
-def translate_hybrid_and_type_embd_dicts_to_dpa2(
+def translate_type_embd_dicts_to_dpa2(
     target_dict,
     source_dict,
     type_embd_dict,
@@ -184,11 +184,8 @@ def translate_hybrid_and_type_embd_dicts_to_dpa2(
     all_keys = list(target_dict.keys())
     record = [False for ii in all_keys]
     for kk, vv in source_dict.items():
-        tk = kk.replace("descriptor_list.1", "repformers")
-        tk = tk.replace("descriptor_list.0", "repinit")
-        tk = tk.replace("sequential_transform.0", "g1_shape_tranform")
-        record[all_keys.index(tk)] = True
-        target_dict[tk] = vv
+        record[all_keys.index(kk)] = True
+        target_dict[kk] = vv
     assert len(type_embd_dict.keys()) == 2
     it = iter(type_embd_dict.keys())
     for _ in range(2):

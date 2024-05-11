@@ -2,6 +2,9 @@
 from .dpa1 import (
     DescrptDPA1,
 )
+from .dpa2 import (
+    DescrptDPA2,
+)
 from .hybrid import (
     DescrptHybrid,
 )
@@ -19,6 +22,7 @@ __all__ = [
     "DescrptSeA",
     "DescrptSeR",
     "DescrptDPA1",
+    "DescrptDPA2",
     "DescrptHybrid",
     "make_base_descriptor",
 ]

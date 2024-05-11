@@ -142,8 +142,6 @@ class DescrptSeAtten(DescrptSeA):
             Whether to mask the diagonal in the attention weights.
     ln_eps: float, Optional
             The epsilon value for layer normalization.
-    multi_task: bool
-            If the model has multi fitting nets to train.
     tebd_input_mode: str
             The input mode of the type embedding. Supported modes are ["concat", "strip"].
             - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
@@ -188,7 +186,6 @@ class DescrptSeAtten(DescrptSeA):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        multi_task: bool = False,
         smooth_type_embedding: bool = False,
         tebd_input_mode: str = "concat",
         # not implemented
@@ -246,7 +243,6 @@ class DescrptSeAtten(DescrptSeA):
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
-            multi_task=multi_task,
         )
         """
         Constructor
@@ -403,21 +399,14 @@ class DescrptSeAtten(DescrptSeA):
                     sumn.append(sysn)
                     sumr2.append(sysr2)
                     suma2.append(sysa2)
-            if not self.multi_task:
-                stat_dict = {
-                    "sumr": sumr,
-                    "suma": suma,
-                    "sumn": sumn,
-                    "sumr2": sumr2,
-                    "suma2": suma2,
-                }
-                self.merge_input_stats(stat_dict)
-            else:
-                self.stat_dict["sumr"] += sumr
-                self.stat_dict["suma"] += suma
-                self.stat_dict["sumn"] += sumn
-                self.stat_dict["sumr2"] += sumr2
-                self.stat_dict["suma2"] += suma2
+            stat_dict = {
+                "sumr": sumr,
+                "suma": suma,
+                "sumn": sumn,
+                "sumr2": sumr2,
+                "suma2": suma2,
+            }
+            self.merge_input_stats(stat_dict)
 
     def enable_compression(
         self,
@@ -2117,7 +2106,6 @@ class DescrptDPA1Compat(DescrptSeAtten):
             attn_layer=attn_layer,
             attn_dotr=attn_dotr,
             attn_mask=attn_mask,
-            multi_task=True,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             smooth_type_embedding=smooth_type_embedding,
@@ -2231,6 +2219,11 @@ class DescrptDPA1Compat(DescrptSeAtten):
             new_dict["attention_layers"][layer_idx].update(update_info)
             new_dict["attention_layers"][layer_idx]["attention_layer"].update(
                 update_info
+            )
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                {
+                    "num_heads": 1,
+                }
             )
         return new_dict
 

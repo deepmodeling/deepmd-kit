@@ -394,6 +394,9 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
 
     @pytest.mark.run(order=1)
     def test_model_qnn_v0(self):
+        # without calling test_mapt_cnn_v0, this test will fail when running individually
+        self.test_mapt_cnn_v0()
+
         tf.reset_default_graph()
         # open NVNMD
         jdata_cf = jdata_deepmd_input_v0["nvnmd"]
@@ -703,6 +706,9 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
 
     @pytest.mark.run(order=1)
     def test_model_qnn_v1(self):
+        # without calling test_mapt_cnn_v1, this test will fail when running individually
+        self.test_mapt_cnn_v1()
+
         tf.reset_default_graph()
         # open NVNMD
         jdata_cf = jdata_deepmd_input_v1["nvnmd"]

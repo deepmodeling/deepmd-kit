@@ -74,7 +74,7 @@ class DescriptorTest:
             dp_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
-        return dp_obj(ext_coords, ext_atype, nlist=nlist)
+        return dp_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
 
     def eval_pt_descriptor(
         self, pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
@@ -95,5 +95,5 @@ class DescriptorTest:
         )
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in pt_obj(ext_coords, ext_atype, nlist=nlist)
+            for x in pt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
         ]

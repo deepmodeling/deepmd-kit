@@ -273,6 +273,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
+        self.trainable = trainable
         # set trainable
         for param in self.parameters():
             param.requires_grad = trainable
@@ -280,6 +281,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.se_atten.get_rcut()
+
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.se_atten.get_rcut_smth()
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
@@ -314,6 +319,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
         """
         return self.se_atten.mixed_types()
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.se_atten.get_env_protection()
 
     def share_params(self, base_class, shared_level, resume=False):
         """
@@ -418,8 +427,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
             },
-            ## to be updated when the options are supported.
-            "trainable": True,
+            "trainable": self.trainable,
             "spin": None,
         }
         if obj.tebd_input_mode in ["strip"]:

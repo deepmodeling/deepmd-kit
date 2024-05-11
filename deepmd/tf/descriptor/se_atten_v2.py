@@ -59,8 +59,6 @@ class DescrptSeAttenV2(DescrptSeAtten):
             Whether to dot the relative coordinates on the attention weights as a gated scheme.
     attn_mask
             Whether to mask the diagonal in the attention weights.
-    multi_task
-            If the model has multi fitting nets to train.
     """
 
     def __init__(
@@ -84,7 +82,6 @@ class DescrptSeAttenV2(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        multi_task: bool = False,
         **kwargs,
     ) -> None:
         DescrptSeAtten.__init__(
@@ -108,7 +105,6 @@ class DescrptSeAttenV2(DescrptSeAtten):
             attn_layer=attn_layer,
             attn_dotr=attn_dotr,
             attn_mask=attn_mask,
-            multi_task=multi_task,
             tebd_input_mode="strip",
             smooth_type_embedding=True,
             **kwargs,

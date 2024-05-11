@@ -41,8 +41,6 @@ class TestUnusedParamsDPA2(unittest.TestCase):
                 # skip the case g2 is not envolved
                 continue
             model = copy.deepcopy(model_dpa2)
-            model["descriptor"]["rcut"] = model["descriptor"]["repinit_rcut"]
-            model["descriptor"]["sel"] = model["descriptor"]["repinit_nsel"]
             model["descriptor"]["repformer_nlayers"] = 2
             # model["descriptor"]["combine_grrg"] = cmbg2
             model["descriptor"]["repformer_update_g1_has_conv"] = conv

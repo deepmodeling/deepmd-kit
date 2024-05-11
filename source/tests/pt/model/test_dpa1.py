@@ -39,12 +39,12 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec, sm, to, tm in itertools.product(
+        for idt, sm, to, tm, prec in itertools.product(
             [False, True],  # resnet_dt
-            ["float64", "float32"],  # precision
             [False, True],  # smooth_type_embedding
             [False, True],  # type_one_side
             ["concat", "strip"],  # tebd_input_mode
+            ["float64", "float32"],  # precision
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -65,7 +65,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 old_impl=False,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
-            dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
+            dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
             rd0, _, _, _, _ = dd0(
                 torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
