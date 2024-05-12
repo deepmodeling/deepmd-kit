@@ -139,6 +139,8 @@ class Trainer:
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
+        self.display_in_training = training_params.get("disp_training", True)
+        self.timing_in_training = training_params.get("time_training", True)
         self.lcurve_should_print_header = True
 
         def get_opt_param(params):
@@ -811,7 +813,7 @@ class Trainer:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
             # Log and persist
-            if _step_id % self.disp_freq == 0:
+            if self.display_in_training and _step_id % self.disp_freq == 0:
                 self.wrapper.eval()
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
@@ -922,13 +924,18 @@ class Trainer:
                 current_time = time.time()
                 train_time = current_time - self.t0
                 self.t0 = current_time
-                if self.rank == 0:
+                if self.rank == 0 and self.timing_in_training:
                     log.info(
                         format_training_message(
                             batch=_step_id,
                             wall_time=train_time,
                         )
                     )
+                # the first training time is not accurate
+                if (
+                    _step_id + 1
+                ) > self.disp_freq or self.num_steps < 2 * self.disp_freq:
+                    self.total_train_time += train_time
 
                 if fout:
                     if self.lcurve_should_print_header:
@@ -964,6 +971,7 @@ class Trainer:
                     writer.add_scalar(f"{task_key}/{item}", more_loss[item], _step_id)
 
         self.t0 = time.time()
+        self.total_train_time = 0.0
         for step_id in range(self.num_steps):
             if step_id < self.start_step:
                 continue
@@ -994,6 +1002,24 @@ class Trainer:
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
+
+            if self.timing_in_training and self.num_steps // self.disp_freq > 0:
+                if self.num_steps >= 2 * self.disp_freq:
+                    log.info(
+                        "average training time: %.4f s/batch (exclude first %d batches)",
+                        self.total_train_time
+                        / (
+                            self.num_steps // self.disp_freq * self.disp_freq
+                            - self.disp_freq
+                        ),
+                        self.disp_freq,
+                    )
+                else:
+                    log.info(
+                        "average training time: %.4f s/batch",
+                        self.total_train_time
+                        / (self.num_steps // self.disp_freq * self.disp_freq),
+                    )
 
             if JIT:
                 pth_model_path = (
