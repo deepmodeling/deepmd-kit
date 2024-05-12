@@ -909,7 +909,7 @@ class Trainer:
                                     learning_rate=cur_lr,
                                 )
                             )
-                            if valid_results is not None and valid_results[_key]:
+                            if valid_results[_key]:
                                 log.info(
                                     format_training_message_per_task(
                                         batch=_step_id,
@@ -1118,7 +1118,7 @@ class Trainer:
         print_str = ""
         print_str += "# %5s" % "step"
         if not self.multi_task:
-            if valid_results is not None:
+            if valid_results:
                 prop_fmt = "   %11s %11s"
                 for k in train_keys:
                     print_str += prop_fmt % (k + "_val", k + "_trn")
@@ -1128,7 +1128,7 @@ class Trainer:
                     print_str += prop_fmt % (k + "_trn")
         else:
             for model_key in self.model_keys:
-                if valid_results[model_key] is not None:
+                if valid_results[model_key]:
                     prop_fmt = "   %11s %11s"
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (
