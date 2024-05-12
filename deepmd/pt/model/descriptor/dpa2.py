@@ -252,7 +252,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         trainable : bool, optional
             If the parameters are trainable.
         seed : int, optional
-            (Unused yet) Random seed for parameter initialization.
+            Random seed for parameter initialization.
         add_tebd_to_repinit_out : bool, optional
             Whether to add type embedding to the output representation from repinit before inputting it into repformer.
 
@@ -293,6 +293,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             resnet_dt=repinit_resnet_dt,
             smooth=smooth,
             type_one_side=repinit_type_one_side,
+            seed=seed,
         )
         self.repformers = DescrptBlockRepformers(
             repformer_rcut,
@@ -327,10 +328,14 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             precision=precision,
             trainable_ln=repformer_trainable_ln,
             ln_eps=repformer_ln_eps,
+            seed=seed,
             old_impl=old_impl,
         )
         self.type_embedding = TypeEmbedNet(
-            ntypes, repinit_tebd_dim, precision=precision
+            ntypes,
+            repinit_tebd_dim,
+            precision=precision,
+            seed=seed,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
@@ -349,6 +354,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 bias=False,
                 precision=precision,
                 init="glorot",
+                seed=seed,
             )
         self.tebd_transform = None
         if self.add_tebd_to_repinit_out:
@@ -357,6 +363,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 self.repformers.dim_in,
                 bias=False,
                 precision=precision,
+                seed=seed,
             )
         assert self.repinit.rcut > self.repformers.rcut
         assert self.repinit.sel[0] > self.repformers.sel[0]

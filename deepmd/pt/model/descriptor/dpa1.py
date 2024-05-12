@@ -172,6 +172,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    seed: int, Optional
+            Random seed for parameter initialization.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -220,10 +222,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
+        seed: Optional[int] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        seed: Optional[int] = None,
         old_impl: bool = False,
     ):
         super().__init__()
@@ -268,9 +270,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
+            seed=seed,
             old_impl=old_impl,
         )
-        self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
+        self.type_embedding = TypeEmbedNet(
+            ntypes, tebd_dim, precision=precision, seed=seed
+        )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable

@@ -82,6 +82,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         super().__init__()
@@ -99,6 +100,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             old_impl=old_impl,
             type_one_side=type_one_side,
+            seed=seed,
             **kwargs,
         )
 
@@ -328,6 +330,7 @@ class DescrptBlockSeA(DescriptorBlock):
         old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -354,6 +357,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.type_one_side = type_one_side
+        self.seed = seed
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -397,6 +401,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     resnet_dt=self.resnet_dt,
+                    seed=self.seed,
                 )
             self.filter_layers = filter_layers
         self.stats = None

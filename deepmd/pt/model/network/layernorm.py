@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Optional,
+)
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,6 +16,7 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 from deepmd.pt.utils.utils import (
+    get_generator,
     to_numpy_array,
     to_torch_tensor,
 )
@@ -33,6 +38,7 @@ class LayerNorm(nn.Module):
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
+        seed: Optional[int] = None,
     ):
         super().__init__()
         self.eps = eps
@@ -44,12 +50,19 @@ class LayerNorm(nn.Module):
         self.bias = nn.Parameter(
             data=empty_t([num_in], self.prec),
         )
+        self.random_generator = get_generator(seed)
         if self.uni_init:
             nn.init.ones_(self.matrix.data)
             nn.init.zeros_(self.bias.data)
         else:
-            nn.init.normal_(self.bias.data, mean=bavg, std=stddev)
-            nn.init.normal_(self.matrix.data, std=stddev / np.sqrt(self.num_in))
+            nn.init.normal_(
+                self.bias.data, mean=bavg, std=stddev, generator=self.random_generator
+            )
+            nn.init.normal_(
+                self.matrix.data,
+                std=stddev / np.sqrt(self.num_in),
+                generator=self.random_generator,
+            )
         self.trainable = trainable
         if not self.trainable:
             self.matrix.requires_grad = False

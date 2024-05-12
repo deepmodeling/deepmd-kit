@@ -556,7 +556,15 @@ class ResidualDeep(nn.Module):
 
 
 class TypeEmbedNet(nn.Module):
-    def __init__(self, type_nums, embed_dim, bavg=0.0, stddev=1.0, precision="default"):
+    def __init__(
+        self,
+        type_nums,
+        embed_dim,
+        bavg=0.0,
+        stddev=1.0,
+        precision="default",
+        seed: Optional[int] = None,
+    ):
         """Construct a type embedding net."""
         super().__init__()
         self.type_nums = type_nums
@@ -569,6 +577,7 @@ class TypeEmbedNet(nn.Module):
             padding=True,
             activation_function="Linear",
             precision=precision,
+            seed=seed,
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
@@ -647,13 +656,13 @@ class TypeEmbedNetConsistent(nn.Module):
         self.activation_function = str(activation_function)
         self.trainable = trainable
         self.padding = padding
-        # no way to pass seed?
         self.embedding_net = EmbeddingNet(
             ntypes,
             self.neuron,
             self.activation_function,
             self.resnet_dt,
             self.precision,
+            self.seed,
         )
         for param in self.parameters():
             param.requires_grad = trainable
