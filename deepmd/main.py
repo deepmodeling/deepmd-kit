@@ -324,12 +324,6 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: TensorFlow) the name of weight file (.npy), if set, save the model's weight into the file",
     )
     parser_frz.add_argument(
-        "--united-model",
-        action="store_true",
-        default=False,
-        help="(Supported backend: TensorFlow) When in multi-task mode, freeze all nodes into one united model",
-    )
-    parser_frz.add_argument(
         "--head",
         default=None,
         type=str,

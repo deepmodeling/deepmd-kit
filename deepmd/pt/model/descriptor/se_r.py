@@ -124,6 +124,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         """Returns the cut-off radius."""
         return self.rcut
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -159,6 +163,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         """
         return False
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
 
     def share_params(self, base_class, shared_level, resume=False):
         """

@@ -22,14 +22,11 @@ $ dp --pt freeze -o model.pth
 
 in the folder where the model is trained. The output model is called `model.pth`.
 
-:::
+In [multi-task mode](../train/multi-task-training-pt.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
+to specify which model branch you want to freeze:
 
-::::
+```bash
+$ dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
+```
 
-In [multi-task mode](../train/multi-task-training.md):
-
-- This process will in default output several models, each of which contains the common descriptor and
-  one of the user-defined fitting nets in {ref}`fitting_net_dict <model/fitting_net_dict>`, let's name it `fitting_key`, together frozen in `graph_{fitting_key}.pb`.
-  Those frozen models are exactly the same as single-task output with fitting net `fitting_key`.
-- If you add `--united-model` option in this situation,
-  the total multi-task model will be frozen into one unit `graph.pb`, which is mainly for multi-task initialization and can not be used directly for inference.
+The output model is called `model_branch1.pth`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.

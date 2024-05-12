@@ -245,7 +245,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
-        ## seed, uniform_seed, multi_task, not included.
+        ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is not None:
             # Use the user-set stripped_type_embedding parameter first
@@ -302,6 +302,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the cut-off radius."""
         return self.se_atten.get_rcut()
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.se_atten.get_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
@@ -335,6 +339,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         """
         return self.se_atten.mixed_types()
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.se_atten.get_env_protection()
 
     def share_params(self, base_class, shared_level, resume=False):
         """
@@ -635,6 +643,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         """Returns the cut-off radius."""
         return self.rcut
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -686,6 +698,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
         """
         return True
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
 
     @property
     def dim_out(self):

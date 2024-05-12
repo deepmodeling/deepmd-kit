@@ -106,6 +106,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the cut-off radius."""
         return self.sea.get_rcut()
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.sea.get_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return self.sea.get_nsel()
@@ -131,6 +135,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         atomic types or not.
         """
         return self.sea.mixed_types()
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.sea.get_env_protection()
 
     def share_params(self, base_class, shared_level, resume=False):
         """
@@ -400,6 +408,10 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the cut-off radius."""
         return self.rcut
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -435,6 +447,10 @@ class DescrptBlockSeA(DescriptorBlock):
 
         """
         return False
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
 
     @property
     def dim_out(self):

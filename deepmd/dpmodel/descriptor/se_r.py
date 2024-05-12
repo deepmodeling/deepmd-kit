@@ -75,8 +75,6 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     precision
             The precision of the embedding net parameters. Supported options are |PRECISION|
-    multi_task
-            If the model has multi fitting nets to train.
     spin
             The deepspin object.
 
@@ -114,7 +112,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
-        ## seed, uniform_seed, multi_task, not included.
+        ## seed, uniform_seed, not included.
         if not type_one_side:
             raise NotImplementedError("type_one_side == False not implemented")
         if spin is not None:
@@ -195,6 +193,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns cutoff radius."""
         return self.rcut
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
+
     def get_sel(self):
         """Returns cutoff radius."""
         return self.sel
@@ -204,6 +206,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         atomic types or not.
         """
         return False
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
 
     def share_params(self, base_class, shared_level, resume=False):
         """

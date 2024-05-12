@@ -43,9 +43,6 @@ from deepmd.tf.utils.compat import (
 from deepmd.tf.utils.finetune import (
     replace_model_params_with_pretrained_model,
 )
-from deepmd.tf.utils.multi_init import (
-    replace_model_params_with_frz_multi_model,
-)
 from deepmd.utils.data_system import (
     get_data,
 )
@@ -126,9 +123,6 @@ def train(
             jdata, run_opt.finetune
         )
 
-    if "fitting_net_dict" in jdata["model"] and run_opt.init_frz_model is not None:
-        jdata = replace_model_params_with_frz_multi_model(jdata, run_opt.init_frz_model)
-
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
@@ -193,62 +187,23 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
     # setup data modifier
     modifier = get_modifier(jdata["model"].get("modifier", None))
 
-    # check the multi-task mode
-    multi_task_mode = "fitting_net_dict" in jdata["model"]
-
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
     if not is_compress:
         # init data
-        if not multi_task_mode:
-            train_data = get_data(
-                jdata["training"]["training_data"], rcut, ipt_type_map, modifier
+        train_data = get_data(
+            jdata["training"]["training_data"], rcut, ipt_type_map, modifier
+        )
+        train_data.print_summary("training")
+        if jdata["training"].get("validation_data", None) is not None:
+            valid_data = get_data(
+                jdata["training"]["validation_data"],
+                rcut,
+                train_data.type_map,
+                modifier,
             )
-            train_data.print_summary("training")
-            if jdata["training"].get("validation_data", None) is not None:
-                valid_data = get_data(
-                    jdata["training"]["validation_data"],
-                    rcut,
-                    train_data.type_map,
-                    modifier,
-                )
-                valid_data.print_summary("validation")
-        else:
-            train_data = {}
-            valid_data = {}
-            for data_systems in jdata["training"]["data_dict"]:
-                if (
-                    jdata["training"]["fitting_weight"][data_systems] > 0.0
-                ):  # check only the available pair
-                    train_data[data_systems] = get_data(
-                        jdata["training"]["data_dict"][data_systems]["training_data"],
-                        rcut,
-                        ipt_type_map,
-                        modifier,
-                        multi_task_mode,
-                    )
-                    train_data[data_systems].print_summary(
-                        f"training in {data_systems}"
-                    )
-                    if (
-                        jdata["training"]["data_dict"][data_systems].get(
-                            "validation_data", None
-                        )
-                        is not None
-                    ):
-                        valid_data[data_systems] = get_data(
-                            jdata["training"]["data_dict"][data_systems][
-                                "validation_data"
-                            ],
-                            rcut,
-                            train_data[data_systems].type_map,
-                            modifier,
-                            multi_task_mode,
-                        )
-                        valid_data[data_systems].print_summary(
-                            f"validation in {data_systems}"
-                        )
+            valid_data.print_summary("validation")
     else:
         if modifier is not None:
             modifier.build_fv_graph()

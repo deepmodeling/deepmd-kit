@@ -282,6 +282,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the cut-off radius."""
         return self.se_atten.get_rcut()
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.se_atten.get_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
@@ -315,6 +319,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
         """
         return self.se_atten.mixed_types()
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.se_atten.get_env_protection()
 
     def share_params(self, base_class, shared_level, resume=False):
         """

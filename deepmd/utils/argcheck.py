@@ -1505,7 +1505,6 @@ def model_args(exclude_hybrid=False):
                 "type",
                 [
                     standard_model_args(),
-                    multi_model_args(),
                     frozen_model_args(),
                     pairtab_model_args(),
                     *hybrid_models,
@@ -1537,29 +1536,6 @@ def standard_model_args() -> Argument:
             ),
         ],
         doc="Stardard model, which contains a descriptor and a fitting.",
-    )
-    return ca
-
-
-def multi_model_args() -> Argument:
-    doc_descrpt = "The descriptor of atomic environment. See model[standard]/descriptor for details."
-    doc_fitting_net_dict = "The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`."
-
-    ca = Argument(
-        "multi",
-        dict,
-        [
-            Argument(
-                "descriptor",
-                dict,
-                [],
-                [descrpt_variant_type_args()],
-                doc=doc_descrpt,
-                fold_subdoc=True,
-            ),
-            Argument("fitting_net_dict", dict, doc=doc_fitting_net_dict),
-        ],
-        doc=doc_only_tf_supported + "Multiple-task model.",
     )
     return ca
 
@@ -1708,17 +1684,6 @@ def learning_rate_args():
         optional=True,
         doc=doc_lr,
     )
-
-
-def learning_rate_dict_args():
-    doc_learning_rate_dict = (
-        "The dictionary of definitions of learning rates in multi-task mode. "
-        "Each learning_rate_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of learning rate.\n"
-    )
-    ca = Argument(
-        "learning_rate_dict", dict, [], [], optional=True, doc=doc_learning_rate_dict
-    )
-    return ca
 
 
 #  --- Loss configurations: --- #
@@ -2086,15 +2051,6 @@ def loss_args():
     return ca
 
 
-def loss_dict_args():
-    doc_loss_dict = (
-        "The dictionary of definitions of multiple loss functions in multi-task mode. "
-        "Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n"
-    )
-    ca = Argument("loss_dict", dict, [], [], optional=True, doc=doc_loss_dict)
-    return ca
-
-
 #  --- Training configurations: --- #
 def training_data_args():  # ! added by Ziyao: new specification style for data systems.
     link_sys = make_link("systems", "training/training_data/systems")
@@ -2291,18 +2247,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
-    doc_data_dict = (
-        "The dictionary of multi DataSystems in multi-task mode. "
-        "Each data_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, "
-        "contains training data and optional validation data definitions."
-    )
-    doc_fitting_weight = (
-        "Each fitting_weight[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, "
-        "is the training weight of fitting net `fitting_key`. "
-        "Fitting nets with higher weights will be selected with higher probabilities to be trained in one step. "
-        "Weights will be normalized and minus ones will be ignored. "
-        "If not set, each fitting net will be equally selected when training."
-    )
     doc_warmup_steps = (
         "The number of steps for learning rate warmup. During warmup, "
         "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
@@ -2384,8 +2328,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument(
             "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
         ),
-        Argument("data_dict", dict, optional=True, doc=doc_data_dict),
-        Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
         Argument(
             "warmup_steps",
             int,
@@ -2466,211 +2408,13 @@ def gen_args(**kwargs) -> List[Argument]:
     return [
         model_args(),
         learning_rate_args(),
-        learning_rate_dict_args(),
         loss_args(),
-        loss_dict_args(),
         training_args(),
         nvnmd_args(),
     ]
 
 
-def normalize_multi_task(data):
-    # single-task or multi-task mode
-    if data["model"].get("type", "standard") not in ("standard", "multi"):
-        return data
-    single_fitting_net = "fitting_net" in data["model"].keys()
-    single_training_data = "training_data" in data["training"].keys()
-    single_valid_data = "validation_data" in data["training"].keys()
-    single_loss = "loss" in data.keys()
-    single_learning_rate = "learning_rate" in data.keys()
-    multi_fitting_net = "fitting_net_dict" in data["model"].keys()
-    multi_training_data = "data_dict" in data["training"].keys()
-    multi_loss = "loss_dict" in data.keys()
-    multi_fitting_weight = "fitting_weight" in data["training"].keys()
-    multi_learning_rate = "learning_rate_dict" in data.keys()
-    assert (single_fitting_net == single_training_data) and (
-        multi_fitting_net == multi_training_data
-    ), (
-        "In single-task mode, 'model/fitting_net' and 'training/training_data' must be defined at the same time! "
-        "While in multi-task mode, 'model/fitting_net_dict', 'training/data_dict' "
-        "must be defined at the same time! Please check your input script. "
-    )
-    assert not (single_fitting_net and multi_fitting_net), (
-        "Single-task mode and multi-task mode can not be performed together. "
-        "Please check your input script and choose just one format! "
-    )
-    assert (
-        single_fitting_net or multi_fitting_net
-    ), "Please define your fitting net and training data! "
-    if multi_fitting_net:
-        assert not single_valid_data, (
-            "In multi-task mode, 'training/validation_data' should not appear "
-            "outside 'training/data_dict'! Please check your input script."
-        )
-        assert (
-            not single_loss
-        ), "In multi-task mode, please use 'model/loss_dict' in stead of 'model/loss'! "
-        assert (
-            "type_map" in data["model"]
-        ), "In multi-task mode, 'model/type_map' must be defined! "
-        data["model"]["type"] = "multi"
-        data["model"]["fitting_net_dict"] = normalize_fitting_net_dict(
-            data["model"]["fitting_net_dict"]
-        )
-        data["training"]["data_dict"] = normalize_data_dict(
-            data["training"]["data_dict"]
-        )
-        data["loss_dict"] = (
-            normalize_loss_dict(
-                data["model"]["fitting_net_dict"].keys(), data["loss_dict"]
-            )
-            if multi_loss
-            else {}
-        )
-        if multi_learning_rate:
-            data["learning_rate_dict"] = normalize_learning_rate_dict(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
-            )
-        elif single_learning_rate:
-            data["learning_rate_dict"] = (
-                normalize_learning_rate_dict_with_single_learning_rate(
-                    data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
-                )
-            )
-        fitting_weight = (
-            data["training"]["fitting_weight"] if multi_fitting_weight else None
-        )
-        data["training"]["fitting_weight"] = normalize_fitting_weight(
-            data["model"]["fitting_net_dict"].keys(),
-            data["training"]["data_dict"].keys(),
-            fitting_weight=fitting_weight,
-        )
-    else:
-        assert not multi_loss, "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
-        assert not multi_learning_rate, "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
-    return data
-
-
-def normalize_fitting_net_dict(fitting_net_dict):
-    new_dict = {}
-    base = Argument("base", dict, [], [fitting_variant_type_args()], doc="")
-    for fitting_key_item in fitting_net_dict:
-        data = base.normalize_value(
-            fitting_net_dict[fitting_key_item], trim_pattern="_*"
-        )
-        base.check_value(data, strict=True)
-        new_dict[fitting_key_item] = data
-    return new_dict
-
-
-def normalize_data_dict(data_dict):
-    new_dict = {}
-    base = Argument(
-        "base", dict, [training_data_args(), validation_data_args()], [], doc=""
-    )
-    for data_system_key_item in data_dict:
-        data = base.normalize_value(data_dict[data_system_key_item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[data_system_key_item] = data
-    return new_dict
-
-
-def normalize_loss_dict(fitting_keys, loss_dict):
-    # check the loss dict
-    failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
-    assert not failed_loss_keys, f"Loss dict key(s) {failed_loss_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-    new_dict = {}
-    base = Argument("base", dict, [], [loss_variant_type_args()], doc="")
-    for item in loss_dict:
-        data = base.normalize_value(loss_dict[item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[item] = data
-    return new_dict
-
-
-def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
-    # check the learning_rate dict
-    failed_learning_rate_keys = [
-        item for item in learning_rate_dict if item not in fitting_keys
-    ]
-    assert not failed_learning_rate_keys, f"Learning rate dict key(s) {failed_learning_rate_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-    new_dict = {}
-    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
-    for item in learning_rate_dict:
-        data = base.normalize_value(learning_rate_dict[item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[item] = data
-    return new_dict
-
-
-def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
-    new_dict = {}
-    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
-    data = base.normalize_value(learning_rate, trim_pattern="_*")
-    base.check_value(data, strict=True)
-    for fitting_key in fitting_keys:
-        new_dict[fitting_key] = data
-    return new_dict
-
-
-def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
-    # check the mapping
-    failed_data_keys = [item for item in data_keys if item not in fitting_keys]
-    assert not failed_data_keys, f"Data dict key(s) {failed_data_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-    empty_fitting_keys = []
-    valid_fitting_keys = []
-    for item in fitting_keys:
-        if item not in data_keys:
-            empty_fitting_keys.append(item)
-        else:
-            valid_fitting_keys.append(item)
-    if empty_fitting_keys:
-        log.warning(
-            f"Fitting net(s) {empty_fitting_keys!s} have no data and will not be used in training."
-        )
-    num_pair = len(valid_fitting_keys)
-    assert num_pair > 0, "No valid training data systems for fitting nets!"
-
-    # check and normalize the fitting weight
-    new_weight = {}
-    if fitting_weight is None:
-        equal_weight = 1.0 / num_pair
-        for item in fitting_keys:
-            new_weight[item] = equal_weight if item in valid_fitting_keys else 0.0
-    else:
-        failed_weight_keys = [
-            item for item in fitting_weight if item not in fitting_keys
-        ]
-        assert not failed_weight_keys, f"Fitting weight key(s) {failed_weight_keys!s} not have corresponding fitting keys in {list(fitting_keys)!s}! "
-        sum_prob = 0.0
-        for item in fitting_keys:
-            if item in valid_fitting_keys:
-                if (
-                    item in fitting_weight
-                    and isinstance(fitting_weight[item], (int, float))
-                    and fitting_weight[item] > 0.0
-                ):
-                    sum_prob += fitting_weight[item]
-                    new_weight[item] = fitting_weight[item]
-                else:
-                    valid_fitting_keys.remove(item)
-                    log.warning(
-                        f"Fitting net '{item}' has zero or invalid weight "
-                        "and will not be used in training."
-                    )
-                    new_weight[item] = 0.0
-            else:
-                new_weight[item] = 0.0
-        assert sum_prob > 0.0, "No valid training weight for fitting nets!"
-        # normalize
-        for item in new_weight:
-            new_weight[item] /= sum_prob
-    return new_weight
-
-
 def normalize(data):
-    data = normalize_multi_task(data)
-
     base = Argument("base", dict, gen_args())
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
