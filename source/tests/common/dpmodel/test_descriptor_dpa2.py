@@ -6,6 +6,10 @@ import numpy as np
 from deepmd.dpmodel.descriptor import (
     DescrptDPA2,
 )
+from deepmd.dpmodel.descriptor.dpa2 import (
+    RepformerArgs,
+    RepinitArgs,
+)
 
 from .case_single_frame_with_nlist import (
     TestCaseSingleFrameWithNlist,
@@ -28,14 +32,21 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = 0.1 + np.abs(dstd)
         dstd_2 = 0.1 + np.abs(dstd_2)
 
+        repinit = RepinitArgs(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            nsel=self.sel_mix,
+        )
+        repformer = RepformerArgs(
+            rcut=self.rcut / 2,
+            rcut_smth=self.rcut_smth,
+            nsel=nnei // 2,
+        )
+
         em0 = DescrptDPA2(
             ntypes=self.nt,
-            repinit_rcut=self.rcut,
-            repinit_rcut_smth=self.rcut_smth,
-            repinit_nsel=self.sel_mix,
-            repformer_rcut=self.rcut / 2,
-            repformer_rcut_smth=self.rcut_smth,
-            repformer_nsel=nnei // 2,
+            repinit=repinit,
+            repformer=repformer,
         )
 
         em0.repinit.mean = davg

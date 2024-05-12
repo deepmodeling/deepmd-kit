@@ -188,19 +188,8 @@ class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
 class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
-        model_params["descriptor"]["repinit_rcut"] = 8
-        model_params["descriptor"]["repinit_rcut_smth"] = 3.5
-        model_params_sample = copy.deepcopy(model_params)
-        #######################################################
-        # dirty hack here! the interface of dataload should be
-        # redesigned to support specifying rcut and sel
-        #######################################################
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
+        model_params["descriptor"]["repinit"]["rcut"] = 8
+        model_params["descriptor"]["repinit"]["rcut_smth"] = 3.5
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = 1e-5, 1e-4
@@ -210,13 +199,6 @@ class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
-        model_params_sample = copy.deepcopy(model_params)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         self.type_split = True
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
@@ -227,13 +209,6 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
-        model_params_sample = copy.deepcopy(model_params)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         self.type_split = True
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
