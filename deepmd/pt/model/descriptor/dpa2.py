@@ -359,8 +359,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             "type": "dpa2",
             "@version": 1,
             "ntypes": self.ntypes,
-            "repinit": self.repinit_args.serialize(),
-            "repformer": self.repformer_args.serialize(),
+            "repinit_args": self.repinit_args.serialize(),
+            "repformer_args": self.repformer_args.serialize(),
             "concat_output_tebd": self.concat_output_tebd,
             "precision": self.precision,
             "smooth": self.smooth,
@@ -418,8 +418,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         g1_shape_tranform = data.pop("g1_shape_tranform")
         tebd_transform = data.pop("tebd_transform", None)
         add_tebd_to_repinit_out = data["add_tebd_to_repinit_out"]
-        data["repinit"] = RepinitArgs(**data["repinit"])
-        data["repformer"] = RepformerArgs(**data["repformer"])
+        data["repinit"] = RepinitArgs(**data["repinit_args"])
+        data["repformer"] = RepformerArgs(**data["repformer_args"])
         obj = cls(**data)
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding
