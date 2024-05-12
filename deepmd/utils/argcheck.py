@@ -648,7 +648,7 @@ def descrpt_dpa2_args():
             doc=doc_concat_output_tebd,
         ),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
-        Argument("smooth", bool, optional=True, default=False, doc=doc_smooth),
+        Argument("smooth", bool, optional=True, default=True, doc=doc_smooth),
         Argument(
             "exclude_types",
             List[List[int]],
