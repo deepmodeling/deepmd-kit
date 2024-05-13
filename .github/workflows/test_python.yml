@@ -23,11 +23,8 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python }}
-    - uses: mpi4py/setup-mpi@v1
-      with:
-        mpi: openmpi
     - run: python -m pip install -U uv
-    - run: uv pip install --system -e .[cpu,test,torch]
+    - run: uv pip install --system -e .[cpu,test,torch] horovod mpi4py mpich
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
@@ -35,11 +32,7 @@ jobs:
         # changes, setting `TENSORFLOW_ROOT`.
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
-    - run: uv pip install --system --no-build-isolation horovod mpi4py
-      env:
-        HOROVOD_WITH_TENSORFLOW: 1
-        HOROVOD_WITHOUT_PYTORCH: 1
-        HOROVOD_WITHOUT_GLOO: 1
+        UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/njzjz/simple https://pypi.anaconda.org/mpi4py/simple"
     - run: dp --version
     - name: Get durations from cache
       uses: actions/cache@v4
