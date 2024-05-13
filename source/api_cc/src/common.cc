@@ -329,8 +329,8 @@ void deepmd::check_status(const tensorflow::Status& status) {
 
 void throw_env_not_set_warning(std::string env_name) {
   std::cerr << "DeePMD-kit WARNING: Environmental variable " << env_name
-            << " is not set. " << "Tune " << env_name
-            << " for the best performance. "
+            << " is not set. "
+            << "Tune " << env_name << " for the best performance. "
             << "See https://deepmd.rtfd.io/parallelism/ for more information."
             << std::endl;
 }
@@ -1347,11 +1347,14 @@ void deepmd::print_summary(const std::string& pre) {
   std::cout << pre << "source commit at:   " + global_git_date << "\n";
   std::cout << pre << "support model ver.: " + global_model_version << "\n";
 #if defined(GOOGLE_CUDA)
-  std::cout << pre << "build variant:      cuda" << "\n";
+  std::cout << pre << "build variant:      cuda"
+            << "\n";
 #elif defined(TENSORFLOW_USE_ROCM)
-  std::cout << pre << "build variant:      rocm" << "\n";
+  std::cout << pre << "build variant:      rocm"
+            << "\n";
 #else
-  std::cout << pre << "build variant:      cpu" << "\n";
+  std::cout << pre << "build variant:      cpu"
+            << "\n";
 #endif
 #ifdef BUILD_TENSORFLOW
   std::cout << pre << "build with tf inc:  " + global_tf_include_dir << "\n";
