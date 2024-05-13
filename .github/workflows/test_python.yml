@@ -24,7 +24,7 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     - run: python -m pip install -U uv
-    - run: uv pip install --system -e .[cpu,test,torch] horovod mpi4py mpich
+    - run: uv pip install --system -e .[cpu,test,torch] horovod[tensorflow-cpu] mpi4py mpich
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
