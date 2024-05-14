@@ -7,6 +7,10 @@ from typing import (
 import torch
 import torch.nn as nn
 
+from deepmd.pt.model.network.init import (
+    constant_,
+    normal_,
+)
 from deepmd.pt.model.network.layernorm import (
     LayerNorm,
 )
@@ -64,9 +68,9 @@ def get_residual(
         requires_grad=trainable,
     )
     if _mode == "norm":
-        nn.init.normal_(residual.data, std=_scale, generator=random_generator)
+        normal_(residual.data, std=_scale, generator=random_generator)
     elif _mode == "const":
-        nn.init.constant_(residual.data, val=_scale)
+        constant_(residual.data, val=_scale)
     else:
         raise RuntimeError(f"Unsupported initialization mode '{_mode}'!")
     return residual

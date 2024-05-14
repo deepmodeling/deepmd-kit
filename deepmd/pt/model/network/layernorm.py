@@ -8,6 +8,11 @@ import torch
 import torch.nn as nn
 
 from deepmd.dpmodel.utils.network import LayerNorm as DPLayerNorm
+from deepmd.pt.model.network.init import (
+    normal_,
+    ones_,
+    zeros_,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -52,13 +57,13 @@ class LayerNorm(nn.Module):
         )
         self.random_generator = get_generator(seed)
         if self.uni_init:
-            nn.init.ones_(self.matrix.data)
-            nn.init.zeros_(self.bias.data)
+            ones_(self.matrix.data)
+            zeros_(self.bias.data)
         else:
-            nn.init.normal_(
+            normal_(
                 self.bias.data, mean=bavg, std=stddev, generator=self.random_generator
             )
-            nn.init.normal_(
+            normal_(
                 self.matrix.data,
                 std=stddev / np.sqrt(self.num_in),
                 generator=self.random_generator,

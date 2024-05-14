@@ -24,6 +24,12 @@ from deepmd.dpmodel.utils import (
     make_fitting_network,
     make_multilayer_network,
 )
+from deepmd.pt.model.network.init import (
+    kaiming_normal_,
+    normal_,
+    trunc_normal_,
+    xavier_uniform_,
+)
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
@@ -142,19 +148,17 @@ class MLPLayer(nn.Module):
         return self.matrix.shape[1]
 
     def _default_normal_init(self, bavg: float = 0.0, stddev: float = 1.0):
-        nn.init.normal_(
+        normal_(
             self.matrix.data,
             std=stddev / np.sqrt(self.num_out + self.num_in),
             generator=self.random_generator,
         )
         if self.bias is not None:
-            nn.init.normal_(
+            normal_(
                 self.bias.data, mean=bavg, std=stddev, generator=self.random_generator
             )
         if self.idt is not None:
-            nn.init.normal_(
-                self.idt.data, mean=0.1, std=0.001, generator=self.random_generator
-            )
+            normal_(self.idt.data, mean=0.1, std=0.001, generator=self.random_generator)
 
     def _trunc_normal_init(self, scale=1.0):
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
@@ -162,12 +166,10 @@ class MLPLayer(nn.Module):
         _, fan_in = self.matrix.shape
         scale = scale / max(1, fan_in)
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
-        nn.init.trunc_normal_(
-            self.matrix, mean=0.0, std=std, generator=self.random_generator
-        )
+        trunc_normal_(self.matrix, mean=0.0, std=std, generator=self.random_generator)
 
     def _glorot_uniform_init(self):
-        nn.init.xavier_uniform_(self.matrix, gain=1, generator=self.random_generator)
+        xavier_uniform_(self.matrix, gain=1, generator=self.random_generator)
 
     def _zero_init(self, use_bias=True):
         with torch.no_grad():
@@ -177,7 +179,7 @@ class MLPLayer(nn.Module):
                     self.bias.fill_(1.0)
 
     def _normal_init(self):
-        nn.init.kaiming_normal_(
+        kaiming_normal_(
             self.matrix, nonlinearity="linear", generator=self.random_generator
         )
 
