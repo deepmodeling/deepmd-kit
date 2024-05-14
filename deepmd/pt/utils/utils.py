@@ -113,8 +113,6 @@ def dict_to_device(sample_dict):
 
 def get_generator(seed: Optional[int] = None) -> Optional[torch.Generator]:
     if seed is not None:
-        generator = torch.Generator(device=DEVICE)
-        generator.manual_seed(seed)
-        return generator
+        return torch.manual_seed(seed)
     else:
         return None
