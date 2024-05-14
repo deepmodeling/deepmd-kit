@@ -72,7 +72,7 @@ class TypeEmbedNet(NativeOP):
         self.type_map = type_map
         if self.use_econf_tebd:
             from deepmd.utils.econf_embd import (
-                econf_dim,
+                ECONF_DIM,
                 electronic_configuration_embedding,
             )
             from deepmd.utils.econf_embd import type_map as periodic_table
@@ -88,7 +88,7 @@ class TypeEmbedNet(NativeOP):
                 dtype=PRECISION_DICT[self.precision],
             )
             self.embedding_net = EmbeddingNet(
-                econf_dim,
+                ECONF_DIM,
                 self.neuron,
                 self.activation_function,
                 self.resnet_dt,

@@ -317,11 +317,11 @@ class TypeEmbedNet:
             )
         else:
             from deepmd.utils.econf_embd import (
-                econf_dim,
+                ECONF_DIM,
             )
 
             embedding_net = EmbeddingNet(
-                in_dim=econf_dim,
+                in_dim=ECONF_DIM,
                 neuron=self.neuron,
                 activation_function=self.filter_activation_fn_name,
                 resnet_dt=self.filter_resnet_dt,

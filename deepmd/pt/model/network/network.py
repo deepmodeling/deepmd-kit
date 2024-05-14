@@ -676,7 +676,7 @@ class TypeEmbedNetConsistent(nn.Module):
         self.econf_tebd = None
         if self.use_econf_tebd:
             from deepmd.utils.econf_embd import (
-                econf_dim,
+                ECONF_DIM,
                 electronic_configuration_embedding,
             )
             from deepmd.utils.econf_embd import type_map as periodic_table
@@ -694,7 +694,7 @@ class TypeEmbedNetConsistent(nn.Module):
                 )
             )
             self.embedding_net = EmbeddingNet(
-                econf_dim,
+                ECONF_DIM,
                 self.neuron,
                 self.activation_function,
                 self.resnet_dt,
