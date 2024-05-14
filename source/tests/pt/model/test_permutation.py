@@ -122,31 +122,35 @@ model_dpa2 = {
     "type_map": ["O", "H", "B"],
     "descriptor": {
         "type": "dpa2",
-        "repinit_rcut": 6.0,
-        "repinit_rcut_smth": 2.0,
-        "repinit_nsel": 100,
-        "repformer_rcut": 4.0,
-        "repformer_rcut_smth": 0.5,
-        "repformer_nsel": 40,
-        "repinit_neuron": [2, 4, 8],
-        "repinit_axis_neuron": 4,
-        "repinit_activation_function": "tanh",
-        "repformer_nlayers": 12,
-        "repformer_g1_dim": 8,
-        "repformer_g2_dim": 5,
-        "repformer_attn2_hidden": 3,
-        "repformer_attn2_nhead": 1,
-        "repformer_attn1_hidden": 5,
-        "repformer_attn1_nhead": 1,
-        "repformer_axis_neuron": 4,
-        "repformer_update_h2": False,
-        "repformer_update_g1_has_conv": True,
-        "repformer_update_g1_has_grrg": True,
-        "repformer_update_g1_has_drrd": True,
-        "repformer_update_g1_has_attn": True,
-        "repformer_update_g2_has_g1g1": True,
-        "repformer_update_g2_has_attn": True,
-        "repformer_attn2_has_gate": True,
+        "repinit": {
+            "rcut": 6.0,
+            "rcut_smth": 2.0,
+            "nsel": 100,
+            "neuron": [2, 4, 8],
+            "axis_neuron": 4,
+            "activation_function": "tanh",
+        },
+        "repformer": {
+            "rcut": 4.0,
+            "rcut_smth": 0.5,
+            "nsel": 40,
+            "nlayers": 12,
+            "g1_dim": 8,
+            "g2_dim": 5,
+            "attn2_hidden": 3,
+            "attn2_nhead": 1,
+            "attn1_hidden": 5,
+            "attn1_nhead": 1,
+            "axis_neuron": 4,
+            "update_h2": False,
+            "update_g1_has_conv": True,
+            "update_g1_has_grrg": True,
+            "update_g1_has_drrd": True,
+            "update_g1_has_attn": True,
+            "update_g2_has_g1g1": True,
+            "update_g2_has_attn": True,
+            "attn2_has_gate": True,
+        },
         "add_tebd_to_repinit_out": False,
     },
     "fitting_net": {
@@ -207,31 +211,35 @@ model_hybrid = {
             },
             {
                 "type": "dpa2",
-                "repinit_rcut": 6.0,
-                "repinit_rcut_smth": 2.0,
-                "repinit_nsel": 30,
-                "repformer_rcut": 4.0,
-                "repformer_rcut_smth": 0.5,
-                "repformer_nsel": 10,
-                "repinit_neuron": [2, 4, 8],
-                "repinit_axis_neuron": 4,
-                "repinit_activation_function": "tanh",
-                "repformer_nlayers": 12,
-                "repformer_g1_dim": 8,
-                "repformer_g2_dim": 5,
-                "repformer_attn2_hidden": 3,
-                "repformer_attn2_nhead": 1,
-                "repformer_attn1_hidden": 5,
-                "repformer_attn1_nhead": 1,
-                "repformer_axis_neuron": 4,
-                "repformer_update_h2": False,
-                "repformer_update_g1_has_conv": True,
-                "repformer_update_g1_has_grrg": True,
-                "repformer_update_g1_has_drrd": True,
-                "repformer_update_g1_has_attn": True,
-                "repformer_update_g2_has_g1g1": True,
-                "repformer_update_g2_has_attn": True,
-                "repformer_attn2_has_gate": True,
+                "repinit": {
+                    "rcut": 6.0,
+                    "rcut_smth": 2.0,
+                    "nsel": 30,
+                    "neuron": [2, 4, 8],
+                    "axis_neuron": 4,
+                    "activation_function": "tanh",
+                },
+                "repformer": {
+                    "rcut": 4.0,
+                    "rcut_smth": 0.5,
+                    "nsel": 10,
+                    "nlayers": 12,
+                    "g1_dim": 8,
+                    "g2_dim": 5,
+                    "attn2_hidden": 3,
+                    "attn2_nhead": 1,
+                    "attn1_hidden": 5,
+                    "attn1_nhead": 1,
+                    "axis_neuron": 4,
+                    "update_h2": False,
+                    "update_g1_has_conv": True,
+                    "update_g1_has_grrg": True,
+                    "update_g1_has_drrd": True,
+                    "update_g1_has_attn": True,
+                    "update_g2_has_g1g1": True,
+                    "update_g2_has_attn": True,
+                    "attn2_has_gate": True,
+                },
                 "add_tebd_to_repinit_out": False,
             },
         ],
@@ -319,13 +327,6 @@ class TestEnergyModelDPA1(unittest.TestCase, PermutationTest):
 
 class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -333,13 +334,6 @@ class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
 
 class TestForceModelDPA2(unittest.TestCase, PermutationTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "direct_force_ener"
         self.type_split = True

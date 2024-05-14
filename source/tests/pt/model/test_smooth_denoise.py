@@ -98,13 +98,6 @@ class SmoothDenoiseTest:
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["sel"] = 8
         model_params["descriptor"]["rcut_smth"] = 3.5
@@ -118,13 +111,6 @@ class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         # model_params["descriptor"]["combine_grrg"] = True
         self.type_split = True

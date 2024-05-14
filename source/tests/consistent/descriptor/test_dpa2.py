@@ -32,6 +32,10 @@ else:
 # not implemented
 DescrptDPA2TF = None
 
+from deepmd.dpmodel.descriptor.dpa2 import (
+    RepformerArgs,
+    RepinitArgs,
+)
 from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
 )
@@ -88,45 +92,53 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return {
             "ntypes": self.ntypes,
-            "repinit_rcut": 6.00,
-            "repinit_rcut_smth": 5.80,
-            "repinit_nsel": 10,
-            "repformer_rcut": 4.00,
-            "repformer_rcut_smth": 3.50,
-            "repformer_nsel": 8,
             # kwargs for repinit
-            "repinit_neuron": [6, 12, 24],
-            "repinit_axis_neuron": 3,
-            "repinit_tebd_dim": 4,
-            "repinit_tebd_input_mode": repinit_tebd_input_mode,
-            "repinit_set_davg_zero": repinit_set_davg_zero,
-            "repinit_activation_function": "tanh",
-            "repinit_type_one_side": repinit_type_one_side,
+            "repinit": RepinitArgs(
+                **{
+                    "rcut": 6.00,
+                    "rcut_smth": 5.80,
+                    "nsel": 10,
+                    "neuron": [6, 12, 24],
+                    "axis_neuron": 3,
+                    "tebd_dim": 4,
+                    "tebd_input_mode": repinit_tebd_input_mode,
+                    "set_davg_zero": repinit_set_davg_zero,
+                    "activation_function": "tanh",
+                    "type_one_side": repinit_type_one_side,
+                }
+            ),
             # kwargs for repformer
-            "repformer_nlayers": 3,
-            "repformer_g1_dim": 20,
-            "repformer_g2_dim": 10,
-            "repformer_axis_neuron": 3,
-            "repformer_direct_dist": repformer_direct_dist,
-            "repformer_update_g1_has_conv": repformer_update_g1_has_conv,
-            "repformer_update_g1_has_drrd": repformer_update_g1_has_drrd,
-            "repformer_update_g1_has_grrg": repformer_update_g1_has_grrg,
-            "repformer_update_g1_has_attn": repformer_update_g1_has_attn,
-            "repformer_update_g2_has_g1g1": repformer_update_g2_has_g1g1,
-            "repformer_update_g2_has_attn": repformer_update_g2_has_attn,
-            "repformer_update_h2": repformer_update_h2,
-            "repformer_attn1_hidden": 12,
-            "repformer_attn1_nhead": 2,
-            "repformer_attn2_hidden": 10,
-            "repformer_attn2_nhead": 2,
-            "repformer_attn2_has_gate": repformer_attn2_has_gate,
-            "repformer_activation_function": "tanh",
-            "repformer_update_style": repformer_update_style,
-            "repformer_update_residual": 0.001,
-            "repformer_update_residual_init": repformer_update_residual_init,
-            "repformer_set_davg_zero": True,
-            "repformer_trainable_ln": repformer_trainable_ln,
-            "repformer_ln_eps": repformer_ln_eps,
+            "repformer": RepformerArgs(
+                **{
+                    "rcut": 4.00,
+                    "rcut_smth": 3.50,
+                    "nsel": 8,
+                    "nlayers": 3,
+                    "g1_dim": 20,
+                    "g2_dim": 10,
+                    "axis_neuron": 3,
+                    "direct_dist": repformer_direct_dist,
+                    "update_g1_has_conv": repformer_update_g1_has_conv,
+                    "update_g1_has_drrd": repformer_update_g1_has_drrd,
+                    "update_g1_has_grrg": repformer_update_g1_has_grrg,
+                    "update_g1_has_attn": repformer_update_g1_has_attn,
+                    "update_g2_has_g1g1": repformer_update_g2_has_g1g1,
+                    "update_g2_has_attn": repformer_update_g2_has_attn,
+                    "update_h2": repformer_update_h2,
+                    "attn1_hidden": 12,
+                    "attn1_nhead": 2,
+                    "attn2_hidden": 10,
+                    "attn2_nhead": 2,
+                    "attn2_has_gate": repformer_attn2_has_gate,
+                    "activation_function": "tanh",
+                    "update_style": repformer_update_style,
+                    "update_residual": 0.001,
+                    "update_residual_init": repformer_update_residual_init,
+                    "set_davg_zero": True,
+                    "trainable_ln": repformer_trainable_ln,
+                    "ln_eps": repformer_ln_eps,
+                }
+            ),
             # kwargs for descriptor
             "concat_output_tebd": True,
             "precision": precision,

@@ -143,13 +143,6 @@ class TestEnergyModelDPA1(unittest.TestCase, ForwardLowerTest):
 class TestEnergyModelDPA2(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
         self.prec = 1e-10
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.model = get_model(model_params).to(env.DEVICE)
 
