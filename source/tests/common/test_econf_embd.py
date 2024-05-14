@@ -37,6 +37,7 @@ class TestEConfEmbd(unittest.TestCase):
             (6, "p"): [0, 0, 0],
             (6, "d"): [0, 0, 0, 0, 0],
             (7, "s"): [0],
+            (7, "p"): [0, 0, 0],
         }
         self.assertDictEqual({kk: list(vv) for kk, vv in res.items()}, expected_res)
 
