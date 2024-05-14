@@ -43,13 +43,13 @@ class TestEConfEmbd(unittest.TestCase):
     def test_fe_flatten(self):
         res = make_econf_embedding(["Fe"], flatten=True)["Fe"]
         # fmt: off
-        expected_res = [2,2,2,2,2,2,2,2,2,2,1,1,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        expected_res = [2,2,2,2,2,2,2,2,2,2,1,1,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
         # fmt: on
         self.assertEqual(list(res), expected_res)
 
     def test_dict(self):
         res = electronic_configuration_embedding["Fe"]
         # fmt: off
-        expected_res = [2,2,2,2,2,2,2,2,2,2,1,1,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        expected_res = [2,2,2,2,2,2,2,2,2,2,1,1,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
         # fmt: on
         self.assertEqual(list(res), expected_res)
