@@ -679,6 +679,8 @@ class StandardModel(Model):
         if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
             self.typeebd = type_embedding
         elif type_embedding is not None:
+            if type_embedding.get("use_econf_tebd", False):
+                type_embedding["type_map"] = type_map
             self.typeebd = TypeEmbedNet(
                 ntypes=self.ntypes,
                 **type_embedding,

@@ -32,8 +32,12 @@ from functools import (
 
 import torch.utils.checkpoint
 
+from deepmd.dpmodel.common import (
+    PRECISION_DICT,
+)
 from deepmd.pt.utils.utils import (
     ActivationFn,
+    to_torch_tensor,
 )
 
 
@@ -556,18 +560,31 @@ class ResidualDeep(nn.Module):
 
 
 class TypeEmbedNet(nn.Module):
-    def __init__(self, type_nums, embed_dim, bavg=0.0, stddev=1.0, precision="default"):
+    def __init__(
+        self,
+        type_nums,
+        embed_dim,
+        bavg=0.0,
+        stddev=1.0,
+        precision="default",
+        use_econf_tebd=False,
+        type_map=None,
+    ):
         """Construct a type embedding net."""
         super().__init__()
         self.type_nums = type_nums
         self.embed_dim = embed_dim
         self.bavg = bavg
         self.stddev = stddev
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.embedding = TypeEmbedNetConsistent(
             ntypes=self.type_nums,
             neuron=[self.embed_dim],
             padding=True,
             activation_function="Linear",
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
             precision=precision,
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
@@ -622,6 +639,11 @@ class TypeEmbedNetConsistent(nn.Module):
         Random seed for initializing the network parameters.
     padding
         Concat the zero padding to the output, as the default embedding of empty type.
+    use_econf_tebd: bool, Optional
+        Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
+        Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -635,6 +657,8 @@ class TypeEmbedNetConsistent(nn.Module):
         trainable: bool = True,
         seed: Optional[int] = None,
         padding: bool = False,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
     ):
         """Construct a type embedding net."""
         super().__init__()
@@ -647,14 +671,44 @@ class TypeEmbedNetConsistent(nn.Module):
         self.activation_function = str(activation_function)
         self.trainable = trainable
         self.padding = padding
-        # no way to pass seed?
-        self.embedding_net = EmbeddingNet(
-            ntypes,
-            self.neuron,
-            self.activation_function,
-            self.resnet_dt,
-            self.precision,
-        )
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        self.econf_tebd = None
+        if self.use_econf_tebd:
+            from deepmd.utils.econf_embd import (
+                econf_dim,
+                electronic_configuration_embedding,
+            )
+            from deepmd.utils.econf_embd import type_map as periodic_table
+
+            missing_types = [t for t in self.type_map if t not in periodic_table]
+            assert not missing_types, (
+                "When using electronic configuration type embedding, "
+                "all element in type_map should be in periodic table! "
+                f"Found these invalid elements: {missing_types}"
+            )
+            self.econf_tebd = to_torch_tensor(
+                np.array(
+                    [electronic_configuration_embedding[kk] for kk in self.type_map],
+                    dtype=PRECISION_DICT[self.precision],
+                )
+            )
+            self.embedding_net = EmbeddingNet(
+                econf_dim,
+                self.neuron,
+                self.activation_function,
+                self.resnet_dt,
+                self.precision,
+            )
+        else:
+            # no way to pass seed?
+            self.embedding_net = EmbeddingNet(
+                ntypes,
+                self.neuron,
+                self.activation_function,
+                self.resnet_dt,
+                self.precision,
+            )
         for param in self.parameters():
             param.requires_grad = trainable
 
@@ -666,9 +720,13 @@ class TypeEmbedNetConsistent(nn.Module):
         type_embedding: torch.Tensor
             Type embedding network.
         """
-        embed = self.embedding_net(
-            torch.eye(self.ntypes, dtype=self.prec, device=device)
-        )
+        if not self.use_econf_tebd:
+            embed = self.embedding_net(
+                torch.eye(self.ntypes, dtype=self.prec, device=device)
+            )
+        else:
+            assert self.econf_tebd is not None
+            embed = self.embedding_net(self.econf_tebd)
         if self.padding:
             embed = torch.cat(
                 [embed, torch.zeros(1, embed.shape[1], dtype=self.prec, device=device)]
@@ -717,6 +775,8 @@ class TypeEmbedNetConsistent(nn.Module):
             "activation_function": self.activation_function,
             "trainable": self.trainable,
             "padding": self.padding,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             "embedding": self.embedding_net.serialize(),
         }
 

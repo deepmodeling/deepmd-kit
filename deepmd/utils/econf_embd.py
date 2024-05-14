@@ -156,6 +156,7 @@ conf_keys = [
 maxn = 7
 maxl = maxn
 maxm = 2 * maxl + 1
+econf_dim = 56
 
 type_map = dpdata.periodic_table.ELEMENTS
 

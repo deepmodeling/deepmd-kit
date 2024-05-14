@@ -39,6 +39,11 @@ class TypeEmbedNet(NativeOP):
         Random seed for initializing the network parameters.
     padding
         Concat the zero padding to the output, as the default embedding of empty type.
+    use_econf_tebd: bool, Optional
+        Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
+        Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -52,6 +57,8 @@ class TypeEmbedNet(NativeOP):
         trainable: bool = True,
         seed: Optional[int] = None,
         padding: bool = False,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
     ) -> None:
         self.ntypes = ntypes
         self.neuron = neuron
@@ -61,19 +68,49 @@ class TypeEmbedNet(NativeOP):
         self.activation_function = str(activation_function)
         self.trainable = trainable
         self.padding = padding
-        self.embedding_net = EmbeddingNet(
-            ntypes,
-            self.neuron,
-            self.activation_function,
-            self.resnet_dt,
-            self.precision,
-        )
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        if self.use_econf_tebd:
+            from deepmd.utils.econf_embd import (
+                econf_dim,
+                electronic_configuration_embedding,
+            )
+            from deepmd.utils.econf_embd import type_map as periodic_table
+
+            missing_types = [t for t in self.type_map if t not in periodic_table]
+            assert not missing_types, (
+                "When using electronic configuration type embedding, "
+                "all element in type_map should be in periodic table! "
+                f"Found these invalid elements: {missing_types}"
+            )
+            self.econf_tebd = np.array(
+                [electronic_configuration_embedding[kk] for kk in self.type_map],
+                dtype=PRECISION_DICT[self.precision],
+            )
+            self.embedding_net = EmbeddingNet(
+                econf_dim,
+                self.neuron,
+                self.activation_function,
+                self.resnet_dt,
+                self.precision,
+            )
+        else:
+            self.embedding_net = EmbeddingNet(
+                ntypes,
+                self.neuron,
+                self.activation_function,
+                self.resnet_dt,
+                self.precision,
+            )
 
     def call(self) -> np.ndarray:
         """Compute the type embedding network."""
-        embed = self.embedding_net(
-            np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
-        )
+        if not self.use_econf_tebd:
+            embed = self.embedding_net(
+                np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
+            )
+        else:
+            embed = self.embedding_net(self.econf_tebd)
         if self.padding:
             embed = np.pad(embed, ((0, 1), (0, 0)), mode="constant")
         return embed
@@ -120,5 +157,7 @@ class TypeEmbedNet(NativeOP):
             "activation_function": self.activation_function,
             "trainable": self.trainable,
             "padding": self.padding,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             "embedding": self.embedding_net.serialize(),
         }
