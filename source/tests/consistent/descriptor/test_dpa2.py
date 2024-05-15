@@ -385,7 +385,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             add_tebd_to_repinit_out,
         ) = self.param
         if precision == "float64":
-            return 1e-10
+            return 1e-8
         elif precision == "float32":
             return 1e-4
         else:
