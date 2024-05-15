@@ -674,6 +674,7 @@ class TypeEmbedNetConsistent(nn.Module):
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
         self.econf_tebd = None
+        embed_input_dim = ntypes
         if self.use_econf_tebd:
             from deepmd.utils.econf_embd import (
                 ECONF_DIM,
@@ -693,22 +694,15 @@ class TypeEmbedNetConsistent(nn.Module):
                     dtype=PRECISION_DICT[self.precision],
                 )
             )
-            self.embedding_net = EmbeddingNet(
-                ECONF_DIM,
-                self.neuron,
-                self.activation_function,
-                self.resnet_dt,
-                self.precision,
-            )
-        else:
-            # no way to pass seed?
-            self.embedding_net = EmbeddingNet(
-                ntypes,
-                self.neuron,
-                self.activation_function,
-                self.resnet_dt,
-                self.precision,
-            )
+            embed_input_dim = ECONF_DIM
+        # no way to pass seed?
+        self.embedding_net = EmbeddingNet(
+            embed_input_dim,
+            self.neuron,
+            self.activation_function,
+            self.resnet_dt,
+            self.precision,
+        )
         for param in self.parameters():
             param.requires_grad = trainable
 

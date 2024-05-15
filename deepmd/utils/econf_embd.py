@@ -172,9 +172,9 @@ conf_keys = [
 maxn = 7
 maxl = maxn
 maxm = 2 * maxl + 1
-ECONF_DIM = 59
 
 type_map = dpdata.periodic_table.ELEMENTS
+ECONF_DIM = electronic_configuration_embedding[type_map[0]].shape[0]
 
 
 def make_empty_list_vec():

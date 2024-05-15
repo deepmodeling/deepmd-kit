@@ -70,6 +70,7 @@ class TypeEmbedNet(NativeOP):
         self.padding = padding
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
+        embed_input_dim = ntypes
         if self.use_econf_tebd:
             from deepmd.utils.econf_embd import (
                 ECONF_DIM,
@@ -87,8 +88,9 @@ class TypeEmbedNet(NativeOP):
                 [electronic_configuration_embedding[kk] for kk in self.type_map],
                 dtype=PRECISION_DICT[self.precision],
             )
+            embed_input_dim = ECONF_DIM
         self.embedding_net = EmbeddingNet(
-            ECONF_DIM if self.use_econf_tebd else ntypes,
+            embed_input_dim,
             self.neuron,
             self.activation_function,
             self.resnet_dt,

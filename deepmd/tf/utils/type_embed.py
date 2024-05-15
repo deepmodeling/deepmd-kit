@@ -307,26 +307,20 @@ class TypeEmbedNet:
         else:
             type_embedding_pattern = TYPE_EMBEDDING_PATTERN
         assert self.type_embedding_net_variables is not None
-        if not self.use_econf_tebd:
-            embedding_net = EmbeddingNet(
-                in_dim=self.ntypes,
-                neuron=self.neuron,
-                activation_function=self.filter_activation_fn_name,
-                resnet_dt=self.filter_resnet_dt,
-                precision=self.filter_precision.name,
-            )
-        else:
+        embed_input_dim = self.ntypes
+        if self.use_econf_tebd:
             from deepmd.utils.econf_embd import (
                 ECONF_DIM,
             )
 
-            embedding_net = EmbeddingNet(
-                in_dim=ECONF_DIM,
-                neuron=self.neuron,
-                activation_function=self.filter_activation_fn_name,
-                resnet_dt=self.filter_resnet_dt,
-                precision=self.filter_precision.name,
-            )
+            embed_input_dim = ECONF_DIM
+        embedding_net = EmbeddingNet(
+            in_dim=embed_input_dim,
+            neuron=self.neuron,
+            activation_function=self.filter_activation_fn_name,
+            resnet_dt=self.filter_resnet_dt,
+            precision=self.filter_precision.name,
+        )
         for key, value in self.type_embedding_net_variables.items():
             m = re.search(type_embedding_pattern, key)
             m = [mm for mm in m.groups() if mm is not None]
