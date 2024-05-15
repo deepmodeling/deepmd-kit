@@ -87,21 +87,13 @@ class TypeEmbedNet(NativeOP):
                 [electronic_configuration_embedding[kk] for kk in self.type_map],
                 dtype=PRECISION_DICT[self.precision],
             )
-            self.embedding_net = EmbeddingNet(
-                ECONF_DIM,
-                self.neuron,
-                self.activation_function,
-                self.resnet_dt,
-                self.precision,
-            )
-        else:
-            self.embedding_net = EmbeddingNet(
-                ntypes,
-                self.neuron,
-                self.activation_function,
-                self.resnet_dt,
-                self.precision,
-            )
+        self.embedding_net = EmbeddingNet(
+            ECONF_DIM if self.use_econf_tebd else ntypes,
+            self.neuron,
+            self.activation_function,
+            self.resnet_dt,
+            self.precision,
+        )
 
     def call(self) -> np.ndarray:
         """Compute the type embedding network."""
