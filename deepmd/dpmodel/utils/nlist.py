@@ -9,8 +9,40 @@ from typing import (
 import numpy as np
 
 from .region import (
+    normalize_coord,
     to_face_distance,
 )
+
+
+def extend_input_and_build_neighbor_list(
+    coord,
+    atype,
+    rcut: float,
+    sel: List[int],
+    mixed_types: bool = False,
+    box: Optional[np.ndarray] = None,
+):
+    nframes, nloc = atype.shape[:2]
+    if box is not None:
+        coord_normalized = normalize_coord(
+            coord.reshape(nframes, nloc, 3),
+            box.reshape(nframes, 3, 3),
+        )
+    else:
+        coord_normalized = coord
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord_normalized, atype, box, rcut
+    )
+    nlist = build_neighbor_list(
+        extended_coord,
+        extended_atype,
+        nloc,
+        rcut,
+        sel,
+        distinguish_types=(not mixed_types),
+    )
+    extended_coord = extended_coord.reshape(nframes, -1, 3)
+    return extended_coord, extended_atype, mapping, nlist
 
 
 ## translated from torch implemantation by chatgpt

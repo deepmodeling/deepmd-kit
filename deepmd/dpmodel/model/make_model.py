@@ -473,4 +473,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
 
+        def get_ntypes(self) -> int:
+            """Get the number of types."""
+            return len(self.get_type_map())
+
     return CM
