@@ -55,18 +55,16 @@ class LayerNorm(nn.Module):
         self.bias = nn.Parameter(
             data=empty_t([num_in], self.prec),
         )
-        self.random_generator = get_generator(seed)
+        random_generator = get_generator(seed)
         if self.uni_init:
             ones_(self.matrix.data)
             zeros_(self.bias.data)
         else:
-            normal_(
-                self.bias.data, mean=bavg, std=stddev, generator=self.random_generator
-            )
+            normal_(self.bias.data, mean=bavg, std=stddev, generator=random_generator)
             normal_(
                 self.matrix.data,
                 std=stddev / np.sqrt(self.num_in),
-                generator=self.random_generator,
+                generator=random_generator,
             )
         self.trainable = trainable
         if not self.trainable:

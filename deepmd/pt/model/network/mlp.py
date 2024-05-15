@@ -100,7 +100,7 @@ class MLPLayer(nn.Module):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.matrix = nn.Parameter(data=empty_t((num_in, num_out), self.prec))
-        self.random_generator = get_generator(seed)
+        random_generator = get_generator(seed)
         if bias:
             self.bias = nn.Parameter(
                 data=empty_t([num_out], self.prec),
@@ -113,17 +113,19 @@ class MLPLayer(nn.Module):
             self.idt = None
         self.resnet = resnet
         if init == "default":
-            self._default_normal_init(bavg=bavg, stddev=stddev)
+            self._default_normal_init(
+                bavg=bavg, stddev=stddev, generator=random_generator
+            )
         elif init == "trunc_normal":
-            self._trunc_normal_init(1.0)
+            self._trunc_normal_init(1.0, generator=random_generator)
         elif init == "relu":
-            self._trunc_normal_init(2.0)
+            self._trunc_normal_init(2.0, generator=random_generator)
         elif init == "glorot":
-            self._glorot_uniform_init()
+            self._glorot_uniform_init(generator=random_generator)
         elif init == "gating":
             self._zero_init(self.use_bias)
         elif init == "kaiming_normal":
-            self._normal_init()
+            self._normal_init(generator=random_generator)
         elif init == "final":
             self._zero_init(False)
         else:
@@ -147,29 +149,34 @@ class MLPLayer(nn.Module):
     def dim_out(self) -> int:
         return self.matrix.shape[1]
 
-    def _default_normal_init(self, bavg: float = 0.0, stddev: float = 1.0):
+    def _default_normal_init(
+        self,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        generator: Optional[torch.Generator] = None,
+    ):
         normal_(
             self.matrix.data,
             std=stddev / np.sqrt(self.num_out + self.num_in),
-            generator=self.random_generator,
+            generator=generator,
         )
         if self.bias is not None:
-            normal_(
-                self.bias.data, mean=bavg, std=stddev, generator=self.random_generator
-            )
+            normal_(self.bias.data, mean=bavg, std=stddev, generator=generator)
         if self.idt is not None:
-            normal_(self.idt.data, mean=0.1, std=0.001, generator=self.random_generator)
+            normal_(self.idt.data, mean=0.1, std=0.001, generator=generator)
 
-    def _trunc_normal_init(self, scale=1.0):
+    def _trunc_normal_init(
+        self, scale=1.0, generator: Optional[torch.Generator] = None
+    ):
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
         _, fan_in = self.matrix.shape
         scale = scale / max(1, fan_in)
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
-        trunc_normal_(self.matrix, mean=0.0, std=std, generator=self.random_generator)
+        trunc_normal_(self.matrix, mean=0.0, std=std, generator=generator)
 
-    def _glorot_uniform_init(self):
-        xavier_uniform_(self.matrix, gain=1, generator=self.random_generator)
+    def _glorot_uniform_init(self, generator: Optional[torch.Generator] = None):
+        xavier_uniform_(self.matrix, gain=1, generator=generator)
 
     def _zero_init(self, use_bias=True):
         with torch.no_grad():
@@ -178,10 +185,8 @@ class MLPLayer(nn.Module):
                 with torch.no_grad():
                     self.bias.fill_(1.0)
 
-    def _normal_init(self):
-        kaiming_normal_(
-            self.matrix, nonlinearity="linear", generator=self.random_generator
-        )
+    def _normal_init(self, generator: Optional[torch.Generator] = None):
+        kaiming_normal_(self.matrix, nonlinearity="linear", generator=generator)
 
     def forward(
         self,
