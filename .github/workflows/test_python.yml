@@ -25,8 +25,8 @@ jobs:
         python-version: ${{ matrix.python }}
     - run: python -m pip install -U uv
     - run: |
-        uv pip install mpich
-        uv pip install "torch==2.3.0+cpu.cxx11.abi" -i https://download.pytorch.org/whl/
+        uv pip install --system mpich
+        uv pip install --system "torch==2.3.0+cpu.cxx11.abi" -i https://download.pytorch.org/whl/
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)')
         uv pip install --system --only-binary=horovod -e .[cpu,test] horovod[tensorflow-cpu] mpi4py
       env:
