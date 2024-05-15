@@ -126,17 +126,20 @@ int main(int argc, char *argv[]) {
       if (!isinit) {
         writebuffer_(&socket, msg_needinit, MSGLEN);
         if (b_verb) {
-          std::cout << "# send back  " << "NEEDINIT" << std::endl;
+          std::cout << "# send back  "
+                    << "NEEDINIT" << std::endl;
         }
       } else if (hasdata) {
         writebuffer_(&socket, msg_havedata, MSGLEN);
         if (b_verb) {
-          std::cout << "# send back  " << "HAVEDATA" << std::endl;
+          std::cout << "# send back  "
+                    << "HAVEDATA" << std::endl;
         }
       } else {
         writebuffer_(&socket, msg_ready, MSGLEN);
         if (b_verb) {
-          std::cout << "# send back  " << "READY" << std::endl;
+          std::cout << "# send back  "
+                    << "READY" << std::endl;
         }
       }
     } else if (header_str == "INIT") {
