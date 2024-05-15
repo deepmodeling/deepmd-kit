@@ -143,6 +143,10 @@ class TypeEmbedNet:
             )
             from deepmd.utils.econf_embd import type_map as periodic_table
 
+            assert (
+                self.type_map is not None
+            ), "When using electronic configuration type embedding, type_map must be provided!"
+
             missing_types = [t for t in self.type_map if t not in periodic_table]
             assert not missing_types, (
                 "When using electronic configuration type embedding, "
