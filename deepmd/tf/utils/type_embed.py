@@ -6,6 +6,11 @@ from typing import (
     Union,
 )
 
+import numpy as np
+
+from deepmd.dpmodel.common import (
+    PRECISION_DICT,
+)
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
 )
@@ -95,6 +100,11 @@ class TypeEmbedNet:
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     padding
             Concat the zero padding to the output, as the default embedding of empty type.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -109,6 +119,8 @@ class TypeEmbedNet:
         seed: Optional[int] = None,
         uniform_seed: bool = False,
         padding: bool = False,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -123,6 +135,28 @@ class TypeEmbedNet:
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
         self.padding = padding
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        if self.use_econf_tebd:
+            from deepmd.utils.econf_embd import (
+                electronic_configuration_embedding,
+            )
+            from deepmd.utils.econf_embd import type_map as periodic_table
+
+            assert (
+                self.type_map is not None
+            ), "When using electronic configuration type embedding, type_map must be provided!"
+
+            missing_types = [t for t in self.type_map if t not in periodic_table]
+            assert not missing_types, (
+                "When using electronic configuration type embedding, "
+                "all element in type_map should be in periodic table! "
+                f"Found these invalid elements: {missing_types}"
+            )
+            self.econf_tebd = np.array(
+                [electronic_configuration_embedding[kk] for kk in self.type_map],
+                dtype=PRECISION_DICT[precision],
+            )
         self.model_type = None
 
     def build(
@@ -148,12 +182,18 @@ class TypeEmbedNet:
             The computational graph for embedded types
         """
         assert ntypes == self.ntypes
-        types = tf.convert_to_tensor(list(range(ntypes)), dtype=tf.int32)
-        ebd_type = tf.cast(
-            tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntypes)),
-            self.filter_precision,
-        )
-        ebd_type = tf.reshape(ebd_type, [-1, ntypes])
+        if not self.use_econf_tebd:
+            types = tf.convert_to_tensor(list(range(ntypes)), dtype=tf.int32)
+            ebd_type = tf.cast(
+                tf.one_hot(tf.cast(types, dtype=tf.int32), int(ntypes)),
+                self.filter_precision,
+            )
+        else:
+            ebd_type = tf.cast(
+                tf.convert_to_tensor(self.econf_tebd),
+                self.filter_precision,
+            )
+        ebd_type = tf.reshape(ebd_type, [ntypes, -1])
         name = "type_embed_net" + suffix
         if (
             nvnmd_cfg.enable
@@ -271,8 +311,15 @@ class TypeEmbedNet:
         else:
             type_embedding_pattern = TYPE_EMBEDDING_PATTERN
         assert self.type_embedding_net_variables is not None
+        embed_input_dim = self.ntypes
+        if self.use_econf_tebd:
+            from deepmd.utils.econf_embd import (
+                ECONF_DIM,
+            )
+
+            embed_input_dim = ECONF_DIM
         embedding_net = EmbeddingNet(
-            in_dim=self.ntypes,
+            in_dim=embed_input_dim,
             neuron=self.neuron,
             activation_function=self.filter_activation_fn_name,
             resnet_dt=self.filter_resnet_dt,
@@ -297,5 +344,7 @@ class TypeEmbedNet:
             "activation_function": self.filter_activation_fn_name,
             "trainable": self.trainable,
             "padding": self.padding,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             "embedding": embedding_net.serialize(),
         }
