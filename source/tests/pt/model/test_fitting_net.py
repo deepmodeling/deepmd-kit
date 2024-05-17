@@ -113,7 +113,7 @@ class TestFittingNet(unittest.TestCase):
         ).to(env.DEVICE)
         for name, param in my_fn.named_parameters():
             matched = re.match(
-                "filter_layers\.networks\.(\d).layers\.(\d)\.([a-z]+)", name
+                r"filter_layers\.networks\.(\d).layers\.(\d)\.([a-z]+)", name
             )
             key = None
             if matched:
