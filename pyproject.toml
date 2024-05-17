@@ -291,6 +291,7 @@ ignore = "D413, D416, D203, D107, D213"
 [tool.isort]
 profile = "black"
 force_grid_wrap = 1
+required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -307,6 +308,7 @@ select = [
     "TID251", # banned-api
     "TID253", # banned-module-level-imports
     "T20", # ban print
+    "TCH", # flake8-type-checking
 ]
 
 ignore = [
