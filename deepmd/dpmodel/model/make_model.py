@@ -236,6 +236,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
+        forward_lower = call_lower
+
         def input_type_cast(
             self,
             coord: np.ndarray,

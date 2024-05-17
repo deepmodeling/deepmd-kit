@@ -1,26 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
+    Callable,
     List,
 )
 
 import numpy as np
 
-from deepmd.dpmodel.common import (
-    NativeOP,
-)
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
 
-from ..utils import (
-    INSTALLED_PT,
-    CommonTestCase,
-    forward_wrapper,
-)
 
-
-class ModelTestCase(CommonTestCase):
-    """Common test case for model."""
+class AtomicModelTestCase:
+    """Common test case for atomic model."""
 
     expected_type_map: List[str]
     """Expected type map."""
@@ -38,12 +31,8 @@ class ModelTestCase(CommonTestCase):
     """Expected output type for the model."""
     expected_sel: List[int]
     """Expected number of neighbors."""
-
-    @property
-    def modules_to_test(self):
-        if INSTALLED_PT:
-            return [*super().modules_to_test, self.pt_script_module]
-        return super().modules_to_test
+    forward_wrapper: Callable[[Any], Any]
+    """Calss wrapper for forward method."""
 
     def test_get_type_map(self):
         """Test get_type_map."""
@@ -75,13 +64,6 @@ class ModelTestCase(CommonTestCase):
         for module in self.modules_to_test:
             self.assertEqual(module.is_aparam_nall(), self.expected_aparam_nall)
 
-    def test_model_output_type(self):
-        """Test model_output_type."""
-        for module in self.modules_to_test:
-            self.assertEqual(
-                module.model_output_type(), self.expected_model_output_type
-            )
-
     def test_get_nnei(self):
         """Test get_nnei."""
         expected_nnei = sum(self.expected_sel)
@@ -94,7 +76,7 @@ class ModelTestCase(CommonTestCase):
             self.assertEqual(module.get_ntypes(), len(self.expected_type_map))
 
     def test_forward(self):
-        """Test forward and forward_lower."""
+        """Test forward."""
         nf = 1
         nloc = 3
         coord = np.array(
@@ -115,29 +97,11 @@ class ModelTestCase(CommonTestCase):
             mixed_types=True,
             box=cell,
         )
-        ret = []
         ret_lower = []
         for module in self.modules_to_test:
-            if isinstance(module, NativeOP):
-                # skip dp:
-                # 1. different keys
-                # 2. no forward_lower
-                # needs to be fixed
-                continue
-            module = forward_wrapper(module)
-            ret.append(module(coord, atype, cell))
+            module = self.forward_wrapper(module)
 
-            ret_lower.append(module.forward_lower(coord_ext, atype_ext, nlist))
-        for kk in ret[0].keys():
-            subret = []
-            for rr in ret:
-                if rr is not None:
-                    subret.append(rr[kk])
-            if len(subret):
-                for ii, rr in enumerate(subret[1:]):
-                    np.testing.assert_allclose(
-                        subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
-                    )
+            ret_lower.append(module(coord_ext, atype_ext, nlist))
         for kk in ret_lower[0].keys():
             subret = []
             for rr in ret_lower:
@@ -145,22 +109,9 @@ class ModelTestCase(CommonTestCase):
                     subret.append(rr[kk])
             if len(subret):
                 for ii, rr in enumerate(subret[1:]):
-                    np.testing.assert_allclose(
-                        subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
-                    )
-        same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
-        self.assertTrue(same_keys)
-        for key in same_keys:
-            for rr in ret:
-                if rr[key] is not None:
-                    rr1 = rr[key]
-                    break
-            else:
-                continue
-            for rr in ret_lower:
-                if rr[key] is not None:
-                    rr2 = rr[key]
-                    break
-            else:
-                continue
-            np.testing.assert_allclose(rr1, rr2)
+                    if subret[0] is None:
+                        assert rr is None
+                    else:
+                        np.testing.assert_allclose(
+                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                        )
