@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
-    List,
-    Optional,
-    Union,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -13,15 +15,6 @@ from deepmd.tf.env import (
     op_module,
     tf,
 )
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.tf.utils.spin import (
-    Spin,
-)
-from deepmd.tf.utils.type_embed import (
-    TypeEmbedNet,
-)
 
 from .model import (
     StandardModel,
@@ -30,6 +23,17 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
+    from deepmd.tf.utils.type_embed import (
+        TypeEmbedNet,
+    )
 
 
 @StandardModel.register("ener")
@@ -73,16 +77,16 @@ class EnerModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
         srtab_add_bias: bool = True,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         data_bias_nsample: int = 10,
         **kwargs,
     ) -> None:
@@ -170,7 +174,7 @@ class EnerModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):

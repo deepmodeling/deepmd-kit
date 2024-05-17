@@ -44,3 +44,5 @@ build_cc_tests
 build_c_tests
 build_c/
 libdeepmd_c/
+CITATIONS.bib.original
+node_modules/

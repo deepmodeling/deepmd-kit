@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """DP-GUI entrypoint."""
 
+from __future__ import (
+    annotations,
+)
+
 
 def start_dpgui(*, port: int, bind_all: bool, **kwargs):
     """Host DP-GUI server.

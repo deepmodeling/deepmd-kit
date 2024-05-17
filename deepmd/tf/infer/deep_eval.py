@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from functools import (
     lru_cache,
 )
@@ -6,11 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -90,13 +89,13 @@ class DeepEval(DeepEvalBackend):
 
     def __init__(
         self,
-        model_file: "Path",
+        model_file: Path,
         output_def: ModelOutputDef,
         *args: list,
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
-        input_map: Optional[dict] = None,
+        auto_batch_size: bool | int | AutoBatchSize = False,
+        input_map: dict | None = None,
         neighbor_list=None,
         **kwargs: dict,
     ):
@@ -262,7 +261,7 @@ class DeepEval(DeepEvalBackend):
 
     @property
     @lru_cache(maxsize=None)
-    def model_type(self) -> "DeepEvalWrapper":
+    def model_type(self) -> DeepEvalWrapper:
         """Get type of model.
 
         :type:str
@@ -353,10 +352,10 @@ class DeepEval(DeepEvalBackend):
 
     @staticmethod
     def _load_graph(
-        frozen_graph_filename: "Path",
+        frozen_graph_filename: Path,
         prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
+        input_map: dict | None = None,
     ):
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
@@ -391,7 +390,7 @@ class DeepEval(DeepEvalBackend):
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[List[int]] = None,
+        sel_atoms: list[int] | None = None,
     ):
         """Sort atoms in the system according their types.
 
@@ -444,7 +443,7 @@ class DeepEval(DeepEvalBackend):
             return coord, atom_type, idx_map, atom_type, idx_map
 
     @staticmethod
-    def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
+    def reverse_map(vec: np.ndarray, imap: list[int]) -> np.ndarray:
         """Reverse mapping of a vector according to the index map.
 
         Parameters
@@ -530,7 +529,7 @@ class DeepEval(DeepEvalBackend):
     def build_neighbor_list(
         self,
         coords: np.ndarray,
-        cell: Optional[np.ndarray],
+        cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
         neighbor_list,
@@ -628,11 +627,11 @@ class DeepEval(DeepEvalBackend):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
-    def get_sel_type(self) -> Optional[np.ndarray]:
+    def get_sel_type(self) -> np.ndarray | None:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -680,8 +679,8 @@ class DeepEval(DeepEvalBackend):
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
-        atom_types: Union[List[int], np.ndarray],
-    ) -> Tuple[int, int]:
+        atom_types: list[int] | np.ndarray,
+    ) -> tuple[int, int]:
         natoms = len(atom_types[0])
         if natoms == 0:
             assert coords.size == 0
@@ -696,11 +695,11 @@ class DeepEval(DeepEvalBackend):
         cells: np.ndarray,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
-    ) -> Dict[str, np.ndarray]:
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
+        **kwargs: dict[str, Any],
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -1025,9 +1024,9 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: np.ndarray,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -1082,9 +1081,9 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: np.ndarray,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
     ) -> np.ndarray:
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
@@ -1144,11 +1143,11 @@ class DeepEvalOld:
 
     def __init__(
         self,
-        model_file: "Path",
+        model_file: Path,
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = False,
-        input_map: Optional[dict] = None,
+        auto_batch_size: bool | int | AutoBatchSize = False,
+        input_map: dict | None = None,
         neighbor_list=None,
     ):
         self.graph = self._load_graph(
@@ -1238,9 +1237,7 @@ class DeepEvalOld:
         else:
             return True
 
-    def _get_tensor(
-        self, tensor_name: str, attr_name: Optional[str] = None
-    ) -> tf.Tensor:
+    def _get_tensor(self, tensor_name: str, attr_name: str | None = None) -> tf.Tensor:
         """Get TF graph tensor and assign it to class namespace.
 
         Parameters
@@ -1267,10 +1264,10 @@ class DeepEvalOld:
 
     @staticmethod
     def _load_graph(
-        frozen_graph_filename: "Path",
+        frozen_graph_filename: Path,
         prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
+        input_map: dict | None = None,
     ):
         # We load the protobuf file from the disk and parse it to retrieve the
         # unserialized graph_def
@@ -1305,7 +1302,7 @@ class DeepEvalOld:
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[List[int]] = None,
+        sel_atoms: list[int] | None = None,
         mixed_type: bool = False,
     ):
         """Sort atoms in the system according their types.
@@ -1368,7 +1365,7 @@ class DeepEvalOld:
             return coord, atom_type, idx_map
 
     @staticmethod
-    def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
+    def reverse_map(vec: np.ndarray, imap: list[int]) -> np.ndarray:
         """Reverse mapping of a vector according to the index map.
 
         Parameters
@@ -1460,7 +1457,7 @@ class DeepEvalOld:
     def build_neighbor_list(
         self,
         coords: np.ndarray,
-        cell: Optional[np.ndarray],
+        cell: np.ndarray | None,
         atype: np.ndarray,
         imap: np.ndarray,
         neighbor_list,

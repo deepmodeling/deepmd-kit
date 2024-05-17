@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import sys
 from pathlib import (
     Path,
-)
-from typing import (
-    Dict,
-    List,
-    Optional,
 )
 
 from .find_tensorflow import (
@@ -24,13 +23,13 @@ else:
 __all__ = ["dynamic_metadata"]
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     return __all__
 
 
 def dynamic_metadata(
     field: str,
-    settings: Optional[Dict[str, object]] = None,
+    settings: dict[str, object] | None = None,
 ):
     assert field in ["optional-dependencies", "entry-points", "scripts"]
     _, _, find_libpython_requires, extra_scripts, tf_version = get_argument_from_env()

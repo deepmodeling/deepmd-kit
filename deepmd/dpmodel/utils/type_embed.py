@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -50,15 +49,15 @@ class TypeEmbedNet(NativeOP):
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         self.ntypes = ntypes
         self.neuron = neuron

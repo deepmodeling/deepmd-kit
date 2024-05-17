@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import torch
@@ -23,15 +24,17 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.env_mat_stat import (
+        StatItem,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +72,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         pass
 
     @abstractmethod
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         pass
 
@@ -100,8 +103,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -121,7 +124,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """
         raise NotImplementedError
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
@@ -163,8 +166,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
     ):
         """Calculate DescriptorBlock."""
         pass

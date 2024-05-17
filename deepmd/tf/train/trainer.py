@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 import shutil
 import time
 from typing import (
-    Dict,
-    List,
+    TYPE_CHECKING,
 )
 
 import google.protobuf.message
@@ -46,9 +49,6 @@ from deepmd.tf.fit.ener import (
 from deepmd.tf.model.model import (
     Model,
 )
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.tf.utils.errors import (
     GraphTooLargeError,
     GraphWithoutTensorError,
@@ -70,6 +70,11 @@ log = logging.getLogger(__name__)
 from deepmd.tf.nvnmd.utils.config import (
     nvnmd_cfg,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 def _is_subdir(path, directory):
@@ -888,7 +893,7 @@ class DatasetLoader:
         self.data_keys = batch_data.keys()
         self.data_types = [tf.as_dtype(x.dtype) for x in batch_data.values()]
 
-    def build(self) -> List[tf.Tensor]:
+    def build(self) -> list[tf.Tensor]:
         """Build the OP that loads the training data.
 
         Returns
@@ -898,7 +903,7 @@ class DatasetLoader:
         """
         train_data = self.train_data
 
-        def get_train_batch() -> List[np.ndarray]:
+        def get_train_batch() -> list[np.ndarray]:
             batch_data = train_data.get_batch()
             # convert dict to list of arryas
             batch_data = tuple([batch_data[kk] for kk in self.data_keys])
@@ -906,7 +911,7 @@ class DatasetLoader:
 
         return tf.py_func(get_train_batch, [], self.data_types, name="train_data")
 
-    def get_data_dict(self, batch_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+    def get_data_dict(self, batch_list: list[np.ndarray]) -> dict[str, np.ndarray]:
         """Generate a dict of the loaded data.
 
         Parameters

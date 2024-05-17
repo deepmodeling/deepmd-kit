@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
 )

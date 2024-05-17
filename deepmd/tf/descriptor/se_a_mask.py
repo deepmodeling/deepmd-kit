@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import warnings
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -117,14 +117,14 @@ class DescrptSeAMask(DescrptSeA):
 
     def __init__(
         self,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         type_one_side: bool = False,
-        exclude_types: List[List[int]] = [],
-        seed: Optional[int] = None,
+        exclude_types: list[list[int]] = [],
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -265,8 +265,8 @@ class DescrptSeAMask(DescrptSeA):
         natoms: tf.Tensor,
         box_: tf.Tensor,
         mesh: tf.Tensor,
-        input_dict: Dict[str, Any],
-        reuse: Optional[bool] = None,
+        input_dict: dict[str, Any],
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -377,7 +377,7 @@ class DescrptSeAMask(DescrptSeA):
         self,
         atom_ener: tf.Tensor,
         natoms: tf.Tensor,
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters

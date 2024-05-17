@@ -4,13 +4,15 @@
 Can handle local or distributed training.
 """
 
+from __future__ import (
+    annotations,
+)
+
 import json
 import logging
 import time
 from typing import (
     Any,
-    Dict,
-    Optional,
 )
 
 from deepmd.tf.common import (
@@ -55,16 +57,16 @@ log = logging.getLogger(__name__)
 def train(
     *,
     INPUT: str,
-    init_model: Optional[str],
-    restart: Optional[str],
+    init_model: str | None,
+    restart: str | None,
     output: str,
     init_frz_model: str,
     mpi_log: str,
     log_level: int,
-    log_path: Optional[str],
+    log_path: str | None,
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
-    finetune: Optional[str] = None,
+    finetune: str | None = None,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -147,7 +149,7 @@ def train(
     _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
+def _do_work(jdata: dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
     """Run serial model training.
 
     Parameters
@@ -232,7 +234,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
 
 
 def get_modifier(modi_data=None):
-    modifier: Optional[DipoleChargeModifier]
+    modifier: DipoleChargeModifier | None
     if modi_data is not None:
         if modi_data["type"] == "dipole_charge":
             modifier = DipoleChargeModifier(

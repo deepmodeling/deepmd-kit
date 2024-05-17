@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -74,14 +72,14 @@ class DescrptSeAEf(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
@@ -144,7 +142,7 @@ class DescrptSeAEf(DescrptSe):
         """Get rotational matrix."""
         return self.qmat
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
 
         Returns
@@ -209,7 +207,7 @@ class DescrptSeAEf(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -267,7 +265,7 @@ class DescrptSeAEf(DescrptSe):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -305,14 +303,14 @@ class DescrptSeAEfLower(DescrptSeA):
         op,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from abc import (
     ABC,
@@ -8,17 +12,16 @@ from collections import (
     defaultdict,
 )
 from typing import (
-    Dict,
+    TYPE_CHECKING,
     Iterator,
-    List,
-    Optional,
 )
 
 import numpy as np
 
-from deepmd.utils.path import (
-    DPPath,
-)
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +44,7 @@ class StatItem:
         self.sum = sum
         self.squared_sum = squared_sum
 
-    def __add__(self, other: "StatItem") -> "StatItem":
+    def __add__(self, other: StatItem) -> StatItem:
         return StatItem(
             number=self.number + other.number,
             sum=self.sum + other.sum,
@@ -98,7 +101,7 @@ class EnvMatStat(ABC):
         super().__init__()
         self.stats = defaultdict(StatItem)
 
-    def compute_stats(self, data: List[Dict[str, np.ndarray]]) -> None:
+    def compute_stats(self, data: list[dict[str, np.ndarray]]) -> None:
         """Compute the statistics of the environment matrix.
 
         Parameters
@@ -113,7 +116,7 @@ class EnvMatStat(ABC):
                 self.stats[kk] += iter_stats[kk]
 
     @abstractmethod
-    def iter(self, data: List[Dict[str, np.ndarray]]) -> Iterator[Dict[str, StatItem]]:
+    def iter(self, data: list[dict[str, np.ndarray]]) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
         Parameters
@@ -160,7 +163,7 @@ class EnvMatStat(ABC):
             )
 
     def load_or_compute_stats(
-        self, data: List[Dict[str, np.ndarray]], path: Optional[DPPath] = None
+        self, data: list[dict[str, np.ndarray]], path: DPPath | None = None
     ) -> None:
         """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
 
@@ -180,7 +183,7 @@ class EnvMatStat(ABC):
                 self.save_stats(path)
                 log.info(f"Save stats to {path}.")
 
-    def get_avg(self, default: float = 0) -> Dict[str, float]:
+    def get_avg(self, default: float = 0) -> dict[str, float]:
         """Get the average of the environment matrix.
 
         Parameters
@@ -197,7 +200,7 @@ class EnvMatStat(ABC):
 
     def get_std(
         self, default: float = 1e-1, protection: float = 1e-2
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Get the standard deviation of the environment matrix.
 
         Parameters

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Dict,
-    List,
-    Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -41,7 +41,7 @@ class DeepTensor(DeepEval):
         The neighbor list object. If None, then build the native neighbor list.
     """
 
-    tensors: ClassVar[Dict[str, str]] = {
+    tensors: ClassVar[dict[str, str]] = {
         # descriptor attrs
         "t_ntypes": "descrpt_attr/ntypes:0",
         "t_rcut": "descrpt_attr/rcut:0",
@@ -59,10 +59,10 @@ class DeepTensor(DeepEval):
 
     def __init__(
         self,
-        model_file: "Path",
+        model_file: Path,
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
+        input_map: dict | None = None,
         neighbor_list=None,
     ) -> None:
         """Constructor."""
@@ -127,11 +127,11 @@ class DeepTensor(DeepEval):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model."""
         return self.tselt
 
@@ -147,11 +147,11 @@ class DeepTensor(DeepEval):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: list[int],
         atomic: bool = True,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
     ) -> np.ndarray:
         """Evaluate the model.
@@ -277,13 +277,13 @@ class DeepTensor(DeepEval):
         self,
         coords: np.ndarray,
         cells: np.ndarray,
-        atom_types: List[int],
+        atom_types: list[int],
         atomic: bool = False,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None,
+        fparam: np.array | None = None,
+        aparam: np.array | None = None,
+        efield: np.array | None = None,
         mixed_type: bool = False,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         """Evaluate the model with interface similar to the energy model.
         Will return global tensor, component-wise force and virial
         and optionally atomic tensor and atomic virial.

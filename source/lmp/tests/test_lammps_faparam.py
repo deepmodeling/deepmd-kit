@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test LAMMPS fparam and aparam input."""
 
+from __future__ import (
+    annotations,
+)
+
 import os
 import subprocess as sp
 import sys

@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import unittest
 from typing import (
     Any,
-    Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -117,7 +119,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         attn_layer: int,
         attn_dotr: bool,
         normalize: bool,
-        temperature: Optional[float],
+        temperature: float | None,
     ) -> bool:
         return attn_layer == 0 and (attn_dotr or normalize or temperature is not None)
 
@@ -279,7 +281,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
         ) = self.param
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
             obj,
             self.natoms,
@@ -309,7 +311,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             mixed_types=True,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from collections import (
     defaultdict,
-)
-from typing import (
-    Dict,
-    List,
-    Tuple,
 )
 
 import numpy as np
 
 
-def weighted_average(errors: List[Dict[str, Tuple[float, float]]]) -> Dict:
+def weighted_average(errors: list[dict[str, tuple[float, float]]]) -> dict:
     """Compute wighted average of prediction errors (MAE or RMSE) for model.
 
     Parameters

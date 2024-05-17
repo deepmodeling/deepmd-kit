@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import bisect
 import logging
-from typing import (
-    List,
-    Optional,
-)
 
 import numpy as np
 
@@ -53,7 +53,7 @@ class DeepmdData:
         sys_path: str,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set: bool = False,
@@ -143,10 +143,10 @@ class DeepmdData:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: list[int] | None = None,
         repeat: int = 1,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ):
         """Add a data item that to be loaded.
@@ -330,11 +330,11 @@ class DeepmdData:
         else:
             return max(self.get_atom_type()) + 1
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
-    def get_atom_type(self) -> List[int]:
+    def get_atom_type(self) -> list[int]:
         """Get atom types."""
         return self.atom_type
 
@@ -593,7 +593,7 @@ class DeepmdData:
         high_prec=False,
         type_sel=None,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ):
         if atomic:
@@ -751,10 +751,10 @@ class DataRequirementItem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: list[int] | None = None,
         repeat: int = 1,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ) -> None:
         self.key = key

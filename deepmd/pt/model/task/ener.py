@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 import logging
-from typing import (
-    List,
-    Optional,
-    Tuple,
-)
 
 import numpy as np
 import torch
@@ -47,8 +46,8 @@ class EnergyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        neuron: list[int] = [128, 128, 128],
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -74,7 +73,7 @@ class EnergyFittingNet(InvarFitting):
         )
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GeneralFitting":
+    def deserialize(cls, data: dict) -> GeneralFitting:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("var_name")
@@ -89,7 +88,7 @@ class EnergyFittingNet(InvarFitting):
         }
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]
 
 
 @Fitting.register("direct_force")
@@ -179,19 +178,19 @@ class EnergyFittingNetDirect(Fitting):
     def serialize(self) -> dict:
         raise NotImplementedError
 
-    def deserialize(cls) -> "EnergyFittingNetDirect":
+    def deserialize(cls) -> EnergyFittingNetDirect:
         raise NotImplementedError
 
     def forward(
         self,
         inputs: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, None]:
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, None]:
         """Based on embedding net output, alculate total energy.
 
         Args:

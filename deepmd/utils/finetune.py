@@ -1,21 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from typing import (
     TYPE_CHECKING,
-    List,
 )
 
 import numpy as np
 
-from deepmd.infer.deep_eval import (
-    DeepEval,
-)
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
-
 if TYPE_CHECKING:
-    pass
+    from deepmd.infer.deep_eval import (
+        DeepEval,
+    )
+    from deepmd.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -23,8 +24,8 @@ log = logging.getLogger(__name__)
 def change_energy_bias_lower(
     data: DeepmdDataSystem,
     dp: DeepEval,
-    origin_type_map: List[str],
-    full_type_map: List[str],
+    origin_type_map: list[str],
+    full_type_map: list[str],
     bias_atom_e: np.ndarray,
     bias_adjust_mode="change-by-statistic",
     ntest=10,

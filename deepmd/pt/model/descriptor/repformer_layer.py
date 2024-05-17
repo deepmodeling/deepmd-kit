@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import torch
@@ -244,7 +243,7 @@ class Atten2Map(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Atten2Map":
+    def deserialize(cls, data: dict) -> Atten2Map:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -317,7 +316,7 @@ class Atten2MultiHeadApply(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Atten2MultiHeadApply":
+    def deserialize(cls, data: dict) -> Atten2MultiHeadApply:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -386,7 +385,7 @@ class Atten2EquiVarApply(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Atten2EquiVarApply":
+    def deserialize(cls, data: dict) -> Atten2EquiVarApply:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -505,7 +504,7 @@ class LocalAtten(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "LocalAtten":
+    def deserialize(cls, data: dict) -> LocalAtten:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -556,7 +555,7 @@ class RepformerLayer(torch.nn.Module):
         smooth: bool = True,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -978,10 +977,10 @@ class RepformerLayer(torch.nn.Module):
         assert (nb, nloc) == g1.shape[:2]
         assert (nb, nloc, nnei) == h2.shape[:3]
 
-        g2_update: List[torch.Tensor] = [g2]
-        h2_update: List[torch.Tensor] = [h2]
-        g1_update: List[torch.Tensor] = [g1]
-        g1_mlp: List[torch.Tensor] = [g1]
+        g2_update: list[torch.Tensor] = [g2]
+        h2_update: list[torch.Tensor] = [h2]
+        g1_update: list[torch.Tensor] = [g1]
+        g1_mlp: list[torch.Tensor] = [g1]
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -1074,7 +1073,7 @@ class RepformerLayer(torch.nn.Module):
     @torch.jit.export
     def list_update_res_avg(
         self,
-        update_list: List[torch.Tensor],
+        update_list: list[torch.Tensor],
     ) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1083,7 +1082,7 @@ class RepformerLayer(torch.nn.Module):
         return uu / (float(nitem) ** 0.5)
 
     @torch.jit.export
-    def list_update_res_incr(self, update_list: List[torch.Tensor]) -> torch.Tensor:
+    def list_update_res_incr(self, update_list: list[torch.Tensor]) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1093,7 +1092,7 @@ class RepformerLayer(torch.nn.Module):
 
     @torch.jit.export
     def list_update_res_residual(
-        self, update_list: List[torch.Tensor], update_name: str = "g1"
+        self, update_list: list[torch.Tensor], update_name: str = "g1"
     ) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1113,7 +1112,7 @@ class RepformerLayer(torch.nn.Module):
 
     @torch.jit.export
     def list_update(
-        self, update_list: List[torch.Tensor], update_name: str = "g1"
+        self, update_list: list[torch.Tensor], update_name: str = "g1"
     ) -> torch.Tensor:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
@@ -1218,7 +1217,7 @@ class RepformerLayer(torch.nn.Module):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "RepformerLayer":
+    def deserialize(cls, data: dict) -> RepformerLayer:
         """Deserialize the networks from a dict.
 
         Parameters

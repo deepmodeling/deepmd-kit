@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import copy
 import logging
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import torch
@@ -35,9 +34,11 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -71,11 +72,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def __init__(
         self,
-        type_map: List[str],
-        atom_exclude_types: List[int] = [],
-        pair_exclude_types: List[Tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[Dict[str, torch.Tensor]] = None,
+        type_map: list[str],
+        atom_exclude_types: list[int] = [],
+        pair_exclude_types: list[tuple[int, int]] = [],
+        rcond: float | None = None,
+        preset_out_bias: dict[str, torch.Tensor] | None = None,
     ):
         torch.nn.Module.__init__(self)
         BaseAtomicModel_.__init__(self)
@@ -88,7 +89,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def init_out_stat(self):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
-        self.bias_keys: List[str] = list(self.fitting_output_def().keys())
+        self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -115,13 +116,13 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             raise KeyError(key)
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def reinit_atom_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
@@ -131,7 +132,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def reinit_pair_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
@@ -183,11 +184,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -270,7 +271,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "BaseAtomicModel":
+    def deserialize(cls, data: dict) -> BaseAtomicModel:
         data = copy.deepcopy(data)
         variables = data.pop("@variables", None)
         variables = (
@@ -291,8 +292,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -314,8 +315,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -341,7 +342,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, torch.Tensor],
+        ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
         """Apply the stat to each atomic output.
@@ -365,7 +366,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def change_out_bias(
         self,
         sample_merged,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
         bias_adjust_mode="change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
@@ -455,7 +456,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def _varsize(
         self,
-        shape: List[int],
+        shape: list[int],
     ) -> int:
         output_size = 1
         len_shape = len(shape)
@@ -467,7 +468,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self,
         kk: str,
     ) -> int:
-        res: List[int] = []
+        res: list[int] = []
         for i, e in enumerate(self.bias_keys):
             if e == kk:
                 res.append(i)
@@ -476,8 +477,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def _store_out_stat(
         self,
-        out_bias: Dict[str, torch.Tensor],
-        out_std: Dict[str, torch.Tensor],
+        out_bias: dict[str, torch.Tensor],
+        out_std: dict[str, torch.Tensor],
         add: bool = False,
     ):
         ntypes = self.get_ntypes()
@@ -497,8 +498,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def _fetch_out_stat(
         self,
-        keys: List[str],
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        keys: list[str],
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Module taking care of important package constants."""
 
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 from pathlib import (
@@ -8,8 +12,6 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    List,
-    Optional,
 )
 
 from packaging.version import (
@@ -97,23 +99,23 @@ class RunOptions:
         deviice type - gpu or cpu
     """
 
-    gpus: Optional[List[int]]
+    gpus: list[int] | None
     world_size: int
     my_rank: int
     nodename: str
-    nodelist: List[int]
+    nodelist: list[int]
     my_device: str
 
-    _HVD: Optional["HVD"]
+    _HVD: HVD | None
     _log_handles_already_set: bool = False
 
     def __init__(
         self,
-        init_model: Optional[str] = None,
-        init_frz_model: Optional[str] = None,
-        finetune: Optional[str] = None,
-        restart: Optional[str] = None,
-        log_path: Optional[str] = None,
+        init_model: str | None = None,
+        init_frz_model: str | None = None,
+        finetune: str | None = None,
+        restart: str | None = None,
+        log_path: str | None = None,
         log_level: int = 0,
         mpi_log: str = "master",
     ):
@@ -152,9 +154,9 @@ class RunOptions:
 
     def _setup_logger(
         self,
-        log_path: Optional[Path],
+        log_path: Path | None,
         log_level: int,
-        mpi_log: Optional[str],
+        mpi_log: str | None,
     ):
         """Set up package loggers.
 
@@ -202,7 +204,7 @@ class RunOptions:
             self._init_serial()
             self._HVD = None
 
-    def _init_distributed(self, HVD: "HVD"):
+    def _init_distributed(self, HVD: HVD):
         """Initialize  settings for distributed training.
 
         Parameters

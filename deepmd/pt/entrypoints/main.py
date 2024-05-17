@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import argparse
 import json
 import logging
@@ -8,11 +12,6 @@ from copy import (
 )
 from pathlib import (
     Path,
-)
-from typing import (
-    List,
-    Optional,
-    Union,
 )
 
 import h5py
@@ -298,7 +297,7 @@ def freeze(FLAGS):
 
 
 @record
-def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
+def main(args: list[str] | argparse.Namespace | None = None):
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

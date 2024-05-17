@@ -14,6 +14,10 @@ DPModel = make_model(DPAtomicModel)
 
 """
 
+from __future__ import (
+    annotations,
+)
+
 from .base_atomic_model import (
     BaseAtomicModel,
 )

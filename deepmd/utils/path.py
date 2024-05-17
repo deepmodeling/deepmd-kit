@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import os
 from abc import (
     ABC,
@@ -12,9 +16,6 @@ from pathlib import (
 )
 from typing import (
     ClassVar,
-    Dict,
-    List,
-    Optional,
 )
 
 import h5py
@@ -76,7 +77,7 @@ class DPPath(ABC):
         """
 
     @abstractmethod
-    def glob(self, pattern: str) -> List["DPPath"]:
+    def glob(self, pattern: str) -> list[DPPath]:
         """Search path using the glob pattern.
 
         Parameters
@@ -91,7 +92,7 @@ class DPPath(ABC):
         """
 
     @abstractmethod
-    def rglob(self, pattern: str) -> List["DPPath"]:
+    def rglob(self, pattern: str) -> list[DPPath]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
 
@@ -115,11 +116,11 @@ class DPPath(ABC):
         """Check if self is directory."""
 
     @abstractmethod
-    def __truediv__(self, key: str) -> "DPPath":
+    def __truediv__(self, key: str) -> DPPath:
         """Used for / operator."""
 
     @abstractmethod
-    def __lt__(self, other: "DPPath") -> bool:
+    def __lt__(self, other: DPPath) -> bool:
         """Whether this DPPath is less than other for sorting."""
 
     @abstractmethod
@@ -205,7 +206,7 @@ class DPOSPath(DPPath):
         with self.path.open("wb") as f:
             np.save(f, arr)
 
-    def glob(self, pattern: str) -> List["DPPath"]:
+    def glob(self, pattern: str) -> list[DPPath]:
         """Search path using the glob pattern.
 
         Parameters
@@ -221,7 +222,7 @@ class DPOSPath(DPPath):
         # currently DPOSPath will only derivative DPOSPath
         return [type(self)(p, mode=self.mode) for p in self.path.glob(pattern)]
 
-    def rglob(self, pattern: str) -> List["DPPath"]:
+    def rglob(self, pattern: str) -> list[DPPath]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
 
@@ -245,11 +246,11 @@ class DPOSPath(DPPath):
         """Check if self is directory."""
         return self.path.is_dir()
 
-    def __truediv__(self, key: str) -> "DPPath":
+    def __truediv__(self, key: str) -> DPPath:
         """Used for / operator."""
         return type(self)(self.path / key, mode=self.mode)
 
-    def __lt__(self, other: "DPOSPath") -> bool:
+    def __lt__(self, other: DPOSPath) -> bool:
         """Whether this DPPath is less than other for sorting."""
         return self.path < other.path
 
@@ -332,7 +333,7 @@ class DPH5Path(DPPath):
         """
         return self.root[self._name][:]
 
-    def load_txt(self, dtype: Optional[np.dtype] = None, **kwargs) -> np.ndarray:
+    def load_txt(self, dtype: np.dtype | None = None, **kwargs) -> np.ndarray:
         """Load NumPy array from text.
 
         Returns
@@ -359,7 +360,7 @@ class DPH5Path(DPPath):
         self.root.flush()
         self._new_keys.append(self._name)
 
-    def glob(self, pattern: str) -> List["DPPath"]:
+    def glob(self, pattern: str) -> list[DPPath]:
         """Search path using the glob pattern.
 
         Parameters
@@ -379,7 +380,7 @@ class DPH5Path(DPPath):
             for pp in globfilter(subpaths, self._connect_path(pattern))
         ]
 
-    def rglob(self, pattern: str) -> List["DPPath"]:
+    def rglob(self, pattern: str) -> list[DPPath]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
 
@@ -396,11 +397,11 @@ class DPH5Path(DPPath):
         return self.glob("**" + pattern)
 
     @property
-    def _keys(self) -> List[str]:
+    def _keys(self) -> list[str]:
         """Walk all groups and dataset."""
         return self._file_keys(self.root)
 
-    __file_new_keys: ClassVar[Dict[h5py.File, List[str]]] = {}
+    __file_new_keys: ClassVar[dict[h5py.File, list[str]]] = {}
 
     @property
     def _new_keys(self):
@@ -410,7 +411,7 @@ class DPH5Path(DPPath):
 
     @classmethod
     @lru_cache(None)
-    def _file_keys(cls, file: h5py.File) -> List[str]:
+    def _file_keys(cls, file: h5py.File) -> list[str]:
         """Walk all groups and dataset."""
         l = []
         file.visit(lambda x: l.append("/" + x))
@@ -430,7 +431,7 @@ class DPH5Path(DPPath):
             return False
         return isinstance(self.root[self._name], h5py.Group)
 
-    def __truediv__(self, key: str) -> "DPPath":
+    def __truediv__(self, key: str) -> DPPath:
         """Used for / operator."""
         return type(self)(f"{self.root_path}#{self._connect_path(key)}", mode=self.mode)
 
@@ -440,7 +441,7 @@ class DPH5Path(DPPath):
             return f"{self._name}{path}"
         return f"{self._name}/{path}"
 
-    def __lt__(self, other: "DPH5Path") -> bool:
+    def __lt__(self, other: DPH5Path) -> bool:
         """Whether this DPPath is less than other for sorting."""
         if self.root_path == other.root_path:
             return self._name < other._name

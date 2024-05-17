@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -57,9 +55,9 @@ class DescrptLocFrame(Descriptor):
     def __init__(
         self,
         rcut: float,
-        sel_a: List[int],
-        sel_r: List[int],
-        axis_rule: List[int],
+        sel_a: list[int],
+        sel_r: list[int],
+        axis_rule: list[int],
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -139,7 +137,7 @@ class DescrptLocFrame(Descriptor):
         """Returns the output dimension of this descriptor."""
         return self.ndescrpt
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns
         -------
         nlist
@@ -217,7 +215,7 @@ class DescrptLocFrame(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -317,7 +315,7 @@ class DescrptLocFrame(Descriptor):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters

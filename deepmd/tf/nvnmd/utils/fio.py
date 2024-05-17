@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import json
 import logging
 import os
 import struct
-from typing import (
-    List,
-)
 
 import numpy as np
 
@@ -168,7 +169,7 @@ class FioBin:
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str, data: List[str]):
+    def save(self, file_name: str, data: list[str]):
         r"""Save hex string into binary file."""
         log.info(f"write binary to {file_name}")
         Fio().create_file_path(file_name)

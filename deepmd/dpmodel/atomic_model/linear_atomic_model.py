@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from typing import (
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -26,12 +26,14 @@ from ..output_def import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .dp_atomic_model import (
-    DPAtomicModel,
-)
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from .dp_atomic_model import (
+        DPAtomicModel,
+    )
 
 
 class LinearEnergyAtomicModel(BaseAtomicModel):
@@ -48,8 +50,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        models: List[BaseAtomicModel],
-        type_map: List[str],
+        models: list[BaseAtomicModel],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -96,26 +98,26 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
-    def get_model_rcuts(self) -> List[float]:
+    def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def get_model_nsels(self) -> List[int]:
+    def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_model_sels(self) -> List[Union[int, List[int]]]:
+    def get_model_sels(self) -> list[int | list[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels()),
@@ -128,10 +130,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        mapping: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
         """Return atomic prediction.
 
         Parameters
@@ -194,7 +196,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(ori_map: List[str], new_map: List[str]) -> np.ndarray:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> np.ndarray:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.
@@ -243,7 +245,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
+    def deserialize(cls, data: dict) -> LinearEnergyAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 2), 2, 2)
         data.pop("@class", None)
@@ -259,8 +261,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
-        nlists_: List[np.ndarray],
-    ) -> List[np.ndarray]:
+        nlists_: list[np.ndarray],
+    ) -> list[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
@@ -275,7 +277,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -322,8 +324,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
-        type_map: List[str],
-        smin_alpha: Optional[float] = 0.1,
+        type_map: list[str],
+        smin_alpha: float | None = 0.1,
         **kwargs,
     ):
         models = [dp_model, zbl_model]
@@ -350,7 +352,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+    def deserialize(cls, data) -> DPZBLLinearEnergyAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         models = [
@@ -366,8 +368,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self,
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
-        nlists_: List[np.ndarray],
-    ) -> List[np.ndarray]:
+        nlists_: list[np.ndarray],
+    ) -> list[np.ndarray]:
         """ZBL weight.
 
         Returns

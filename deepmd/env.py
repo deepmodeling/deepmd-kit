@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 from configparser import (
@@ -6,10 +10,6 @@ from configparser import (
 )
 from pathlib import (
     Path,
-)
-from typing import (
-    Dict,
-    Tuple,
 )
 
 import numpy as np
@@ -105,7 +105,7 @@ def set_default_nthreads():
         set_env_if_empty("DP_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
 
 
-def get_default_nthreads() -> Tuple[int, int]:
+def get_default_nthreads() -> tuple[int, int]:
     """Get paralellism settings.
 
     The method will first read the environment variables with the prefix `DP_`.
@@ -133,7 +133,7 @@ def get_default_nthreads() -> Tuple[int, int]:
 
 def _get_package_constants(
     config_file: Path = CONFIG_FILE,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 
     Parameters

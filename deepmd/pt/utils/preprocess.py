@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
-from typing import (
-    Union,
+from __future__ import (
+    annotations,
 )
+
+import logging
 
 import torch
 
@@ -242,7 +243,7 @@ def make_env_mat(
     coord,
     atype,
     region,
-    rcut: Union[float, list],
+    rcut: float | list,
     sec,
     pbc=True,
     type_split=True,

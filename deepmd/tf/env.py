@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Module that sets tensorflow working environment and exports inportant constants."""
 
+from __future__ import (
+    annotations,
+)
+
 import ctypes
 import os
 import platform
@@ -297,7 +301,7 @@ def reset_default_tf_session_config(cpu_only: bool):
             del default_tf_session_config.device_count["GPU"]
 
 
-def get_module(module_name: str) -> "ModuleType":
+def get_module(module_name: str) -> ModuleType:
     """Load force module.
 
     Returns

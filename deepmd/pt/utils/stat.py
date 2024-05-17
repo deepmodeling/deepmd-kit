@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from collections import (
     defaultdict,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -29,9 +30,11 @@ from deepmd.utils.out_stat import (
     compute_stats_from_atomic,
     compute_stats_from_redu,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -85,8 +88,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 def _restore_from_file(
     stat_file_path: DPPath,
-    keys: List[str] = ["energy"],
-) -> Optional[dict]:
+    keys: list[str] = ["energy"],
+) -> dict | None:
     if stat_file_path is None:
         return None, None
     stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
@@ -143,8 +146,8 @@ def _post_process_stat(
 
 
 def _compute_model_predict(
-    sampled: Union[Callable[[], List[dict]], List[dict]],
-    keys: List[str],
+    sampled: Callable[[], list[dict]] | list[dict],
+    keys: list[str],
     model_forward: Callable[..., torch.Tensor],
 ):
     auto_batch_size = AutoBatchSize()
@@ -183,8 +186,8 @@ def _compute_model_predict(
 
 def _make_preset_out_bias(
     ntypes: int,
-    ibias: List[Optional[np.array]],
-) -> Optional[np.array]:
+    ibias: list[np.array | None],
+) -> np.array | None:
     """Make preset out bias.
 
     output:
@@ -207,7 +210,7 @@ def _make_preset_out_bias(
 
 
 def _fill_stat_with_global(
-    atomic_stat: Union[np.ndarray, None],
+    atomic_stat: np.ndarray | None,
     global_stat: np.ndarray,
 ):
     """This function is used to fill atomic stat with global stat.
@@ -233,13 +236,13 @@ def _fill_stat_with_global(
 
 
 def compute_output_stats(
-    merged: Union[Callable[[], List[dict]], List[dict]],
+    merged: Callable[[], list[dict]] | list[dict],
     ntypes: int,
-    keys: Union[str, List[str]] = ["energy"],
-    stat_file_path: Optional[DPPath] = None,
-    rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
-    model_forward: Optional[Callable[..., torch.Tensor]] = None,
+    keys: str | list[str] = ["energy"],
+    stat_file_path: DPPath | None = None,
+    rcond: float | None = None,
+    preset_bias: dict[str, list[torch.Tensor | None]] | None = None,
+    model_forward: Callable[..., torch.Tensor] | None = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -391,12 +394,12 @@ def compute_output_stats(
 
 
 def compute_output_stats_global(
-    sampled: List[dict],
+    sampled: list[dict],
     ntypes: int,
-    keys: List[str],
-    rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
-    model_pred: Optional[Dict[str, np.ndarray]] = None,
+    keys: list[str],
+    rcond: float | None = None,
+    preset_bias: dict[str, list[torch.Tensor | None]] | None = None,
+    model_pred: dict[str, np.ndarray] | None = None,
 ):
     """This function only handle stat computation from reduced global labels."""
     # get label dict from sample; for each key, only picking the system with global labels.
@@ -505,10 +508,10 @@ def compute_output_stats_global(
 
 
 def compute_output_stats_atomic(
-    sampled: List[dict],
+    sampled: list[dict],
     ntypes: int,
-    keys: List[str],
-    model_pred: Optional[Dict[str, np.ndarray]] = None,
+    keys: list[str],
+    model_pred: dict[str, np.ndarray] | None = None,
 ):
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {

@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import unittest
-from typing import (
-    Any,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
-import numpy as np
+import unittest
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
 
 from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
 from deepmd.utils.argcheck import (
@@ -18,6 +20,9 @@ from .common import (
     CommonTest,
     parameterized,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
 
 if INSTALLED_PT:
     import torch
@@ -82,7 +87,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
 
         self.ntypes = 2
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return [
             obj.build(
                 obj.ntypes,
@@ -99,7 +104,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             for x in (pt_obj(device=PT_DEVICE),)
         ]
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

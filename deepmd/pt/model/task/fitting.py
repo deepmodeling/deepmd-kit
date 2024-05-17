@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 import logging
 from abc import (
     abstractmethod,
-)
-from typing import (
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -128,19 +127,19 @@ class GeneralFitting(Fitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        neuron: list[int] = [128, 128, 128],
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[int] = None,
-        exclude_types: List[int] = [],
-        trainable: Union[bool, List[bool]] = True,
-        remove_vaccum_contribution: Optional[List[bool]] = None,
+        rcond: float | None = None,
+        seed: int | None = None,
+        exclude_types: list[int] = [],
+        trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
         **kwargs,
     ):
         super().__init__()
@@ -243,7 +242,7 @@ class GeneralFitting(Fitting):
 
     def reinit_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
@@ -288,7 +287,7 @@ class GeneralFitting(Fitting):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GeneralFitting":
+    def deserialize(cls, data: dict) -> GeneralFitting:
         data = copy.deepcopy(data)
         variables = data.pop("@variables")
         nets = data.pop("nets")
@@ -307,9 +306,9 @@ class GeneralFitting(Fitting):
         return self.numb_aparam
 
     # make jit happy
-    exclude_types: List[int]
+    exclude_types: list[int]
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -317,7 +316,7 @@ class GeneralFitting(Fitting):
         If returning an empty list, all atom types are selected.
         """
         # make jit happy
-        sel_type: List[int] = []
+        sel_type: list[int] = []
         for ii in range(self.ntypes):
             if ii not in self.exclude_types:
                 sel_type.append(ii)
@@ -371,11 +370,11 @@ class GeneralFitting(Fitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ):
         xx = descriptor
         if self.remove_vaccum_contribution is not None:

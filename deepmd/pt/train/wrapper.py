@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
-from typing import (
-    Dict,
-    Optional,
-    Union,
+from __future__ import (
+    annotations,
 )
+
+import logging
 
 import torch
 
@@ -18,8 +17,8 @@ log = logging.getLogger(__name__)
 class ModelWrapper(torch.nn.Module):
     def __init__(
         self,
-        model: Union[torch.nn.Module, Dict],
-        loss: Union[torch.nn.Module, Dict] = None,
+        model: torch.nn.Module | dict,
+        loss: torch.nn.Module | dict = None,
         model_params=None,
         shared_links=None,
     ):
@@ -139,15 +138,15 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord,
         atype,
-        spin: Optional[torch.Tensor] = None,
-        box: Optional[torch.Tensor] = None,
-        cur_lr: Optional[torch.Tensor] = None,
-        label: Optional[torch.Tensor] = None,
-        task_key: Optional[torch.Tensor] = None,
+        spin: torch.Tensor | None = None,
+        box: torch.Tensor | None = None,
+        cur_lr: torch.Tensor | None = None,
+        label: torch.Tensor | None = None,
+        task_key: torch.Tensor | None = None,
         inference_only=False,
         do_atomic_virial=False,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ):
         if not self.multi_task:
             task_key = "Default"
@@ -183,12 +182,12 @@ class ModelWrapper(torch.nn.Module):
             )
             return model_pred, loss, more_loss
 
-    def set_extra_state(self, state: Dict):
+    def set_extra_state(self, state: dict):
         self.model_params = state["model_params"]
         self.train_infos = state["train_infos"]
         return None
 
-    def get_extra_state(self) -> Dict:
+    def get_extra_state(self) -> dict:
         state = {
             "model_params": self.model_params,
             "train_infos": self.train_infos,

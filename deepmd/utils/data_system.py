@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import collections
 import logging
 import warnings
@@ -7,10 +11,6 @@ from functools import (
 )
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -46,13 +46,13 @@ class DeepmdDataSystem:
 
     def __init__(
         self,
-        systems: List[str],
+        systems: list[str],
         batch_size: int,
         test_size: int,
-        rcut: Optional[float] = None,
+        rcut: float | None = None,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set=False,
@@ -243,7 +243,7 @@ class DeepmdDataSystem:
 
     @property
     @lru_cache(maxsize=None)
-    def default_mesh(self) -> List[np.ndarray]:
+    def default_mesh(self) -> list[np.ndarray]:
         """Mesh for each system."""
         return [
             make_default_mesh(
@@ -306,10 +306,10 @@ class DeepmdDataSystem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: list[int] | None = None,
         repeat: int = 1,
         default: float = 0.0,
-        dtype: Optional[np.dtype] = None,
+        dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
     ):
         """Add a data item that to be loaded.
@@ -389,7 +389,7 @@ class DeepmdDataSystem:
             probs = process_sys_probs(sys_probs, self.nbatches)
         self.sys_probs = probs
 
-    def get_batch(self, sys_idx: Optional[int] = None) -> dict:
+    def get_batch(self, sys_idx: int | None = None) -> dict:
         # batch generation style altered by Ziyao Li:
         # one should specify the "sys_prob" and "auto_prob_style" params
         # via set_sys_prob() function. The sys_probs this function uses is
@@ -416,7 +416,7 @@ class DeepmdDataSystem:
             b_data = self.get_batch_mixed()
         return b_data
 
-    def get_batch_standard(self, sys_idx: Optional[int] = None) -> dict:
+    def get_batch_standard(self, sys_idx: int | None = None) -> dict:
         """Get a batch of data from the data systems in the standard way.
 
         Parameters
@@ -463,7 +463,7 @@ class DeepmdDataSystem:
         b_data = self._merge_batch_data(batch_data)
         return b_data
 
-    def _merge_batch_data(self, batch_data: List[dict]) -> dict:
+    def _merge_batch_data(self, batch_data: list[dict]) -> dict:
         """Merge batch data from different systems.
 
         Parameters
@@ -511,7 +511,7 @@ class DeepmdDataSystem:
         return b_data
 
     # ! altered by Marián Rynik
-    def get_test(self, sys_idx: Optional[int] = None, n_test: int = -1):  # depreciated
+    def get_test(self, sys_idx: int | None = None, n_test: int = -1):  # depreciated
         """Get test data from the the data systems.
 
         Parameters
@@ -545,7 +545,7 @@ class DeepmdDataSystem:
         else:
             return self.test_size[self.pick_idx]
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
@@ -626,12 +626,12 @@ def _format_name_length(name, width):
 def print_summary(
     name: str,
     nsystems: int,
-    system_dirs: List[str],
-    natoms: List[int],
-    batch_size: List[int],
-    nbatches: List[int],
-    sys_probs: List[float],
-    pbc: List[bool],
+    system_dirs: list[str],
+    natoms: list[int],
+    batch_size: list[int],
+    nbatches: list[int],
+    sys_probs: list[float],
+    pbc: list[bool],
 ):
     """Print summary of systems.
 
@@ -723,7 +723,7 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
     return sys_probs
 
 
-def process_systems(systems: Union[str, List[str]]) -> List[str]:
+def process_systems(systems: str | list[str]) -> list[str]:
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
@@ -764,7 +764,7 @@ def process_systems(systems: Union[str, List[str]]) -> List[str]:
 
 
 def get_data(
-    jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
+    jdata: dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
 ) -> DeepmdDataSystem:
     """Get the data system.
 

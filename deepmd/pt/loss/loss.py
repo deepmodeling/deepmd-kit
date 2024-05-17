@@ -1,17 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
-    List,
+    TYPE_CHECKING,
 )
 
 import torch
 
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
+if TYPE_CHECKING:
+    from deepmd.utils.data import (
+        DataRequirementItem,
+    )
 
 
 class TaskLoss(torch.nn.Module, ABC):
@@ -25,7 +30,7 @@ class TaskLoss(torch.nn.Module, ABC):
 
     @property
     @abstractmethod
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         pass
 

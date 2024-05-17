@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
-    Optional,
     overload,
 )
 
@@ -18,7 +21,7 @@ from .env import PRECISION_DICT as PT_PRECISION_DICT
 
 
 class ActivationFn(torch.nn.Module):
-    def __init__(self, activation: Optional[str]):
+    def __init__(self, activation: str | None):
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
 

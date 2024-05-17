@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import re
 import warnings
 from typing import (
     Any,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -169,16 +168,16 @@ class DescrptSeAtten(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: list[int] | int,
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         set_davg_zero: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -193,10 +192,10 @@ class DescrptSeAtten(DescrptSeA):
         normalize=True,
         temperature=None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-3,
+        ln_eps: float | None = 1e-3,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
-        stripped_type_embedding: Optional[bool] = None,
+        stripped_type_embedding: bool | None = None,
         **kwargs,
     ) -> None:
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -338,7 +337,7 @@ class DescrptSeAtten(DescrptSeA):
         mesh: list,
         input_dict: dict,
         mixed_type: bool = False,
-        real_natoms_vec: Optional[list] = None,
+        real_natoms_vec: list | None = None,
         **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
@@ -512,7 +511,7 @@ class DescrptSeAtten(DescrptSeA):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -1382,9 +1381,9 @@ class DescrptSeAtten(DescrptSeA):
 
     def build_type_exclude_mask_mixed(
         self,
-        exclude_types: Set[Tuple[int, int]],
+        exclude_types: set[tuple[int, int]],
         ntypes: int,
-        sel: List[int],
+        sel: list[int],
         ndescrpt: int,
         atype: tf.Tensor,
         shape0: tf.Tensor,
@@ -1590,7 +1589,7 @@ class DescrptSeAtten(DescrptSeA):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
@@ -2045,9 +2044,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: list[int] | int,
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -2058,23 +2057,23 @@ class DescrptDPA1Compat(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         scaling_factor=1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-3,
+        ln_eps: float | None = 1e-3,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
-        spin: Optional[Any] = None,
+        type_map: list[str] | None = None,
+        spin: Any | None = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: int | None = None,
         uniform_seed: bool = False,
     ) -> None:
         if not normalize:
@@ -2151,7 +2150,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.utils.network import (
@@ -14,9 +18,6 @@ from deepmd.dpmodel.utils.update_sel import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -27,12 +28,9 @@ except ImportError:
     __version__ = "unknown"
 
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 from deepmd.dpmodel import (
@@ -53,6 +51,11 @@ from .base_descriptor import (
 from .descriptor import (
     DescriptorBlock,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 def np_softmax(x, axis=-1):
@@ -221,9 +224,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: list[int] | int,
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -234,24 +237,24 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         scaling_factor=1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
-        spin: Optional[Any] = None,
-        stripped_type_embedding: Optional[bool] = None,
+        spin: Any | None = None,
+        stripped_type_embedding: bool | None = None,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -322,7 +325,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.se_atten.get_sel()
 
@@ -372,7 +375,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: DPPath | None = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -389,7 +392,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         coord_ext,
         atype_ext,
         nlist,
-        mapping: Optional[np.ndarray] = None,
+        mapping: np.ndarray | None = None,
     ):
         """Compute the descriptor.
 
@@ -492,7 +495,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptDPA1":
+    def deserialize(cls, data: dict) -> DescrptDPA1:
         """Deserialize from dict."""
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
@@ -544,9 +547,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: list[int] | int,
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -556,16 +559,16 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         scaling_factor=1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         smooth: bool = True,
     ) -> None:
         self.rcut = rcut
@@ -665,7 +668,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -734,8 +737,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
         raise NotImplementedError
@@ -746,7 +749,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -779,8 +782,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         nlist: np.ndarray,
         coord_ext: np.ndarray,
         atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
+        atype_embd_ext: np.ndarray | None = None,
+        mapping: np.ndarray | None = None,
     ):
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
@@ -884,7 +887,7 @@ class NeighborGatedAttention(NativeOP):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         smooth: bool = True,
@@ -929,8 +932,8 @@ class NeighborGatedAttention(NativeOP):
         self,
         input_G,
         nei_mask,
-        input_r: Optional[np.ndarray] = None,
-        sw: Optional[np.ndarray] = None,
+        input_r: np.ndarray | None = None,
+        sw: np.ndarray | None = None,
     ):
         out = input_G
         for layer in self.attention_layers:
@@ -981,7 +984,7 @@ class NeighborGatedAttention(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NeighborGatedAttention":
+    def deserialize(cls, data: dict) -> NeighborGatedAttention:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -1010,7 +1013,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         smooth: bool = True,
@@ -1049,8 +1052,8 @@ class NeighborGatedAttentionLayer(NativeOP):
         self,
         x,
         nei_mask,
-        input_r: Optional[np.ndarray] = None,
-        sw: Optional[np.ndarray] = None,
+        input_r: np.ndarray | None = None,
+        sw: np.ndarray | None = None,
     ):
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
@@ -1083,7 +1086,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data) -> "NeighborGatedAttentionLayer":
+    def deserialize(cls, data) -> NeighborGatedAttentionLayer:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -1111,7 +1114,7 @@ class GatedAttentionLayer(NativeOP):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,

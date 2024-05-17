@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
-from typing import (
-    List,
+from __future__ import (
+    annotations,
 )
+
+import logging
 
 from deepmd.backend.backend import (
     Backend,
@@ -21,7 +22,7 @@ def neighbor_stat(
     *,
     system: str,
     rcut: float,
-    type_map: List[str],
+    type_map: list[str],
     mixed_type: bool = False,
     backend: str = "tensorflow",
     **kwargs,

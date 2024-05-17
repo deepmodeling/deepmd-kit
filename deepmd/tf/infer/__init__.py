@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Submodule containing all the implemented potentials."""
 
-from typing import (
-    TYPE_CHECKING,
+from __future__ import (
+    annotations,
 )
 
 from deepmd.infer import (
     DeepPotential,
+)
+from deepmd.infer.deep_eval import (
+    DeepEval,
 )
 
 from .data_modifier import (
@@ -17,9 +20,6 @@ from .deep_dipole import (
 )
 from .deep_dos import (
     DeepDOS,
-)
-from .deep_eval import (
-    DeepEval,
 )
 from .deep_polar import (
     DeepGlobalPolar,
@@ -37,11 +37,6 @@ from .ewald_recp import (
 from .model_devi import (
     calc_model_devi,
 )
-
-if TYPE_CHECKING:
-    from deepmd.infer.deep_eval import (
-        DeepEval,
-    )
 
 __all__ = [
     "DeepPotential",

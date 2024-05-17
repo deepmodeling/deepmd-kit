@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     ABC,
     abstractmethod,
@@ -7,11 +11,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -23,12 +22,13 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
 )
-from deepmd.utils.batch_size import (
-    AutoBatchSize,
-)
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+    from deepmd.utils.batch_size import (
+        AutoBatchSize,
+    )
 
 
 class DeepEvalBackend(ABC):
@@ -82,10 +82,10 @@ class DeepEvalBackend(ABC):
         self,
         model_file: str,
         output_def: ModelOutputDef,
-        *args: List[Any],
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
-        neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Dict[str, Any],
+        *args: list[Any],
+        auto_batch_size: bool | int | AutoBatchSize = True,
+        neighbor_list: ase.neighborlist.NewPrimitiveNeighborList | None = None,
+        **kwargs: dict[str, Any],
     ) -> None:
         pass
 
@@ -102,10 +102,10 @@ class DeepEvalBackend(ABC):
         cells: np.ndarray,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
-    ) -> Dict[str, np.ndarray]:
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: dict[str, Any],
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -152,7 +152,7 @@ class DeepEvalBackend(ABC):
         """Get the number of atom types of this model."""
 
     @abstractmethod
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
 
     @abstractmethod
@@ -168,11 +168,11 @@ class DeepEvalBackend(ABC):
         coords: np.ndarray,
         cells: np.ndarray,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
-        **kwargs: Dict[str, Any],
+        **kwargs: dict[str, Any],
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -250,11 +250,11 @@ class DeepEvalBackend(ABC):
 
     @property
     @abstractmethod
-    def model_type(self) -> "DeepEval":
+    def model_type(self) -> DeepEval:
         """The the evaluator of the model type."""
 
     @abstractmethod
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -316,10 +316,10 @@ class DeepEval(ABC):
     def __init__(
         self,
         model_file: str,
-        *args: List[Any],
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
-        neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Dict[str, Any],
+        *args: list[Any],
+        auto_batch_size: bool | int | AutoBatchSize = True,
+        neighbor_list: ase.neighborlist.NewPrimitiveNeighborList | None = None,
+        **kwargs: dict[str, Any],
     ) -> None:
         self.deep_eval = DeepEvalBackend(
             model_file,
@@ -345,7 +345,7 @@ class DeepEval(ABC):
         """Get the number of atom types of this model."""
         return self.deep_eval.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.deep_eval.get_type_map()
 
@@ -362,7 +362,7 @@ class DeepEval(ABC):
         coords: np.ndarray,
         atom_types: np.ndarray,
         mixed_type: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if mixed_type or atom_types.ndim > 1:
             natoms = len(atom_types[0])
         else:
@@ -382,12 +382,12 @@ class DeepEval(ABC):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
-        **kwargs: Dict[str, Any],
+        **kwargs: dict[str, Any],
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -515,7 +515,7 @@ class DeepEval(ABC):
                 )
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

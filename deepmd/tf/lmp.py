@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Register entry points for lammps-wheel."""
 
+from __future__ import (
+    annotations,
+)
+
 import os
 import platform
 from importlib import (
@@ -8,10 +12,6 @@ from importlib import (
 )
 from pathlib import (
     Path,
-)
-from typing import (
-    List,
-    Optional,
 )
 
 from packaging.version import (
@@ -32,12 +32,12 @@ else:
     find_libpython = None
 
 
-def get_env(paths: List[Optional[str]]) -> str:
+def get_env(paths: list[str | None]) -> str:
     """Get the environment variable from given paths."""
     return ":".join(p for p in paths if p is not None)
 
 
-def get_library_path(module: str, filename: str) -> List[str]:
+def get_library_path(module: str, filename: str) -> list[str]:
     """Get library path from a module.
 
     Parameters

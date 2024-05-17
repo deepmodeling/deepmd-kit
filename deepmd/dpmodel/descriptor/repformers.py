@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -18,11 +19,8 @@ except ImportError:
     __version__ = "unknown"
 
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 from deepmd.dpmodel import (
@@ -43,6 +41,11 @@ from .descriptor import (
 from .dpa1 import (
     np_softmax,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @DescriptorBlock.register("se_repformer")
@@ -77,11 +80,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
     ):
         r"""
         The repformer descriptor block.
@@ -255,7 +258,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -320,8 +323,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
         raise NotImplementedError
@@ -332,7 +335,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -342,8 +345,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         nlist: np.ndarray,
         coord_ext: np.ndarray,
         atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
+        atype_embd_ext: np.ndarray | None = None,
+        mapping: np.ndarray | None = None,
     ):
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         nlist = nlist * exclude_mask
@@ -728,7 +731,7 @@ class Atten2Map(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Atten2Map":
+    def deserialize(cls, data: dict) -> Atten2Map:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -803,7 +806,7 @@ class Atten2MultiHeadApply(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Atten2MultiHeadApply":
+    def deserialize(cls, data: dict) -> Atten2MultiHeadApply:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -872,7 +875,7 @@ class Atten2EquiVarApply(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Atten2EquiVarApply":
+    def deserialize(cls, data: dict) -> Atten2EquiVarApply:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -996,7 +999,7 @@ class LocalAtten(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "LocalAtten":
+    def deserialize(cls, data: dict) -> LocalAtten:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -1047,7 +1050,7 @@ class RepformerLayer(NativeOP):
         smooth: bool = True,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1338,10 +1341,10 @@ class RepformerLayer(NativeOP):
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: List[np.ndarray] = [g2]
-        h2_update: List[np.ndarray] = [h2]
-        g1_update: List[np.ndarray] = [g1]
-        g1_mlp: List[np.ndarray] = [g1]
+        g2_update: list[np.ndarray] = [g2]
+        h2_update: list[np.ndarray] = [h2]
+        g1_update: list[np.ndarray] = [g1]
+        g1_mlp: list[np.ndarray] = [g1]
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -1433,7 +1436,7 @@ class RepformerLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: List[np.ndarray],
+        update_list: list[np.ndarray],
     ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1441,7 +1444,7 @@ class RepformerLayer(NativeOP):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: List[np.ndarray]) -> np.ndarray:
+    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1450,7 +1453,7 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: List[np.ndarray], update_name: str = "g1"
+        self, update_list: list[np.ndarray], update_name: str = "g1"
     ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1468,7 +1471,7 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update(
-        self, update_list: List[np.ndarray], update_name: str = "g1"
+        self, update_list: list[np.ndarray], update_name: str = "g1"
     ) -> np.ndarray:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
@@ -1573,7 +1576,7 @@ class RepformerLayer(NativeOP):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "RepformerLayer":
+    def deserialize(cls, data: dict) -> RepformerLayer:
         """Deserialize the networks from a dict.
 
         Parameters

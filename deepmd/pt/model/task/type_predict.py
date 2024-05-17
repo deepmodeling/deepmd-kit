@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
+from __future__ import (
+    annotations,
 )
 
-import torch
+from typing import (
+    TYPE_CHECKING,
+)
 
 from deepmd.pt.model.network.network import (
     MaskLMHead,
@@ -11,6 +13,9 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.model.task import (
     Fitting,
 )
+
+if TYPE_CHECKING:
+    import torch
 
 
 class TypePredictNet(Fitting):
@@ -32,7 +37,7 @@ class TypePredictNet(Fitting):
             weight=None,
         )
 
-    def forward(self, features, masked_tokens: Optional[torch.Tensor] = None):
+    def forward(self, features, masked_tokens: torch.Tensor | None = None):
         """Calculate the predicted logits.
         Args:
         - features: Input features with shape [nframes, nloc, feature_dim].

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import os
 from typing import (
-    List,
-    Tuple,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -21,12 +24,14 @@ from deepmd.tf.infer.deep_dipole import DeepDipoleOld as DeepDipole
 from deepmd.tf.infer.ewald_recp import (
     EwaldRecp,
 )
-from deepmd.tf.utils.data import (
-    DeepmdData,
-)
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data import (
+        DeepmdData,
+    )
 
 
 class DipoleChargeModifier(DeepDipole):
@@ -47,8 +52,8 @@ class DipoleChargeModifier(DeepDipole):
     def __init__(
         self,
         model_name: str,
-        model_charge_map: List[float],
-        sys_charge_map: List[float],
+        model_charge_map: list[float],
+        sys_charge_map: list[float],
         ewald_h: float = 1,
         ewald_beta: float = 1,
     ) -> None:
@@ -219,7 +224,7 @@ class DipoleChargeModifier(DeepDipole):
         box: np.ndarray,
         atype: np.ndarray,
         eval_fv: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate the modification.
 
         Parameters

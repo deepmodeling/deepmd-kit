@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Gradients for prod force se_a_mask."""
 
+from __future__ import (
+    annotations,
+)
+
 from tensorflow.python.framework import (
     ops,
 )

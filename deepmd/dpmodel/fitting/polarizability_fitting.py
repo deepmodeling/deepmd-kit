@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
 )
 
 import numpy as np
@@ -89,26 +90,26 @@ class PolarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
         old_impl: bool = False,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: list[float] | None = None,
         shift_diag: bool = True,
         # not used
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -195,7 +196,7 @@ class PolarFitting(GeneralFitting):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GeneralFitting":
+    def deserialize(cls, data: dict) -> GeneralFitting:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         var_name = data.pop("var_name", None)
@@ -219,12 +220,12 @@ class PolarFitting(GeneralFitting):
         self,
         descriptor: np.ndarray,
         atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        gr: np.ndarray | None = None,
+        g2: np.ndarray | None = None,
+        h2: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

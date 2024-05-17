@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     Any,
     Callable,
-    Dict,
     Generator,
-    Optional,
-    Tuple,
 )
 
 from deepmd.tf.env import (
@@ -45,9 +46,9 @@ class ParallelOp:
 
     def __init__(
         self,
-        builder: Callable[..., Tuple[Dict[str, tf.Tensor], Tuple[tf.Tensor]]],
-        nthreads: Optional[int] = None,
-        config: Optional[tf.ConfigProto] = None,
+        builder: Callable[..., tuple[dict[str, tf.Tensor], tuple[tf.Tensor]]],
+        nthreads: int | None = None,
+        config: tf.ConfigProto | None = None,
     ) -> None:
         if nthreads is not None:
             self.nthreads = nthreads
@@ -65,8 +66,8 @@ class ParallelOp:
                 self.ops.append(op)
 
     def generate(
-        self, sess: tf.Session, feed: Generator[Dict[str, Any], None, None]
-    ) -> Generator[Tuple, None, None]:
+        self, sess: tf.Session, feed: Generator[dict[str, Any], None, None]
+    ) -> Generator[tuple, None, None]:
         """Returns a generator.
 
         Parameters

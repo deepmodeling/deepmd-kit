@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Union,
+from __future__ import (
+    annotations,
 )
+
+import copy
 
 import numpy as np
 
@@ -57,10 +55,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, List[int]],
-        type_map: List[str],
-        rcond: Optional[float] = None,
-        atom_ener: Optional[List[float]] = None,
+        sel: int | list[int],
+        type_map: list[str],
+        rcond: float | None = None,
+        atom_ener: list[float] | None = None,
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -109,10 +107,10 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [self.sel]
 
     def get_nsel(self) -> int:
@@ -147,7 +145,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "PairTabAtomicModel":
+    def deserialize(cls, data) -> PairTabAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
@@ -167,10 +165,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        mapping: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.reshape(nframes, -1, 3)
 
@@ -374,7 +372,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return 0
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

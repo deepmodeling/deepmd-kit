@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -97,7 +100,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             "embedding_width": 30,
         }
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         (
             resnet_dt,
             precision,
@@ -144,7 +147,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             None,
         )["polarizability"]
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:
             # shape is not same
             ret = ret[0].reshape(-1, self.natoms[0], 1)

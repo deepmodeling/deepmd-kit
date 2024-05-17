@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     abstractmethod,
 )
@@ -10,9 +14,6 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     ClassVar,
-    Dict,
-    List,
-    Type,
 )
 
 from deepmd.utils.plugin import (
@@ -45,7 +46,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
     """
 
     @staticmethod
-    def get_backend(key: str) -> Type["Backend"]:
+    def get_backend(key: str) -> type[Backend]:
         """Get the backend by key.
 
         Parameters
@@ -61,7 +62,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
         return Backend.get_class_by_type(key)
 
     @staticmethod
-    def get_backends() -> Dict[str, Type["Backend"]]:
+    def get_backends() -> dict[str, type[Backend]]:
         """Get all the registered backend names.
 
         Returns
@@ -73,8 +74,8 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
 
     @staticmethod
     def get_backends_by_feature(
-        feature: "Backend.Feature",
-    ) -> Dict[str, Type["Backend"]]:
+        feature: Backend.Feature,
+    ) -> dict[str, type[Backend]]:
         """Get all the registered backend names with a specific feature.
 
         Parameters
@@ -94,7 +95,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
         }
 
     @staticmethod
-    def detect_backend_by_model(filename: str) -> Type["Backend"]:
+    def detect_backend_by_model(filename: str) -> type[Backend]:
         """Detect the backend of the given model file.
 
         Parameters
@@ -128,7 +129,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
 
     features: ClassVar[Feature] = Feature(0)
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = []
+    suffixes: ClassVar[list[str]] = []
     """The supported suffixes of the saved model.
 
     The first element is considered as the default suffix."""
@@ -145,7 +146,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
 
     @property
     @abstractmethod
-    def entry_point_hook(self) -> Callable[["Namespace"], None]:
+    def entry_point_hook(self) -> Callable[[Namespace], None]:
         """The entry point hook of the backend.
 
         Returns
@@ -157,7 +158,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
 
     @property
     @abstractmethod
-    def deep_eval(self) -> Type["DeepEvalBackend"]:
+    def deep_eval(self) -> type[DeepEvalBackend]:
         """The Deep Eval backend of the backend.
 
         Returns
@@ -169,7 +170,7 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
 
     @property
     @abstractmethod
-    def neighbor_stat(self) -> Type["NeighborStat"]:
+    def neighbor_stat(self) -> type[NeighborStat]:
         """The neighbor statistics of the backend.
 
         Returns

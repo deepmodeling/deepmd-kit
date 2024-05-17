@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
-    Optional,
+    TYPE_CHECKING,
 )
 
 import torch
@@ -8,9 +12,11 @@ import torch
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 class BaseModel(torch.nn.Module, make_base_model()):
@@ -22,7 +28,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute or load the statistics parameters of the model,

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
-from typing import (
-    Optional,
+from __future__ import (
+    annotations,
 )
+
+import logging
 
 import numpy as np
 
@@ -602,10 +603,10 @@ class Wrap:
 
 def wrap(
     *,
-    nvnmd_config: Optional[str] = "nvnmd/config.npy",
-    nvnmd_weight: Optional[str] = "nvnmd/weight.npy",
-    nvnmd_map: Optional[str] = "nvnmd/map.npy",
-    nvnmd_model: Optional[str] = "nvnmd/model.pb",
+    nvnmd_config: str | None = "nvnmd/config.npy",
+    nvnmd_weight: str | None = "nvnmd/weight.npy",
+    nvnmd_map: str | None = "nvnmd/map.npy",
+    nvnmd_model: str | None = "nvnmd/model.pb",
     **kwargs,
 ):
     wrapObj = Wrap(nvnmd_config, nvnmd_weight, nvnmd_map, nvnmd_model)

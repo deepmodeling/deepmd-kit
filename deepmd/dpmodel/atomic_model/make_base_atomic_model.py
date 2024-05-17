@@ -1,21 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
-    Dict,
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 def make_base_atomic_model(
@@ -57,7 +61,7 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
             pass
 
@@ -66,7 +70,7 @@ def make_base_atomic_model(
             return len(self.get_type_map())
 
         @abstractmethod
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             pass
 
@@ -87,7 +91,7 @@ def make_base_atomic_model(
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -121,10 +125,10 @@ def make_base_atomic_model(
             extended_coord: t_tensor,
             extended_atype: t_tensor,
             nlist: t_tensor,
-            mapping: Optional[t_tensor] = None,
-            fparam: Optional[t_tensor] = None,
-            aparam: Optional[t_tensor] = None,
-        ) -> Dict[str, t_tensor]:
+            mapping: t_tensor | None = None,
+            fparam: t_tensor | None = None,
+            aparam: t_tensor | None = None,
+        ) -> dict[str, t_tensor]:
             pass
 
         @abstractmethod
@@ -160,7 +164,7 @@ def make_base_atomic_model(
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -168,7 +172,7 @@ def make_base_atomic_model(
             """
             odef = self.fitting_output_def()
             if var_name is None:
-                require: List[bool] = []
+                require: list[bool] = []
                 for vv in odef.keys():
                     require.append(self.do_grad_(vv, "r"))
                 return any(require)
@@ -177,7 +181,7 @@ def make_base_atomic_model(
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.
@@ -185,7 +189,7 @@ def make_base_atomic_model(
             """
             odef = self.fitting_output_def()
             if var_name is None:
-                require: List[bool] = []
+                require: list[bool] = []
                 for vv in odef.keys():
                     require.append(self.do_grad_(vv, "c"))
                 return any(require)

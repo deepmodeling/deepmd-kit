@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -81,11 +79,11 @@ class DescrptSeT(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
@@ -184,7 +182,7 @@ class DescrptSeT(DescrptSe):
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
 
         Returns
@@ -362,7 +360,7 @@ class DescrptSeT(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -467,7 +465,7 @@ class DescrptSeT(DescrptSe):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters

@@ -1,18 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from abc import (
     abstractmethod,
 )
 from typing import (
-    Type,
+    TYPE_CHECKING,
 )
 
 from deepmd.utils.data_system import (
     get_data,
 )
-from deepmd.utils.neighbor_stat import (
-    NeighborStat,
-)
+
+if TYPE_CHECKING:
+    from deepmd.utils.neighbor_stat import (
+        NeighborStat,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -158,7 +164,7 @@ class BaseUpdateSel:
 
     @property
     @abstractmethod
-    def neighbor_stat(self) -> Type[NeighborStat]:
+    def neighbor_stat(self) -> type[NeighborStat]:
         pass
 
     @abstractmethod

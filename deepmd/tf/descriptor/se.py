@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import re
-from typing import (
-    List,
-    Set,
-    Tuple,
+from __future__ import (
+    annotations,
 )
+
+import re
 
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
@@ -76,7 +75,7 @@ class DescrptSe(Descriptor):
         self.rij = tf.identity(self.rij, name="o_rij" + suffix)
         self.nlist = tf.identity(self.nlist, name="o_nlist" + suffix)
 
-    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> tuple[str]:
         """Get names of tensors.
 
         Parameters
@@ -169,11 +168,11 @@ class DescrptSe(Descriptor):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
-        excluded_types: Set[Tuple[int, int]] = set(),
+        excluded_types: set[tuple[int, int]] = set(),
         suffix: str = "",
     ) -> dict:
         """Serialize network.

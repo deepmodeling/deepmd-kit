@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import os
 import site
 from functools import (
@@ -16,13 +20,10 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    Optional,
-)
 
 
 @lru_cache
-def find_pytorch() -> Optional[str]:
+def find_pytorch() -> str | None:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:

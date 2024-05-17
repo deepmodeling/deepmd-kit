@@ -1,21 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
-from typing import (
-    Dict,
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
-import numpy as np
+import copy
+from typing import (
+    TYPE_CHECKING,
+)
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
-)
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -24,6 +21,13 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 @BaseAtomicModel.register("standard")
@@ -46,7 +50,7 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         descriptor,
         fitting,
-        type_map: List[str],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -64,7 +68,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return self.descriptor.get_rcut()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
@@ -85,10 +89,10 @@ class DPAtomicModel(BaseAtomicModel):
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
         nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        mapping: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
         """Models' atomic predictions.
 
         Parameters
@@ -146,7 +150,7 @@ class DPAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPAtomicModel":
+    def deserialize(cls, data) -> DPAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
@@ -166,7 +170,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting.get_dim_aparam()
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import functools
 import logging
 import time
@@ -10,7 +14,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Dict,
 )
 
 import numpy as np
@@ -88,7 +91,7 @@ log = logging.getLogger(__name__)
 class Trainer:
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         training_data,
         stat_file_path=None,
         validation_data=None,

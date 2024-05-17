@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -104,7 +108,7 @@ class LayerNorm(nn.Module):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "LayerNorm":
+    def deserialize(cls, data: dict) -> LayerNorm:
         """Deserialize the layer from a dict.
 
         Parameters

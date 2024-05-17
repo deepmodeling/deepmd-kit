@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     TYPE_CHECKING,
-    Dict,
     Iterator,
-    List,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 
 
 class EnvMatStat(BaseEnvMatStat):
-    def compute_stat(self, env_mat: Dict[str, torch.Tensor]) -> Dict[str, StatItem]:
+    def compute_stat(self, env_mat: dict[str, torch.Tensor]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
         Parameters
@@ -70,7 +70,7 @@ class EnvMatStatSe(EnvMatStat):
         The descriptor of the model.
     """
 
-    def __init__(self, descriptor: "DescriptorBlock"):
+    def __init__(self, descriptor: DescriptorBlock):
         super().__init__()
         self.descriptor = descriptor
         self.last_dim = (
@@ -78,8 +78,8 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: List[Dict[str, Union[torch.Tensor, List[Tuple[int, int]]]]]
-    ) -> Iterator[Dict[str, StatItem]]:
+        self, data: list[dict[str, torch.Tensor | list[tuple[int, int]]]]
+    ) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
         Parameters

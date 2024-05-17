@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from deepmd.infer.model_devi import (
     calc_model_devi,
     calc_model_devi_e,

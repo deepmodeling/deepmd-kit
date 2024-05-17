@@ -1,26 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 import functools
 import logging
 from typing import (
-    Dict,
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 import torch
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-)
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -29,6 +25,14 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel import (
+        FittingOutputDef,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +56,7 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         descriptor,
         fitting,
-        type_map: List[str],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -79,7 +83,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return self.rcut
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
         return self.sel
 
@@ -110,7 +114,7 @@ class DPAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPAtomicModel":
+    def deserialize(cls, data) -> DPAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
@@ -127,11 +131,11 @@ class DPAtomicModel(BaseAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
         Parameters
@@ -185,7 +189,7 @@ class DPAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute or load the statistics parameters of the model,
@@ -231,7 +235,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting_net.get_dim_aparam()
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

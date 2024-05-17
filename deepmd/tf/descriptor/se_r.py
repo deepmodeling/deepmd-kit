@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
-    List,
-    Optional,
-    Tuple,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -32,9 +34,6 @@ from deepmd.tf.utils.network import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
-from deepmd.tf.utils.spin import (
-    Spin,
-)
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
 )
@@ -48,6 +47,11 @@ from .descriptor import (
 from .se import (
     DescrptSe,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 
 @Descriptor.register("se_e2_r")
@@ -91,18 +95,18 @@ class DescrptSeR(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -378,7 +382,7 @@ class DescrptSeR(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -484,7 +488,7 @@ class DescrptSeR(DescrptSe):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import socket
-from typing import (
-    List,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
+import socket
 
-def get_host_names() -> Tuple[str, List[str]]:
+
+def get_host_names() -> tuple[str, list[str]]:
     """Get host names of all nodes in the cluster.
 
     If mpi4py is not installed or MPI is not used, then the

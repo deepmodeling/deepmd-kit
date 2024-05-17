@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import torch
@@ -20,9 +21,6 @@ from deepmd.pt.utils import (
 from deepmd.utils.pair_tab import (
     PairTab,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -30,6 +28,11 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseAtomicModel.register("pairtab")
@@ -69,8 +72,8 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, List[int]],
-        type_map: List[str],
+        sel: int | list[int],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -138,10 +141,10 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [self.sel]
 
     def get_nsel(self) -> int:
@@ -176,7 +179,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "PairTabAtomicModel":
+    def deserialize(cls, data) -> PairTabAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
@@ -198,8 +201,8 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -224,12 +227,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
         if self.do_grad_r() or self.do_grad_c():
@@ -450,7 +453,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return 0
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

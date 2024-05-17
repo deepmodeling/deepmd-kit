@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 import queue
@@ -10,7 +14,7 @@ from threading import (
     Thread,
 )
 from typing import (
-    List,
+    TYPE_CHECKING,
 )
 
 import h5py
@@ -36,14 +40,16 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
 from deepmd.utils.data_system import (
     print_summary,
     prob_sys_size_ext,
     process_sys_probs,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.data import (
+        DataRequirementItem,
+    )
 
 log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
@@ -85,7 +91,7 @@ class DpLoaderSet(Dataset):
             with h5py.File(systems) as file:
                 systems = [os.path.join(systems, item) for item in file.keys()]
 
-        self.systems: List[DeepmdDataSetForLoader] = []
+        self.systems: list[DeepmdDataSetForLoader] = []
         if len(systems) >= 100:
             log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
@@ -105,7 +111,7 @@ class DpLoaderSet(Dataset):
         ) as pool:
             self.systems = pool.map(construct_dataset, systems)
 
-        self.sampler_list: List[DistributedSampler] = []
+        self.sampler_list: list[DistributedSampler] = []
         self.index = []
         self.total_batch = 0
 
@@ -177,7 +183,7 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
@@ -185,7 +191,7 @@ class DpLoaderSet(Dataset):
     def print_summary(
         self,
         name: str,
-        prob: List[float],
+        prob: list[float],
     ):
         print_summary(
             name,

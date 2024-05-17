@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import functools
 from typing import (
-    Dict,
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 import torch
@@ -14,9 +16,6 @@ from deepmd.pt.model.atomic_model import (
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -24,6 +23,11 @@ from deepmd.utils.spin import (
 from .make_model import (
     make_model,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 class SpinModel(torch.nn.Module):
@@ -57,7 +61,7 @@ class SpinModel(torch.nn.Module):
         extended_atype,
         extended_spin,
         nlist,
-        mapping: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
     ):
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
@@ -244,7 +248,7 @@ class SpinModel(torch.nn.Module):
         return aparam
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
         ntypes = len(tmap) // 2  # ignore the virtual type
@@ -266,7 +270,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.get_dim_aparam()
 
     @torch.jit.export
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
         Only atoms with selected atom types have atomic contribution
         to the result of the model.
@@ -282,7 +286,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.is_aparam_nall()
 
     @torch.jit.export
-    def model_output_type(self) -> List[str]:
+    def model_output_type(self) -> list[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
@@ -327,7 +331,7 @@ class SpinModel(torch.nn.Module):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute or load the statistics parameters of the model,
@@ -375,11 +379,11 @@ class SpinModel(torch.nn.Module):
         coord,
         atype,
         spin,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc = coord.shape[:2]
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
         model_ret = self.backbone_model.forward_common(
@@ -422,9 +426,9 @@ class SpinModel(torch.nn.Module):
         extended_atype,
         extended_spin,
         nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ):
         nframes, nloc = nlist.shape[:2]
@@ -481,7 +485,7 @@ class SpinModel(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data) -> "SpinModel":
+    def deserialize(cls, data) -> SpinModel:
         backbone_model_obj = make_model(DPAtomicModel).deserialize(
             data["backbone_model"]
         )
@@ -509,11 +513,11 @@ class SpinEnergyModel(SpinModel):
         coord,
         atype,
         spin,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         if aparam is not None:
             aparam = self.expand_aparam(aparam, coord.shape[1])
         model_ret = self.forward_common(
@@ -542,9 +546,9 @@ class SpinEnergyModel(SpinModel):
         extended_atype,
         extended_spin,
         nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ):
         model_ret = self.forward_common_lower(

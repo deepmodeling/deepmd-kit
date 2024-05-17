@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Base of plugin systems."""
+
 # copied from https://github.com/deepmodeling/dpdata/blob/a3e76d75de53f6076254de82d18605a010dc3b00/dpdata/plugin.py
+from __future__ import (
+    annotations,
+)
 
 import difflib
 from abc import (
@@ -8,9 +12,6 @@ from abc import (
 )
 from typing import (
     Callable,
-    Dict,
-    Optional,
-    Type,
 )
 
 
@@ -34,7 +35,7 @@ class Plugin:
     def __init__(self):
         self.plugins = {}
 
-    def __add__(self, other) -> "Plugin":
+    def __add__(self, other) -> Plugin:
         self.plugins.update(other.plugins)
         return self
 
@@ -99,7 +100,7 @@ class PluginVariant(metaclass=VariantABCMeta):
     pass
 
 
-def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
+def make_plugin_registry(name: str | None = None) -> type[object]:
     """Make a plugin registry.
 
     Parameters
@@ -141,7 +142,7 @@ def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
             return PR.__plugins.register(key)
 
         @classmethod
-        def get_class_by_type(cls, class_type: str) -> Type[object]:
+        def get_class_by_type(cls, class_type: str) -> type[object]:
             """Get the class by the plugin type."""
             if class_type in PR.__plugins.plugins:
                 return PR.__plugins.plugins[class_type]
@@ -154,7 +155,7 @@ def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
                 raise RuntimeError(f"Unknown {name} type: {class_type}. {dym_message}")
 
         @classmethod
-        def get_plugins(cls) -> Dict[str, Type[object]]:
+        def get_plugins(cls) -> dict[str, type[object]]:
             """Get all the registered plugins."""
             return PR.__plugins.plugins
 

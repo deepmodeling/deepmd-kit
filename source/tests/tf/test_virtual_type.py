@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test virtual atomic type."""
 
+from __future__ import (
+    annotations,
+)
+
 import os
 import unittest
 

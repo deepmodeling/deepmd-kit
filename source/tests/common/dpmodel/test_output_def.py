@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import unittest
-from typing import (
-    List,
+from __future__ import (
+    annotations,
 )
+
+import unittest
 
 import numpy as np
 
@@ -26,7 +27,7 @@ class VariableDef:
     def __init__(
         self,
         name: str,
-        shape: List[int],
+        shape: list[int],
         atomic: bool = True,
     ):
         self.name = name

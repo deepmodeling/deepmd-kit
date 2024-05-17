@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import torch
@@ -27,9 +27,6 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -41,6 +38,11 @@ from .se_atten import (
     DescrptBlockSeAtten,
     NeighborGatedAttention,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("dpa1")
@@ -199,7 +201,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -213,7 +215,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
         normalize=True,
@@ -221,16 +223,16 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         concat_output_tebd: bool = True,
         trainable: bool = True,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
-        stripped_type_embedding: Optional[bool] = None,
+        stripped_type_embedding: bool | None = None,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
         # not implemented
         spin=None,
-        type: Optional[str] = None,
-        seed: Optional[int] = None,
+        type: str | None = None,
+        seed: int | None = None,
         old_impl: bool = False,
     ):
         super().__init__()
@@ -305,7 +307,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.se_atten.get_sel()
 
@@ -372,8 +374,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -452,7 +454,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptDPA1":
+    def deserialize(cls, data: dict) -> DescrptDPA1:
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
@@ -492,8 +494,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ):
         """Compute the descriptor.
 

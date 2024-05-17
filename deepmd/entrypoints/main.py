@@ -1,9 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Common entrypoints."""
 
-import argparse
+from __future__ import (
+    annotations,
+)
+
 from pathlib import (
     Path,
+)
+from typing import (
+    TYPE_CHECKING,
 )
 
 from deepmd.backend.backend import (
@@ -33,6 +39,9 @@ from deepmd.infer.model_devi import (
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
+
+if TYPE_CHECKING:
+    import argparse
 
 
 def main(args: argparse.Namespace):

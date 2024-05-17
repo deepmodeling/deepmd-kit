@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import warnings
 from typing import (
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -22,9 +25,6 @@ from deepmd.tf.env import (
 from deepmd.tf.fit.fitting import (
     Fitting,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.loss.tensor import (
     TensorLoss,
 )
@@ -38,6 +38,11 @@ from deepmd.tf.utils.network import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 @Fitting.register("polar")
@@ -83,14 +88,14 @@ class PolarFittingSeA(Fitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: list[int] | None = None,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: list[float] | None = None,
         shift_diag: bool = True,  # YWolfeee: will support the user to decide whether to use this function
         # diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
-        seed: Optional[int] = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -149,7 +154,7 @@ class PolarFittingSeA(Fitting):
         self.mixed_prec = None
         self.mixed_types = mixed_types
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get selected atom types."""
         return self.sel_type
 
@@ -364,8 +369,8 @@ class PolarFittingSeA(Fitting):
         input_d: tf.Tensor,
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ):
         """Build the computational graph for fitting net.
@@ -522,7 +527,7 @@ class PolarFittingSeA(Fitting):
             graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters
@@ -639,13 +644,13 @@ class GlobalPolarFittingSeA:
     def __init__(
         self,
         descrpt: tf.Tensor,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: list[int] | None = None,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
-        diag_shift: Optional[List[float]] = None,
-        seed: Optional[int] = None,
+        scale: list[float] | None = None,
+        diag_shift: list[float] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
     ) -> None:
@@ -680,7 +685,7 @@ class GlobalPolarFittingSeA:
         input_d,
         rot_mat,
         natoms,
-        input_dict: Optional[dict] = None,
+        input_dict: dict | None = None,
         reuse=None,
         suffix="",
     ) -> tf.Tensor:
@@ -740,7 +745,7 @@ class GlobalPolarFittingSeA:
             graph=graph, graph_def=graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters

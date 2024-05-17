@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import torch
@@ -37,9 +37,6 @@ from deepmd.pt.utils.update_sel import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -57,6 +54,11 @@ from .se_atten import (
     DescrptBlockSeAtten,
 )
 
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
+
 
 @BaseDescriptor.register("dpa2")
 class DescrptDPA2(BaseDescriptor, torch.nn.Module):
@@ -64,20 +66,20 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         self,
         ntypes: int,
         # args for repinit
-        repinit: Union[RepinitArgs, dict],
+        repinit: RepinitArgs | dict,
         # args for repformer
-        repformer: Union[RepformerArgs, dict],
+        repformer: RepformerArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = True,
         precision: str = "float64",
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
         old_impl: bool = False,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
@@ -255,7 +257,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -342,8 +344,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -422,7 +424,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptDPA2":
+    def deserialize(cls, data: dict) -> DescrptDPA2:
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
@@ -481,8 +483,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ):
         """Compute the descriptor.
 

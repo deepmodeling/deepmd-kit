@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from typing import (
     TYPE_CHECKING,
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -33,19 +34,19 @@ class DOSFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         numb_dos: int = 300,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        bias_dos: Optional[np.ndarray] = None,
-        rcond: Optional[float] = None,
-        trainable: Union[bool, List[bool]] = True,
+        bias_dos: np.ndarray | None = None,
+        rcond: float | None = None,
+        trainable: bool | list[bool] = True,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = False,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
         # not used
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ):
         if bias_dos is not None:
             self.bias_dos = bias_dos
@@ -70,7 +71,7 @@ class DOSFittingNet(InvarFitting):
         )
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GeneralFitting":
+    def deserialize(cls, data: dict) -> GeneralFitting:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data["numb_dos"] = data.pop("dim_out")

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import json
 import logging
 import warnings
@@ -64,7 +68,7 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: Optional[dict]):
+    def deprecate_something(data: dict | None):
         if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
@@ -150,8 +154,8 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[List[str]] = None, doc: str = ""
-    ) -> Callable[[], List[Argument]]:
+        self, name: str, alias: list[str] | None = None, doc: str = ""
+    ) -> Callable[[], list[Argument]]:
         """Register a descriptor argument plugin.
 
         Parameters
@@ -178,7 +182,7 @@ class ArgsPlugin:
             alias = tuple(alias)
         return self.__plugin.register((name, alias, doc))
 
-    def get_all_argument(self, exclude_hybrid: bool = False) -> List[Argument]:
+    def get_all_argument(self, exclude_hybrid: bool = False) -> list[Argument]:
         """Get all arguments.
 
         Parameters
@@ -2424,7 +2428,7 @@ def gen_json(**kwargs):
     )
 
 
-def gen_args(**kwargs) -> List[Argument]:
+def gen_args(**kwargs) -> list[Argument]:
     return [
         model_args(),
         learning_rate_args(),

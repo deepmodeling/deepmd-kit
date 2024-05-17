@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import glob
 import json
 import os
@@ -14,12 +18,7 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Optional,
-    Set,
     TypeVar,
-    Union,
     get_args,
 )
 
@@ -64,8 +63,8 @@ _ACTIVATION = Literal[
     "linear",
 ]
 # get_args is new in py38
-VALID_PRECISION: Set[_PRECISION] = set(get_args(_PRECISION))
-VALID_ACTIVATION: Set[_ACTIVATION] = set(get_args(_ACTIVATION))
+VALID_PRECISION: set[_PRECISION] = set(get_args(_PRECISION))
+VALID_ACTIVATION: set[_ACTIVATION] = set(get_args(_ACTIVATION))
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
@@ -90,10 +89,10 @@ def add_data_requirement(
     atomic: bool = False,
     must: bool = False,
     high_prec: bool = False,
-    type_sel: Optional[bool] = None,
+    type_sel: bool | None = None,
     repeat: int = 1,
     default: float = 0.0,
-    dtype: Optional[np.dtype] = None,
+    dtype: np.dtype | None = None,
     output_natoms_for_type_sel: bool = False,
 ):
     """Specify data requirements for training.
@@ -193,8 +192,8 @@ def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
 # if the deprecated_key argument is left empty function puppose is only custom
 # error since dict[key] already raises KeyError when the key is missing
 def j_must_have(
-    jdata: Dict[str, "_DICT_VAL"], key: str, deprecated_key: List[str] = []
-) -> "_DICT_VAL":
+    jdata: dict[str, _DICT_VAL], key: str, deprecated_key: list[str] = []
+) -> _DICT_VAL:
     """Assert that supplied dictionary conaines specified key.
 
     Returns
@@ -218,7 +217,7 @@ def j_must_have(
         return jdata[key]
 
 
-def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
+def j_loader(filename: str | Path) -> dict[str, Any]:
     """Load yaml or json settings file.
 
     Parameters
@@ -248,7 +247,7 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
 
 
 # TODO port expand_sys_str completely to pathlib when all callers are ported
-def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
+def expand_sys_str(root_dir: str | Path) -> list[str]:
     """Recursively iterate over directories taking those that contain `type.raw` file.
 
     Parameters
@@ -268,7 +267,7 @@ def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     return matches
 
 
-def get_np_precision(precision: "_PRECISION") -> np.dtype:
+def get_np_precision(precision: _PRECISION) -> np.dtype:
     """Get numpy precision constant from string.
 
     Parameters

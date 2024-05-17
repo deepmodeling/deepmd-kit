@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import json
 import logging
 from typing import (
     Any,
-    Dict,
 )
 
 from deepmd.tf.utils.errors import (
@@ -17,7 +20,7 @@ log = logging.getLogger(__name__)
 
 
 def replace_model_params_with_pretrained_model(
-    jdata: Dict[str, Any], pretrained_model: str
+    jdata: dict[str, Any], pretrained_model: str
 ):
     """Replace the model params in input script according to pretrained model.
 

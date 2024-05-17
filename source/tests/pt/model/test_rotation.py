@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import json
 import unittest
 from pathlib import (
     Path,
-)
-from typing import (
-    List,
-    Optional,
 )
 
 import numpy as np
@@ -30,7 +30,7 @@ class CheckSymmetry(DeepmdData):
     def __init__(
         self,
         sys_path: str,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
     ):
         super().__init__(sys_path=sys_path, type_map=type_map)
         self.add("energy", 1, atomic=False, must=False, high_prec=True)

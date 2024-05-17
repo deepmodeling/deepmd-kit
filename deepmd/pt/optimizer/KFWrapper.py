@@ -1,13 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import math
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-from torch.optim.optimizer import (
-    Optimizer,
-)
+
+if TYPE_CHECKING:
+    from torch.optim.optimizer import (
+        Optimizer,
+    )
 
 
 class KFOptimizerWrapper:

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     ABCMeta,
     abstractmethod,
-)
-from typing import (
-    Dict,
-    Tuple,
 )
 
 import numpy as np
@@ -23,10 +23,10 @@ class Loss(metaclass=ABCMeta):
         self,
         learning_rate: tf.Tensor,
         natoms: tf.Tensor,
-        model_dict: Dict[str, tf.Tensor],
-        label_dict: Dict[str, tf.Tensor],
+        model_dict: dict[str, tf.Tensor],
+        label_dict: dict[str, tf.Tensor],
         suffix: str,
-    ) -> Tuple[tf.Tensor, Dict[str, tf.Tensor]]:
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         """Build the loss function graph.
 
         Parameters
@@ -54,7 +54,7 @@ class Loss(metaclass=ABCMeta):
     def eval(
         self,
         sess: tf.Session,
-        feed_dict: Dict[tf.placeholder, tf.Tensor],
+        feed_dict: dict[tf.placeholder, tf.Tensor],
         natoms: tf.Tensor,
     ) -> dict:
         """Eval the loss function.

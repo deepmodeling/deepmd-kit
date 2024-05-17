@@ -4,15 +4,15 @@
 See issue #2982 for more information.
 """
 
+from __future__ import (
+    annotations,
+)
+
 import copy
 import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -48,7 +48,7 @@ class Identity(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Identity":
+    def deserialize(cls, data: dict) -> Identity:
         return Identity()
 
 
@@ -75,7 +75,7 @@ class NativeLayer(NativeOP):
         num_out,
         bias: bool = True,
         use_timestep: bool = False,
-        activation_function: Optional[str] = None,
+        activation_function: str | None = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
     ) -> None:
@@ -120,7 +120,7 @@ class NativeLayer(NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NativeLayer":
+    def deserialize(cls, data: dict) -> NativeLayer:
         """Deserialize the layer from a dict.
 
         Parameters
@@ -355,7 +355,7 @@ class LayerNorm(NativeLayer):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "LayerNorm":
+    def deserialize(cls, data: dict) -> LayerNorm:
         """Deserialize the layer from a dict.
 
         Parameters
@@ -458,7 +458,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             The layers of the network.
         """
 
-        def __init__(self, layers: Optional[List[dict]] = None) -> None:
+        def __init__(self, layers: list[dict] | None = None) -> None:
             super().__init__()
             if layers is None:
                 layers = []
@@ -480,7 +480,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             }
 
         @classmethod
-        def deserialize(cls, data: dict) -> "NN":
+        def deserialize(cls, data: dict) -> NN:
             """Deserialize the network from a dict.
 
             Parameters
@@ -565,7 +565,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
         def __init__(
             self,
             in_dim,
-            neuron: List[int] = [24, 48, 96],
+            neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
@@ -614,7 +614,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             }
 
         @classmethod
-        def deserialize(cls, data: dict) -> "EmbeddingNet":
+        def deserialize(cls, data: dict) -> EmbeddingNet:
             """Deserialize the network from a dict.
 
             Parameters
@@ -664,7 +664,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             self,
             in_dim,
             out_dim,
-            neuron: List[int] = [24, 48, 96],
+            neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
@@ -715,7 +715,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             }
 
         @classmethod
-        def deserialize(cls, data: dict) -> "FittingNet":
+        def deserialize(cls, data: dict) -> FittingNet:
             """Deserialize the network from a dict.
 
             Parameters
@@ -756,7 +756,7 @@ class NetworkCollection:
     """
 
     # subclass may override this
-    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+    NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
@@ -767,7 +767,7 @@ class NetworkCollection:
         ndim: int,
         ntypes: int,
         network_type: str = "network",
-        networks: List[Union[NativeNet, dict]] = [],
+        networks: list[NativeNet | dict] = [],
     ):
         self.ndim = ndim
         self.ntypes = ntypes
@@ -837,7 +837,7 @@ class NetworkCollection:
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NetworkCollection":
+    def deserialize(cls, data: dict) -> NetworkCollection:
         """Deserialize the networks from a dict.
 
         Parameters

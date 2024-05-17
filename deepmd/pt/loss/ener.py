@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import torch
@@ -35,7 +34,7 @@ class EnergyStdLoss(TaskLoss):
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: Optional[float] = None,
+        relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
@@ -336,7 +335,7 @@ class EnergyStdLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
         if self.has_e:

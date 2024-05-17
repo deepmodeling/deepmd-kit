@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import itertools
 from typing import (
+    TYPE_CHECKING,
     Callable,
     ClassVar,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -30,12 +30,6 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -45,7 +39,7 @@ try:
         Final,
     )
 except ImportError:
-    from torch.jit import Final
+    pass
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pt.model.network.mlp import (
@@ -63,6 +57,18 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 
+if TYPE_CHECKING:
+    from torch.jit import (
+        Final,
+    )
+
+    from deepmd.utils.env_mat_stat import (
+        StatItem,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
+
 
 @BaseDescriptor.register("se_e2_a")
 @BaseDescriptor.register("se_a")
@@ -78,7 +84,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
@@ -114,7 +120,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.sea.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sea.get_sel()
 
@@ -165,8 +171,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -188,7 +194,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
@@ -198,8 +204,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ):
         """Compute the descriptor.
 
@@ -274,7 +280,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptSeA":
+    def deserialize(cls, data: dict) -> DescrptSeA:
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
@@ -323,7 +329,7 @@ class DescrptBlockSeA(DescriptorBlock):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
@@ -416,7 +422,7 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -480,8 +486,8 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -517,7 +523,7 @@ class DescrptBlockSeA(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -527,7 +533,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -537,8 +543,8 @@ class DescrptBlockSeA(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
     ):
         """Calculate decoded embedding for each atom.
 

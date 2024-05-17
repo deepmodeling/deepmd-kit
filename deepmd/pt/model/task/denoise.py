@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import torch
@@ -98,7 +98,7 @@ class DenoiseNet(Fitting):
         nlist_mask,
         features,
         sw,
-        masked_tokens: Optional[torch.Tensor] = None,
+        masked_tokens: torch.Tensor | None = None,
     ):
         """Calculate the updated coord.
         Args:

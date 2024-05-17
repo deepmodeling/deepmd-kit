@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 import math
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Union,
-)
 
 import torch
 
@@ -47,7 +45,7 @@ def make_hessian_model(T_Model):
 
         def requires_hessian(
             self,
-            keys: Union[str, List[str]],
+            keys: str | list[str],
         ):
             """Set which output variable(s) requires hessian."""
             if isinstance(keys, str):
@@ -64,11 +62,11 @@ def make_hessian_model(T_Model):
             self,
             coord,
             atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, torch.Tensor]:
+        ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
             Parameters
@@ -119,10 +117,10 @@ def make_hessian_model(T_Model):
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-        ) -> Dict[str, torch.Tensor]:
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
             nf, nloc = atype.shape
             coord = coord.view([nf, (nloc * 3)])
             box = box.view([nf, 9]) if box is not None else None
@@ -130,7 +128,7 @@ def make_hessian_model(T_Model):
             aparam = aparam.view([nf, nloc, -1]) if aparam is not None else None
             fdef = self.atomic_output_def()
             # keys of values that require hessian
-            hess_keys: List[str] = []
+            hess_keys: list[str] = []
             for kk in fdef.keys():
                 if fdef[kk].r_hessian:
                     hess_keys.append(kk)
@@ -164,9 +162,9 @@ def make_hessian_model(T_Model):
             ci,
             coord,
             atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> torch.Tensor:
             # coord, # (nloc x 3)
             # atype, # nloc
@@ -188,9 +186,9 @@ def make_hessian_model(T_Model):
             obj: CM,
             ci: int,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor],
-            fparam: Optional[torch.Tensor],
-            aparam: Optional[torch.Tensor],
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
         ):
             self.atype, self.box, self.fparam, self.aparam = atype, box, fparam, aparam
             self.ci = ci

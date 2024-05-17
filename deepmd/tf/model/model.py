@@ -1,17 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from abc import (
     ABC,
     abstractmethod,
 )
-from enum import (
-    Enum,
-)
 from typing import (
-    Dict,
-    List,
-    Optional,
-    Union,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -41,14 +39,8 @@ from deepmd.tf.fit.fitting import (
 from deepmd.tf.fit.polar import (
     PolarFittingSeA,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.utils.argcheck import (
     type_embedding_args,
-)
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
 )
 from deepmd.tf.utils.graph import (
     load_graph_def,
@@ -68,6 +60,18 @@ from deepmd.utils.plugin import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from enum import (
+        Enum,
+    )
+
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 class Model(ABC, make_plugin_registry("model")):
@@ -111,18 +115,18 @@ class Model(ABC, make_plugin_registry("model")):
 
     def __init__(
         self,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_bias_nsample: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
         srtab_add_bias: bool = True,
-        spin: Optional[Spin] = None,
-        compress: Optional[dict] = None,
+        spin: Spin | None = None,
+        compress: dict | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -165,10 +169,10 @@ class Model(ABC, make_plugin_registry("model")):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ):
         """Build the model.
 
@@ -233,10 +237,10 @@ class Model(ABC, make_plugin_registry("model")):
         box: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ):
         """Build the descriptor part of the model.
 
@@ -321,10 +325,10 @@ class Model(ABC, make_plugin_registry("model")):
     def build_type_embedding(
         self,
         ntypes: int,
-        frz_model: Optional[str] = None,
-        ckpt_meta: Optional[str] = None,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
         suffix: str = "",
-        reuse: Optional[Union[bool, Enum]] = None,
+        reuse: bool | Enum | None = None,
     ) -> tf.Tensor:
         """Build the type embedding part of the model.
 
@@ -373,7 +377,7 @@ class Model(ABC, make_plugin_registry("model")):
         return dout
 
     def _import_graph_def_from_frz_model(
-        self, frz_model: str, feed_dict: dict, return_elements: List[str]
+        self, frz_model: str, feed_dict: dict, return_elements: list[str]
     ):
         return_nodes = [x[:-2] for x in return_elements]
         graph, graph_def = load_graph_def(frz_model)
@@ -383,7 +387,7 @@ class Model(ABC, make_plugin_registry("model")):
         )
 
     def _import_graph_def_from_ckpt_meta(
-        self, ckpt_meta: str, feed_dict: dict, return_elements: List[str]
+        self, ckpt_meta: str, feed_dict: dict, return_elements: list[str]
     ):
         return_nodes = [x[:-2] for x in return_elements]
         with tf.Graph().as_default() as graph:
@@ -442,24 +446,24 @@ class Model(ABC, make_plugin_registry("model")):
         """
         raise RuntimeError("Not supported")
 
-    def get_numb_fparam(self) -> Union[int, dict]:
+    def get_numb_fparam(self) -> int | dict:
         """Get the number of frame parameters."""
         return 0
 
-    def get_numb_aparam(self) -> Union[int, dict]:
+    def get_numb_aparam(self) -> int | dict:
         """Get the number of atomic parameters."""
         return 0
 
-    def get_numb_dos(self) -> Union[int, dict]:
+    def get_numb_dos(self) -> int | dict:
         """Get the number of gridpoints in energy space."""
         return 0
 
     @abstractmethod
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
 
     @abstractmethod
-    def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
         """Get the loss function(s)."""
 
     @abstractmethod
@@ -482,7 +486,7 @@ class Model(ABC, make_plugin_registry("model")):
         box: tf.Tensor,
         mesh: tf.Tensor,
         **kwargs,
-    ) -> Dict[str, tf.Tensor]:
+    ) -> dict[str, tf.Tensor]:
         """Generate the feed_dict for current descriptor.
 
         Parameters
@@ -548,7 +552,7 @@ class Model(ABC, make_plugin_registry("model")):
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = "") -> "Model":
+    def deserialize(cls, data: dict, suffix: str = "") -> Model:
         """Deserialize the model.
 
         There is no suffix in a native DP model, but it is important
@@ -643,10 +647,10 @@ class StandardModel(Model):
 
     def __init__(
         self,
-        descriptor: Union[dict, Descriptor],
-        fitting_net: Union[dict, Fitting],
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        descriptor: dict | Descriptor,
+        fitting_net: dict | Fitting,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -736,11 +740,11 @@ class StandardModel(Model):
         ):
             self.typeebd.init_variables(graph, graph_def, suffix=suffix)
 
-    def get_fitting(self) -> Union[Fitting, dict]:
+    def get_fitting(self) -> Fitting | dict:
         """Get the fitting(s)."""
         return self.fitting
 
-    def get_loss(self, loss: dict, lr) -> Union[Loss, dict]:
+    def get_loss(self, loss: dict, lr) -> Loss | dict:
         """Get the loss function(s)."""
         return self.fitting.get_loss(loss, lr)
 
@@ -770,7 +774,7 @@ class StandardModel(Model):
         return local_jdata_cpy
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
+    def deserialize(cls, data: dict, suffix: str = "") -> Descriptor:
         """Deserialize the model.
 
         There is no suffix in a native DP model, but it is important

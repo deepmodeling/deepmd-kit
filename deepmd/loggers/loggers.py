@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Logger initialization for package."""
 
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 from typing import (
     TYPE_CHECKING,
-    Optional,
 )
 
 if TYPE_CHECKING:
@@ -88,7 +91,7 @@ class _MPIFileStream:
     """
 
     def __init__(
-        self, filename: "Path", MPI: "MPI", mode: str = "_MPI_APPEND_MODE"
+        self, filename: Path, MPI: MPI, mode: str = "_MPI_APPEND_MODE"
     ) -> None:
         self.stream = MPI.File.Open(MPI.COMM_WORLD, filename, mode)
         self.stream.Set_atomicity(True)
@@ -127,8 +130,8 @@ class _MPIHandler(logging.FileHandler):
 
     def __init__(
         self,
-        filename: "Path",
-        MPI: "MPI",
+        filename: Path,
+        MPI: MPI,
         mode: str = "_MPI_APPEND_MODE",
     ) -> None:
         self.MPI = MPI
@@ -143,7 +146,7 @@ class _MPIHandler(logging.FileHandler):
 
 
 def set_log_handles(
-    level: int, log_path: Optional["Path"] = None, mpi_log: Optional[str] = None
+    level: int, log_path: Path | None = None, mpi_log: str | None = None
 ):
     """Set desired level for package loggers and add file handlers.
 

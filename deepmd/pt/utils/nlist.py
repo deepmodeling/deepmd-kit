@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Union,
+from __future__ import (
+    annotations,
 )
 
 import torch
@@ -21,9 +18,9 @@ def extend_input_and_build_neighbor_list(
     coord,
     atype,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     mixed_types: bool = False,
-    box: Optional[torch.Tensor] = None,
+    box: torch.Tensor | None = None,
 ):
     nframes, nloc = atype.shape[:2]
     if box is not None:
@@ -55,7 +52,7 @@ def build_neighbor_list(
     atype: torch.Tensor,
     nloc: int,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
     """Build neightbor list for a single frame. keeps nsel neighbors.
@@ -156,7 +153,7 @@ def build_neighbor_list(
 def nlist_distinguish_types(
     nlist: torch.Tensor,
     atype: torch.Tensor,
-    sel: List[int],
+    sel: list[int],
 ):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
@@ -206,9 +203,9 @@ def get_multiple_nlist_key(
 def build_multiple_neighbor_list(
     coord: torch.Tensor,
     nlist: torch.Tensor,
-    rcuts: List[float],
-    nsels: List[int],
-) -> Dict[str, torch.Tensor]:
+    rcuts: list[float],
+    nsels: list[int],
+) -> dict[str, torch.Tensor]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
@@ -276,9 +273,9 @@ def build_multiple_neighbor_list(
 def extend_coord_with_ghosts(
     coord: torch.Tensor,
     atype: torch.Tensor,
-    cell: Optional[torch.Tensor],
+    cell: torch.Tensor | None,
     rcut: float,
-    cell_cpu: Optional[torch.Tensor] = None,
+    cell_cpu: torch.Tensor | None = None,
 ):
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors

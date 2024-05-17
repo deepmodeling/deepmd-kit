@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -81,10 +80,10 @@ class EnvMat(NativeOP):
         coord_ext: np.ndarray,
         atype_ext: np.ndarray,
         nlist: np.ndarray,
-        davg: Optional[np.ndarray] = None,
-        dstd: Optional[np.ndarray] = None,
+        davg: np.ndarray | None = None,
+        dstd: np.ndarray | None = None,
         radial_only: bool = False,
-    ) -> Union[np.ndarray, np.ndarray]:
+    ) -> np.ndarray | np.ndarray:
         """Compute the environment matrix.
 
         Parameters
@@ -146,5 +145,5 @@ class EnvMat(NativeOP):
     def deserialize(
         cls,
         data: dict,
-    ) -> "EnvMat":
+    ) -> EnvMat:
         return cls(**data)

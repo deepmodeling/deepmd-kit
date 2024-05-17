@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from typing import (
+    TYPE_CHECKING,
     Iterator,
-    Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -17,9 +20,6 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.batch_size import (
     AutoBatchSize,
 )
-from deepmd.tf.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.tf.utils.nlist import (
     extend_coord_with_ghosts,
 )
@@ -27,6 +27,11 @@ from deepmd.tf.utils.sess import (
     run_sess,
 )
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +66,7 @@ class NeighborStatOP:
         atype: tf.Tensor,
         cell: tf.Tensor,
         pbc: tf.Tensor,
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         """Calculate the nearest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -187,7 +192,7 @@ class NeighborStat(BaseNeighborStat):
             self.op = self.build()
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
-    def build(self) -> Tuple[tf.Tensor, tf.Tensor]:
+    def build(self) -> tuple[tf.Tensor, tf.Tensor]:
         """Build the graph.
 
         Returns
@@ -215,7 +220,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Produce data.
 
         Parameters
@@ -251,7 +256,7 @@ class NeighborStat(BaseNeighborStat):
         self,
         coord: np.ndarray,
         atype: np.ndarray,
-        box: Optional[np.ndarray],
+        box: np.ndarray | None,
         pbc: bool,
     ):
         """Execute the operation.

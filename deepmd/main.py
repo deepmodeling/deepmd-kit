@@ -5,6 +5,10 @@ If only printing the help message, this module does not call
 the main DeePMD-kit module to avoid the slow import of TensorFlow.
 """
 
+from __future__ import (
+    annotations,
+)
+
 import argparse
 import logging
 import os
@@ -12,12 +16,6 @@ import textwrap
 import warnings
 from collections import (
     defaultdict,
-)
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -57,10 +55,10 @@ class RawTextArgumentDefaultsHelpFormatter(
     """This formatter is used to print multile-line help message with default value."""
 
 
-BACKENDS: Dict[str, Type[Backend]] = Backend.get_backends_by_feature(
+BACKENDS: dict[str, type[Backend]] = Backend.get_backends_by_feature(
     Backend.Feature.ENTRY_POINT
 )
-BACKEND_TABLE: Dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
+BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
 
 
 class BackendOption(argparse.Action):
@@ -130,7 +128,7 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    BACKEND_ALIAS: Dict[str, List[str]] = defaultdict(list)
+    BACKEND_ALIAS: dict[str, list[str]] = defaultdict(list)
     for alias, backend in BACKEND_TABLE.items():
         BACKEND_ALIAS[backend].append(alias)
     for backend, alias in BACKEND_ALIAS.items():
@@ -754,7 +752,7 @@ def main_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse arguments and convert argument strings to objects.
 
     Parameters

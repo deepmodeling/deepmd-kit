@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
+    TYPE_CHECKING,
     Iterator,
-    Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -13,10 +16,12 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.nlist import (
     extend_coord_with_ghosts,
 )
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
 from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
+
+if TYPE_CHECKING:
+    from deepmd.utils.data_system import (
+        DeepmdDataSystem,
+    )
 
 
 class NeighborStatOP(NativeOP):
@@ -46,8 +51,8 @@ class NeighborStatOP(NativeOP):
         self,
         coord: np.ndarray,
         atype: np.ndarray,
-        cell: Optional[np.ndarray],
-    ) -> Tuple[float, np.ndarray]:
+        cell: np.ndarray | None,
+    ) -> tuple[float, np.ndarray]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -130,7 +135,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 
         Yields

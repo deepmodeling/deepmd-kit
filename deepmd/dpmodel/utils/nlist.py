@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Union,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -19,7 +16,7 @@ def build_neighbor_list(
     atype: np.ndarray,
     nloc: int,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> np.ndarray:
     """Build neightbor list for a single frame. keeps nsel neighbors.
@@ -109,7 +106,7 @@ def build_neighbor_list(
 def nlist_distinguish_types(
     nlist: np.ndarray,
     atype: np.ndarray,
-    sel: List[int],
+    sel: list[int],
 ):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
@@ -143,9 +140,9 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
 def build_multiple_neighbor_list(
     coord: np.ndarray,
     nlist: np.ndarray,
-    rcuts: List[float],
-    nsels: List[int],
-) -> Dict[str, np.ndarray]:
+    rcuts: list[float],
+    nsels: list[int],
+) -> dict[str, np.ndarray]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
@@ -201,7 +198,7 @@ def build_multiple_neighbor_list(
 def extend_coord_with_ghosts(
     coord: np.ndarray,
     atype: np.ndarray,
-    cell: Optional[np.ndarray],
+    cell: np.ndarray | None,
     rcut: float,
 ):
     """Extend the coordinates of the atoms by appending peridoc images.

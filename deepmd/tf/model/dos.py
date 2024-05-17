@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
-    List,
-    Optional,
-    Union,
+    TYPE_CHECKING,
 )
 
 from deepmd.tf.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
     tf,
-)
-from deepmd.tf.utils.type_embed import (
-    TypeEmbedNet,
 )
 
 from .model import (
@@ -21,6 +20,11 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.type_embed import (
+        TypeEmbedNet,
+    )
 
 
 @StandardModel.register("dos")
@@ -50,8 +54,8 @@ class DOSModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         **kwargs,
@@ -138,7 +142,7 @@ class DOSModel(StandardModel):
         mesh,
         input_dict,
         frz_model=None,
-        ckpt_meta: Optional[str] = None,
+        ckpt_meta: str | None = None,
         suffix="",
         reuse=None,
     ):

@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test trained DeePMD model."""
 
+from __future__ import (
+    annotations,
+)
+
 import logging
 from pathlib import (
     Path,
 )
 from typing import (
     TYPE_CHECKING,
-    Dict,
-    List,
-    Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -47,10 +47,6 @@ from deepmd.utils.weight_avg import (
 
 if TYPE_CHECKING:
     from deepmd.tf.infer import (
-        DeepDipole,
-        DeepDOS,
-        DeepPolar,
-        DeepPot,
         DeepWFC,
     )
     from deepmd.tf.infer.deep_tensor import (
@@ -68,11 +64,11 @@ def test(
     system: str,
     datafile: str,
     numb_test: int,
-    rand_seed: Optional[int],
+    rand_seed: int | None,
     shuffle_test: bool,
     detail_file: str,
     atomic: bool,
-    head: Optional[str] = None,
+    head: str | None = None,
     **kwargs,
 ):
     """Test model predictions.
@@ -251,14 +247,14 @@ def save_txt_file(
 
 
 def test_ener(
-    dp: "DeepPot",
+    dp: DeepPot,
     data: DeepmdData,
     system: str,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     has_atom_ener: bool,
     append_detail: bool = False,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -556,7 +552,7 @@ def test_ener(
         }
 
 
-def print_ener_sys_avg(avg: Dict[str, float]):
+def print_ener_sys_avg(avg: dict[str, float]):
     """Print errors summary for energy type potential.
 
     Parameters
@@ -583,14 +579,14 @@ def print_ener_sys_avg(avg: Dict[str, float]):
 
 
 def test_dos(
-    dp: "DeepDOS",
+    dp: DeepDOS,
     data: DeepmdData,
     system: str,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     has_atom_dos: bool,
     append_detail: bool = False,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test DOS type model.
 
     Parameters
@@ -728,7 +724,7 @@ def test_dos(
     }
 
 
-def print_dos_sys_avg(avg: Dict[str, float]):
+def print_dos_sys_avg(avg: dict[str, float]):
     """Print errors summary for DOS type potential.
 
     Parameters
@@ -742,7 +738,7 @@ def print_dos_sys_avg(avg: Dict[str, float]):
     log.info(f"DOS RMSE/Natoms    : {avg['rmse_dosa']:e} Occupation/eV")
 
 
-def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):
+def run_test(dp: DeepTensor, test_data: dict, numb_test: int, test_sys: DeepmdData):
     """Run tests.
 
     Parameters
@@ -776,11 +772,11 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: Deepmd
 
 
 def test_wfc(
-    dp: "DeepWFC",
+    dp: DeepWFC,
     data: DeepmdData,
     numb_test: int,
-    detail_file: Optional[str],
-) -> Tuple[List[np.ndarray], List[int]]:
+    detail_file: str | None,
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -838,13 +834,13 @@ def print_wfc_sys_avg(avg):
 
 
 def test_polar(
-    dp: "DeepPolar",
+    dp: DeepPolar,
     data: DeepmdData,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     *,
     atomic: bool,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -980,12 +976,12 @@ def print_polar_sys_avg(avg):
 
 
 def test_dipole(
-    dp: "DeepDipole",
+    dp: DeepDipole,
     data: DeepmdData,
     numb_test: int,
-    detail_file: Optional[str],
+    detail_file: str | None,
     atomic: bool,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters

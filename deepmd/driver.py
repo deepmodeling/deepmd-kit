@@ -7,6 +7,10 @@
 # The class in the dpdata package needs to handle different situations for v1 and v2 interface,
 # which is too complex with the development of deepmd-kit.
 # So, it will be a good idea to ship it with DeePMD-kit itself.
+from __future__ import (
+    annotations,
+)
+
 import dpdata
 from dpdata.utils import (
     sort_atom_names,

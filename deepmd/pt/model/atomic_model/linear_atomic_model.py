@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import torch
@@ -23,9 +23,6 @@ from deepmd.pt.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -33,12 +30,18 @@ from deepmd.utils.version import (
 from .base_atomic_model import (
     BaseAtomicModel,
 )
-from .dp_atomic_model import (
-    DPAtomicModel,
-)
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
+
+    from .dp_atomic_model import (
+        DPAtomicModel,
+    )
 
 
 class LinearEnergyAtomicModel(BaseAtomicModel):
@@ -55,8 +58,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        models: List[BaseAtomicModel],
-        type_map: List[str],
+        models: list[BaseAtomicModel],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -111,26 +114,26 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
-    def get_model_rcuts(self) -> List[float]:
+    def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def get_model_nsels(self) -> List[int]:
+    def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_model_sels(self) -> List[List[int]]:
+    def get_model_sels(self) -> list[list[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = torch.stack(
             [
@@ -143,8 +146,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         inner_sorted = zipped[inner_sorting]
         outer_sorting = torch.argsort(inner_sorted[:, 0], stable=True)
         outer_sorted = inner_sorted[outer_sorting]
-        sorted_rcuts: List[float] = outer_sorted[:, 0].tolist()
-        sorted_sels: List[int] = outer_sorted[:, 1].to(torch.int64).tolist()
+        sorted_rcuts: list[float] = outer_sorted[:, 0].tolist()
+        sorted_sels: list[int] = outer_sorted[:, 1].to(torch.int64).tolist()
         return sorted_rcuts, sorted_sels
 
     def forward_atomic(
@@ -152,11 +155,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
         Parameters
@@ -224,7 +227,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, torch.Tensor],
+        ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
         """Apply the stat to each atomic output.
@@ -242,7 +245,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return ret
 
     @staticmethod
-    def remap_atype(ori_map: List[str], new_map: List[str]) -> torch.Tensor:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> torch.Tensor:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels. It creates a index mapping for the conversion.
@@ -293,7 +296,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
+    def deserialize(cls, data: dict) -> LinearEnergyAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.get("@version", 2), 2, 1)
         data.pop("@class", None)
@@ -307,7 +310,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def _compute_weight(
         self, extended_coord, extended_atype, nlists_
-    ) -> List[torch.Tensor]:
+    ) -> list[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
@@ -326,7 +329,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -355,8 +358,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -380,7 +383,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute or load the statistics parameters of the model,
@@ -428,8 +431,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
-        type_map: List[str],
-        smin_alpha: Optional[float] = 0.1,
+        type_map: list[str],
+        smin_alpha: float | None = 0.1,
         **kwargs,
     ):
         models = [dp_model, zbl_model]
@@ -459,7 +462,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
+    def deserialize(cls, data) -> DPZBLLinearEnergyAtomicModel:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         models = [
@@ -475,8 +478,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        nlists_: List[torch.Tensor],
-    ) -> List[torch.Tensor]:
+        nlists_: list[torch.Tensor],
+    ) -> list[torch.Tensor]:
         """ZBL weight.
 
         Returns

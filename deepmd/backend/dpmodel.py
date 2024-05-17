@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     TYPE_CHECKING,
     Callable,
     ClassVar,
-    List,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -37,7 +39,7 @@ class DPModelBackend(Backend):
         Backend.Feature.DEEP_EVAL | Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = [".dp"]
+    suffixes: ClassVar[list[str]] = [".dp"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -51,7 +53,7 @@ class DPModelBackend(Backend):
         return True
 
     @property
-    def entry_point_hook(self) -> Callable[["Namespace"], None]:
+    def entry_point_hook(self) -> Callable[[Namespace], None]:
         """The entry point hook of the backend.
 
         Returns
@@ -62,7 +64,7 @@ class DPModelBackend(Backend):
         raise NotImplementedError(f"Unsupported backend: {self.name}")
 
     @property
-    def deep_eval(self) -> Type["DeepEvalBackend"]:
+    def deep_eval(self) -> type[DeepEvalBackend]:
         """The Deep Eval backend of the backend.
 
         Returns
@@ -77,7 +79,7 @@ class DPModelBackend(Backend):
         return DeepEval
 
     @property
-    def neighbor_stat(self) -> Type["NeighborStat"]:
+    def neighbor_stat(self) -> type[NeighborStat]:
         """The neighbor statistics of the backend.
 
         Returns

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 
@@ -16,8 +15,8 @@ def format_training_message(
 def format_training_message_per_task(
     batch: int,
     task_name: str,
-    rmse: Dict[str, float],
-    learning_rate: Optional[float],
+    rmse: dict[str, float],
+    learning_rate: float | None,
 ):
     if task_name:
         task_name += ": "

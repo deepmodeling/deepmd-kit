@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
 import textwrap
-from typing import (
-    Optional,
-)
 
 from google.protobuf import (
     text_format,
@@ -59,7 +60,7 @@ def detect_model_version(input_model: str):
     return version
 
 
-def convert_to_21(input_model: str, output_model: str, version: Optional[str] = None):
+def convert_to_21(input_model: str, output_model: str, version: str | None = None):
     """Convert DP graph to 2.1 graph.
 
     Parameters

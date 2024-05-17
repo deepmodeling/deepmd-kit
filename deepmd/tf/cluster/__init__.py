@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Module that reads node resources, auto detects if running local or on SLURM."""
 
-from typing import (
-    List,
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
 from .local import get_resource as get_local_res
@@ -12,7 +10,7 @@ from .local import get_resource as get_local_res
 __all__ = ["get_resource"]
 
 
-def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
+def get_resource() -> tuple[str, list[str], list[int] | None]:
     """Get local or slurm resources: nodename, nodelist, and gpus.
 
     Returns

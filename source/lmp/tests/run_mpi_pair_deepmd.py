@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Use mpi4py to run a LAMMPS pair_deepmd + model deviation (atomic, relative) task."""
 
+from __future__ import (
+    annotations,
+)
+
 import argparse
 
 import numpy as np

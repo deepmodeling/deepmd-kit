@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -74,12 +73,12 @@ class DescrptSeAEbd(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         type_nchanl: int = 2,
         type_nlayer: int = 1,
@@ -87,7 +86,7 @@ class DescrptSeAEbd(DescrptSeA):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -121,7 +120,7 @@ class DescrptSeAEbd(DescrptSeA):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.

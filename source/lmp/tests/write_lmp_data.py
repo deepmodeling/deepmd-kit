@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import numpy as np
 
 comment_lmp_data = "# the first line must be comment"

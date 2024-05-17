@@ -1,23 +1,28 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
-    Dict,
-    Optional,
+    TYPE_CHECKING,
 )
 
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 def make_base_fitting(
@@ -54,12 +59,12 @@ def make_base_fitting(
             self,
             descriptor: t_tensor,
             atype: t_tensor,
-            gr: Optional[t_tensor] = None,
-            g2: Optional[t_tensor] = None,
-            h2: Optional[t_tensor] = None,
-            fparam: Optional[t_tensor] = None,
-            aparam: Optional[t_tensor] = None,
-        ) -> Dict[str, t_tensor]:
+            gr: t_tensor | None = None,
+            g2: t_tensor | None = None,
+            h2: t_tensor | None = None,
+            fparam: t_tensor | None = None,
+            aparam: t_tensor | None = None,
+        ) -> dict[str, t_tensor]:
             """Calculate fitting."""
             pass
 
@@ -73,7 +78,7 @@ def make_base_fitting(
             pass
 
         @classmethod
-        def deserialize(cls, data: dict) -> "BF":
+        def deserialize(cls, data: dict) -> BF:
             """Deserialize the fitting.
 
             Parameters

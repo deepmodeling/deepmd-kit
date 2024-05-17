@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from typing import (
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -22,9 +25,6 @@ from deepmd.tf.fit.fitting import (
 )
 from deepmd.tf.loss.dos import (
     DOSLoss,
-)
-from deepmd.tf.loss.loss import (
-    Loss,
 )
 from deepmd.tf.nvnmd.fit.ener import (
     one_layer_nvnmd,
@@ -49,6 +49,11 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -104,18 +109,18 @@ class DOSFitting(Fitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         numb_dos: int = 300,
-        rcond: Optional[float] = None,
-        trainable: Optional[List[bool]] = None,
-        seed: Optional[int] = None,
+        rcond: float | None = None,
+        trainable: list[bool] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         mixed_types: bool = False,
         **kwargs,
@@ -397,8 +402,8 @@ class DOSFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -631,7 +636,7 @@ class DOSFitting(Fitting):
             # for compatibility, old models has no t_bias_dos
             pass
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters

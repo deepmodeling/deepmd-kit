@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import math
 from typing import (
+    TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -20,12 +21,14 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("hybrid")
@@ -41,7 +44,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def __init__(
         self,
-        list: List[Union[BaseDescriptor, Dict[str, Any]]],
+        list: list[BaseDescriptor | dict[str, Any]],
         **kwargs,
     ) -> None:
         super().__init__()
@@ -51,7 +54,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             raise RuntimeError(
                 "cannot build descriptor from an empty list of descriptors."
             )
-        formatted_descript_list: List[BaseDescriptor] = []
+        formatted_descript_list: list[BaseDescriptor] = []
         for ii in descrpt_list:
             if isinstance(ii, BaseDescriptor):
                 formatted_descript_list.append(ii)
@@ -69,7 +72,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
             ), f"number of atom types in {ii}th descrptor does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
-        self.nlist_cut_idx: List[torch.Tensor] = []
+        self.nlist_cut_idx: list[torch.Tensor] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -108,7 +111,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         # Note: Using the minimum rcut_smth might not be appropriate in all scenarios. Consider using a different approach or provide detailed documentation on why the minimum value is chosen.
         return min([descrpt.get_rcut_smth() for descrpt in self.descrpt_list])
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         if self.mixed_types():
             return [
@@ -166,7 +169,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: DPPath | None = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
@@ -176,8 +179,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ):
         """Compute the descriptor.
 
@@ -212,9 +215,9 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """
         out_descriptor = []
         out_gr = []
-        out_g2: Optional[torch.Tensor] = None
-        out_h2: Optional[torch.Tensor] = None
-        out_sw: Optional[torch.Tensor] = None
+        out_g2: torch.Tensor | None = None
+        out_h2: torch.Tensor | None = None
+        out_sw: torch.Tensor | None = None
         if self.sel_no_mixed_types is not None:
             nl_distinguish_types = nlist_distinguish_types(
                 nlist,
@@ -268,7 +271,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptHybrid":
+    def deserialize(cls, data: dict) -> DescrptHybrid:
         data = data.copy()
         class_name = data.pop("@class")
         assert class_name == "Descriptor"

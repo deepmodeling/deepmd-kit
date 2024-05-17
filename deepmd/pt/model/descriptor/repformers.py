@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import torch
@@ -31,17 +31,19 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 
 from .repformer_layer import (
     RepformerLayer,
 )
 from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
+
+if TYPE_CHECKING:
+    from deepmd.utils.env_mat_stat import (
+        StatItem,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 if not hasattr(torch.ops.deepmd, "border_op"):
 
@@ -96,11 +98,11 @@ class DescrptBlockRepformers(DescriptorBlock):
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         old_impl: bool = False,
     ):
         r"""
@@ -314,7 +316,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -383,7 +385,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -393,9 +395,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ):
         if comm_dict is None:
             assert mapping is not None
@@ -499,8 +501,8 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -536,7 +538,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(

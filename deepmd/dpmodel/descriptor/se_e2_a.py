@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import itertools
 
 import numpy as np
@@ -8,9 +12,6 @@ from deepmd.dpmodel.utils.update_sel import (
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -23,10 +24,8 @@ except ImportError:
 
 import copy
 from typing import (
+    TYPE_CHECKING,
     Any,
-    List,
-    Optional,
-    Tuple,
 )
 
 from deepmd.dpmodel import (
@@ -44,6 +43,11 @@ from deepmd.dpmodel.utils import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("se_e2_a")
@@ -142,20 +146,20 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        spin: Optional[Any] = None,
+        spin: Any | None = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> None:
         ## seed, uniform_seed, not included.
         if spin is not None:
@@ -267,7 +271,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: DPPath | None = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -284,7 +288,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -294,7 +298,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         coord_ext,
         atype_ext,
         nlist,
-        mapping: Optional[np.ndarray] = None,
+        mapping: np.ndarray | None = None,
     ):
         """Compute the descriptor.
 
@@ -405,7 +409,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptSeA":
+    def deserialize(cls, data: dict) -> DescrptSeA:
         """Deserialize from dict."""
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)

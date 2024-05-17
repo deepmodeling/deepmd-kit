@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 from abc import (
     abstractmethod,
 )
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
 )
 
 import numpy as np
@@ -83,22 +84,22 @@ class GeneralFitting(NativeOP, BaseFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        bias_atom_e: Optional[np.ndarray] = None,
-        rcond: Optional[float] = None,
+        bias_atom_e: np.ndarray | None = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = True,
-        exclude_types: List[int] = [],
-        remove_vaccum_contribution: Optional[List[bool]] = None,
+        exclude_types: list[int] = [],
+        remove_vaccum_contribution: list[bool] | None = None,
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -176,7 +177,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -219,7 +220,7 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def reinit_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
@@ -258,7 +259,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GeneralFitting":
+    def deserialize(cls, data: dict) -> GeneralFitting:
         data = copy.deepcopy(data)
         data.pop("@class")
         data.pop("type")
@@ -274,12 +275,12 @@ class GeneralFitting(NativeOP, BaseFitting):
         self,
         descriptor: np.ndarray,
         atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        gr: np.ndarray | None = None,
+        g2: np.ndarray | None = None,
+        h2: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

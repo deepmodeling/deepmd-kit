@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
+from __future__ import (
+    annotations,
 )
 
 import torch
@@ -230,7 +230,7 @@ class DOSLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
         if self.has_ados or self.has_acdf:

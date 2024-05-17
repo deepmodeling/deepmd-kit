@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 import logging
 from typing import (
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
-
-import torch
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -25,6 +26,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    import torch
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -84,18 +88,18 @@ class InvarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         dim_out: int,
-        neuron: List[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        neuron: list[int] = [128, 128, 128],
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[int] = None,
-        exclude_types: List[int] = [],
-        atom_ener: Optional[List[Optional[torch.Tensor]]] = None,
+        rcond: float | None = None,
+        seed: int | None = None,
+        exclude_types: list[int] = [],
+        atom_ener: list[torch.Tensor | None] | None = None,
         **kwargs,
     ):
         self.dim_out = dim_out
@@ -133,7 +137,7 @@ class InvarFitting(GeneralFitting):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GeneralFitting":
+    def deserialize(cls, data: dict) -> GeneralFitting:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         return super().deserialize(data)
@@ -155,11 +159,11 @@ class InvarFitting(GeneralFitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ):
         """Based on embedding net output, alculate total energy.
 
@@ -174,4 +178,4 @@ class InvarFitting(GeneralFitting):
         return self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

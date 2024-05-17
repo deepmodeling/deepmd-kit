@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
-from typing import (
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
-from deepmd.tf.utils.spin import (
-    Spin,
+import logging
+from typing import (
+    TYPE_CHECKING,
 )
 
 from .descriptor import (
@@ -15,6 +14,11 @@ from .descriptor import (
 from .se_a import (
     DescrptSeA,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -31,19 +35,19 @@ class DescrptSeAEbdV2(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         **kwargs,
     ) -> None:
         DescrptSeA.__init__(

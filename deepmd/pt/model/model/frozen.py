@@ -1,23 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import json
 import tempfile
 from typing import (
-    Dict,
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 import torch
 
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
-)
 from deepmd.entrypoints.convert_backend import (
     convert_backend,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.output_def import (
+        FittingOutputDef,
+    )
 
 
 @BaseModel.register("frozen")
@@ -52,12 +56,12 @@ class FrozenModel(BaseModel):
         return self.model.get_rcut()
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.model.get_type_map()
 
     @torch.jit.export
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.model.get_sel()
 
@@ -72,7 +76,7 @@ class FrozenModel(BaseModel):
         return self.model.get_dim_aparam()
 
     @torch.jit.export
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -107,11 +111,11 @@ class FrozenModel(BaseModel):
         self,
         coord,
         atype,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         return self.model.forward(
             coord,
             atype,

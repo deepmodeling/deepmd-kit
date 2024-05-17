@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from importlib.util import (
     find_spec,
 )
@@ -6,8 +10,6 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     ClassVar,
-    List,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -41,7 +43,7 @@ class TensorFlowBackend(Backend):
         | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = [".pb"]
+    suffixes: ClassVar[list[str]] = [".pb"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -64,7 +66,7 @@ class TensorFlowBackend(Backend):
         )
 
     @property
-    def entry_point_hook(self) -> Callable[["Namespace"], None]:
+    def entry_point_hook(self) -> Callable[[Namespace], None]:
         """The entry point hook of the backend.
 
         Returns
@@ -77,7 +79,7 @@ class TensorFlowBackend(Backend):
         return deepmd_main
 
     @property
-    def deep_eval(self) -> Type["DeepEvalBackend"]:
+    def deep_eval(self) -> type[DeepEvalBackend]:
         """The Deep Eval backend of the backend.
 
         Returns
@@ -90,7 +92,7 @@ class TensorFlowBackend(Backend):
         return DeepEvalTF
 
     @property
-    def neighbor_stat(self) -> Type["NeighborStat"]:
+    def neighbor_stat(self) -> type[NeighborStat]:
         """The neighbor statistics of the backend.
 
         Returns

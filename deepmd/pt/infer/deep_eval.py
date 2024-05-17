@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -87,11 +86,11 @@ class DeepEval(DeepEvalBackend):
         self,
         model_file: str,
         output_def: ModelOutputDef,
-        *args: List[Any],
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
-        neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        head: Optional[str] = None,
-        **kwargs: Dict[str, Any],
+        *args: list[Any],
+        auto_batch_size: bool | int | AutoBatchSize = True,
+        neighbor_list: ase.neighborlist.NewPrimitiveNeighborList | None = None,
+        head: str | None = None,
+        **kwargs: dict[str, Any],
     ):
         self.output_def = output_def
         self.model_path = model_file
@@ -152,7 +151,7 @@ class DeepEval(DeepEvalBackend):
         """Get the number of atom types of this model."""
         return len(self.type_map)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.type_map
 
@@ -165,7 +164,7 @@ class DeepEval(DeepEvalBackend):
         return self.dp.model["Default"].get_dim_aparam()
 
     @property
-    def model_type(self) -> "DeepEvalWrapper":
+    def model_type(self) -> DeepEvalWrapper:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model["Default"].model_output_type()
         if "energy" in model_output_type:
@@ -183,7 +182,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError("Unknown model type")
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -214,10 +213,10 @@ class DeepEval(DeepEvalBackend):
         cells: np.ndarray,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
-    ) -> Dict[str, np.ndarray]:
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: dict[str, Any],
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -284,7 +283,7 @@ class DeepEval(DeepEvalBackend):
             )
         )
 
-    def _get_request_defs(self, atomic: bool) -> List[OutputVariableDef]:
+    def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
         """Get the requested output definitions.
 
         When atomic is True, all output_def are requested.
@@ -349,7 +348,7 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         atom_types: np.ndarray,
         mixed_type: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if mixed_type:
             natoms = len(atom_types[0])
         else:
@@ -364,11 +363,11 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
-        request_defs: List[OutputVariableDef],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
 
@@ -432,12 +431,12 @@ class DeepEval(DeepEvalBackend):
     def _eval_model_spin(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         spins: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
-        request_defs: List[OutputVariableDef],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
 
@@ -530,10 +529,10 @@ class DeepEval(DeepEvalBackend):
 # For tests only
 def eval_model(
     model,
-    coords: Union[np.ndarray, torch.Tensor],
-    cells: Optional[Union[np.ndarray, torch.Tensor]],
-    atom_types: Union[np.ndarray, torch.Tensor, List[int]],
-    spins: Optional[Union[np.ndarray, torch.Tensor]] = None,
+    coords: np.ndarray | torch.Tensor,
+    cells: np.ndarray | torch.Tensor | None,
+    atom_types: np.ndarray | torch.Tensor | list[int],
+    spins: np.ndarray | torch.Tensor | None = None,
     atomic: bool = False,
     infer_batch_size: int = 2,
     denoise: bool = False,

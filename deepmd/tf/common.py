@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Collection of functions and classes used throughout the whole package."""
 
+from __future__ import (
+    annotations,
+)
+
 import warnings
 from functools import (
     wraps,
@@ -9,7 +13,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Union,
 )
 
 import tensorflow
@@ -149,7 +152,7 @@ assert VALID_ACTIVATION.issubset(ACTIVATION_FN_DICT.keys())
 
 
 def get_activation_func(
-    activation_fn: Union["_ACTIVATION", None],
+    activation_fn: _ACTIVATION | None,
 ) -> Callable[[tf.Tensor], tf.Tensor]:
     """Get activation function callable based on string name.
 
@@ -176,7 +179,7 @@ def get_activation_func(
     return ACTIVATION_FN_DICT[activation_fn.lower()]
 
 
-def get_precision(precision: "_PRECISION") -> Any:
+def get_precision(precision: _PRECISION) -> Any:
     """Convert str to TF DType constant.
 
     Parameters

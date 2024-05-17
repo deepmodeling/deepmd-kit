@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """First-order derivatives and second-order derivatives for gelu function."""
 
+from __future__ import (
+    annotations,
+)
+
 import tensorflow
 from tensorflow.python.framework import (
     ops,

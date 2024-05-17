@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -49,7 +47,7 @@ class SpinModel:
         extended_atype: np.ndarray,
         extended_spin: np.ndarray,
         nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
+        mapping: np.ndarray | None = None,
     ):
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
@@ -187,7 +185,7 @@ class SpinModel:
         extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
         return extended_tensor_updated.reshape(out_shape)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
         ntypes = len(tmap) // 2  # ignore the virtual type
@@ -205,7 +203,7 @@ class SpinModel:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.backbone_model.get_dim_aparam()
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
         Only atoms with selected atom types have atomic contribution
         to the result of the model.
@@ -219,7 +217,7 @@ class SpinModel:
         """
         return self.backbone_model.is_aparam_nall()
 
-    def model_output_type(self) -> List[str]:
+    def model_output_type(self) -> list[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
@@ -261,7 +259,7 @@ class SpinModel:
         }
 
     @classmethod
-    def deserialize(cls, data) -> "SpinModel":
+    def deserialize(cls, data) -> SpinModel:
         backbone_model_obj = make_model(DPAtomicModel).deserialize(
             data["backbone_model"]
         )
@@ -276,11 +274,11 @@ class SpinModel:
         coord,
         atype,
         spin,
-        box: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        box: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Return model prediction.
 
         Parameters
@@ -335,9 +333,9 @@ class SpinModel:
         extended_atype: np.ndarray,
         extended_spin: np.ndarray,
         nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        mapping: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         do_atomic_virial: bool = False,
     ):
         """Return model prediction. Lower interface that takes

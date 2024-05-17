@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Use dp_ipi inside the Python package."""
 
+from __future__ import (
+    annotations,
+)
+
 import os
 import subprocess
 import sys
-from typing import (
-    List,
-)
 
 from deepmd.tf.lmp import (
     get_op_dir,
@@ -15,7 +16,7 @@ from deepmd.tf.lmp import (
 ROOT_DIR = get_op_dir()
 
 
-def _program(name: str, args: List[str]):
+def _program(name: str, args: list[str]):
     """Execuate a program.
 
     Parameters

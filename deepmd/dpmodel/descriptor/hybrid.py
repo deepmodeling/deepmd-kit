@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import math
 from typing import (
+    TYPE_CHECKING,
     Any,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -19,12 +20,14 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.utils.nlist import (
     nlist_distinguish_types,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @BaseDescriptor.register("hybrid")
@@ -40,7 +43,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def __init__(
         self,
-        list: List[Union[BaseDescriptor, Dict[str, Any]]],
+        list: list[BaseDescriptor | dict[str, Any]],
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -65,7 +68,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             ), f"number of atom types in {ii}th descrptor {self.descrpt_list[0].__class__.__name__} does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
-        self.nlist_cut_idx: List[np.ndarray] = []
+        self.nlist_cut_idx: list[np.ndarray] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -103,7 +106,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         # Note: Using the minimum rcut_smth might not be appropriate in all scenarios. Consider using a different approach or provide detailed documentation on why the minimum value is chosen.
         return np.min([descrpt.get_rcut_smth() for descrpt in self.descrpt_list]).item()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         if self.mixed_types():
             return [
@@ -152,7 +155,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         raise NotImplementedError
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: DPPath | None = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
@@ -162,7 +165,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         coord_ext,
         atype_ext,
         nlist,
-        mapping: Optional[np.ndarray] = None,
+        mapping: np.ndarray | None = None,
     ):
         """Compute the descriptor.
 
@@ -248,7 +251,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptHybrid":
+    def deserialize(cls, data: dict) -> DescrptHybrid:
         data = data.copy()
         class_name = data.pop("@class")
         assert class_name == "Descriptor"

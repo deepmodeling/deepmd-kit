@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """DeePMD-Kit entry point module."""
 
+from __future__ import (
+    annotations,
+)
+
 import argparse
 from pathlib import (
     Path,
-)
-from typing import (
-    List,
-    Optional,
-    Union,
 )
 
 from deepmd.backend.suffix import (
@@ -39,7 +38,7 @@ from deepmd.tf.nvnmd.entrypoints.train import (
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
-def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
+def main(args: list[str] | argparse.Namespace | None = None):
     """DeePMD-Kit entry point.
 
     Parameters

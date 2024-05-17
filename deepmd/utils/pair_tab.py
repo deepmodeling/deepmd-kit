@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import logging
-from typing import (
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
+
+import logging
 
 import numpy as np
 from scipy.interpolate import (
@@ -33,11 +33,11 @@ class PairTab:
             The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
     """
 
-    def __init__(self, filename: str, rcut: Optional[float] = None) -> None:
+    def __init__(self, filename: str, rcut: float | None = None) -> None:
         """Constructor."""
         self.reinit(filename, rcut)
 
-    def reinit(self, filename: str, rcut: Optional[float] = None) -> None:
+    def reinit(self, filename: str, rcut: float | None = None) -> None:
         """Initialize the tabulated interaction.
 
         Parameters
@@ -92,7 +92,7 @@ class PairTab:
         }
 
     @classmethod
-    def deserialize(cls, data) -> "PairTab":
+    def deserialize(cls, data) -> PairTab:
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
@@ -195,7 +195,7 @@ class PairTab:
 
                 self.vdata = np.concatenate((self.vdata, pad_extrapolation), axis=0)
 
-    def get(self) -> Tuple[np.array, np.array]:
+    def get(self) -> tuple[np.array, np.array]:
         """Get the serialized table."""
         return self.tab_info, self.tab_data
 

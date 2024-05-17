@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from typing import (
     TYPE_CHECKING,
-    List,
-    Optional,
 )
 
 import numpy as np
@@ -30,9 +32,6 @@ from deepmd.tf.loss.ener import (
     EnerSpinLoss,
     EnerStdLoss,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.nvnmd.fit.ener import (
     one_layer_nvnmd,
 )
@@ -50,9 +49,6 @@ from deepmd.tf.utils.network import one_layer as one_layer_deepmd
 from deepmd.tf.utils.network import (
     one_layer_rand_seed_shift,
 )
-from deepmd.tf.utils.spin import (
-    Spin,
-)
 from deepmd.utils.finetune import (
     change_energy_bias_lower,
 )
@@ -64,7 +60,12 @@ from deepmd.utils.version import (
 )
 
 if TYPE_CHECKING:
-    pass
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
+    from deepmd.tf.utils.spin import (
+        Spin,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -150,21 +151,21 @@ class EnerFitting(Fitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
-        seed: Optional[int] = None,
-        atom_ener: List[float] = [],
+        trainable: list[bool] | None = None,
+        seed: int | None = None,
+        atom_ener: list[float] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         mixed_types: bool = False,
         **kwargs,
     ) -> None:
@@ -467,8 +468,8 @@ class EnerFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -822,7 +823,7 @@ class EnerFitting(Fitting):
             ntest=ntest,
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters

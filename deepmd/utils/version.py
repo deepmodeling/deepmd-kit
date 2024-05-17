@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
+
 def check_version_compatibility(
     current_version: int,
     maximum_supported_version: int,

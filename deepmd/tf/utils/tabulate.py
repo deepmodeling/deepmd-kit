@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from functools import (
     lru_cache,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Tuple,
 )
 
 import numpy as np
@@ -19,9 +21,6 @@ import deepmd
 from deepmd.tf.common import (
     ACTIVATION_FN_DICT,
 )
-from deepmd.tf.descriptor import (
-    Descriptor,
-)
 from deepmd.tf.env import (
     op_module,
     tf,
@@ -30,6 +29,11 @@ from deepmd.tf.utils.graph import (
     get_embedding_net_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.descriptor import (
+        Descriptor,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -65,11 +69,11 @@ class DPTabulate:
     def __init__(
         self,
         descrpt: Descriptor,
-        neuron: List[int],
+        neuron: list[int],
         graph: tf.Graph,
         graph_def: tf.GraphDef,
         type_one_side: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
         suffix: str = "",
     ) -> None:
@@ -160,7 +164,7 @@ class DPTabulate:
 
     def build(
         self, min_nbor_dist: float, extrapolate: float, stride0: float, stride1: float
-    ) -> Tuple[Dict[str, int], Dict[str, int]]:
+    ) -> tuple[dict[str, int], dict[str, int]]:
         r"""Build the tables for model compression.
 
         Parameters

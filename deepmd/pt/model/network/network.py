@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 import numpy as np
@@ -24,7 +27,7 @@ try:
         Final,
     )
 except ImportError:
-    from torch.jit import Final
+    pass
 
 from functools import (
     partial,
@@ -39,6 +42,11 @@ from deepmd.pt.utils.utils import (
     ActivationFn,
     to_torch_tensor,
 )
+
+if TYPE_CHECKING:
+    from torch.jit import (
+        Final,
+    )
 
 
 def Tensor(*shape):
@@ -224,8 +232,8 @@ class TypeFilter(nn.Module):
     def forward(
         self,
         inputs,
-        atype_tebd: Optional[torch.Tensor] = None,
-        nlist_tebd: Optional[torch.Tensor] = None,
+        atype_tebd: torch.Tensor | None = None,
+        nlist_tebd: torch.Tensor | None = None,
     ):
         """Calculate decoded embedding for each atom.
 
@@ -425,7 +433,7 @@ class Embedding(nn.Embedding):
         self,
         num_embeddings: int,
         embedding_dim: int,
-        padding_idx: Optional[int] = None,
+        padding_idx: int | None = None,
         dtype=torch.float64,
     ):
         super().__init__(
@@ -492,7 +500,7 @@ class MaskLMHead(nn.Module):
             torch.zeros(output_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
         )
 
-    def forward(self, features, masked_tokens: Optional[torch.Tensor] = None, **kwargs):
+    def forward(self, features, masked_tokens: torch.Tensor | None = None, **kwargs):
         # Only project the masked tokens while training,
         # saves both memory and computation
         if masked_tokens is not None:
@@ -650,15 +658,15 @@ class TypeEmbedNetConsistent(nn.Module):
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
     ):
         """Construct a type embedding net."""
         super().__init__()
@@ -940,8 +948,8 @@ class NeighborWiseAttention(nn.Module):
         self,
         input_G,
         nei_mask,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ):
         """
         Args:
@@ -1023,8 +1031,8 @@ class NeighborWiseAttentionLayer(nn.Module):
         self,
         x,
         nei_mask,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ):
         residual = x
         if not self.post_ln:
@@ -1091,8 +1099,8 @@ class GatedSelfAttetion(nn.Module):
         self,
         query,
         nei_mask,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
         attnw_shift: float = 20.0,
     ):
         """
@@ -1163,9 +1171,9 @@ class LocalSelfMultiheadAttention(nn.Module):
     def forward(
         self,
         query,
-        attn_bias: Optional[torch.Tensor] = None,
-        nlist_mask: Optional[torch.Tensor] = None,
-        nlist: Optional[torch.Tensor] = None,
+        attn_bias: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        nlist: torch.Tensor | None = None,
         return_attn=True,
     ):
         nframes, nloc, feature_dim = query.size()
@@ -1526,7 +1534,7 @@ class TriangleMultiplication(nn.Module):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # z : [nframes, nloc, nloc, pair_dim]
 
@@ -1600,9 +1608,9 @@ class EvoformerEncoderLayer(nn.Module):
     def forward(
         self,
         x,
-        attn_bias: Optional[torch.Tensor] = None,
-        nlist_mask: Optional[torch.Tensor] = None,
-        nlist: Optional[torch.Tensor] = None,
+        attn_bias: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        nlist: torch.Tensor | None = None,
         return_attn=True,
     ):
         residual = x
@@ -1935,8 +1943,8 @@ class Evoformer3bEncoderLayer(nn.Module):
         x: torch.Tensor,
         pair: torch.Tensor,
         nlist: torch.Tensor = None,
-        attn_mask: Optional[torch.Tensor] = None,
-        pair_mask: Optional[torch.Tensor] = None,
+        attn_mask: torch.Tensor | None = None,
+        pair_mask: torch.Tensor | None = None,
         op_mask: float = 1.0,
         op_norm: float = 1.0,
     ):

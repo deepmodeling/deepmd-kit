@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Output statistics."""
 
-from typing import (
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -12,9 +11,9 @@ import numpy as np
 def compute_stats_from_redu(
     output_redu: np.ndarray,
     natoms: np.ndarray,
-    assigned_bias: Optional[np.ndarray] = None,
-    rcond: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    assigned_bias: np.ndarray | None = None,
+    rcond: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
     Given the reduced output value and the number of atoms for each atom,
@@ -86,7 +85,7 @@ def compute_stats_from_redu(
 def compute_stats_from_atomic(
     output: np.ndarray,
     atype: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
     Given the output value and the type of atoms,

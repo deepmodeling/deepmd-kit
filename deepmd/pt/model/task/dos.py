@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import copy
 import logging
-from typing import (
-    List,
-    Optional,
-    Union,
-)
 
 import torch
 
@@ -45,17 +44,17 @@ class DOSFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         numb_dos: int = 300,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        rcond: Optional[float] = None,
-        bias_dos: Optional[torch.Tensor] = None,
-        trainable: Union[bool, List[bool]] = True,
-        seed: Optional[int] = None,
+        rcond: float | None = None,
+        bias_dos: torch.Tensor | None = None,
+        trainable: bool | list[bool] = True,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
         mixed_types: bool = True,
     ):
         if bias_dos is not None:
@@ -97,7 +96,7 @@ class DOSFittingNet(InvarFitting):
         )
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DOSFittingNet":
+    def deserialize(cls, data: dict) -> DOSFittingNet:
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
@@ -125,4 +124,4 @@ class DOSFittingNet(InvarFitting):
         return dd
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

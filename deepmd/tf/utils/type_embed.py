@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import re
-from typing import (
-    List,
-    Optional,
-    Union,
+from __future__ import (
+    annotations,
 )
+
+import re
 
 import numpy as np
 
@@ -111,16 +110,16 @@ class TypeEmbedNet:
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
-        activation_function: Union[str, None] = "tanh",
+        activation_function: str | None = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         uniform_seed: bool = False,
         padding: bool = False,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
         **kwargs,
     ) -> None:
         """Constructor."""

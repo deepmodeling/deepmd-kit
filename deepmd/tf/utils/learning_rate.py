@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 import numpy as np
@@ -50,9 +50,7 @@ class LearningRateExp:
         self.cd["decay_rate"] = decay_rate
         self.start_lr_ = self.cd["start_lr"]
 
-    def build(
-        self, global_step: tf.Tensor, stop_step: Optional[int] = None
-    ) -> tf.Tensor:
+    def build(self, global_step: tf.Tensor, stop_step: int | None = None) -> tf.Tensor:
         """Build the learning rate.
 
         Parameters

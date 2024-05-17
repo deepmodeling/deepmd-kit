@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """ASE calculator interface module."""
 
+from __future__ import (
+    annotations,
+)
+
 from pathlib import (
     Path,
 )
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Dict,
-    List,
-    Optional,
-    Union,
 )
 
 from ase.calculators.calculator import (
@@ -72,7 +72,7 @@ class DP(Calculator):
     """
 
     name = "DP"
-    implemented_properties: ClassVar[List[str]] = [
+    implemented_properties: ClassVar[list[str]] = [
         "energy",
         "free_energy",
         "forces",
@@ -82,9 +82,9 @@ class DP(Calculator):
 
     def __init__(
         self,
-        model: Union[str, "Path"],
+        model: str | Path,
         label: str = "DP",
-        type_dict: Optional[Dict[str, int]] = None,
+        type_dict: dict[str, int] | None = None,
         neighbor_list=None,
         **kwargs,
     ) -> None:
@@ -99,9 +99,9 @@ class DP(Calculator):
 
     def calculate(
         self,
-        atoms: Optional["Atoms"] = None,
-        properties: List[str] = ["energy", "forces", "virial"],
-        system_changes: List[str] = all_changes,
+        atoms: Atoms | None = None,
+        properties: list[str] = ["energy", "forces", "virial"],
+        system_changes: list[str] = all_changes,
     ):
         """Run calculation with deepmd model.
 

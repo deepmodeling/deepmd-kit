@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -92,14 +91,14 @@ class DeepPot(DeepEval):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
-        **kwargs: Dict[str, Any],
-    ) -> Tuple[np.ndarray, ...]:
+        **kwargs: dict[str, Any],
+    ) -> tuple[np.ndarray, ...]:
         """Evaluate energy, force, and virial. If atomic is True,
         also return atomic energy and atomic virial.
 

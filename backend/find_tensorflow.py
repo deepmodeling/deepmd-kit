@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import os
 import site
 from functools import (
@@ -16,12 +20,6 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
 
 from packaging.specifiers import (
     SpecifierSet,
@@ -29,7 +27,7 @@ from packaging.specifiers import (
 
 
 @lru_cache
-def find_tensorflow() -> Tuple[Optional[str], List[str]]:
+def find_tensorflow() -> tuple[str | None, list[str]]:
     """Find TensorFlow library.
 
     Tries to find TensorFlow in the order of:
@@ -197,7 +195,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
 
 @lru_cache
-def get_tf_version(tf_path: Union[str, Path]) -> str:
+def get_tf_version(tf_path: str | Path) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters

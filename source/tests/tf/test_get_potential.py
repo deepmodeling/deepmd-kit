@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test if `DeepPotential` facto function returns the right type of potential."""
 
+from __future__ import (
+    annotations,
+)
+
 import unittest
 
 from deepmd.tf.infer import (

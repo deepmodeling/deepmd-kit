@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     ClassVar,
-    Dict,
-    Optional,
 )
 
 import numpy as np
@@ -62,7 +64,7 @@ class Identity(nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "Identity":
+    def deserialize(cls, data: dict) -> Identity:
         return Identity()
 
 
@@ -73,7 +75,7 @@ class MLPLayer(nn.Module):
         num_out,
         bias: bool = True,
         use_timestep: bool = False,
-        activation_function: Optional[str] = None,
+        activation_function: str | None = None,
         resnet: bool = False,
         bavg: float = 0.0,
         stddev: float = 1.0,
@@ -228,7 +230,7 @@ class MLPLayer(nn.Module):
         return nl.serialize()
 
     @classmethod
-    def deserialize(cls, data: dict) -> "MLPLayer":
+    def deserialize(cls, data: dict) -> MLPLayer:
         """Deserialize the layer from a dict.
 
         Parameters
@@ -280,7 +282,7 @@ FittingNet = make_fitting_network(EmbeddingNet, MLP, MLPLayer)
 class NetworkCollection(DPNetworkCollection, nn.Module):
     """PyTorch implementation of NetworkCollection."""
 
-    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+    NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": MLP,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,

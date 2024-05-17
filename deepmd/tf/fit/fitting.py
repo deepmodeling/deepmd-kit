@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import re
 from abc import (
     abstractmethod,
 )
 from typing import (
-    List,
-    Optional,
+    TYPE_CHECKING,
 )
 
 from deepmd.common import (
@@ -19,15 +22,17 @@ from deepmd.tf.env import (
     FITTING_NET_PATTERN,
     tf,
 )
-from deepmd.tf.loss.loss import (
-    Loss,
-)
 from deepmd.tf.utils import (
     PluginVariant,
 )
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 
 class Fitting(PluginVariant, make_plugin_registry("fitting")):
@@ -84,7 +89,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         """
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = "") -> "Fitting":
+    def deserialize(cls, data: dict, suffix: str = "") -> Fitting:
         """Deserialize the fitting.
 
         There is no suffix in a native DP model, but it is important
@@ -128,11 +133,11 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
-        out_dim: Optional[int] = 1,
+        out_dim: int | None = 1,
         suffix: str = "",
     ) -> dict:
         """Serialize network.

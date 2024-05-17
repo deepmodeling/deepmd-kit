@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 import os
-from typing import (
-    Optional,
-)
 
 from deepmd.tf.entrypoints.freeze import (
     freeze,
@@ -118,8 +119,8 @@ def normalized_input_qnn(jdata, PATH_QNN, CONFIG_CNN, WEIGHT_CNN, MAP_CNN):
 def train_nvnmd(
     *,
     INPUT: str,
-    init_model: Optional[str],
-    restart: Optional[str],
+    init_model: str | None,
+    restart: str | None,
     step: str,
     skip_neighbor_stat: bool = False,
     **kwargs,

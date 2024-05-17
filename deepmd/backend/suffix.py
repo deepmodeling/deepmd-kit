@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import functools
 import operator
 from pathlib import (
     Path,
-)
-from typing import (
-    Optional,
-    Type,
-    Union,
 )
 
 from deepmd.backend.backend import (
@@ -17,9 +16,9 @@ from deepmd.backend.backend import (
 
 def format_model_suffix(
     filename: str,
-    feature: Optional[Backend.Feature] = None,
-    preferred_backend: Optional[Union[str, Type["Backend"]]] = None,
-    strict_prefer: Optional[bool] = None,
+    feature: Backend.Feature | None = None,
+    preferred_backend: str | type[Backend] | None = None,
+    strict_prefer: bool | None = None,
 ) -> str:
     """Check and format the suffixes of a filename.
 

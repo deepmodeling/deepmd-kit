@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.utils.network import (
@@ -15,9 +19,6 @@ from deepmd.dpmodel.utils.type_embed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -28,10 +29,7 @@ except ImportError:
     __version__ = "unknown"
 
 from typing import (
-    List,
-    Optional,
-    Tuple,
-    Union,
+    TYPE_CHECKING,
 )
 
 from deepmd.dpmodel import (
@@ -53,6 +51,11 @@ from .repformers import (
     RepformerLayer,
 )
 
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
+
 
 class RepinitArgs:
     def __init__(
@@ -60,7 +63,7 @@ class RepinitArgs:
         rcut: float,
         rcut_smth: float,
         nsel: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 16,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -132,7 +135,7 @@ class RepinitArgs:
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "RepinitArgs":
+    def deserialize(cls, data: dict) -> RepinitArgs:
         return cls(**data)
 
 
@@ -165,7 +168,7 @@ class RepformerArgs:
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
     ):
         r"""The constructor for the RepformerArgs class which defines the parameters of the repformer block in DPA2 descriptor.
 
@@ -301,7 +304,7 @@ class RepformerArgs:
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "RepformerArgs":
+    def deserialize(cls, data: dict) -> RepformerArgs:
         return cls(**data)
 
 
@@ -311,20 +314,20 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self,
         ntypes: int,
         # args for repinit
-        repinit: Union[RepinitArgs, dict],
+        repinit: RepinitArgs | dict,
         # args for repformer
-        repformer: Union[RepformerArgs, dict],
+        repformer: RepformerArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = True,
         precision: str = "float64",
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: list[str] | None = None,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
@@ -496,7 +499,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -548,7 +551,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: DPPath | None = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -557,7 +560,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         coord_ext: np.ndarray,
         atype_ext: np.ndarray,
         nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
+        mapping: np.ndarray | None = None,
     ):
         """Compute the descriptor.
 
@@ -693,7 +696,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptDPA2":
+    def deserialize(cls, data: dict) -> DescrptDPA2:
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")

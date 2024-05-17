@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """A PEP-517 backend to find TensorFlow."""
 
-from typing import (
-    List,
+from __future__ import (
+    annotations,
 )
 
 from scikit_build_core import build as _orig
@@ -23,7 +23,7 @@ __all__ = [
 ]
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     return __all__
 
 
@@ -39,11 +39,11 @@ build_editable = _orig.build_editable
 
 def get_requires_for_build_wheel(
     config_settings: dict,
-) -> List[str]:
+) -> list[str]:
     return _orig.get_requires_for_build_wheel(config_settings) + find_tensorflow()[1]
 
 
 def get_requires_for_build_editable(
     config_settings: dict,
-) -> List[str]:
+) -> list[str]:
     return _orig.get_requires_for_build_editable(config_settings) + find_tensorflow()[1]

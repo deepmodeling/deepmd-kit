@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import itertools
 import os
 import sys
@@ -13,10 +17,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 from uuid import (
     uuid4,
@@ -63,13 +63,13 @@ class CommonTest(ABC):
     """Arguments data."""
     addtional_data: ClassVar[dict] = {}
     """Additional data that will not be checked."""
-    tf_class: ClassVar[Optional[type]]
+    tf_class: ClassVar[type | None]
     """TensorFlow model class."""
-    dp_class: ClassVar[Optional[type]]
+    dp_class: ClassVar[type | None]
     """Native DP model class."""
-    pt_class: ClassVar[Optional[type]]
+    pt_class: ClassVar[type | None]
     """PyTorch model class."""
-    args: ClassVar[Optional[Union[Argument, List[Argument]]]]
+    args: ClassVar[Argument | list[Argument] | None]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
@@ -109,7 +109,7 @@ class CommonTest(ABC):
         return cls(**data, **self.addtional_data)
 
     @abstractmethod
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         """Build the TF graph.
 
         Parameters
@@ -155,7 +155,7 @@ class CommonTest(ABC):
         PT = 3
 
     @abstractmethod
-    def extract_ret(self, ret: Any, backend: RefBackend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend: RefBackend) -> tuple[np.ndarray, ...]:
         """Extract the return value when comparing with other backends.
 
         Parameters
@@ -172,8 +172,8 @@ class CommonTest(ABC):
         """
 
     def build_eval_tf(
-        self, sess: "tf.Session", obj: Any, suffix: str
-    ) -> List[np.ndarray]:
+        self, sess: tf.Session, obj: Any, suffix: str
+    ) -> list[np.ndarray]:
         """Build and evaluate the TF graph."""
         t_out, feed_dict = self.build_tf(obj, suffix)
 

@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
+from __future__ import (
+    annotations,
 )
 
-import torch
+from typing import (
+    TYPE_CHECKING,
+)
 
 from deepmd.pt.model.task.dipole import (
     DipoleFittingNet,
@@ -13,6 +15,9 @@ from .dp_atomic_model import (
     DPAtomicModel,
 )
 
+if TYPE_CHECKING:
+    import torch
+
 
 class DPDipoleAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
@@ -21,7 +26,7 @@ class DPDipoleAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, torch.Tensor],
+        ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
         # dipole not applying bias

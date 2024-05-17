@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
-from typing import (
-    Dict,
-    List,
-    Optional,
-    Tuple,
+from __future__ import (
+    annotations,
 )
+
+import copy
 
 import numpy as np
 
@@ -28,11 +26,11 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 class BaseAtomicModel(BaseAtomicModel_):
     def __init__(
         self,
-        type_map: List[str],
-        atom_exclude_types: List[int] = [],
-        pair_exclude_types: List[Tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[Dict[str, np.ndarray]] = None,
+        type_map: list[str],
+        atom_exclude_types: list[int] = [],
+        pair_exclude_types: list[tuple[int, int]] = [],
+        rcond: float | None = None,
+        preset_out_bias: dict[str, np.ndarray] | None = None,
     ):
         super().__init__()
         self.type_map = type_map
@@ -44,7 +42,7 @@ class BaseAtomicModel(BaseAtomicModel_):
     def init_out_stat(self):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
-        self.bias_keys: List[str] = list(self.fitting_output_def().keys())
+        self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -70,13 +68,13 @@ class BaseAtomicModel(BaseAtomicModel_):
         else:
             raise KeyError(key)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def reinit_atom_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
@@ -86,7 +84,7 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def reinit_pair_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
@@ -115,10 +113,10 @@ class BaseAtomicModel(BaseAtomicModel_):
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
         nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+        mapping: np.ndarray | None = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+    ) -> dict[str, np.ndarray]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -197,7 +195,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "BaseAtomicModel":
+    def deserialize(cls, data: dict) -> BaseAtomicModel:
         data = copy.deepcopy(data)
         variables = data.pop("@variables")
         obj = cls(**data)
@@ -207,7 +205,7 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, np.ndarray],
+        ret: dict[str, np.ndarray],
         atype: np.ndarray,
     ):
         """Apply the stat to each atomic output.
@@ -230,7 +228,7 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def _varsize(
         self,
-        shape: List[int],
+        shape: list[int],
     ) -> int:
         output_size = 1
         len_shape = len(shape)
@@ -242,7 +240,7 @@ class BaseAtomicModel(BaseAtomicModel_):
         self,
         kk: str,
     ) -> int:
-        res: List[int] = []
+        res: list[int] = []
         for i, e in enumerate(self.bias_keys):
             if e == kk:
                 res.append(i)
@@ -251,8 +249,8 @@ class BaseAtomicModel(BaseAtomicModel_):
 
     def _fetch_out_stat(
         self,
-        keys: List[str],
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+        keys: list[str],
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

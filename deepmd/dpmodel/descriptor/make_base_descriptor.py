@@ -1,25 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    List,
-    Optional,
-    Union,
 )
 
 from deepmd.common import (
     j_get_type,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 def make_base_descriptor(
@@ -57,7 +61,7 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected neighboring atoms for each type."""
             pass
 
@@ -107,8 +111,8 @@ def make_base_descriptor(
 
         def compute_input_stats(
             self,
-            merged: Union[Callable[[], List[dict]], List[dict]],
-            path: Optional[DPPath] = None,
+            merged: Callable[[], list[dict]] | list[dict],
+            path: DPPath | None = None,
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
@@ -119,7 +123,7 @@ def make_base_descriptor(
             extended_coord,
             extended_atype,
             nlist,
-            mapping: Optional[t_tensor] = None,
+            mapping: t_tensor | None = None,
         ):
             """Calculate descriptor."""
             pass
@@ -130,7 +134,7 @@ def make_base_descriptor(
             pass
 
         @classmethod
-        def deserialize(cls, data: dict) -> "BD":
+        def deserialize(cls, data: dict) -> BD:
             """Deserialize the model.
 
             Parameters

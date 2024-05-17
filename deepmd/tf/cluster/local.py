@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Get local GPU resources."""
 
+from __future__ import (
+    annotations,
+)
+
 import subprocess as sp
 import sys
-from typing import (
-    List,
-    Optional,
-    Tuple,
-)
 
 from deepmd.tf.env import (
     tf,
@@ -51,7 +50,7 @@ def get_gpus():
         return list(range(num_gpus)) if num_gpus > 0 else None
 
 
-def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
+def get_resource() -> tuple[str, list[str], list[int] | None]:
     """Get local resources: nodename, nodelist, and gpus.
 
     Returns

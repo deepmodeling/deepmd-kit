@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """This module will house cust Tf OPs after CMake installation."""
 
+from __future__ import (
+    annotations,
+)
+
 import importlib
 import logging
 from pathlib import (

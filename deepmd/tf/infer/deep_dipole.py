@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from pathlib import (
-    Path,
+from __future__ import (
+    annotations,
 )
+
 from typing import (
-    Optional,
+    TYPE_CHECKING,
 )
 
 from deepmd.infer.deep_dipole import (
@@ -12,6 +13,11 @@ from deepmd.infer.deep_dipole import (
 from deepmd.tf.infer.deep_tensor import (
     DeepTensor,
 )
+
+if TYPE_CHECKING:
+    from pathlib import (
+        Path,
+    )
 
 __all__ = [
     "DeepDipole",
@@ -44,10 +50,10 @@ class DeepDipoleOld(DeepTensor):
 
     def __init__(
         self,
-        model_file: "Path",
+        model_file: Path,
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
+        input_map: dict | None = None,
         neighbor_list=None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to

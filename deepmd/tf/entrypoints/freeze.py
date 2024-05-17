@@ -7,17 +7,16 @@ References
 https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc
 """
 
+from __future__ import (
+    annotations,
+)
+
 import logging
 from os.path import (
     abspath,
 )
 from pathlib import (
     Path,
-)
-from typing import (
-    List,
-    Optional,
-    Union,
 )
 
 import google.protobuf.message
@@ -77,10 +76,10 @@ def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def
 
 def _make_node_names(
     model_type: str,
-    modifier_type: Optional[str] = None,
+    modifier_type: str | None = None,
     out_suffix: str = "",
-    node_names: Optional[Union[str, list]] = None,
-) -> List[str]:
+    node_names: str | list | None = None,
+) -> list[str]:
     """Get node names based on model type.
 
     Parameters
@@ -294,8 +293,8 @@ def freeze(
     *,
     checkpoint_folder: str,
     output: str,
-    node_names: Optional[str] = None,
-    nvnmd_weight: Optional[str] = None,
+    node_names: str | None = None,
+    nvnmd_weight: str | None = None,
     **kwargs,
 ):
     """Freeze the graph in supplied folder.

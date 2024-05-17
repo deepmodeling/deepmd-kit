@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from abc import (
     abstractmethod,
 )
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
 )
 
 import numpy as np
@@ -105,7 +104,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         """
         raise NotImplementedError
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
 
         Returns
@@ -124,12 +123,12 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     @abstractmethod
     def compute_input_stats(
         self,
-        data_coord: List[np.ndarray],
-        data_box: List[np.ndarray],
-        data_atype: List[np.ndarray],
-        natoms_vec: List[np.ndarray],
-        mesh: List[np.ndarray],
-        input_dict: Dict[str, List[np.ndarray]],
+        data_coord: list[np.ndarray],
+        data_box: list[np.ndarray],
+        data_atype: list[np.ndarray],
+        natoms_vec: list[np.ndarray],
+        mesh: list[np.ndarray],
+        input_dict: dict[str, list[np.ndarray]],
         **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be
@@ -169,8 +168,8 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         natoms: tf.Tensor,
         box_: tf.Tensor,
         mesh: tf.Tensor,
-        input_dict: Dict[str, Any],
-        reuse: Optional[bool] = None,
+        input_dict: dict[str, Any],
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -250,7 +249,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             f"Descriptor {type(self).__name__} doesn't support compression!"
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Reveive the mixed precision setting.
 
         Parameters
@@ -269,7 +268,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     @abstractmethod
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -317,7 +316,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             f"Descriptor {type(self).__name__} doesn't support initialization from the given variables!"
         )
 
-    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> tuple[str]:
         """Get names of tensors.
 
         Parameters
@@ -356,9 +355,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
 
     def build_type_exclude_mask(
         self,
-        exclude_types: Set[Tuple[int, int]],
+        exclude_types: set[tuple[int, int]],
         ntypes: int,
-        sel: List[int],
+        sel: list[int],
         ndescrpt: int,
         atype: tf.Tensor,
         shape0: tf.Tensor,
@@ -474,7 +473,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         return cls.update_sel(global_jdata, local_jdata)
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
+    def deserialize(cls, data: dict, suffix: str = "") -> Descriptor:
         """Deserialize the model.
 
         There is no suffix in a native DP model, but it is important

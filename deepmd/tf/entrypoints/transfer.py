@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Module used for transfering parameters between models."""
 
+from __future__ import (
+    annotations,
+)
+
 import logging
 import re
 from typing import (
-    Dict,
-    Optional,
     Sequence,
 )
 
@@ -31,7 +33,7 @@ def convert_number(number: int) -> float:
 
 
 def convert_matrix(
-    matrix: np.ndarray, shape: Sequence[int], dtype: Optional[type] = None
+    matrix: np.ndarray, shape: Sequence[int], dtype: type | None = None
 ) -> np.ndarray:
     """Convert matrix of integers to self defined binary format.
 
@@ -187,7 +189,7 @@ class CopyNodeAttr:
         self.node = node
 
     def from_array(
-        self, tensor: np.ndarray, dtype: type, shape: Optional[Sequence[int]] = None
+        self, tensor: np.ndarray, dtype: type, shape: Sequence[int] | None = None
     ):
         if shape is None:
             shape = tensor.shape
@@ -234,7 +236,7 @@ def check_dim(raw_graph_node: tf.Tensor, old_graph_node: tf.Tensor, node_name: s
         )
 
 
-def load_transform_node(graph: tf.Graph) -> Dict[str, tf.Tensor]:
+def load_transform_node(graph: tf.Graph) -> dict[str, tf.Tensor]:
     """Load nodes and their names from graph to dict.
 
     Parameters

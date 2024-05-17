@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
+    TYPE_CHECKING,
     Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 import torch
@@ -43,15 +43,17 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
-from deepmd.utils.env_mat_stat import (
-    StatItem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+if TYPE_CHECKING:
+    from deepmd.utils.env_mat_stat import (
+        StatItem,
+    )
+    from deepmd.utils.path import (
+        DPPath,
+    )
 
 
 @DescriptorBlock.register("se_atten")
@@ -60,7 +62,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -79,11 +81,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
         temperature=None,
         smooth: bool = True,
         type_one_side: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        type: Optional[str] = None,
+        ln_eps: float | None = 1e-5,
+        type: str | None = None,
         old_impl: bool = False,
     ):
         r"""Construct an embedding net of type `se_atten`.
@@ -294,7 +296,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -363,8 +365,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ):
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -400,7 +402,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -410,7 +412,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -420,8 +422,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
     ):
         """Compute the descriptor.
 
@@ -586,7 +588,7 @@ class NeighborGatedAttention(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         smooth: bool = True,
@@ -632,8 +634,8 @@ class NeighborGatedAttention(nn.Module):
         self,
         input_G,
         nei_mask,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ):
         """Compute the multi-layer gated self-attention.
 
@@ -698,7 +700,7 @@ class NeighborGatedAttention(nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NeighborGatedAttention":
+    def deserialize(cls, data: dict) -> NeighborGatedAttention:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -726,7 +728,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         smooth: bool = True,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
@@ -765,8 +767,8 @@ class NeighborGatedAttentionLayer(nn.Module):
         self,
         x,
         nei_mask,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
     ):
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
@@ -799,7 +801,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "NeighborGatedAttentionLayer":
+    def deserialize(cls, data: dict) -> NeighborGatedAttentionLayer:
         """Deserialize the networks from a dict.
 
         Parameters
@@ -827,7 +829,7 @@ class GatedAttentionLayer(nn.Module):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
@@ -876,8 +878,8 @@ class GatedAttentionLayer(nn.Module):
         self,
         query,
         nei_mask,
-        input_r: Optional[torch.Tensor] = None,
-        sw: Optional[torch.Tensor] = None,
+        input_r: torch.Tensor | None = None,
+        sw: torch.Tensor | None = None,
         attnw_shift: float = 20.0,
     ):
         """Compute the multi-head gated self-attention.
@@ -983,7 +985,7 @@ class GatedAttentionLayer(nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data: dict) -> "GatedAttentionLayer":
+    def deserialize(cls, data: dict) -> GatedAttentionLayer:
         """Deserialize the networks from a dict.
 
         Parameters

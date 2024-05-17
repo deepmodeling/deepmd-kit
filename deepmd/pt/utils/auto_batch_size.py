@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from typing import (
     Callable,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -56,7 +58,7 @@ class AutoBatchSize(AutoBatchSizeBase):
 
     def execute_all(
         self, callable: Callable, total_size: int, natoms: int, *args, **kwargs
-    ) -> Tuple[Union[np.ndarray, torch.Tensor]]:
+    ) -> tuple[np.ndarray | torch.Tensor]:
         """Excuate a method with all given data.
 
         Parameters
@@ -75,7 +77,7 @@ class AutoBatchSize(AutoBatchSizeBase):
 
         def execute_with_batch_size(
             batch_size: int, start_index: int
-        ) -> Tuple[int, Tuple[torch.Tensor]]:
+        ) -> tuple[int, tuple[torch.Tensor]]:
             end_index = start_index + batch_size
             end_index = min(end_index, total_size)
             return (end_index - start_index), callable(

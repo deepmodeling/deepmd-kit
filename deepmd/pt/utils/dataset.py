@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-
-
-from typing import (
-    List,
-    Optional,
+from __future__ import (
+    annotations,
 )
 
 from torch.utils.data import (
@@ -17,7 +14,7 @@ from deepmd.utils.data import (
 
 
 class DeepmdDataSetForLoader(Dataset):
-    def __init__(self, system: str, type_map: Optional[List[str]] = None):
+    def __init__(self, system: str, type_map: list[str] | None = None):
         """Construct DeePMD-style dataset containing frames cross different systems.
 
         Args:
@@ -41,7 +38,7 @@ class DeepmdDataSetForLoader(Dataset):
         b_data["natoms"] = self._natoms_vec
         return b_data
 
-    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
         """Add data requirement for this data system."""
         for data_item in data_requirement:
             self._data_system.add(

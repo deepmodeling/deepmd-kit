@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 from .deep_eval import (
     DeepEval,
 )
@@ -17,7 +21,7 @@ __all__ = [
 ]
 
 
-def DeepPotential(*args, **kwargs) -> "DeepEval":
+def DeepPotential(*args, **kwargs) -> DeepEval:
     """Factory function that forwards to DeepEval (for compatbility).
 
     Parameters
