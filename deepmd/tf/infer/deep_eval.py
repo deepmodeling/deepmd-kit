@@ -10,6 +10,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Type,
     Union,
 )
 
@@ -262,7 +263,7 @@ class DeepEval(DeepEvalBackend):
 
     @property
     @lru_cache(maxsize=None)
-    def model_type(self) -> "DeepEvalWrapper":
+    def model_type(self) -> Type["DeepEvalWrapper"]:
         """Get type of model.
 
         :type:str
@@ -693,13 +694,13 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> Dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -1023,7 +1024,7 @@ class DeepEval(DeepEvalBackend):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -1080,7 +1081,7 @@ class DeepEval(DeepEvalBackend):
     def _eval_descriptor_inner(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
