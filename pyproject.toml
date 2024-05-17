@@ -291,7 +291,6 @@ ignore = "D413, D416, D203, D107, D213"
 [tool.isort]
 profile = "black"
 force_grid_wrap = 1
-required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -309,6 +308,7 @@ select = [
     "TID253", # banned-module-level-imports
     "T20", # ban print
     "TCH", # flake8-type-checking
+	"I002", # isort: missing required imports
 ]
 
 ignore = [
@@ -334,6 +334,9 @@ exclude = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 banned-module-level-imports = [
