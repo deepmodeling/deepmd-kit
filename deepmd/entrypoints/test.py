@@ -46,14 +46,7 @@ from deepmd.utils.weight_avg import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.tf.infer import (
-        DeepDipole,
-        DeepDOS,
-        DeepPolar,
-        DeepPot,
-        DeepWFC,
-    )
-    from deepmd.tf.infer.deep_tensor import (
+    from deepmd.infer.deep_tensor import (
         DeepTensor,
     )
 

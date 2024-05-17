@@ -146,7 +146,7 @@ class DeepTensor(DeepEval):
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: List[int],
         atomic: bool = True,
         fparam: Optional[np.ndarray] = None,
@@ -276,7 +276,7 @@ class DeepTensor(DeepEval):
     def eval_full(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: List[int],
         atomic: bool = False,
         fparam: Optional[np.array] = None,
