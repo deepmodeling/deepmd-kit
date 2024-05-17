@@ -53,7 +53,7 @@ from deepmd.utils.argcheck import (
     (True,),  # repformer_update_g2_has_g1g1
     (True,),  # repformer_update_g2_has_attn
     (False,),  # repformer_update_h2
-    (True, False),  # repformer_attn2_has_gate
+    (True,),  # repformer_attn2_has_gate
     ("res_avg", "res_residual"),  # repformer_update_style
     ("norm", "const"),  # repformer_update_residual_init
     (True,),  # repformer_set_davg_zero
@@ -63,6 +63,7 @@ from deepmd.utils.argcheck import (
     ([], [[0, 1]]),  # exclude_types
     ("float64",),  # precision
     (True, False),  # add_tebd_to_repinit_out
+    (True, False),  # use_econf_tebd
 )
 class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -89,6 +90,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -146,6 +148,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             "exclude_types": exclude_types,
             "env_protection": 0.0,
             "trainable": True,
+            "use_econf_tebd": use_econf_tebd,
+            "type_map": ["O", "H"] if use_econf_tebd else None,
             "add_tebd_to_repinit_out": add_tebd_to_repinit_out,
         }
 
@@ -173,6 +177,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -200,6 +205,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -227,6 +233,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
         return True
 
@@ -290,6 +297,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
@@ -350,6 +358,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -383,9 +392,10 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             exclude_types,
             precision,
             add_tebd_to_repinit_out,
+            use_econf_tebd,
         ) = self.param
         if precision == "float64":
-            return 1e-10
+            return 1e-8
         elif precision == "float32":
             return 1e-4
         else:

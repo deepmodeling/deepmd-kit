@@ -76,6 +76,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         seed: Optional[int] = None,
         add_tebd_to_repinit_out: bool = False,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         old_impl: bool = False,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
@@ -104,6 +106,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             (Unused yet) Random seed for parameter initialization.
         add_tebd_to_repinit_out : bool, optional
             Whether to add type embedding to the output representation from repinit before inputting it into repformer.
+        use_econf_tebd : bool, Optional
+            Whether to use electronic configuration type embedding.
+        type_map : List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
 
         Returns
         -------
@@ -189,8 +196,14 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ln_eps=self.repformer_args.ln_eps,
             old_impl=old_impl,
         )
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
-            ntypes, self.repinit_args.tebd_dim, precision=precision
+            ntypes,
+            self.repinit_args.tebd_dim,
+            precision=precision,
+            use_econf_tebd=self.use_econf_tebd,
+            type_map=type_map,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
@@ -368,6 +381,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             "env_protection": self.env_protection,
             "trainable": self.trainable,
             "add_tebd_to_repinit_out": self.add_tebd_to_repinit_out,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
             "g1_shape_tranform": self.g1_shape_tranform.serialize(),
         }

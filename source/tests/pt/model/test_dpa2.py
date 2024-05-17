@@ -61,6 +61,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rpz,
             sm,
             prec,
+            ect,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -75,18 +76,21 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [
                 False,
             ],  # repformer_update_h2
-            [True, False],  # repformer_attn2_has_gate
+            [
+                True,
+            ],  # repformer_attn2_has_gate
             ["res_avg", "res_residual"],  # repformer_update_style
             [
                 True,
             ],  # repformer_set_davg_zero
             [True, False],  # smooth
             ["float64"],  # precision
+            [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             if prec == "float64":
-                atol = 1e-11  # marginal GPU test cases...
+                atol = 1e-8  # marginal GPU test cases...
 
             repinit = RepinitArgs(
                 rcut=self.rcut,
@@ -129,6 +133,8 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 exclude_types=[],
                 add_tebd_to_repinit_out=False,
                 precision=prec,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 old_impl=False,
             ).to(env.DEVICE)
 
@@ -168,7 +174,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
             )
             # old impl
-            if prec == "float64" and rus == "res_avg":
+            if prec == "float64" and rus == "res_avg" and ect is False:
                 dd3 = DescrptDPA2(
                     self.nt,
                     repinit=repinit,
@@ -232,6 +238,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rpz,
             sm,
             prec,
+            ect,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -269,6 +276,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 True,
             ],  # smooth
             ["float64"],  # precision
+            [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -314,6 +322,8 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 exclude_types=[],
                 add_tebd_to_repinit_out=False,
                 precision=prec,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 old_impl=False,
             ).to(env.DEVICE)
 

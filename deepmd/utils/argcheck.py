@@ -80,6 +80,7 @@ def type_embedding_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
 
     return [
         Argument("neuron", List[int], optional=True, default=[8], doc=doc_neuron),
@@ -94,6 +95,9 @@ def type_embedding_args():
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        Argument(
+            "use_econf_tebd", bool, optional=True, default=False, doc=doc_use_econf_tebd
+        ),
     ]
 
 
@@ -506,6 +510,7 @@ def descrpt_se_atten_args():
     )
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
@@ -565,6 +570,13 @@ def descrpt_se_atten_args():
             optional=True,
             default=8,
             doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
         ),
         Argument(
             "tebd_input_mode",
@@ -634,6 +646,7 @@ def descrpt_dpa2_args():
     doc_trainable = "If the parameters in the embedding net is trainable."
     doc_seed = "Random seed for parameter initialization."
     doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
     return [
         # repinit args
         Argument("repinit", dict, dpa2_repinit_args(), doc=doc_repinit),
@@ -672,6 +685,13 @@ def descrpt_dpa2_args():
             default=False,
             alias=["repformer_add_type_ebd_to_seq"],
             doc=doc_add_tebd_to_repinit_out,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
         ),
     ]
 
