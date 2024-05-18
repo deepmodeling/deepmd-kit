@@ -116,11 +116,6 @@ class Model(ABC, make_plugin_registry("model")):
         data_stat_nbatch: int = 10,
         data_bias_nsample: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
-        srtab_add_bias: bool = True,
         spin: Optional[Spin] = None,
         compress: Optional[dict] = None,
         **kwargs,
@@ -142,15 +137,6 @@ class Model(ABC, make_plugin_registry("model")):
         self.data_stat_nbatch = data_stat_nbatch
         self.data_bias_nsample = data_bias_nsample
         self.data_stat_protect = data_stat_protect
-        self.srtab_name = use_srtab
-        if self.srtab_name is not None:
-            self.srtab = PairTab(self.srtab_name, rcut=self.get_rcut())
-            self.smin_alpha = smin_alpha
-            self.sw_rmin = sw_rmin
-            self.sw_rmax = sw_rmax
-            self.srtab_add_bias = srtab_add_bias
-        else:
-            self.srtab = None
 
     def get_type_map(self) -> list:
         """Get the type map."""
@@ -649,6 +635,10 @@ class StandardModel(Model):
         type_map: Optional[List[str]] = None,
         **kwargs,
     ) -> None:
+        super().__init__(
+            descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
+        )
+
         if isinstance(descriptor, Descriptor):
             self.descrpt = descriptor
         else:
@@ -671,11 +661,6 @@ class StandardModel(Model):
             )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
-
-        # need rcut
-        super().__init__(
-            descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
-        )
 
         # type embedding
         if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
