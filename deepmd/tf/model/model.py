@@ -53,9 +53,6 @@ from deepmd.tf.utils.data_system import (
 from deepmd.tf.utils.graph import (
     load_graph_def,
 )
-from deepmd.tf.utils.pair_tab import (
-    PairTab,
-)
 from deepmd.tf.utils.spin import (
     Spin,
 )
