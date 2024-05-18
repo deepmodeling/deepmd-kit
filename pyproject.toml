@@ -287,6 +287,7 @@ force_grid_wrap = 1
 [tool.ruff.lint]
 select = [
     "E", # errors
+    "W", # warning
     "F", # pyflakes
     "D", # pydocstyle
     "UP", # pyupgrade
