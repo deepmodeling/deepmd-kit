@@ -144,7 +144,7 @@ class Model(ABC, make_plugin_registry("model")):
         self.data_stat_protect = data_stat_protect
         self.srtab_name = use_srtab
         if self.srtab_name is not None:
-            self.srtab = PairTab(self.srtab_name)
+            self.srtab = PairTab(self.srtab_name, rcut=self.get_rcut())
             self.smin_alpha = smin_alpha
             self.sw_rmin = sw_rmin
             self.sw_rmax = sw_rmax

@@ -66,7 +66,7 @@ class PairTabModel(Model):
     ):
         super().__init__()
         self.tab_file = tab_file
-        self.tab = PairTab(self.tab_file)
+        self.tab = PairTab(self.tab_file, rcut=rcut)
         self.ntypes = self.tab.ntypes
         self.rcut = rcut
         if isinstance(sel, int):
