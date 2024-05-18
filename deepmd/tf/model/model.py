@@ -635,7 +635,6 @@ class StandardModel(Model):
         super().__init__(
             descriptor=descriptor, fitting=fitting_net, type_map=type_map, **kwargs
         )
-
         if isinstance(descriptor, Descriptor):
             self.descrpt = descriptor
         else:

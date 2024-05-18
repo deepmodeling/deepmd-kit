@@ -16,6 +16,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.tf.utils.pair_tab import (
+    PairTab,
+)
 from deepmd.tf.utils.spin import (
     Spin,
 )
