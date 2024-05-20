@@ -272,9 +272,7 @@ class DPTrainer:
                 self.place_holders[kk] = tf.placeholder(
                     GLOBAL_TF_FLOAT_PRECISION, [None], "t_" + kk
                 )
-            self._get_place_holders(
-                {rr.key: rr.dict for rr in self.model.input_requirement}
-            )
+            self._get_place_holders({rr.key: rr.dict for rr in self.data_requirements})
         else:
             self._get_place_holders(data.get_data_dict())
 
