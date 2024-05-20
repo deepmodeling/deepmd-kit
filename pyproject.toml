@@ -298,6 +298,7 @@ docstring-code-format = true
 [tool.ruff.lint]
 select = [
     "E", # errors
+    "W", # warning
     "F", # pyflakes
     "D", # pydocstyle
     "UP", # pyupgrade

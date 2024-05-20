@@ -50,7 +50,7 @@ class DeepGlobalPolar(DeepTensor):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: dict,
+        **kwargs,
     ) -> np.ndarray:
         """Evaluate the model.
 

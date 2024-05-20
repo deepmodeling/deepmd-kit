@@ -172,6 +172,11 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -220,6 +225,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
@@ -270,7 +277,15 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             ln_eps=ln_eps,
             old_impl=old_impl,
         )
-        self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        self.type_embedding = TypeEmbedNet(
+            ntypes,
+            tebd_dim,
+            precision=precision,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
+        )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
@@ -415,6 +430,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             # make deterministic
             "precision": RESERVED_PRECISON_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),

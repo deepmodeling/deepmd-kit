@@ -2031,6 +2031,11 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
     spin
             (Only support None to keep consistent with old implementation.)
             The old implementation of deepspin.
@@ -2065,6 +2070,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
         ln_eps: Optional[float] = 1e-3,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
@@ -2113,6 +2120,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             env_protection=env_protection,
         )
         self.tebd_dim = tebd_dim
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2121,6 +2130,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             neuron=[self.tebd_dim],
             padding=True,
             activation_function="Linear",
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
             # precision=precision,
         )
         self.concat_output_tebd = concat_output_tebd
@@ -2303,6 +2314,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
                 "normalize": self.normalize,
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
+                "use_econf_tebd": self.use_econf_tebd,
+                "type_map": self.type_map,
                 "type_embedding": self.type_embedding.serialize(suffix),
             }
         )
