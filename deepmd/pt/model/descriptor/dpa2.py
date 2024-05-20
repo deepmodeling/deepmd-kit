@@ -204,7 +204,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ntypes,
             self.repinit_args.tebd_dim,
             precision=precision,
-            seed=seed
+            seed=seed,
             use_econf_tebd=self.use_econf_tebd,
             type_map=type_map,
         )
