@@ -756,6 +756,22 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
+
+    # check available model branches
+    parser_list_model_branch = subparsers.add_parser(
+        "list-model-branch",
+        parents=[parser_log],
+        help="Check the available model branches in multi-task pre-trained model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp --pt list-model-branch model.pt
+        """
+        ),
+    )
+    parser_list_model_branch.add_argument("INPUT", help="The input multi-task pre-trained model file")
+
     return parser
 
 
@@ -813,6 +829,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
+        "list-model-branch"
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

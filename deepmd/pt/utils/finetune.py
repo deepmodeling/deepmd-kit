@@ -5,6 +5,7 @@ from copy import (
 )
 
 import torch
+from IPython import embed
 
 from deepmd.pt.utils import (
     env,
