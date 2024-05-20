@@ -23,6 +23,7 @@ from typing import (
 from deepmd.backend.backend import (
     Backend,
 )
+from IPython import embed
 
 try:
     from deepmd._version import version as __version__
@@ -273,6 +274,11 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default="",
         help="(Supported backend: PyTorch) Model branch chosen for fine-tuning if multi-task. If not specified, it will re-init the fitting net.",
+    )
+    parser_train.add_argument(
+        "--list-model-branch",
+        action="store_true",
+        help="(Supported backend: PyTorch) List model branches of a pretrained model."
     )
     parser_train.add_argument(
         "--force-load",

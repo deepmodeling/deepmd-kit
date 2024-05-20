@@ -53,7 +53,7 @@ def main(args: argparse.Namespace):
     set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)
 
     dict_args = vars(args)
-
+    
     if args.command == "test":
         dict_args["model"] = format_model_suffix(
             dict_args["model"],
