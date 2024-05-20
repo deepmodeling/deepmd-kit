@@ -25,6 +25,7 @@ from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.data import (
+    DataRequirementItem,
     DeepmdData,
 )
 from deepmd.utils.out_stat import (
@@ -297,6 +298,12 @@ class DeepmdDataSystem:
                     "output_natoms_for_type_sel", False
                 ),
             )
+
+    def add_data_requirements(
+        self, data_requirements: List[DataRequirementItem]
+    ) -> None:
+        """Add items to the data system by a list of `DataRequirementItem`."""
+        self.add_dict({rr.key: rr.dict for rr in data_requirements})
 
     def add(
         self,
