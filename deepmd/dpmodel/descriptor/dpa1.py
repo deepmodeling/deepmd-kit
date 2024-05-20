@@ -193,6 +193,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
+
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -242,6 +248,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
@@ -287,12 +295,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
         )
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes=ntypes,
             neuron=[tebd_dim],
             padding=True,
             activation_function="Linear",
             precision=precision,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
@@ -457,6 +469,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
             "embeddings": obj.embeddings.serialize(),

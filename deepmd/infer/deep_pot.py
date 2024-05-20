@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Dict,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
+    overload,
 )
 
 import numpy as np
@@ -89,6 +90,48 @@ class DeepPot(DeepEval):
             )
         )
 
+    @overload
+    def eval(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: Union[List[int], np.ndarray],
+        atomic: Literal[True],
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
+        mixed_type: bool,
+        **kwargs: Any,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        pass
+
+    @overload
+    def eval(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: Union[List[int], np.ndarray],
+        atomic: Literal[False],
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
+        mixed_type: bool,
+        **kwargs: Any,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        pass
+
+    @overload
+    def eval(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: Union[List[int], np.ndarray],
+        atomic: bool,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
+        mixed_type: bool,
+        **kwargs: Any,
+    ) -> Tuple[np.ndarray, ...]:
+        pass
+
     def eval(
         self,
         coords: np.ndarray,
@@ -98,7 +141,7 @@ class DeepPot(DeepEval):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate energy, force, and virial. If atomic is True,
         also return atomic energy and atomic virial.
