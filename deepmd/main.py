@@ -277,7 +277,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "--list-model-branch",
         action="store_true",
-        help="(Supported backend: PyTorch) List model branches of a multitask pretrained model."
+        help="(Supported backend: PyTorch) List model branches of a multitask pretrained model.",
     )
     parser_train.add_argument(
         "--force-load",
