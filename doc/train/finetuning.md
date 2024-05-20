@@ -104,6 +104,7 @@ One can check the available model branches in multi-task pre-trained model by re
 ```bash
 $ dp --pt train input.json --finetune multitask_pretrained.pt --list-model-branch
 ```
+
 :::
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
