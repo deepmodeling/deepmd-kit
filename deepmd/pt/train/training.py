@@ -83,6 +83,7 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+from IPython import embed
 
 
 class Trainer:
@@ -533,6 +534,7 @@ class Trainer:
                                     _origin_state_dict[new_key].clone().detach()
                                 )
 
+                    embed()
                     if not self.multi_task:
                         model_key = "Default"
                         model_key_from = self.finetune_links[model_key]
