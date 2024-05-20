@@ -47,6 +47,9 @@ from deepmd.pt.train import (
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.env import (
     DEVICE,
 )
@@ -326,10 +329,9 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         model_params = state_dict["_extra_state"]["model_params"]
         finetune_from_multi_task = "model_dict" in model_params
         #  Pretrained model must be multitask mode
-        assert (
-            finetune_from_multi_task
-        ), "Error: The '--list-model-branch' option requires \
-            a multitask pretrained model. The provided model does not meet this criterion"
+        assert finetune_from_multi_task, \
+            f"The '--list-model-branch' option requires a multitask pretrained model."\
+            f" The provided model does not meet this criterion."
         model_branch = list(model_params["model_dict"].keys())
         log.info(f"Available model branches are {model_branch}")
     else:
