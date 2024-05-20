@@ -770,7 +770,14 @@ def main_parser() -> argparse.ArgumentParser:
         """
         ),
     )
+<<<<<<< HEAD
     parser_list_model_branch.add_argument("INPUT", help="The input multi-task pre-trained model file")
+=======
+    parser_list_model_branch.add_argument(
+        "INPUT", help="The input multi-task pre-trained model file"
+    )
+
+>>>>>>> 50b00090e1ac2777faf84446f5d4e04bcef55188
     return parser
 
 
@@ -828,7 +835,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
-        "list-model-branch"
+        "list-model-branch",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

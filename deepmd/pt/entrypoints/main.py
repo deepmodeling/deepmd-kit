@@ -71,7 +71,6 @@ from deepmd.utils.path import (
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
-from IPython import embed
 
 
 def get_trainer(
@@ -329,7 +328,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         #  Pretrained model must be multitask mode
         assert finetune_from_multi_task, "When using --list-model-branch, the pretrained model must be multitask model"
         model_branch = list(model_params["model_dict"].keys())
-        log.info(f"Available model branches are {model_branch}")        
+        log.info(f"Available model branches are {model_branch}")
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 
