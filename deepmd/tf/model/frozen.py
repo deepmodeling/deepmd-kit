@@ -269,5 +269,19 @@ class FrozenModel(Model):
     @property
     def input_requirement(self) -> List[DataRequirementItem]:
         """Return data requirements needed for the model input."""
-        # TODO
-        return []
+        data_requirement = []
+        numb_fparam = self.model.get_dim_fparam()
+        numb_aparam = self.model.get_dim_aparam()
+        if numb_fparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "fparam", numb_fparam, atomic=False, must=True, high_prec=False
+                )
+            )
+        if numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", numb_aparam, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement
