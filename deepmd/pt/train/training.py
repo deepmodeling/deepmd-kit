@@ -519,6 +519,7 @@ class Trainer:
                             for i in _random_state_dict.keys()
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
+                        embed()
                         for item_key in target_keys:
                             if _new_fitting and ".fitting_net." in item_key:
                                 # print(f'Keep {item_key} in old model!')
@@ -534,7 +535,6 @@ class Trainer:
                                     _origin_state_dict[new_key].clone().detach()
                                 )
 
-                    embed()
                     if not self.multi_task:
                         model_key = "Default"
                         model_key_from = self.finetune_links[model_key]
