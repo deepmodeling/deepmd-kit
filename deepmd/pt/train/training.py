@@ -83,7 +83,9 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
-from IPython import embed
+from IPython import (
+    embed,
+)
 
 
 class Trainer:
