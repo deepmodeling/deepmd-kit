@@ -266,7 +266,7 @@ class DeepmdDataSystem:
         )
         return energy_shift.ravel()
 
-    def add_dict(self, adict: List[dict]) -> None:
+    def add_dict(self, adict: Dict[str, Dict[str, Any]]) -> None:
         """Add items to the data system by a `dict`.
         `adict` should have items like
         .. code-block:: python.
