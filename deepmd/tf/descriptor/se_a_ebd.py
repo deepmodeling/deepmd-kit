@@ -6,9 +6,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.tf.common import (
-    add_data_requirement,
-)
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     op_module,
@@ -17,6 +14,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.network import (
     embedding_net,
     one_layer,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .descriptor import (
@@ -110,8 +110,6 @@ class DescrptSeAEbd(DescrptSeA):
         self.type_nlayer = type_nlayer
         self.type_one_side = type_one_side
         self.numb_aparam = numb_aparam
-        if self.numb_aparam > 0:
-            add_data_requirement("aparam", 3, atomic=True, must=True, high_prec=False)
 
     def build(
         self,
@@ -600,3 +598,15 @@ class DescrptSeAEbd(DescrptSeA):
         result = tf.reshape(result, [-1, outputs_size_2 * outputs_size])
 
         return result, qmat
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = super().input_requirement
+        if self.numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", 3, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement

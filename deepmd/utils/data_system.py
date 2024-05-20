@@ -17,7 +17,6 @@ import numpy as np
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
-    data_requirement,
     expand_sys_str,
     j_must_have,
     make_default_mesh,
@@ -267,7 +266,7 @@ class DeepmdDataSystem:
         )
         return energy_shift.ravel()
 
-    def add_dict(self, adict: dict) -> None:
+    def add_dict(self, adict: List[dict]) -> None:
         """Add items to the data system by a `dict`.
         `adict` should have items like
         .. code-block:: python.
@@ -807,6 +806,5 @@ def get_data(
         sys_probs=sys_probs,
         auto_prob_style=auto_prob,
     )
-    data.add_dict(data_requirement)
 
     return data

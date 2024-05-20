@@ -7,7 +7,6 @@ from typing import (
 )
 
 from deepmd.tf.common import (
-    add_data_requirement,
     make_default_mesh,
 )
 from deepmd.tf.env import (
@@ -33,6 +32,9 @@ from deepmd.tf.utils.type_embed import (
 )
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 
@@ -103,7 +105,6 @@ class PairwiseDPRc(Model):
             type_embedding=self.typeebd,
             compress=compress,
         )
-        add_data_requirement("aparam", 1, atomic=True, must=True, high_prec=False)
         self.rcut = max(self.qm_model.get_rcut(), self.qmmm_model.get_rcut())
 
     def build(
@@ -423,6 +424,15 @@ class PairwiseDPRc(Model):
         # rcut is not important here
         UpdateSel().get_min_nbor_dist(global_jdata, 6.0)
         return local_jdata
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = []
+        data_requirement.append(
+            DataRequirementItem("aparam", 1, atomic=True, must=True, high_prec=False)
+        )
+        return data_requirement
 
 
 def gather_placeholder(
