@@ -771,7 +771,6 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
     parser_list_model_branch.add_argument("INPUT", help="The input multi-task pre-trained model file")
-
     return parser
 
 

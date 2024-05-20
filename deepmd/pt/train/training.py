@@ -83,7 +83,6 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
-from IPython import embed
 
 
 class Trainer:
@@ -519,7 +518,6 @@ class Trainer:
                             for i in _random_state_dict.keys()
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
-                        embed()
                         for item_key in target_keys:
                             if _new_fitting and ".fitting_net." in item_key:
                                 # print(f'Keep {item_key} in old model!')

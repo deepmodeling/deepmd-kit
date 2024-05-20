@@ -44,9 +44,6 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train import (
     training,
 )
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
@@ -313,21 +310,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     log.info("DeepMD version: %s", __version__)
 
     if FLAGS.command == "train":
-        if FLAGS.list_model_branch:
-            assert (
-                FLAGS.finetune is not None
-            ), "Error: The '--list-model-branch' option requires the '--finetune' argument to specify the model."
-            state_dict = torch.load(FLAGS.finetune, map_location=env.DEVICE)
-            if "model" in state_dict:
-                state_dict = state_dict["model"]
-            model_params = state_dict["_extra_state"]["model_params"]
-            finetune_from_multi_task = "model_dict" in model_params
-            #  Pretrained model must be multitask mode
-            assert finetune_from_multi_task, "Error: The '--list-model-branch' option requires a multitask pretrained model. The provided model does not meet this criterion."
-            model_branch = list(model_params["model_dict"].keys())
-            log.info(f"Available model branches are {model_branch}")
-        else:
-            train(FLAGS)
+        train(FLAGS)
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)
