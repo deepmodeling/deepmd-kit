@@ -114,6 +114,7 @@ class DpTrainer:
         dp_lr = self._get_dp_lr()
         dp_ds = self._get_dp_dataset()
         dp_ds.add_data_requirements(dp_model.input_requirement)
+        dp_ds.add_data_requirements(dp_loss.label_requirement)
         dp_model.data_stat(dp_ds)
 
         # Build graph
