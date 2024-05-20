@@ -72,7 +72,6 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
-from IPython import embed
 
 log = logging.getLogger(__name__)
 

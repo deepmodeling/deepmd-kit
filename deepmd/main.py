@@ -23,7 +23,6 @@ from typing import (
 from deepmd.backend.backend import (
     Backend,
 )
-from IPython import embed
 
 try:
     from deepmd._version import version as __version__
