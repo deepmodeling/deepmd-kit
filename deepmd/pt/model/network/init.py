@@ -8,7 +8,10 @@ from torch import (
     Tensor,
 )
 
-# Initialization methods copied from torch.nn.init from version v2.3.0
+# Copyright (c) 2023 The PyTorch Authors. All rights reserved.
+#
+# This file includes source code from PyTorch of version v2.3.0, which is released under the BSD-3-Clause license.
+# For more information about PyTorch, visit https://pytorch.org/.
 
 
 # These no_grad_* functions are necessary as wrappers around the parts of these
