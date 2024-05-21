@@ -5,6 +5,9 @@ import tensorflow as tf
 from deepmd.tf.loss import (
     EnerStdLoss,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 
 class TestLossGf(tf.test.TestCase):
@@ -24,6 +27,62 @@ class TestLossGf(tf.test.TestCase):
             start_pref_gf=1,
             limit_pref_gf=1,
             numb_generalized_coord=2,
+        )
+
+    def test_label_requirements(self):
+        """Test label_requirements are expected."""
+        self.assertCountEqual(
+            self.loss.label_requirement,
+            [
+                DataRequirementItem(
+                    "energy",
+                    1,
+                    atomic=False,
+                    must=False,
+                    high_prec=True,
+                    repeat=1,
+                ),
+                DataRequirementItem(
+                    "force",
+                    3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=1,
+                ),
+                DataRequirementItem(
+                    "virial",
+                    9,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                    repeat=1,
+                ),
+                DataRequirementItem(
+                    "atom_pref",
+                    1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=3,
+                ),
+                DataRequirementItem(
+                    "atom_ener",
+                    1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=1,
+                ),
+                DataRequirementItem(
+                    "drdq",
+                    2 * 3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=1,
+                ),
+            ],
         )
 
     def test_build_loss(self):

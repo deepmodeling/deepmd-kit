@@ -265,6 +265,9 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
 
+        # test input requirement for the model
+        self.assertCountEqual(model.input_requirement, [])
+
     def test_model_atom_ener_type_embedding(self):
         """Test atom ener with type embedding."""
         jfile = "water_se_a.json"
