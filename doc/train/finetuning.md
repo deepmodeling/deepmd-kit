@@ -102,7 +102,7 @@ $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHO
 One can check the available model branches in multi-task pre-trained model by refering to the documentation of the pre-trained model or by using the following command:
 
 ```bash
-$ dp --pt list-model-branch multitask_pretrained.pt
+$ dp --pt show multitask_pretrained.pt --list-model-branch
 ```
 
 :::
