@@ -756,7 +756,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_list_model_branch = subparsers.add_parser(
         "list-model-branch",
         parents=[parser_log],
-        help="Check the available model branches in multi-task pre-trained model",
+        help="(Supported backend: PyTorch) Check the available model branches in multi-task pre-trained model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
