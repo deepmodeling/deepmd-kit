@@ -765,9 +765,7 @@ def main_parser() -> argparse.ArgumentParser:
         """
         ),
     )
-    parser_show.add_argument(
-        "INPUT", help="The input model file"
-    )
+    parser_show.add_argument("INPUT", help="The input model file")
     parser_show.add_argument(
         "--list-model-branch",
         action="store_true",
