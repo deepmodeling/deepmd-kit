@@ -85,7 +85,6 @@ class ModelTestCase:
     def test_forward(self):
         """Test forward and forward_lower."""
         nf = 1
-        nloc = 3
         coord = np.array(
             [
                 [0, 0, 0],

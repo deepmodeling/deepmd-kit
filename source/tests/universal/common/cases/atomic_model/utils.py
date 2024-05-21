@@ -78,7 +78,6 @@ class AtomicModelTestCase:
     def test_forward(self):
         """Test forward."""
         nf = 1
-        nloc = 3
         coord = np.array(
             [
                 [0, 0, 0],
