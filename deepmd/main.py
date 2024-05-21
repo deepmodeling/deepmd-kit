@@ -752,21 +752,26 @@ def main_parser() -> argparse.ArgumentParser:
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
 
-    # check available model branches
-    parser_list_model_branch = subparsers.add_parser(
-        "list-model-branch",
+    # * show model ******************************************************************
+    parser_show = subparsers.add_parser(
+        "show",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Check the available model branches in multi-task pre-trained model",
+        help="(Supported backend: PyTorch) Show the information of a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
         examples:
-            dp --pt list-model-branch model.pt
+            dp show model.pt --list-model-branch
         """
         ),
     )
-    parser_list_model_branch.add_argument(
-        "INPUT", help="The input multi-task pre-trained model file"
+    parser_show.add_argument(
+        "INPUT", help="The input model file"
+    )
+    parser_show.add_argument(
+        "--list-model-branch",
+        action="store_true",
+        help="Check the available model branches in multi-task model",
     )
     return parser
 
@@ -825,7 +830,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
-        "list-model-branch",
+        "show",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

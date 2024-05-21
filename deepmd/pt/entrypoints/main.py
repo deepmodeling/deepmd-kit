@@ -322,19 +322,20 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
-    elif FLAGS.command == "list-model-branch":
+    elif FLAGS.command == "show":
         state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_params = state_dict["_extra_state"]["model_params"]
         finetune_from_multi_task = "model_dict" in model_params
-        #  Pretrained model must be multitask mode
-        assert finetune_from_multi_task, (
-            "The '--list-model-branch' option requires a multitask pretrained model."
-            " The provided model does not meet this criterion."
-        )
-        model_branch = list(model_params["model_dict"].keys())
-        log.info(f"Available model branches are {model_branch}")
+        if FLAGS.list_model_branch:
+            #  The model must be multitask mode
+            assert finetune_from_multi_task, (
+                "The '--list-model-branch' option requires a multitask model."
+                " The provided model does not meet this criterion."
+            )
+            model_branch = list(model_params["model_dict"].keys())
+            log.info(f"Available model branches are {model_branch}")
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 
