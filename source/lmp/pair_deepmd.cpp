@@ -220,8 +220,7 @@ void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
   Compute *compute = modify->compute[icompute];
 
   if (!compute) {
-    error->all(FLERR,
-               "compute id is not found: " + compute_fparam_id);
+    error->all(FLERR, "compute id is not found: " + compute_fparam_id);
   }
   fparam.resize(dim_fparam);
 
@@ -250,8 +249,7 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
   Compute *compute = modify->compute[icompute];
 
   if (!compute) {
-    error->all(FLERR,
-               "compute id is not found: " + compute_aparam_id);
+    error->all(FLERR, "compute id is not found: " + compute_aparam_id);
   }
   int nlocal = atom->nlocal;
   aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
@@ -284,8 +282,7 @@ void PairDeepMD::make_ttm_fparam(vector<double> &fparam) {
     }
   }
   if (!ttm_fix) {
-    error->all(FLERR,
-               "fix ttm id is not found: " + ttm_fix_id);
+    error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
   }
 
   fparam.resize(dim_fparam);
@@ -326,8 +323,7 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
     }
   }
   if (!ttm_fix) {
-    error->all(FLERR,
-               "fix ttm id is not found: " + ttm_fix_id);
+    error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
   }
   // modify
   double **x = atom->x;
