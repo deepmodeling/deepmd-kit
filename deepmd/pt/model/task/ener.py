@@ -56,6 +56,7 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         super().__init__(
@@ -71,6 +72,7 @@ class EnergyFittingNet(InvarFitting):
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
+            seed=seed,
             **kwargs,
         )
 
@@ -153,9 +155,6 @@ class EnergyFittingNetDirect(Fitting):
                 )
                 filter_layers.append(one)
         self.filter_layers = torch.nn.ModuleList(filter_layers)
-
-        if "seed" in kwargs:
-            torch.manual_seed(kwargs["seed"])
 
     def output_def(self):
         return FittingOutputDef(

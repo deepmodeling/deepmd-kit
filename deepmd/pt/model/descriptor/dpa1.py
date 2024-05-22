@@ -172,6 +172,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    seed: int, Optional
+            Random seed for parameter initialization.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
@@ -225,12 +227,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
+        seed: Optional[int] = None,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        seed: Optional[int] = None,
         old_impl: bool = False,
     ):
         super().__init__()
@@ -275,6 +277,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
+            seed=seed,
             old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
@@ -283,6 +286,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             ntypes,
             tebd_dim,
             precision=precision,
+            seed=seed,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
         )

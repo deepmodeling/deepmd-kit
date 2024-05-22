@@ -568,6 +568,7 @@ class TypeEmbedNet(nn.Module):
         bavg=0.0,
         stddev=1.0,
         precision="default",
+        seed: Optional[int] = None,
         use_econf_tebd=False,
         type_map=None,
     ):
@@ -587,6 +588,7 @@ class TypeEmbedNet(nn.Module):
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
             precision=precision,
+            seed=seed,
         )
         # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
@@ -727,13 +729,13 @@ class TypeEmbedNetConsistent(nn.Module):
                 )
             )
             embed_input_dim = ECONF_DIM
-        # no way to pass seed?
         self.embedding_net = EmbeddingNet(
             embed_input_dim,
             self.neuron,
             self.activation_function,
             self.resnet_dt,
             self.precision,
+            self.seed,
         )
         for param in self.parameters():
             param.requires_grad = trainable
