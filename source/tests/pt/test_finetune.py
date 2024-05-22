@@ -226,13 +226,12 @@ class FinetuneTest:
         )
         test_keys = ["energy", "force", "virial"]
         for key in test_keys:
-            if key in ["energy"]:
-                torch.testing.assert_close(
-                    model_large_result[key],
-                    model_slimed_result[key],
-                    rtol=prec,
-                    atol=prec,
-                )
+            torch.testing.assert_close(
+                model_large_result[key],
+                model_slimed_result[key],
+                rtol=prec,
+                atol=prec,
+            )
 
         self.tearDown()
 
@@ -251,7 +250,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = self.data_file
         self.config["training"]["validation_data"]["systems"] = self.data_file
         self.config["model"] = deepcopy(model_se_e2_a)
@@ -265,7 +264,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = self.data_file
         self.config["training"]["validation_data"]["systems"] = self.data_file
         self.config["model"] = deepcopy(model_zbl)
@@ -279,7 +278,7 @@ class TestEnergyModelDPA1(unittest.TestCase, FinetuneTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = self.data_file
         self.config["training"]["validation_data"]["systems"] = self.data_file
         self.config["model"] = deepcopy(model_dpa1)
@@ -293,7 +292,7 @@ class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.data_file = [str(Path(__file__).parent / "water/data/single")]
         self.config["training"]["training_data"]["systems"] = self.data_file
         self.config["training"]["validation_data"]["systems"] = self.data_file
         self.config["model"] = deepcopy(model_dpa2)
