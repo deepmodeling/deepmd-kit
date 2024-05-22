@@ -247,7 +247,6 @@ def j_loader(filename: Union[str, Path]) -> Dict[str, Any]:
         raise TypeError("config file must be json, or yaml/yml")
 
 
-# TODO port expand_sys_str completely to pathlib when all callers are ported
 def expand_sys_str(root_dir: Union[str, Path]) -> List[str]:
     """Recursively iterate over directories taking those that contain `type.raw` file.
 
