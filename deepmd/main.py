@@ -766,8 +766,14 @@ def main_parser() -> argparse.ArgumentParser:
         """
         ),
     )
-    parser_show.add_argument("INPUT", help="The input checkpoint file or frozen model file")
-    parser_show.add_argument('ATTRIBUTES', choices=['model-branch', 'type-map', 'descriptor', 'fitting-net'], nargs="+")
+    parser_show.add_argument(
+        "INPUT", help="The input checkpoint file or frozen model file"
+    )
+    parser_show.add_argument(
+        "ATTRIBUTES",
+        choices=["model-branch", "type-map", "descriptor", "fitting-net"],
+        nargs="+",
+    )
     return parser
 
 
