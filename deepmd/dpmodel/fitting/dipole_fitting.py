@@ -175,6 +175,15 @@ class DipoleFitting(GeneralFitting):
             ]
         )
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, np.ndarray],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, np.ndarray]:
+        """Update the type related params when loading from pretrained model with redundant types."""
+        raise NotImplementedError
+
     def call(
         self,
         descriptor: np.ndarray,

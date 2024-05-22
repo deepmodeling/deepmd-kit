@@ -110,6 +110,15 @@ class BaseAtomicModel(BaseAtomicModel_):
             ]
         )
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, np.ndarray],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, np.ndarray]:
+        """Update the type related params when loading from pretrained model with redundant types."""
+        raise NotImplementedError
+
     def forward_common_atomic(
         self,
         extended_coord: np.ndarray,

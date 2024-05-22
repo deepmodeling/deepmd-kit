@@ -70,7 +70,14 @@ $ dp --pt train input.json --finetune pretrained.pt
 We do not support fine-tuning from a randomly initialized fitting net in this case, which is the same as implementations in TensorFlow.
 :::
 
-The model section in input.json can be simplified as follows:
+The model section in input.json **must be the same as that in the pretrained model**.
+If you do not know the model params in the pretrained model, you can add `--use-pretrain-script` in the fine-tuning command:
+
+```bash
+$ dp --pt train input.json --finetune pretrained.pt --use-pretrain-script
+```
+
+The model section will be overwritten (except the `type_map` subsection) by that in the pretrained model and then the input.json can be simplified as follows:
 
 ```json
     "model": {
@@ -79,11 +86,6 @@ The model section in input.json can be simplified as follows:
         "fitting_net" : {}
     }
 ```
-
-:::{warning}
-The `type_map` will be overwritten based on that in the pre-trained model. Please ensure you are familiar with the `type_map` configuration in the pre-trained model before starting the fine-tuning process.
-This issue will be addressed in the future version.
-:::
 
 #### Fine-tuning from a multi-task pre-trained model
 

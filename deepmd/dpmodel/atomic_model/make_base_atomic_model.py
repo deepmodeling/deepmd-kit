@@ -136,6 +136,16 @@ def make_base_atomic_model(
         def deserialize(cls, data: dict):
             pass
 
+        @abstractmethod
+        def update_type_params(
+            self,
+            state_dict: Dict[str, t_tensor],
+            mapping_index: List[int],
+            prefix: str = "",
+        ) -> Dict[str, t_tensor]:
+            """Update the type related params when loading from pretrained model with redundant types."""
+            pass
+
         def make_atom_mask(
             self,
             atype: t_tensor,

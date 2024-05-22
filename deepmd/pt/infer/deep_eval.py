@@ -118,7 +118,6 @@ class DeepEval(DeepEvalBackend):
                             item.replace(f"model.{head}.", "model.Default.")
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
-            self.input_param["resuming"] = True
             model = get_model(self.input_param).to(DEVICE)
             model = torch.jit.script(model)
             self.dp = ModelWrapper(model)

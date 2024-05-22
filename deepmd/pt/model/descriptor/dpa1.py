@@ -370,6 +370,42 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def dim_emb(self):
         return self.get_dim_emb()
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, torch.Tensor],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Update the type related params when loading from pretrained model with redundant types.
+
+        Parameters
+        ----------
+        state_dict : Dict[str, torch.Tensor]
+            The model state dict from the pretrained model.
+        mapping_index : List[int]
+            The mapping index of newly defined types to those in the pretrained model.
+        prefix : str
+            The prefix of the param keys.
+
+        Returns
+        -------
+        updated_dict: Dict[str, torch.Tensor]
+            Updated type related params.
+        """
+        updated_dict = {}
+        for key in state_dict.keys():
+            if f"{prefix}.se_atten.mean" in key or f"{prefix}.se_atten.stddev" in key:
+                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
+        updated_dict.update(
+            self.type_embedding.update_type_params(
+                state_dict,
+                mapping_index=mapping_index,
+                prefix=prefix + ".type_embedding",
+            )
+        )
+        return updated_dict
+
     def compute_input_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],

@@ -2,6 +2,7 @@
 import copy
 import logging
 from typing import (
+    Dict,
     List,
     Optional,
     Tuple,
@@ -180,6 +181,31 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     def deserialize(cls) -> "EnergyFittingNetDirect":
+        raise NotImplementedError
+
+    def update_type_params(
+        self,
+        state_dict: Dict[str, torch.Tensor],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Update the type related params when loading from pretrained model with redundant types.
+
+        Parameters
+        ----------
+        state_dict : Dict[str, torch.Tensor]
+            The model state dict from the pretrained model.
+        mapping_index : List[int]
+            The mapping index of newly defined types to those in the pretrained model.
+        prefix : str
+            The prefix of the param keys.
+
+        Returns
+        -------
+        updated_dict: Dict[str, torch.Tensor]
+            Updated type related params.
+        """
         raise NotImplementedError
 
     def forward(

@@ -15,6 +15,9 @@ import torch
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
+from deepmd.pt.utils.finetune import (
+    get_finetune_rules,
+)
 
 from .model.test_permutation import (
     model_dos,
@@ -32,13 +35,37 @@ class DPTrainTest:
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
 
-        # test fine-tuning
+        # test fine-tuning using same input
+        finetune_model = self.config["training"].get("save_ckpt", "model.ckpt") + ".pt"
+        self.config["model"], finetune_links = get_finetune_rules(
+            finetune_model,
+            self.config["model"],
+        )
         trainer_finetune = get_trainer(
             deepcopy(self.config),
-            finetune_model=self.config["training"].get("save_ckpt", "model.ckpt")
-            + ".pt",
+            finetune_model=finetune_model,
+            finetune_links=finetune_links,
         )
         trainer_finetune.run()
+
+        # test fine-tuning using empty input
+        self.config_empty = deepcopy(self.config)
+        if "descriptor" in self.config_empty["model"]:
+            self.config_empty["model"]["descriptor"] = {}
+        if "fitting_net" in self.config_empty["model"]:
+            self.config_empty["model"]["fitting_net"] = {}
+        self.config_empty["model"], finetune_links = get_finetune_rules(
+            finetune_model,
+            self.config_empty["model"],
+            change_model_params=True,
+        )
+        trainer_finetune_empty = get_trainer(
+            deepcopy(self.config_empty),
+            finetune_model=finetune_model,
+            finetune_links=finetune_links,
+        )
+        trainer_finetune_empty.run()
+
         self.tearDown()
 
     def test_trainable(self):

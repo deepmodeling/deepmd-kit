@@ -411,6 +411,35 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, torch.Tensor],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Update the type related params when loading from pretrained model with redundant types.
+
+        Parameters
+        ----------
+        state_dict : Dict[str, torch.Tensor]
+            The model state dict from the pretrained model.
+        mapping_index : List[int]
+            The mapping index of newly defined types to those in the pretrained model.
+        prefix : str
+            The prefix of the param keys.
+
+        Returns
+        -------
+        updated_dict: Dict[str, torch.Tensor]
+            Updated type related params.
+        """
+        updated_dict = {}
+        for key in state_dict.keys():
+            if f"{prefix}.out_bias" in key or f"{prefix}.out_std" in key:
+                updated_dict[key] = state_dict[key][:, mapping_index].clone().detach()
+        return updated_dict
+
     def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 

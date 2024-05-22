@@ -152,6 +152,15 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         raise NotImplementedError
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, np.ndarray],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, np.ndarray]:
+        """Update the type related params when loading from pretrained model with redundant types."""
+        raise NotImplementedError
+
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:

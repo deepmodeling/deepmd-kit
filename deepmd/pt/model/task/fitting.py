@@ -5,6 +5,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Dict,
     List,
     Optional,
     Union,
@@ -366,6 +367,36 @@ class GeneralFitting(Fitting):
 
     def _extend_a_avg_std(self, xx: torch.Tensor, nb: int, nloc: int) -> torch.Tensor:
         return torch.tile(xx.view([1, 1, self.numb_aparam]), [nb, nloc, 1])
+
+    def update_type_params(
+        self,
+        state_dict: Dict[str, torch.Tensor],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Update the type related params when loading from pretrained model with redundant types.
+
+        Parameters
+        ----------
+        state_dict : Dict[str, torch.Tensor]
+            The model state dict from the pretrained model.
+        mapping_index : List[int]
+            The mapping index of newly defined types to those in the pretrained model.
+        prefix : str
+            The prefix of the param keys.
+
+        Returns
+        -------
+        updated_dict: Dict[str, torch.Tensor]
+            Updated type related params.
+        """
+        assert self.mixed_types, "Only fitting net in mixed_types can be slimmed!"
+        updated_dict = {}
+        for key in state_dict.keys():
+            if f"{prefix}.bias_atom_e" in key:
+                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
+        return updated_dict
 
     def _forward_common(
         self,

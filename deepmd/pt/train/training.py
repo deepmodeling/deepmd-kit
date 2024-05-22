@@ -31,7 +31,7 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    EnergyModel,
+    DOSModel,
     get_model,
     get_zbl_model,
 )
@@ -460,12 +460,8 @@ class Trainer:
         # resuming and finetune
         optimizer_state_dict = None
         if resuming:
-            ntest = model_params.get("data_bias_nsample", 1)
-            origin_model = (
-                finetune_model if finetune_model is not None else resume_model
-            )
-            log.info(f"Resuming from {origin_model}.")
-            state_dict = torch.load(origin_model, map_location=DEVICE)
+            log.info(f"Resuming from {resume_model}.")
+            state_dict = torch.load(resume_model, map_location=DEVICE)
             if "model" in state_dict:
                 optimizer_state_dict = (
                     state_dict["optimizer"] if finetune_model is None else None
@@ -500,19 +496,21 @@ class Trainer:
                         log.warning(
                             f"Force load mode allowed! These keys are not in ckpt and will re-init: {slim_keys}"
                         )
-
+                # update model params in pretrained model
                 if finetune_model is not None:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
 
                     def update_single_finetune_params(
                         _model_key,
-                        _model_key_from,
+                        _finetune_rule_single,
                         _new_state_dict,
                         _origin_state_dict,
                         _random_state_dict,
-                        _new_fitting=False,
                     ):
+                        _new_fitting = _finetune_rule_single.get_random_fitting()
+                        _model_key_from = _finetune_rule_single.get_model_branch()
+                        single_modified_state_dict = {}
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -521,7 +519,7 @@ class Trainer:
                         for item_key in target_keys:
                             if _new_fitting and ".fitting_net." in item_key:
                                 # print(f'Keep {item_key} in old model!')
-                                _new_state_dict[item_key] = (
+                                single_modified_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
                                 )
                             else:
@@ -529,80 +527,69 @@ class Trainer:
                                     f".{_model_key}.", f".{_model_key_from}."
                                 )
                                 # print(f'Replace {item_key} with {new_key} in pretrained_model!')
-                                _new_state_dict[item_key] = (
+                                single_modified_state_dict[item_key] = (
                                     _origin_state_dict[new_key].clone().detach()
                                 )
+                        if _finetune_rule_single.get_update_type():
+                            single_modified_state_dict.update(
+                                self.wrapper.model[_model_key].update_type_params(
+                                    single_modified_state_dict,
+                                    mapping_index=_finetune_rule_single.get_index_mapping(),
+                                    prefix=f".{_model_key}",
+                                )
+                            )
+                        _new_state_dict.update(single_modified_state_dict)
 
-                    if not self.multi_task:
-                        model_key = "Default"
-                        model_key_from = self.finetune_links[model_key]
-                        new_fitting = model_params.pop("new_fitting", False)
+                    for model_key in self.model_keys:
+                        finetune_rule_single = self.finetune_links[model_key]
                         update_single_finetune_params(
                             model_key,
-                            model_key_from,
+                            finetune_rule_single,
                             new_state_dict,
                             state_dict,
                             target_state_dict,
-                            _new_fitting=new_fitting,
                         )
-                    else:
-                        for model_key in self.model_keys:
-                            if model_key in self.finetune_links:
-                                model_key_from = self.finetune_links[model_key]
-                                new_fitting = model_params["model_dict"][model_key].pop(
-                                    "new_fitting", False
-                                )
-                            else:
-                                model_key_from = model_key
-                                new_fitting = False
-                            update_single_finetune_params(
-                                model_key,
-                                model_key_from,
-                                new_state_dict,
-                                state_dict,
-                                target_state_dict,
-                                _new_fitting=new_fitting,
-                            )
                     state_dict = new_state_dict
                     state_dict["_extra_state"] = self.wrapper.state_dict()[
                         "_extra_state"
                     ]
+
                 self.wrapper.load_state_dict(state_dict)
 
+                # change bias for fine-tuning
                 if finetune_model is not None:
 
                     def single_model_finetune(
                         _model,
-                        _model_params,
+                        _finetune_rule_single,
                         _sample_func,
                     ):
-                        old_type_map, new_type_map = (
-                            _model_params["type_map"],
-                            _model_params["new_type_map"],
-                        )
-                        if isinstance(_model, EnergyModel):
+                        # need fix for DOSModel
+                        if not isinstance(_model, DOSModel):
                             _model = _model_change_out_bias(
-                                _model, new_type_map, _sample_func, _model_params
+                                _model,
+                                _sample_func,
+                                _bias_adjust_mode="change-by-statistic"
+                                if not _finetune_rule_single.get_random_fitting()
+                                else "set-by-statistic",
                             )
-                        else:
-                            # need to updated
-                            pass
                         return _model
 
-                    # finetune
                     if not self.multi_task:
+                        finetune_rule_single = self.finetune_links["Default"]
                         self.model = single_model_finetune(
-                            self.model, model_params, self.get_sample_func
+                            self.model, finetune_rule_single, self.get_sample_func
                         )
                     else:
                         for model_key in self.model_keys:
-                            if model_key in self.finetune_links:
+                            finetune_rule_single = self.finetune_links[model_key]
+                            if not finetune_rule_single.get_resuming():
                                 log.info(
                                     f"Model branch {model_key} will be fine-tuned. This may take a long time..."
                                 )
                                 self.model[model_key] = single_model_finetune(
                                     self.model[model_key],
-                                    model_params["model_dict"][model_key],
+                                    finetune_rule_single,
                                     self.get_sample_func[model_key],
                                 )
                             else:
@@ -1203,27 +1190,20 @@ class Trainer:
 
 def _model_change_out_bias(
     _model,
-    new_type_map,
     _sample_func,
-    _model_params,
+    _bias_adjust_mode="change-by-statistic",
 ):
     old_bias = _model.get_out_bias()
     _model.change_out_bias(
         _sample_func,
-        bias_adjust_mode=_model_params.get("bias_adjust_mode", "change-by-statistic"),
+        bias_adjust_mode=_bias_adjust_mode,
     )
     new_bias = _model.get_out_bias()
 
     model_type_map = _model.get_type_map()
-    sorter = np.argsort(model_type_map)
-    missing_types = [t for t in new_type_map if t not in model_type_map]
-    assert (
-        not missing_types
-    ), f"Some types are not in the pre-trained model: {list(missing_types)} !"
-    idx_type_map = sorter[np.searchsorted(model_type_map, new_type_map, sorter=sorter)]
     log.info(
-        f"Change output bias of {new_type_map!s} "
-        f"from {to_numpy_array(old_bias[:,idx_type_map]).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias[:,idx_type_map]).reshape(-1)!s}."
+        f"Change output bias of {model_type_map!s} "
+        f"from {to_numpy_array(old_bias).reshape(-1)!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model

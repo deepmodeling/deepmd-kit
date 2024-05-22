@@ -182,6 +182,44 @@ class DPAtomicModel(BaseAtomicModel):
     def get_out_bias(self) -> torch.Tensor:
         return self.out_bias
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, torch.Tensor],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Update the type related params when loading from pretrained model with redundant types.
+
+        Parameters
+        ----------
+        state_dict : Dict[str, torch.Tensor]
+            The model state dict from the pretrained model.
+        mapping_index : List[int]
+            The mapping index of newly defined types to those in the pretrained model.
+        prefix : str
+            The prefix of the param keys.
+
+        Returns
+        -------
+        updated_dict: Dict[str, torch.Tensor]
+            Updated type related params.
+        """
+        updated_dict = BaseAtomicModel.update_type_params(
+            self, state_dict, mapping_index=mapping_index, prefix=prefix
+        )
+        updated_dict.update(
+            self.descriptor.update_type_params(
+                state_dict, mapping_index=mapping_index, prefix=prefix + ".descriptor"
+            )
+        )
+        updated_dict.update(
+            self.fitting_net.update_type_params(
+                state_dict, mapping_index=mapping_index, prefix=prefix + ".fitting_net"
+            )
+        )
+        return updated_dict
+
     def compute_or_load_stat(
         self,
         sampled_func,

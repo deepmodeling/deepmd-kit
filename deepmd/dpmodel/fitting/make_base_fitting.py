@@ -5,6 +5,7 @@ from abc import (
 )
 from typing import (
     Dict,
+    List,
     Optional,
 )
 
@@ -61,6 +62,16 @@ def make_base_fitting(
             aparam: Optional[t_tensor] = None,
         ) -> Dict[str, t_tensor]:
             """Calculate fitting."""
+            pass
+
+        @abstractmethod
+        def update_type_params(
+            self,
+            state_dict: Dict[str, t_tensor],
+            mapping_index: List[int],
+            prefix: str = "",
+        ) -> Dict[str, t_tensor]:
+            """Update the type related params when loading from pretrained model with redundant types."""
             pass
 
         def compute_output_stats(self, merged):

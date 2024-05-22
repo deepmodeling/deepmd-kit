@@ -15,6 +15,9 @@ import torch
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
+from deepmd.pt.utils.finetune import (
+    get_finetune_rules,
+)
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
@@ -116,11 +119,16 @@ class MultiTaskTrainTest:
             self.origin_config["model"]
         )
 
+        finetune_model = self.config["training"].get("save_ckpt", "model.ckpt") + ".pt"
+        self.origin_config["model"], finetune_links = get_finetune_rules(
+            finetune_model,
+            self.origin_config["model"],
+        )
         trainer_finetune = get_trainer(
             deepcopy(self.origin_config),
-            finetune_model=self.config["training"].get("save_ckpt", "model.ckpt")
-            + ".pt",
+            finetune_model=finetune_model,
             shared_links=shared_links_finetune,
+            finetune_links=finetune_links,
         )
 
         # check parameters

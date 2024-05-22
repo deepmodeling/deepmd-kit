@@ -331,6 +331,47 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
+    def update_type_params(
+        self,
+        state_dict: Dict[str, torch.Tensor],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Update the type related params when loading from pretrained model with redundant types.
+
+        Parameters
+        ----------
+        state_dict : Dict[str, torch.Tensor]
+            The model state dict from the pretrained model.
+        mapping_index : List[int]
+            The mapping index of newly defined types to those in the pretrained model.
+        prefix : str
+            The prefix of the param keys.
+
+        Returns
+        -------
+        updated_dict: Dict[str, torch.Tensor]
+            Updated type related params.
+        """
+        updated_dict = {}
+        for key in state_dict.keys():
+            if (
+                f"{prefix}.repinit.mean" in key
+                or f"{prefix}.repinit.stddev" in key
+                or f"{prefix}.repformers.mean" in key
+                or f"{prefix}.repformers.stddev" in key
+            ):
+                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
+        updated_dict.update(
+            self.type_embedding.update_type_params(
+                state_dict,
+                mapping_index=mapping_index,
+                prefix=prefix + ".type_embedding",
+            )
+        )
+        return updated_dict
+
     @property
     def dim_out(self):
         return self.get_dim_out()

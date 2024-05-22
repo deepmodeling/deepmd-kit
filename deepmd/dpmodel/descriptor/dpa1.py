@@ -29,6 +29,7 @@ except ImportError:
 from typing import (
     Any,
     Callable,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -362,6 +363,15 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         If not start from checkpoint (resume is False),
         some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
+        raise NotImplementedError
+
+    def update_type_params(
+        self,
+        state_dict: Dict[str, np.ndarray],
+        mapping_index: List[int],
+        prefix: str = "",
+    ) -> Dict[str, np.ndarray]:
+        """Update the type related params when loading from pretrained model with redundant types."""
         raise NotImplementedError
 
     @property

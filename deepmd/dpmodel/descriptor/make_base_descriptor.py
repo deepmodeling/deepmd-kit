@@ -5,6 +5,7 @@ from abc import (
 )
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
     Union,
@@ -103,6 +104,16 @@ def make_base_descriptor(
             If not start from checkpoint (resume is False),
             some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
             """
+            pass
+
+        @abstractmethod
+        def update_type_params(
+            self,
+            state_dict: Dict[str, t_tensor],
+            mapping_index: List[int],
+            prefix: str = "",
+        ) -> Dict[str, t_tensor]:
+            """Update the type related params when loading from pretrained model with redundant types."""
             pass
 
         def compute_input_stats(
