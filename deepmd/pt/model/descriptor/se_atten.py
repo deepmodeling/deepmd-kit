@@ -83,6 +83,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         env_protection: float = 0.0,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        seed: Optional[int] = None,
         type: Optional[str] = None,
         old_impl: bool = False,
     ):
@@ -148,6 +149,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
             Whether to normalize the hidden vectors in attention weights calculation.
         temperature : float
             If not None, the scaling of attention weights is `temperature` itself.
+        seed : int, Optional
+            Random seed for parameter initialization.
         """
         super().__init__()
         del type
@@ -174,6 +177,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.type_one_side = type_one_side
         self.env_protection = env_protection
         self.trainable_ln = trainable_ln
+        self.seed = seed
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
@@ -223,6 +227,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ln_eps=self.ln_eps,
                 smooth=self.smooth,
                 precision=self.precision,
+                seed=self.seed,
             )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -266,6 +271,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
+                seed=self.seed,
             )
             self.filter_layers = filter_layers
             if self.tebd_input_mode in ["strip"]:
@@ -278,6 +284,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     resnet_dt=self.resnet_dt,
+                    seed=self.seed,
                 )
                 self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -591,6 +598,7 @@ class NeighborGatedAttention(nn.Module):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -607,6 +615,7 @@ class NeighborGatedAttention(nn.Module):
         self.ln_eps = ln_eps
         self.smooth = smooth
         self.precision = precision
+        self.seed = seed
         self.network_type = NeighborGatedAttentionLayer
         attention_layers = []
         for i in range(self.layer_num):
@@ -624,6 +633,7 @@ class NeighborGatedAttention(nn.Module):
                     ln_eps=ln_eps,
                     smooth=smooth,
                     precision=precision,
+                    seed=seed,
                 )
             )
         self.attention_layers = nn.ModuleList(attention_layers)
@@ -731,6 +741,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -745,6 +756,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         self.precision = precision
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
+        self.seed = seed
         self.attention_layer = GatedAttentionLayer(
             nnei,
             embed_dim,
@@ -756,9 +768,14 @@ class NeighborGatedAttentionLayer(nn.Module):
             temperature=temperature,
             smooth=smooth,
             precision=precision,
+            seed=seed,
         )
         self.attn_layer_norm = LayerNorm(
-            self.embed_dim, eps=ln_eps, trainable=trainable_ln, precision=precision
+            self.embed_dim,
+            eps=ln_eps,
+            trainable=trainable_ln,
+            precision=precision,
+            seed=seed,
         )
 
     def forward(
@@ -831,6 +848,7 @@ class GatedAttentionLayer(nn.Module):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ):
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -847,6 +865,7 @@ class GatedAttentionLayer(nn.Module):
         self.scaling_factor = scaling_factor
         self.temperature = temperature
         self.precision = precision
+        self.seed = seed
         self.scaling = (
             (self.head_dim * scaling_factor) ** -0.5
             if temperature is None
@@ -861,6 +880,7 @@ class GatedAttentionLayer(nn.Module):
             bavg=0.0,
             stddev=1.0,
             precision=precision,
+            seed=seed,
         )
         self.out_proj = MLPLayer(
             hidden_dim,
@@ -870,6 +890,7 @@ class GatedAttentionLayer(nn.Module):
             bavg=0.0,
             stddev=1.0,
             precision=precision,
+            seed=seed,
         )
 
     def forward(
