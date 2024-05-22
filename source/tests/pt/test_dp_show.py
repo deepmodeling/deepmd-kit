@@ -6,9 +6,11 @@ import unittest
 from copy import (
     deepcopy,
 )
-from typing import ClassVar
 from pathlib import (
     Path,
+)
+from typing import (
+    ClassVar,
 )
 
 import torch
