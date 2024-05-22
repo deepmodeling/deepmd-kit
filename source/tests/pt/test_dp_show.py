@@ -234,3 +234,5 @@ class TestMultiTaskModel(unittest.TestCase):
                 shutil.rmtree(f)
             if f in ["checkpoint"]:
                 os.remove(f)
+            if f in [self.stat_files]:
+                shutil.rmtree(f)
