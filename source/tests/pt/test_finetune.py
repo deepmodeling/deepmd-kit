@@ -245,7 +245,7 @@ class FinetuneTest:
                 shutil.rmtree(f)
 
 
-class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
+class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -259,7 +259,7 @@ class TestEnergyModelSeA(unittest.TestCase, FinetuneTest):
         self.mixed_types = False
 
 
-class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
+class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -273,7 +273,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, FinetuneTest):
         self.mixed_types = False
 
 
-class TestEnergyModelDPA1(unittest.TestCase, FinetuneTest):
+class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -287,7 +287,7 @@ class TestEnergyModelDPA1(unittest.TestCase, FinetuneTest):
         self.mixed_types = True
 
 
-class TestEnergyModelDPA2(unittest.TestCase, FinetuneTest):
+class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
