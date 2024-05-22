@@ -761,7 +761,8 @@ def main_parser() -> argparse.ArgumentParser:
         epilog=textwrap.dedent(
             """\
         examples:
-            dp show model.pt --list-model-branch
+            dp --pt show model.pt model-branch type-map descriptor fitting-net
+            dp --pt show frozen_model.pth type-map descriptor fitting-net
         """
         ),
     )
