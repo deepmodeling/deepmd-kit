@@ -6,6 +6,7 @@ import unittest
 from copy import (
     deepcopy,
 )
+from typing import ClassVar
 from pathlib import (
     Path,
 )
@@ -29,8 +30,8 @@ from .model.test_permutation import (
 
 # mock FLAGS object
 class FLAGS:
-    INPUT = ""
-    ATTRIBUTES = []
+    INPUT: ClassVar[str] = ""
+    ATTRIBUTES: ClassVar[list] = []
 
 
 # mock log
