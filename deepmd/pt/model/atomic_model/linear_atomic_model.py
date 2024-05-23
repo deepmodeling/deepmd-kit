@@ -507,7 +507,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
                 torch.zeros_like(nlist_larger),
             ),
             dim=-1,
-        )  
+        )
         denominator = torch.sum(
             torch.where(
                 nlist_larger != -1,
@@ -527,7 +527,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
-        
+
         # to handle masked atoms
         coef = torch.where(sigma != 0, coef, torch.zeros_like(coef))
         self.zbl_weight = coef  # nframes, nloc
