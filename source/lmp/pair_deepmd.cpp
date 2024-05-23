@@ -218,7 +218,9 @@ void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
   int icompute = modify->find_compute(compute_fparam_id);
   Compute *compute = modify->compute[icompute];
 
-  assert(compute);
+  if (!compute) {
+    error->all(FLERR, "compute id is not found: " + compute_fparam_id);
+  }
   fparam.resize(dim_fparam);
 
   if (dim_fparam == 1) {
@@ -245,7 +247,9 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
   int icompute = modify->find_compute(compute_aparam_id);
   Compute *compute = modify->compute[icompute];
 
-  assert(compute);
+  if (!compute) {
+    error->all(FLERR, "compute id is not found: " + compute_aparam_id);
+  }
   int nlocal = atom->nlocal;
   aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
 
@@ -276,7 +280,9 @@ void PairDeepMD::make_ttm_fparam(vector<double> &fparam) {
       ttm_fix = dynamic_cast<FixTTMDP *>(modify->fix[ii]);
     }
   }
-  assert(ttm_fix);
+  if (!ttm_fix) {
+    error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
+  }
 
   fparam.resize(dim_fparam);
 
@@ -315,7 +321,9 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
       ttm_fix = dynamic_cast<FixTTMDP *>(modify->fix[ii]);
     }
   }
-  assert(ttm_fix);
+  if (!ttm_fix) {
+    error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
+  }
   // modify
   double **x = atom->x;
   int *mask = atom->mask;
