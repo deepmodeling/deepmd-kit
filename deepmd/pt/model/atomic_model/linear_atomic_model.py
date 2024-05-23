@@ -506,7 +506,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
                 pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha),
                 torch.zeros_like(nlist_larger),
             ),
-             dim=-1
+            dim=-1,
         )  # masked nnei will be zero, no need to handle
         denominator = torch.sum(
             torch.where(
