@@ -755,7 +755,7 @@ class DescrptSeT(DescrptSe):
         dict
             The converted network data
         """
-        assert ndim == 2, "Embeddings in descriptor 'se_e3' must has two dimensions."
+        assert ndim == 2, "Embeddings in descriptor 'se_e3' must have two dimensions."
         embeddings = NetworkCollection(
             ntypes=ntypes,
             ndim=ndim,
@@ -831,7 +831,7 @@ class DescrptSeT(DescrptSe):
         embeddings = NetworkCollection.deserialize(data)
         assert (
             embeddings.ndim == 2
-        ), "Embeddings in descriptor 'se_e3' must has two dimensions."
+        ), "Embeddings in descriptor 'se_e3' must have two dimensions."
         for ii in range(embeddings.ntypes**embeddings.ndim):
             net_idx = []
             rest_ii = ii
