@@ -634,23 +634,22 @@ class DescrptBlockSeT(DescriptorBlock):
             nei_type_j = self.sel[ti]
             tj = embedding_idx // self.ntypes
             nei_type_i = self.sel[tj]
-            if tj < ti:
+            if ti <= tj:
                 # avoid repeat calculation
-                continue
-            # nfnl x nt_i x 3
-            rr_i = dmatrix[:, self.sec[ti] : self.sec[ti + 1], 1:]
-            # nfnl x nt_j x 3
-            rr_j = dmatrix[:, self.sec[tj] : self.sec[tj + 1], 1:]
-            # nfnl x nt_i x nt_j
-            env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
-            # nfnl x nt_i x nt_j x 1
-            env_ij_reshape = env_ij.unsqueeze(-1)
-            # nfnl x nt_i x nt_j x ng
-            gg = ll.forward(env_ij_reshape)
-            # nfnl x nt_i x nt_j x ng
-            res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
-            res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
-            result += res_ij
+                # nfnl x nt_i x 3
+                rr_i = dmatrix[:, self.sec[ti] : self.sec[ti + 1], 1:]
+                # nfnl x nt_j x 3
+                rr_j = dmatrix[:, self.sec[tj] : self.sec[tj + 1], 1:]
+                # nfnl x nt_i x nt_j
+                env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
+                # nfnl x nt_i x nt_j x 1
+                env_ij_reshape = env_ij.unsqueeze(-1)
+                # nfnl x nt_i x nt_j x ng
+                gg = ll.forward(env_ij_reshape)
+                # nfnl x nt_i x nt_j x ng
+                res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
+                res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
+                result += res_ij
         # xyz_scatter /= (self.nnei * self.nnei)
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
