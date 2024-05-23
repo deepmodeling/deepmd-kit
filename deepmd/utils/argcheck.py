@@ -309,6 +309,8 @@ def descrpt_se_t_args():
     doc_trainable = "If the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
         Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
@@ -330,6 +332,20 @@ def descrpt_se_t_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "exclude_types",
+            List[List[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
         ),
     ]
 

@@ -32,6 +32,9 @@ from .se_a import (
 from .se_r import (
     DescrptSeR,
 )
+from .se_t import (
+    DescrptSeT,
+)
 
 __all__ = [
     "BaseDescriptor",
@@ -41,6 +44,7 @@ __all__ = [
     "DescrptBlockSeAtten",
     "DescrptSeA",
     "DescrptSeR",
+    "DescrptSeT",
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptHybrid",

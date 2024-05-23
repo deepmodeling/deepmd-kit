@@ -138,6 +138,7 @@ EMBEDDING_NET_PATTERN = str(
     r"filter_type_(all)/(bias)_(\d+)_(\d+)_(\d+)|"
     r"filter_type_(all)/(bias)_(\d+)_(\d+)|"
     r"filter_type_(all)/(bias)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)_(\d+)_(\d+)|"
     r"filter_type_(all)/(idt)_(\d+)_(\d+)|"
     r"filter_type_(all)/(idt)_(\d+)|"
 )[:-1]

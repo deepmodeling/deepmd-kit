@@ -1,4 +1,4 @@
-# Descriptor `"se_e3"` {{ tensorflow_icon }}
+# Descriptor `"se_e3"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
 **Supported backends**: TensorFlow {{ tensorflow_icon }}
