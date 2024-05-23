@@ -167,6 +167,8 @@ class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa1)["descriptor"]
+        # double sel for virtual atoms to avoid large error
+        model_params["descriptor"]["sel"] *= 2
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
@@ -176,6 +178,9 @@ class TestEnergyModelSpinDPA2(unittest.TestCase, ForwardLowerTest):
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2)["descriptor"]
+        # double sel for virtual atoms to avoid large error
+        model_params["descriptor"]["repinit"]["nsel"] *= 2
+        model_params["descriptor"]["repformer"]["nsel"] *= 2
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 

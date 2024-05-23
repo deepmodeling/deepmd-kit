@@ -236,6 +236,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
 
+        forward_lower = call_lower
+
         def input_type_cast(
             self,
             coord: np.ndarray,
@@ -472,5 +474,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
+
+        def get_ntypes(self) -> int:
+            """Get the number of types."""
+            return len(self.get_type_map())
 
     return CM

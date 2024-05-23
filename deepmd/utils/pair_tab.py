@@ -31,6 +31,8 @@ class PairTab:
             The second to the last columes are energies for pairs of certain types.
             For example we have two atom types, 0 and 1.
             The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
+    rcut : float, optional
+        cutoff raduis for the tabulated potential
     """
 
     def __init__(self, filename: str, rcut: Optional[float] = None) -> None:
@@ -49,6 +51,8 @@ class PairTab:
             The second to the last columes are energies for pairs of certain types.
             For example we have two atom types, 0 and 1.
             The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
+        rcut : float, optional
+            cutoff raduis for the tabulated potential
         """
         if filename is None:
             self.tab_info, self.tab_data = None, None
