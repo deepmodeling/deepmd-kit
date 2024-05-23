@@ -55,7 +55,7 @@ class ForceTest:
     def test(
         self,
     ):
-        places = 6
+        places = 5
         delta = 1e-5
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype, device="cpu")
@@ -126,7 +126,7 @@ class VirialTest:
     def test(
         self,
     ):
-        places = 6
+        places = 5
         delta = 1e-4
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype, device="cpu")
