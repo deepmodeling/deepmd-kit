@@ -201,7 +201,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             use_econf_tebd,
         ) = self.param
-        # TODO (excluded_types != [] and attn_layer > 0) need fix
         return (
             CommonTest.skip_tf
             or (
@@ -209,7 +208,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
                 or smooth_type_embedding
                 or not normalize
                 or temperature != 1.0
-                or (excluded_types != [] and attn_layer > 0)
                 or (type_one_side and tebd_input_mode == "strip")  # not consistent yet
             )
             or self.is_meaningless_zero_attention_layer_tests(
