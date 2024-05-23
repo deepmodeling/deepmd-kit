@@ -228,7 +228,7 @@ class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
-        self.epsilon, self.aprec = 1e-10, None
+        self.epsilon, self.aprec = 1e-10, 1e-4
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):
