@@ -66,7 +66,7 @@ model_zbl = {
     "use_srtab": f"{CUR_DIR}/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
     "sw_rmin": 0.2,
-    "sw_rmax": 1.0,
+    "sw_rmax": 4.0,
     "descriptor": {
         "type": "se_atten",
         "sel": 40,
