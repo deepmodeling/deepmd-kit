@@ -5,7 +5,6 @@ import shutil
 import numpy as np
 
 from deepmd.tf.common import (
-    data_requirement,
     j_must_have,
 )
 from deepmd.tf.env import (
@@ -72,7 +71,7 @@ class TestDataModifier(tf.test.TestCase):
         data = DeepmdDataSystem(
             systems, batch_size, test_size, rcut, set_prefix=set_pfx
         )
-        data.add_dict(data_requirement)
+        data.add_data_requirements(model.data_requirements)
 
         # clear the default graph
         tf.reset_default_graph()

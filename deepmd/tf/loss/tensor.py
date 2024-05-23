@@ -1,15 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    List,
+)
+
 import numpy as np
 
-from deepmd.tf.common import (
-    add_data_requirement,
-)
 from deepmd.tf.env import (
     global_cvt_2_tf_float,
     tf,
 )
 from deepmd.tf.utils.sess import (
     run_sess,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .loss import (
@@ -48,24 +52,6 @@ class TensorLoss(Loss):
         ), "Can not assign negative weight to `pref` and `pref_atomic`"
         assert (self.local_weight > 0.0) or (self.global_weight > 0.0), AssertionError(
             "Can not assian zero weight both to `pref` and `pref_atomic`"
-        )
-
-        # data required
-        add_data_requirement(
-            "atomic_" + self.label_name,
-            self.tensor_size,
-            atomic=True,
-            must=False,
-            high_prec=False,
-            type_sel=self.type_sel,
-        )
-        add_data_requirement(
-            self.label_name,
-            self.tensor_size,
-            atomic=False,
-            must=False,
-            high_prec=False,
-            type_sel=self.type_sel,
         )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
@@ -154,3 +140,30 @@ class TensorLoss(Loss):
         if self.global_weight > 0.0:
             results["rmse_gl"] = np.sqrt(error_gl) / atoms
         return results
+
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        data_requirements = []
+        # data required
+        data_requirements.append(
+            DataRequirementItem(
+                "atomic_" + self.label_name,
+                self.tensor_size,
+                atomic=True,
+                must=False,
+                high_prec=False,
+                type_sel=self.type_sel,
+            )
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                self.label_name,
+                self.tensor_size,
+                atomic=False,
+                must=False,
+                high_prec=False,
+                type_sel=self.type_sel,
+            )
+        )
+        return data_requirements

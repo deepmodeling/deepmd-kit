@@ -25,6 +25,9 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.utils import (
     PluginVariant,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
@@ -252,3 +255,8 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
                     # prevent keyError
                     fitting_net_variables[f"{layer_name}{key}{suffix}/idt"] = 0.0
         return fitting_net_variables
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return []

@@ -31,7 +31,6 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.tf.common import (
-    data_requirement,
     expand_sys_str,
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
@@ -114,6 +113,8 @@ class DpTrainer:
         dp_loss = self._get_dp_loss()
         dp_lr = self._get_dp_lr()
         dp_ds = self._get_dp_dataset()
+        dp_ds.add_data_requirements(dp_model.input_requirement)
+        dp_ds.add_data_requirements(dp_loss.label_requirement)
         dp_model.data_stat(dp_ds)
 
         # Build graph
@@ -188,7 +189,6 @@ class DpTrainer:
             type_map=self.type_map,
             trn_all_set=True,
         )
-        data.add_dict(data_requirement)
         return data
 
     def _get_dp_model(self):

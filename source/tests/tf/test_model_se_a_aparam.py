@@ -16,6 +16,9 @@ from deepmd.tf.fit import (
 from deepmd.tf.model import (
     EnerModel,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 from .common import (
     DataSystem,
@@ -165,3 +168,9 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(e, refe, places)
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
+
+        # test input requirement for the model
+        self.assertCountEqual(
+            model.input_requirement,
+            [DataRequirementItem("aparam", 2, atomic=True, must=True, high_prec=False)],
+        )

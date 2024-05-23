@@ -16,7 +16,6 @@ from typing import (
     Any,
     Dict,
     List,
-    Optional,
     Set,
     TypeVar,
     Union,
@@ -39,8 +38,6 @@ from deepmd.utils.path import (
 )
 
 __all__ = [
-    "data_requirement",
-    "add_data_requirement",
     "select_idx_map",
     "make_default_mesh",
     "j_must_have",
@@ -76,64 +73,6 @@ if TYPE_CHECKING:
             "_ACTIVATION",
         ]
     )
-
-
-# TODO: refactor data_requirement to make it not a global variable
-# this is not a good way to do things. This is some global variable to which
-# anyone can write and there is no good way to keep track of the changes
-data_requirement = {}
-
-
-def add_data_requirement(
-    key: str,
-    ndof: int,
-    atomic: bool = False,
-    must: bool = False,
-    high_prec: bool = False,
-    type_sel: Optional[bool] = None,
-    repeat: int = 1,
-    default: float = 0.0,
-    dtype: Optional[np.dtype] = None,
-    output_natoms_for_type_sel: bool = False,
-):
-    """Specify data requirements for training.
-
-    Parameters
-    ----------
-    key : str
-        type of data stored in corresponding `*.npy` file e.g. `forces` or `energy`
-    ndof : int
-        number of the degrees of freedom, this is tied to `atomic` parameter e.g. forces
-        have `atomic=True` and `ndof=3`
-    atomic : bool, optional
-        specifies whwther the `ndof` keyworrd applies to per atom quantity or not,
-        by default False
-    must : bool, optional
-        specifi if the `*.npy` data file must exist, by default False
-    high_prec : bool, optional
-        if true load data to `np.float64` else `np.float32`, by default False
-    type_sel : bool, optional
-        select only certain type of atoms, by default None
-    repeat : int, optional
-        if specify repaeat data `repeat` times, by default 1
-    default : float, optional, default=0.
-        default value of data
-    dtype : np.dtype, optional
-        the dtype of data, overwrites `high_prec` if provided
-    output_natoms_for_type_sel : bool, optional
-        if True and type_sel is True, the atomic dimension will be natoms instead of nsel
-    """
-    data_requirement[key] = {
-        "ndof": ndof,
-        "atomic": atomic,
-        "must": must,
-        "high_prec": high_prec,
-        "type_sel": type_sel,
-        "repeat": repeat,
-        "default": default,
-        "dtype": dtype,
-        "output_natoms_for_type_sel": output_natoms_for_type_sel,
-    }
 
 
 def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarray:
