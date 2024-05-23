@@ -59,6 +59,9 @@ from deepmd.tf.utils.spin import (
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
@@ -571,6 +574,11 @@ class Model(ABC, make_plugin_registry("model")):
         """
         raise NotImplementedError(f"Not implemented in class {self.__name__}")
 
+    @property
+    @abstractmethod
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+
 
 @Model.register("standard")
 class StandardModel(Model):
@@ -825,3 +833,8 @@ class StandardModel(Model):
                 "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),
             },
         }
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return self.descrpt.input_requirement + self.fitting.input_requirement
