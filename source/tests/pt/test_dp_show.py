@@ -25,7 +25,7 @@ from .model.test_permutation import (
 class TestSingleTaskModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json, "r") as f:
+        with open(input_json) as f:
             self.config = json.load(f)
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
@@ -37,7 +37,6 @@ class TestSingleTaskModel(unittest.TestCase):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
         os.system("dp --pt freeze")
-
     def test_checkpoint(self):
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
