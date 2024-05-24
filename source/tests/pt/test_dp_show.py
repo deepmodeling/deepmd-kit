@@ -54,7 +54,7 @@ class TestSingleTaskModel(unittest.TestCase):
             "The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}"
             in results[-1]
         )
-  
+
     def test_frozen_model(self):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
