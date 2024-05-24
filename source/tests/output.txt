@@ -1,0 +1,6 @@
+To get the best performance, it is recommended to adjust the number of threads by setting the environment variables OMP_NUM_THREADS, DP_INTRA_OP_PARALLELISM_THREADS, and DP_INTER_OP_PARALLELISM_THREADS. See https://deepmd.rtfd.io/parallelism/ for more information.
+[2024-05-24 04:20:00,443] DEEPMD INFO    DeepMD version: 2.2.0b1.dev842+g2bf07698
+[2024-05-24 04:20:01,450] DEEPMD INFO    This is a singletask model
+[2024-05-24 04:20:01,450] DEEPMD INFO    The type_map is ['O', 'H', 'Au']
+[2024-05-24 04:20:01,450] DEEPMD INFO    The descriptor parameter is {'type': 'se_e2_a', 'sel': [46, 92, 4], 'rcut_smth': 0.5, 'rcut': 4.0, 'neuron': [25, 50, 100], 'resnet_dt': False, 'axis_neuron': 16, 'seed': 1}
+[2024-05-24 04:20:01,450] DEEPMD INFO    The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}
