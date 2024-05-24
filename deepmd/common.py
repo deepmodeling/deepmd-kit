@@ -40,7 +40,6 @@ from deepmd.utils.path import (
 __all__ = [
     "select_idx_map",
     "make_default_mesh",
-    "j_must_have",
     "j_loader",
     "expand_sys_str",
     "get_np_precision",
@@ -127,14 +126,19 @@ def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
     return default_mesh
 
 
-# TODO: rename j_must_have to j_deprecated and only warn about deprecated keys
-# maybe rename this to j_deprecated and only warn about deprecated keys,
-# if the deprecated_key argument is left empty function puppose is only custom
-# error since dict[key] already raises KeyError when the key is missing
-def j_must_have(
+def j_deprecated(
     jdata: Dict[str, "_DICT_VAL"], key: str, deprecated_key: List[str] = []
 ) -> "_DICT_VAL":
     """Assert that supplied dictionary conaines specified key.
+
+    Parameters
+    ----------
+    jdata : Dict[str, _DICT_VAL]
+        dictionary to check
+    key : str
+        key to check
+    deprecated_key : List[str], optional
+        list of deprecated keys, by default []
 
     Returns
     -------
