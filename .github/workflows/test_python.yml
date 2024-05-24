@@ -42,7 +42,7 @@ jobs:
     - name: Get durations from cache
       uses: actions/cache@v4
       with:
-        path: test_durations
+        path: .test_durations
         # the key must never match, even when restarting workflows, as that
         # will cause durations to get out of sync between groups, the
         # combined durations will be loaded if available
