@@ -13,9 +13,6 @@ from pathlib import (
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
-from deepmd.pt.utils.multi_task import (
-    preprocess_shared_params,
-)
 
 from .model.test_permutation import (
     model_se_e2_a,
@@ -58,7 +55,7 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    '''
+    """
     def test_frozen_model(self):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
@@ -83,7 +80,7 @@ class TestSingleTaskModel(unittest.TestCase):
             "RuntimeError: The 'model-branch' option requires a multitask model. The provided model does not meet this criterion."
             in results[-1]
         )
-    '''
+    """
 
     def tearDown(self):
         for f in os.listdir("."):
@@ -94,7 +91,8 @@ class TestSingleTaskModel(unittest.TestCase):
             if f in ["stat_files"]:
                 shutil.rmtree(f)
 
-'''
+
+"""
 class TestMultiTaskModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/multitask.json")
@@ -195,4 +193,4 @@ class TestMultiTaskModel(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files", self.stat_files]:
                 shutil.rmtree(f)
-'''
+"""
