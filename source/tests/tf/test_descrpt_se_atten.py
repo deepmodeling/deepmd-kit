@@ -45,7 +45,6 @@ class TestModel(tf.test.TestCase):
         test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
-        stop_batch = jdata["stop_batch"]
         rcut = jdata["model"]["descriptor"]["rcut"]
         sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
@@ -222,7 +221,6 @@ class TestModel(tf.test.TestCase):
         test_size = jdata["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = jdata["stop_batch"]
         rcut = jdata["model"]["descriptor"]["rcut"]
         sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
@@ -400,7 +398,6 @@ class TestModel(tf.test.TestCase):
         test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
-        stop_batch = jdata["stop_batch"]
         rcut = jdata["model"]["descriptor"]["rcut"]
         sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
@@ -571,7 +568,6 @@ class TestModel(tf.test.TestCase):
         test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
-        stop_batch = jdata["stop_batch"]
         rcut = jdata["model"]["descriptor"]["rcut"]
         sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])

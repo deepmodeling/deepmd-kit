@@ -32,8 +32,6 @@ class TestModel(tf.test.TestCase):
 
         systems = jdata["systems"]
         set_pfx = "set"
-        batch_size = jdata["batch_size"]
-        test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
         stop_batch = jdata["stop_batch"]

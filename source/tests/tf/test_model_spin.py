@@ -45,7 +45,6 @@ class TestModelSpin(tf.test.TestCase):
 
         # set system information
         set_pfx = "set"
-        batch_size = jdata["training"]["training_data"]["batch_size"]
         batch_size = 2
         test_size = jdata["training"]["validation_data"]["numb_btch"]
         stop_batch = jdata["training"]["numb_steps"]
