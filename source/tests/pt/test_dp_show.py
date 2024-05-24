@@ -75,7 +75,7 @@ class TestSingleTaskModel(unittest.TestCase):
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith("pt"):
                 os.remove(f)
-            if f in ["lcurve.out", "frozen_model.pth", "out.txt", "checkpoint"]:
+            if f in ["lcurve.out", "frozen_model.pth", "output.txt", "checkpoint"]:
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
