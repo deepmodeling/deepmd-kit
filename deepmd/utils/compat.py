@@ -378,7 +378,7 @@ def update_deepmd_input(
         return "model" not in jdata.keys()
 
     def is_deepmd_v1_input(jdata):
-        return "systems" in jdata, ["training"].keys()
+        return "systems" in jdata["training"].keys()
 
     if is_deepmd_v0_input(jdata):
         jdata = convert_input_v0_v1(jdata, warning, None)
