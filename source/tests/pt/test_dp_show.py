@@ -58,8 +58,7 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
-            results = f.readlines()
+        results = read_output_file("output.txt")
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -69,6 +68,10 @@ class TestSingleTaskModel(unittest.TestCase):
             "The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}"
             in results[-1]
         )
+
+def read_output_file(file_path):
+    with open(file_path) as f:
+        return f.readlines()
 
     def test_checkpoint_error(self):
         INPUT = "model.pt"
