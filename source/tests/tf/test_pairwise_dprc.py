@@ -13,7 +13,6 @@ from deepmd.tf import (
 )
 from deepmd.tf.common import (
     j_loader,
-    j_must_have,
 )
 from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -437,7 +436,7 @@ class TestPairwiseModel(tf.test.TestCase):
         idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
         np.save("system/set.000/aparam.npy", idxs)
 
-        systems = j_must_have(jdata["training"]["training_data"], "systems")
+        systems = jdata["training"]["training_data"]["systems"]
         batch_size = 1
         test_size = 1
         rcut = model.get_rcut()
@@ -625,7 +624,7 @@ class TestPairwiseModel(tf.test.TestCase):
         idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
         np.save("system/set.000/aparam.npy", idxs)
 
-        systems = j_must_have(jdata["training"]["training_data"], "systems")
+        systems = jdata["training"]["training_data"]["systems"]
         batch_size = 1
         test_size = 1
         rcut = model.get_rcut()

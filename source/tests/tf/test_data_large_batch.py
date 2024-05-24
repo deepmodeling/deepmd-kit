@@ -5,9 +5,6 @@ import unittest
 import numpy as np
 from packaging.version import parse as parse_version
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeAtten,
 )
@@ -50,11 +47,11 @@ class TestDataLargeBatch(tf.test.TestCase):
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        type_map = j_must_have(jdata["model"], "type_map")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        type_map = jdata["model"]["type_map"]
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {
@@ -248,11 +245,11 @@ class TestDataLargeBatch(tf.test.TestCase):
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        type_map = j_must_have(jdata["model"], "type_map")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        type_map = jdata["model"]["type_map"]
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {
@@ -446,11 +443,11 @@ class TestDataLargeBatch(tf.test.TestCase):
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        type_map = j_must_have(jdata["model"], "type_map")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        type_map = jdata["model"]["type_map"]
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {
