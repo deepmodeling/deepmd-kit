@@ -58,7 +58,6 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    '''
     def test_frozen_model(self):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
@@ -74,6 +73,7 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
+    '''
     def test_checkpoint_error(self):
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
