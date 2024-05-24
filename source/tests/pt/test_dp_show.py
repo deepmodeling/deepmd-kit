@@ -74,8 +74,12 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
-            results = f.readlines()
+        try:
+            with open("output.txt", "r") as f:
+                results = f.readlines()
+        except IOError as e:
+            print(f"Failed to read file: {e}")
+            results = []
         assert (
             "RuntimeError: The 'model-branch' option requires a multitask model. The provided model does not meet this criterion."
             in results[-1]
