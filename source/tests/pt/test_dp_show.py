@@ -45,11 +45,7 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        try:
-            results = read_output_file("output.txt")
-        except OSError as e:
-            print(f"Failed to read file: {e}")
-            results = []
+        results = read_output_file("output.txt")
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -64,11 +60,7 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        try:
-            results = read_output_file("output.txt")
-        except OSError as e:
-            print(f"Failed to read file: {e}")
-            results = []
+        results = read_output_file("output.txt")
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -83,11 +75,7 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        try:
-            results = read_output_file("output.txt")
-        except OSError as e:
-            print(f"Failed to read file: {e}")
-            results = []
+        results = read_output_file("output.txt")
         assert (
             "RuntimeError: The 'model-branch' option requires a multitask model. The provided model does not meet this criterion."
             in results[-1]
@@ -154,11 +142,7 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "model.ckpt.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        try:
-            results = read_output_file("output.txt")
-        except OSError as e:
-            print(f"Failed to read file: {e}")
-            results = []
+        results = read_output_file("output.txt")
         assert "This is a multitask model" in results[-8]
         assert "Available model branches are ['model_1', 'model_2']" in results[-7]
         assert "The type_map of branch model_1 is ['O', 'H', 'B']" in results[-6]
@@ -188,11 +172,7 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        try:
-            results = read_output_file("output.txt")
-        except OSError as e:
-            print(f"Failed to read file: {e}")
-            results = []
+        results = read_output_file("output.txt")
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'B']" in results[-3]
         assert (
