@@ -21,6 +21,7 @@ from .model.test_permutation import (
     model_se_e2_a,
 )
 
+
 class TestSingleTaskModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -41,36 +42,45 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
             "{'type': 'se_e2_a'" and "'sel': [46, 92, 4]" and "'rcut': 4.0"
         ) in results[-2]
-        assert "The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}" in results[-1]
+        assert (
+            "The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}"
+            in results[-1]
+        )
 
     def test_frozen_model(self):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
             "{'type': 'se_e2_a'" and "'sel': [46, 92, 4]" and "'rcut': 4.0"
         ) in results[-2]
-        assert "The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}" in results[-1]
+        assert (
+            "The fitting_net parameter is {'neuron': [24, 24, 24], 'resnet_dt': True, 'seed': 1}"
+            in results[-1]
+        )
 
     def test_checkpoint_error(self):
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
-        assert "RuntimeError: The 'model-branch' option requires a multitask model. The provided model does not meet this criterion." in results[-1]
-    
+        assert (
+            "RuntimeError: The 'model-branch' option requires a multitask model. The provided model does not meet this criterion."
+            in results[-1]
+        )
+
     def tearDown(self):
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith("pt"):
@@ -79,6 +89,7 @@ class TestSingleTaskModel(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 class TestMultiTaskModel(unittest.TestCase):
     def setUp(self):
@@ -131,7 +142,7 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "model.ckpt.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a multitask model" in results[-8]
         assert "Available model branches are ['model_1', 'model_2']" in results[-7]
@@ -149,21 +160,30 @@ class TestMultiTaskModel(unittest.TestCase):
             and "'sel': [46, 92, 4]"
             and "'rcut_smth': 0.5"
         ) in results[-3]
-        assert "The fitting_net parameter of branch model_1 is {'neuron': [1, 2, 3], 'seed': 678}" in results[-2]
-        assert "The fitting_net parameter of branch model_2 is {'neuron': [9, 8, 7], 'seed': 1111}" in results[-1]
+        assert (
+            "The fitting_net parameter of branch model_1 is {'neuron': [1, 2, 3], 'seed': 678}"
+            in results[-2]
+        )
+        assert (
+            "The fitting_net parameter of branch model_2 is {'neuron': [9, 8, 7], 'seed': 1111}"
+            in results[-1]
+        )
 
     def test_frozen_model(self):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'B']" in results[-3]
         assert (
             "'type': 'se_e2_a'" and "'sel': [46, 92, 4]" and "'rcut_smth': 0.5"
         ) in results[-2]
-        assert "The fitting_net parameter is {'neuron': [1, 2, 3], 'seed': 678}" in results[-1]
+        assert (
+            "The fitting_net parameter is {'neuron': [1, 2, 3], 'seed': 678}"
+            in results[-1]
+        )
 
     def tearDown(self):
         for f in os.listdir("."):
