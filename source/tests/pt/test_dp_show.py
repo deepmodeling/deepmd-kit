@@ -41,7 +41,7 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
@@ -68,6 +68,7 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
+
 def read_output_file(file_path):
     with open(file_path) as f:
         return f.readlines()
@@ -77,9 +78,9 @@ def read_output_file(file_path):
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
         try:
-            with open("output.txt", "r") as f:
+            with open("output.txt") as f:
                 results = f.readlines()
-        except IOError as e:
+        except OSError as e:
             print(f"Failed to read file: {e}")
             results = []
         assert (
@@ -100,7 +101,7 @@ def read_output_file(file_path):
 class TestMultiTaskModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/multitask.json")
-        with open(input_json, "r") as f:
+        with open(input_json) as f:
             self.config = json.load(f)
         self.config["model"]["shared_dict"]["my_descriptor"] = model_se_e2_a[
             "descriptor"
@@ -148,7 +149,7 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "model.ckpt.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a multitask model" in results[-8]
         assert "Available model branches are ['model_1', 'model_2']" in results[-7]
@@ -179,7 +180,7 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt", "r") as f:
+        with open("output.txt") as f:
             results = f.readlines()
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'B']" in results[-3]
