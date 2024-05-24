@@ -37,6 +37,7 @@ class TestSingleTaskModel(unittest.TestCase):
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
         os.system("dp --pt freeze")
+
     def test_checkpoint(self):
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
