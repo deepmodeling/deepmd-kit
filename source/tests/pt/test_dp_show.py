@@ -21,6 +21,9 @@ from .model.test_permutation import (
     model_se_e2_a,
 )
 
+def read_output_file(file_path):
+    with open(file_path) as f:
+        return f.readlines()
 
 class TestSingleTaskModel(unittest.TestCase):
     def setUp(self):
@@ -42,8 +45,11 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt") as f:
-            results = f.readlines()
+        try:
+            results = read_output_file("output.txt")
+        except OSError as e:
+            print(f"Failed to read file: {e}")
+            results = []
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -58,7 +64,11 @@ class TestSingleTaskModel(unittest.TestCase):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        results = read_output_file("output.txt")
+        try:
+            results = read_output_file("output.txt")
+        except OSError as e:
+            print(f"Failed to read file: {e}")
+            results = []
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -69,18 +79,12 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-
-def read_output_file(file_path):
-    with open(file_path) as f:
-        return f.readlines()
-
     def test_checkpoint_error(self):
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
         try:
-            with open("output.txt") as f:
-                results = f.readlines()
+            results = read_output_file("output.txt")
         except OSError as e:
             print(f"Failed to read file: {e}")
             results = []
@@ -150,8 +154,11 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "model.ckpt.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt") as f:
-            results = f.readlines()
+        try:
+            results = read_output_file("output.txt")
+        except OSError as e:
+            print(f"Failed to read file: {e}")
+            results = []
         assert "This is a multitask model" in results[-8]
         assert "Available model branches are ['model_1', 'model_2']" in results[-7]
         assert "The type_map of branch model_1 is ['O', 'H', 'B']" in results[-6]
@@ -181,8 +188,11 @@ class TestMultiTaskModel(unittest.TestCase):
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         os.system(f"dp --pt show {INPUT} {ATTRIBUTES} 2> output.txt")
-        with open("output.txt") as f:
-            results = f.readlines()
+        try:
+            results = read_output_file("output.txt")
+        except OSError as e:
+            print(f"Failed to read file: {e}")
+            results = []
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'B']" in results[-3]
         assert (
