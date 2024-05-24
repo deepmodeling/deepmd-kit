@@ -43,7 +43,6 @@ class TestModel(tf.test.TestCase):
         test_size = jdata["training"]["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = jdata["training"]["stop_batch"]
         rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)

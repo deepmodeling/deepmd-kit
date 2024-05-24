@@ -47,7 +47,6 @@ class TestModelSpin(tf.test.TestCase):
         set_pfx = "set"
         batch_size = 2
         test_size = jdata["training"]["validation_data"]["numb_btch"]
-        stop_batch = jdata["training"]["numb_steps"]
         rcut = jdata["model"]["descriptor"]["rcut"]
         jdata["training"]["training_data"]["systems"] = [
             str(tests_path / "model_spin/")
