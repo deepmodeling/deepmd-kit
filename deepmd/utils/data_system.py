@@ -17,7 +17,6 @@ import numpy as np
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
-    data_requirement,
     expand_sys_str,
     j_must_have,
     make_default_mesh,
@@ -26,6 +25,7 @@ from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.data import (
+    DataRequirementItem,
     DeepmdData,
 )
 from deepmd.utils.out_stat import (
@@ -267,7 +267,7 @@ class DeepmdDataSystem:
         )
         return energy_shift.ravel()
 
-    def add_dict(self, adict: dict) -> None:
+    def add_dict(self, adict: Dict[str, Dict[str, Any]]) -> None:
         """Add items to the data system by a `dict`.
         `adict` should have items like
         .. code-block:: python.
@@ -298,6 +298,12 @@ class DeepmdDataSystem:
                     "output_natoms_for_type_sel", False
                 ),
             )
+
+    def add_data_requirements(
+        self, data_requirements: List[DataRequirementItem]
+    ) -> None:
+        """Add items to the data system by a list of `DataRequirementItem`."""
+        self.add_dict({rr.key: rr.dict for rr in data_requirements})
 
     def add(
         self,
@@ -807,6 +813,5 @@ def get_data(
         sys_probs=sys_probs,
         auto_prob_style=auto_prob,
     )
-    data.add_dict(data_requirement)
 
     return data
