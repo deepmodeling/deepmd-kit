@@ -141,7 +141,6 @@ class EnvMatStatSe(EnvMatStat):
                 zero_mean,
                 one_stddev,
                 self.descriptor.get_rcut(),
-                # TODO: export rcut_smth from DescriptorBlock
                 self.descriptor.get_rcut_smth(),
                 radial_only,
                 protection=self.descriptor.get_env_protection(),
