@@ -21,9 +21,11 @@ from .model.test_permutation import (
     model_se_e2_a,
 )
 
+
 def read_output_file(file_path):
     with open(file_path) as f:
         return f.readlines()
+
 
 class TestSingleTaskModel(unittest.TestCase):
     def setUp(self):
