@@ -61,6 +61,12 @@ class AutoBatchSize(ABC):
             self.maximum_working_batch_size = initial_batch_size
             if self.is_gpu_available():
                 self.minimal_not_working_batch_size = 2**31
+                log.info(
+                    "You may encounter the error \"an illegal memory access was encountered\". "
+                    "It is due to some issue of TensorFlow. "
+                    "If you see this error, you can set the environment variable DP_INFER_BATCH_SIZE to a value smaller than the batch size you see adjusted. "
+                    "The environment variable DP_INFER_BATCH_SIZE controls the inference batch size (nframes * natoms). "
+                )
             else:
                 self.minimal_not_working_batch_size = (
                     self.maximum_working_batch_size + 1
