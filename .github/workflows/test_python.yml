@@ -50,6 +50,7 @@ jobs:
         restore-keys: |
           test-durations-combined-${{ matrix.python }}-${{ github.sha }}
           test-durations-combined-${{ matrix.python }}
+    - run: cat .test_durations
     - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
