@@ -18,7 +18,6 @@ import numpy as np
 import deepmd.utils.random as dp_random
 from deepmd.common import (
     expand_sys_str,
-    j_must_have,
     make_default_mesh,
 )
 from deepmd.env import (
@@ -792,10 +791,10 @@ def get_data(
     DeepmdDataSystem
         The data system
     """
-    systems = j_must_have(jdata, "systems")
+    systems = jdata["systems"]
     systems = process_systems(systems)
 
-    batch_size = j_must_have(jdata, "batch_size")
+    batch_size = jdata["batch_size"]
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     optional_type_map = not multi_task_mode

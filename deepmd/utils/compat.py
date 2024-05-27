@@ -17,7 +17,7 @@ from typing import (
 import numpy as np
 
 from deepmd.common import (
-    j_must_have,
+    j_deprecated,
 )
 
 
@@ -127,8 +127,8 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     descriptor["sel"] = jdata["sel_a"]
     _jcopy(jdata, descriptor, ("rcut",))
     descriptor["rcut_smth"] = jdata.get("rcut_smth", descriptor["rcut"])
-    descriptor["neuron"] = j_must_have(jdata, "filter_neuron")
-    descriptor["axis_neuron"] = j_must_have(jdata, "axis_neuron", ["n_axis_neuron"])
+    descriptor["neuron"] = jdata["filter_neuron"]
+    descriptor["axis_neuron"] = j_deprecated(jdata, "axis_neuron", ["n_axis_neuron"])
     descriptor["resnet_dt"] = False
     if "resnet_dt" in jdata:
         descriptor["resnet_dt"] = jdata["filter_resnet_dt"]
@@ -154,7 +154,7 @@ def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
     seed = jdata.get("seed", None)
     if seed is not None:
         fitting_net["seed"] = seed
-    fitting_net["neuron"] = j_must_have(jdata, "fitting_neuron", ["n_neuron"])
+    fitting_net["neuron"] = j_deprecated(jdata, "fitting_neuron", ["n_neuron"])
     fitting_net["resnet_dt"] = True
     if "resnet_dt" in jdata:
         fitting_net["resnet_dt"] = jdata["resnet_dt"]
@@ -237,16 +237,16 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
     training["disp_file"] = "lcurve.out"
     if "disp_file" in jdata:
         training["disp_file"] = jdata["disp_file"]
-    training["disp_freq"] = j_must_have(jdata, "disp_freq")
-    training["numb_test"] = j_must_have(jdata, "numb_test")
-    training["save_freq"] = j_must_have(jdata, "save_freq")
-    training["save_ckpt"] = j_must_have(jdata, "save_ckpt")
-    training["disp_training"] = j_must_have(jdata, "disp_training")
-    training["time_training"] = j_must_have(jdata, "time_training")
+    training["disp_freq"] = jdata["disp_freq"]
+    training["numb_test"] = jdata["numb_test"]
+    training["save_freq"] = jdata["save_freq"]
+    training["save_ckpt"] = jdata["save_ckpt"]
+    training["disp_training"] = jdata["disp_training"]
+    training["time_training"] = jdata["time_training"]
     if "profiling" in jdata:
         training["profiling"] = jdata["profiling"]
         if training["profiling"]:
-            training["profiling_file"] = j_must_have(jdata, "profiling_file")
+            training["profiling_file"] = jdata["profiling_file"]
     return training
 
 
@@ -378,7 +378,7 @@ def update_deepmd_input(
         return "model" not in jdata.keys()
 
     def is_deepmd_v1_input(jdata):
-        return "systems" in j_must_have(jdata, "training").keys()
+        return "systems" in jdata["training"].keys()
 
     if is_deepmd_v0_input(jdata):
         jdata = convert_input_v0_v1(jdata, warning, None)

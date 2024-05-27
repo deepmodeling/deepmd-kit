@@ -3,9 +3,6 @@ import unittest
 
 import numpy as np
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeA,
 )
@@ -48,18 +45,16 @@ class TestModelSpin(tf.test.TestCase):
 
         # set system information
         set_pfx = "set"
-        batch_size = j_must_have(jdata["training"]["training_data"], "batch_size")
         batch_size = 2
-        test_size = j_must_have(jdata["training"]["validation_data"], "numb_btch")
-        stop_batch = j_must_have(jdata["training"], "numb_steps")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        test_size = jdata["training"]["validation_data"]["numb_btch"]
+        rcut = jdata["model"]["descriptor"]["rcut"]
         jdata["training"]["training_data"]["systems"] = [
             str(tests_path / "model_spin/")
         ]
         jdata["training"]["validation_data"]["systems"] = [
             str(tests_path / "model_spin/")
         ]
-        systems = j_must_have(jdata["training"]["training_data"], "systems")
+        systems = jdata["training"]["training_data"]["systems"]
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
         test_data = data.get_test()
 
