@@ -26,7 +26,6 @@ from deepmd.common import (
     expand_sys_str,
     get_np_precision,
     j_loader,
-    j_must_have,
     make_default_mesh,
     select_idx_map,
 )
@@ -47,7 +46,6 @@ __all__ = [
     # from deepmd.common
     "select_idx_map",
     "make_default_mesh",
-    "j_must_have",
     "j_loader",
     "expand_sys_str",
     "get_np_precision",

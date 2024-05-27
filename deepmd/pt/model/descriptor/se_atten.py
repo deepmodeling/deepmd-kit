@@ -559,7 +559,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 raise NotImplementedError
 
             input_r = torch.nn.functional.normalize(
-                dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
             )
             gg = self.dpa1_attention(
                 gg, nlist_mask, input_r=input_r, sw=sw

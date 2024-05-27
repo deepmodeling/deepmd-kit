@@ -15,7 +15,6 @@ from typing import (
 
 from deepmd.tf.common import (
     j_loader,
-    j_must_have,
 )
 from deepmd.tf.env import (
     reset_default_tf_session_config,
@@ -211,7 +210,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
             modifier.build_fv_graph()
 
     # get training info
-    stop_batch = j_must_have(jdata["training"], "numb_steps")
+    stop_batch = jdata["training"]["numb_steps"]
     origin_type_map = jdata["model"].get("origin_type_map", None)
     if (
         origin_type_map is not None and not origin_type_map

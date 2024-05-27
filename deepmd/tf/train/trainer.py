@@ -29,7 +29,6 @@ from deepmd.loggers.training import (
 )
 from deepmd.tf.common import (
     get_precision,
-    j_must_have,
 )
 from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -91,7 +90,7 @@ class DPTrainer:
 
     def _init_param(self, jdata):
         # model config
-        model_param = j_must_have(jdata, "model")
+        model_param = jdata["model"]
 
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
@@ -123,7 +122,7 @@ class DPTrainer:
             return lr, scale_lr_coef
 
         # learning rate
-        lr_param = j_must_have(jdata, "learning_rate")
+        lr_param = jdata["learning_rate"]
         self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
         # loss
         # infer loss type by fitting_type
