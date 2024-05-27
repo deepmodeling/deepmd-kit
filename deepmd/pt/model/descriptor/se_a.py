@@ -82,9 +82,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
+        trainable: bool = True,
         seed: Optional[int] = None,
-        **kwargs,
+        ntypes: Optional[int] = None,  # to be compat with input
     ):
+        del ntypes
         super().__init__()
         self.sea = DescrptBlockSeA(
             rcut,
@@ -100,8 +102,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             old_impl=old_impl,
             type_one_side=type_one_side,
+            trainable=trainable,
             seed=seed,
-            **kwargs,
         )
 
     def get_rcut(self) -> float:
