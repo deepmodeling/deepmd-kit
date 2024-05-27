@@ -115,7 +115,7 @@ class DescrptSeT(DescrptSe):
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
         if exclude_types:
-            raise NotImplementedError("env_protection != [] is not supported.")
+            raise NotImplementedError("exclude_types != [] is not supported.")
         if env_protection != 0.0:
             raise NotImplementedError("env_protection != 0.0 is not supported.")
         self.sel_a = sel
