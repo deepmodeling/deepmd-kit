@@ -1,17 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import io
 import json
 import os
 import shutil
 import unittest
-import io
+from contextlib import (
+    redirect_stderr,
+)
 from copy import (
     deepcopy,
 )
 from pathlib import (
     Path,
-)
-from contextlib import (
-    redirect_stderr,
 )
 
 from deepmd.pt.entrypoints.main import (
@@ -21,12 +21,13 @@ from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
 
-from .model.test_permutation import (
-    model_se_e2_a,
-)
 from .common import (
     run_dp,
 )
+from .model.test_permutation import (
+    model_se_e2_a,
+)
+
 
 class TestSingleTaskModel(unittest.TestCase):
     def setUp(self):
@@ -49,7 +50,7 @@ class TestSingleTaskModel(unittest.TestCase):
         ATTRIBUTES = "type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
-        results = f.getvalue().split('\n')[:-1]
+        results = f.getvalue().split("\n")[:-1]
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -65,7 +66,7 @@ class TestSingleTaskModel(unittest.TestCase):
         ATTRIBUTES = "type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
-        results = f.getvalue().split('\n')[:-1]
+        results = f.getvalue().split("\n")[:-1]
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'Au']" in results[-3]
         assert (
@@ -84,6 +85,7 @@ class TestSingleTaskModel(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 class TestMultiTaskModel(unittest.TestCase):
     def setUp(self):
@@ -137,7 +139,7 @@ class TestMultiTaskModel(unittest.TestCase):
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
-        results = f.getvalue().split('\n')[:-1]
+        results = f.getvalue().split("\n")[:-1]
         assert "This is a multitask model" in results[-8]
         assert "Available model branches are ['model_1', 'model_2']" in results[-7]
         assert "The type_map of branch model_1 is ['O', 'H', 'B']" in results[-6]
@@ -168,7 +170,7 @@ class TestMultiTaskModel(unittest.TestCase):
         ATTRIBUTES = "type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
-        results = f.getvalue().split('\n')[:-1]
+        results = f.getvalue().split("\n")[:-1]
         assert "This is a singletask model" in results[-4]
         assert "The type_map is ['O', 'H', 'B']" in results[-3]
         assert (
