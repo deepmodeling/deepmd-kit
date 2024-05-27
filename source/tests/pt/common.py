@@ -3,6 +3,7 @@ from deepmd.pt.entrypoints.main import (
     main,
 )
 
+
 def run_dp(cmd: str) -> int:
     """Run DP directly from the entry point instead of the subprocess.
 
