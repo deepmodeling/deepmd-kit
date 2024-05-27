@@ -194,4 +194,4 @@ class TestMultiTaskModel(unittest.TestCase):
             if f in ["lcurve.out", "frozen_model.pth", "checkpoint", "output.txt"]:
                 os.remove(f)
             if f in ["stat_files", self.stat_files]:
-                shutil.rmtree(f)
+                shutil.rmtree(f) 
