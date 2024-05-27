@@ -85,8 +85,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         seed: Optional[int] = None,
         ntypes: Optional[int] = None,  # to be compat with input
+        spin=None,
     ):
         del ntypes
+        if spin is not None:
+            raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.sea = DescrptBlockSeA(
             rcut,
