@@ -5,6 +5,7 @@ from abc import (
 )
 from typing import (
     Dict,
+    List,
     Tuple,
 )
 
@@ -12,6 +13,9 @@ import numpy as np
 
 from deepmd.tf.env import (
     tf,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 
@@ -91,3 +95,8 @@ class Loss(metaclass=ABCMeta):
             lambda: loss,
             lambda: tf.cast(np.nan, dtype=loss.dtype),
         )
+
+    @property
+    @abstractmethod
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""

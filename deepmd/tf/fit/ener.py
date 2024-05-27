@@ -9,7 +9,6 @@ from typing import (
 import numpy as np
 
 from deepmd.tf.common import (
-    add_data_requirement,
     cast_precision,
     get_activation_func,
     get_precision,
@@ -52,6 +51,9 @@ from deepmd.tf.utils.network import (
 )
 from deepmd.tf.utils.spin import (
     Spin,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 from deepmd.utils.finetune import (
     change_energy_bias_lower,
@@ -218,18 +220,9 @@ class EnerFitting(Fitting):
                 self.atom_ener.append(None)
         self.useBN = False
         self.bias_atom_e = np.zeros(self.ntypes, dtype=np.float64)
-        # data requirement
-        if self.numb_fparam > 0:
-            add_data_requirement(
-                "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
-            )
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
-        if self.numb_aparam > 0:
-            add_data_requirement(
-                "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
-            )
         self.aparam_avg = None
         self.aparam_std = None
         self.aparam_inv_std = None
@@ -939,3 +932,21 @@ class EnerFitting(Fitting):
             },
         }
         return data
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = []
+        if self.numb_fparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
+                )
+            )
+        if self.numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement
