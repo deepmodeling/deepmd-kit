@@ -50,10 +50,10 @@ def serialize_from_file(model_file: str) -> dict:
         "pt_version": torch.__version__,
         "model": model_dict,
         "model_def_script": model_def_script,
-        "@variables": {
-            "min_nbor_dist": model.get_min_nbor_dist(),
-        },
+        "@variables": {},
     }
+    if model.get_min_nbor_dist() is not None:
+        data["@variables"]["min_nbor_dist"] = model.get_min_nbor_dist()
     return data
 
 
