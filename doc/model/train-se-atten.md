@@ -161,7 +161,7 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
       "set_davg_zero": false
 ```
 
-The default value of `"tebd_input_mode"` is `"concat"`, when this parameter is set to `"concat"`: 
+The default value of `"tebd_input_mode"` is `"concat"`, when this parameter is set to `"concat"`:
 
 ```math
    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\})
