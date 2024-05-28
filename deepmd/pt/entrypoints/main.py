@@ -246,6 +246,7 @@ def train(FLAGS):
         config = normalize(config)
 
     # do neighbor stat
+    min_nbor_dist = None
     if not FLAGS.skip_neighbor_stat:
         log.info(
             "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
@@ -288,11 +289,12 @@ def train(FLAGS):
         shared_links=shared_links,
     )
     # save min_nbor_dist
-    if not multi_task:
-        trainer.model.min_nbor_dist = min_nbor_dist
-    else:
-        for model_item in min_nbor_dist:
-            trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
+    if min_nbor_dist is not None:
+        if not multi_task:
+            trainer.model.min_nbor_dist = min_nbor_dist
+        else:
+            for model_item in min_nbor_dist:
+                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
     trainer.run()
 
 
