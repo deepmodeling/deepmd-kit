@@ -161,6 +161,21 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
       "set_davg_zero": false
 ```
 
+The default value of `"tebd_input_mode"` is `"concat"`, when this parameter is set to `"concat"`: 
+
+```math
+   (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\})
+```
+
+where $\mathcal{A}^i$ and $\mathcal{A}^j$ are type embeddings of central and neighboring atoms.
+
+When `"tebd_input_mode"` is set to `"strip"`, the embedding matrix $\mathcal{G}^i$ is constructed as:
+
+```math
+   (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\}) \odot s(r_{ij})) \quad \mathrm{or}\quad (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\}) \odot s(r_{ij}))
+```
+ 
+
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
 Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model/descriptor[se_atten_v2]/attn_layer>` set to 0.
