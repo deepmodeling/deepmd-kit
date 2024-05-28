@@ -5,10 +5,10 @@ from unittest.mock import (
     patch,
 )
 
-from deepmd.pt.model.model.model import (
+from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
-from deepmd.pt.utils.update_sel import (
+from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
 
@@ -26,7 +26,7 @@ class TestTrain(unittest.TestCase):
         self.mock_min_nbor_dist = random.random()
         return super().setUp()
 
-    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    @patch("deepmd.dpmodel.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_one_sel(self, sel_mock):
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
 
@@ -39,7 +39,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(sel, [16, 32])
         self.assertAlmostEqual(min_nbor_dist, self.mock_min_nbor_dist)
 
-    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    @patch("deepmd.dpmodel.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_sel_hybrid(self, sel_mock):
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
 
@@ -70,7 +70,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    @patch("deepmd.dpmodel.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_sel(self, sel_mock):
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
 
@@ -85,7 +85,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    @patch("deepmd.dpmodel.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_sel_atten_auto(self, sel_mock):
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 
@@ -112,7 +112,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    @patch("deepmd.dpmodel.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_sel_atten_int(self, sel_mock):
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 
@@ -139,7 +139,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    @patch("deepmd.dpmodel.utils.update_sel.UpdateSel.get_nbor_stat")
     def test_update_sel_atten_list(self, sel_mock):
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 
@@ -163,17 +163,6 @@ class TestTrain(unittest.TestCase):
             },
             "training": {"training_data": {}},
         }
-        jdata = update_sel(jdata)
-        self.assertEqual(jdata, expected_out)
-
-    def test_skip_frozen(self):
-        jdata = {
-            "model": {
-                "type": "frozen",
-            },
-            "training": {"training_data": {}},
-        }
-        expected_out = jdata.copy()
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
