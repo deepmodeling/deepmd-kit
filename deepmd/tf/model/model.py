@@ -11,6 +11,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -511,7 +512,12 @@ class Model(ABC, make_plugin_registry("model")):
 
     @classmethod
     @abstractmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Notes
@@ -520,8 +526,10 @@ class Model(ABC, make_plugin_registry("model")):
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
 
@@ -529,9 +537,11 @@ class Model(ABC, make_plugin_registry("model")):
         -------
         dict
             The updated local data
+        float
+            The minimum distance between two atoms
         """
         cls = cls.get_class_by_type(local_jdata.get("type", "standard"))
-        return cls.update_sel(global_jdata, local_jdata)
+        return cls.update_sel(train_data, type_map, local_jdata)
 
     @classmethod
     def deserialize(cls, data: dict, suffix: str = "") -> "Model":
@@ -744,21 +754,35 @@ class StandardModel(Model):
         return self.ntypes
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["descriptor"] = Descriptor.update_sel(
-            global_jdata, local_jdata["descriptor"]
+        local_jdata_cpy["descriptor"], min_nbor_dist = Descriptor.update_sel(
+            train_data, type_map, local_jdata["descriptor"]
         )
-        return local_jdata_cpy
+        return local_jdata_cpy, min_nbor_dist
 
     @classmethod
     def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":

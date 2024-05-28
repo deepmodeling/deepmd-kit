@@ -5,6 +5,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
 )
 
 import torch
@@ -17,6 +18,9 @@ from deepmd.entrypoints.convert_backend import (
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 
@@ -130,6 +134,11 @@ class FrozenModel(BaseModel):
         # be a problem
         return self.model.get_model_def_script()
 
+    @torch.jit.export
+    def get_min_nbor_dist(self) -> float:
+        """Get the minimum neighbor distance."""
+        return self.model.get_min_nbor_dist()
+
     def serialize(self) -> dict:
         from deepmd.pt.model.model import (
             get_model,
@@ -156,17 +165,31 @@ class FrozenModel(BaseModel):
         return self.model.get_nsel()
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
-        return local_jdata
+        return local_jdata, None
 
     @torch.jit.export
     def model_output_type(self) -> str:

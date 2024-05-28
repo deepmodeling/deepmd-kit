@@ -227,6 +227,10 @@ class SpinModel:
         """Get the model definition script."""
         return self.backbone_model.get_model_def_script()
 
+    def get_min_nbor_dist(self) -> float:
+        """Get the minimum neighbor distance."""
+        return self.backbone_model.get_min_nbor_dist()
+
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         # for C++ interface

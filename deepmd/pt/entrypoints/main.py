@@ -63,6 +63,7 @@ from deepmd.utils.compat import (
     update_deepmd_input,
 )
 from deepmd.utils.data_system import (
+    get_data,
     process_systems,
 )
 from deepmd.utils.path import (
@@ -252,21 +253,56 @@ def train(FLAGS):
         log.info(
             "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
         )
+
+        type_map = config["model"].get("type_map")
         if not multi_task:
-            config["model"] = BaseModel.update_sel(config, config["model"])
+            train_data = get_data(
+                config["training"]["training_data"], 0, type_map, None
+            )
+            config["model"], min_nbor_dist = BaseModel.update_sel(
+                config, config["model"]
+            )
         else:
+            assert (
+                type_map is not None
+            ), "Data stat in multi-task mode must have available type_map! "
+            train_data = None
+            for systems in config["training"]["data_dict"]:
+                tmp_data = get_data(
+                    config["training"]["data_dict"][systems]["training_data"],
+                    0,
+                    type_map,
+                    None,
+                )
+                tmp_data.get_batch()
+                assert tmp_data.get_type_map(), f"In multi-task mode, 'type_map.raw' must be defined in data systems {systems}! "
+                if train_data is None:
+                    train_data = tmp_data
+                else:
+                    train_data.system_dirs += tmp_data.system_dirs
+                    train_data.data_systems += tmp_data.data_systems
+                    train_data.natoms += tmp_data.natoms
+                    train_data.natoms_vec += tmp_data.natoms_vec
+                    train_data.default_mesh += tmp_data.default_mesh
+
             training_jdata = deepcopy(config["training"])
             training_jdata.pop("data_dict", {})
             training_jdata.pop("model_prob", {})
+            # considering multi-task shares the descriptor, we need a minimal min_nbor_dist
+            min_nbor_dist = 0
             for model_item in config["model"]["model_dict"]:
                 fake_global_jdata = {
                     "model": deepcopy(config["model"]["model_dict"][model_item]),
                     "training": deepcopy(config["training"]["data_dict"][model_item]),
                 }
                 fake_global_jdata["training"].update(training_jdata)
-                config["model"]["model_dict"][model_item] = BaseModel.update_sel(
-                    fake_global_jdata, config["model"]["model_dict"][model_item]
+                config["model"]["model_dict"][model_item], min_nbor_dist_item = (
+                    BaseModel.update_sel(
+                        fake_global_jdata, config["model"]["model_dict"][model_item]
+                    )
                 )
+                if min_nbor_dist_item is not None:
+                    min_nbor_dist = min(min_nbor_dist, min_nbor_dist_item)
 
     with open(FLAGS.output, "w") as fp:
         json.dump(config, fp, indent=4)
@@ -281,6 +317,8 @@ def train(FLAGS):
         FLAGS.init_frz_model,
         shared_links=shared_links,
     )
+    # save min_nbor_dist
+    trainer.model.min_nbor_dist = min_nbor_dist
     trainer.run()
 
 

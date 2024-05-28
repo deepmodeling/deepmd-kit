@@ -50,8 +50,9 @@ def serialize_from_file(model_file: str) -> dict:
         "pt_version": torch.__version__,
         "model": model_dict,
         "model_def_script": model_def_script,
-        # TODO
-        "@variables": {},
+        "@variables": {
+            "min_nbor_dist": model.get_min_nbor_dist(),
+        },
     }
     return data
 
@@ -72,4 +73,6 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     # JIT will happy in this way...
     model.model_def_script = json.dumps(data["model_def_script"])
     model = torch.jit.script(model)
+    if "min_nbor_dist" in data.get("@variables", {}):
+        model.min_nbor_dist = data["@variables"]["min_nbor_dist"]
     torch.jit.save(model, model_file)
