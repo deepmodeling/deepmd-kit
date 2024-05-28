@@ -279,8 +279,12 @@ class DescrptSeT(NativeOP, BaseDescriptor):
                 # avoid repeat calculation
                 # nfnl x nt_i x 3
                 rr_i = rr[:, sec[ti] : sec[ti + 1], 1:]
+                mm_i = exclude_mask[:, sec[ti] : sec[ti + 1]]
+                rr_i = rr_i * mm_i[:, :, None]
                 # nfnl x nt_j x 3
                 rr_j = rr[:, sec[tj] : sec[tj + 1], 1:]
+                mm_j = exclude_mask[:, sec[tj] : sec[tj + 1]]
+                rr_j = rr_j * mm_j[:, :, None]
                 # nfnl x nt_i x nt_j
                 env_ij = np.einsum("ijm,ikm->ijk", rr_i, rr_j)
                 # nfnl x nt_i x nt_j x 1

@@ -45,6 +45,8 @@ class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ["float64", "float32"],
             [
                 [],
+                [[0, 1]],
+                [[1, 1]],
             ],
         ):
             dtype = PRECISION_DICT[prec]

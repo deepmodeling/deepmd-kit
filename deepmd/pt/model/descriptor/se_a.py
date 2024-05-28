@@ -85,6 +85,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         seed: Optional[int] = None,
         ntypes: Optional[int] = None,  # to be compat with input
+        # not implemented
         spin=None,
     ):
         del ntypes

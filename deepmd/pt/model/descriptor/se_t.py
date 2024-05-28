@@ -115,8 +115,12 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         seed: Optional[int] = None,
         ntypes: Optional[int] = None,  # to be compat with input
+        # not implemented
+        spin=None,
     ):
         del ntypes
+        if spin is not None:
+            raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.seat = DescrptBlockSeT(
             rcut,
@@ -638,8 +642,12 @@ class DescrptBlockSeT(DescriptorBlock):
                 # avoid repeat calculation
                 # nfnl x nt_i x 3
                 rr_i = dmatrix[:, self.sec[ti] : self.sec[ti + 1], 1:]
+                mm_i = exclude_mask[:, self.sec[ti] : self.sec[ti + 1]]
+                rr_i = rr_i * mm_i[:, :, None]
                 # nfnl x nt_j x 3
                 rr_j = dmatrix[:, self.sec[tj] : self.sec[tj + 1], 1:]
+                mm_j = exclude_mask[:, self.sec[tj] : self.sec[tj + 1]]
+                rr_j = rr_j * mm_j[:, :, None]
                 # nfnl x nt_i x nt_j
                 env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
                 # nfnl x nt_i x nt_j x 1
