@@ -263,13 +263,11 @@ def train(FLAGS):
                 train_data, type_map, config["model"]
             )
         else:
-            # considering multi-task shares the descriptor, we need a minimal min_nbor_dist
-            min_nbor_dist = 0
+            training_jdata = deepcopy(config["training"])
+            training_jdata.pop("data_dict", {})
+            training_jdata.pop("model_prob", {})
+            min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
-                training_jdata = deepcopy(config["training"])
-                training_jdata.pop("data_dict", {})
-                training_jdata.pop("model_prob", {})
-
                 fake_global_jdata = {
                     "model": deepcopy(config["model"]["model_dict"][model_item]),
                     "training": deepcopy(config["training"]["data_dict"][model_item]),
@@ -300,13 +298,11 @@ def train(FLAGS):
                         train_data.natoms_vec += tmp_data.natoms_vec
                         train_data.default_mesh += tmp_data.default_mesh
 
-                config["model"]["model_dict"][model_item], min_nbor_dist_item = (
+                config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
                         train_data, type_map, config["model"]["model_dict"][model_item]
                     )
                 )
-                if min_nbor_dist_item is not None:
-                    min_nbor_dist = min(min_nbor_dist, min_nbor_dist_item)
 
     with open(FLAGS.output, "w") as fp:
         json.dump(config, fp, indent=4)
@@ -322,7 +318,11 @@ def train(FLAGS):
         shared_links=shared_links,
     )
     # save min_nbor_dist
-    trainer.model.min_nbor_dist = min_nbor_dist
+    if not multi_task:
+        trainer.model.min_nbor_dist = min_nbor_dist
+    else:
+        for model_item in min_nbor_dist:
+            trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
     trainer.run()
 
 
