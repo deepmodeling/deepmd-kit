@@ -324,7 +324,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         local_jdata_cpy = local_jdata.copy()
         min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
-            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist
 
