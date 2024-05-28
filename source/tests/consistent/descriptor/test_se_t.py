@@ -37,7 +37,7 @@ from deepmd.utils.argcheck import (
 
 @parameterized(
     (True, False),  # resnet_dt
-    ([],),  # excluded_types
+    ([], [[0, 1]]),  # excluded_types
     ("float32", "float64"),  # precision
     (0.0, 1e-8, 1e-2),  # env_protection
 )
@@ -90,7 +90,7 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return env_protection != 0.0
+        return env_protection != 0.0 or excluded_types
 
     tf_class = DescrptSeTTF
     dp_class = DescrptSeTDP
