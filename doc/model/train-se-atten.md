@@ -174,7 +174,6 @@ When `"tebd_input_mode"` is set to `"strip"`, the embedding matrix $\mathcal{G}^
 ```math
    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\}) \odot s(r_{ij})) \quad \mathrm{or}\quad (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\}) \odot s(r_{ij}))
 ```
- 
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
