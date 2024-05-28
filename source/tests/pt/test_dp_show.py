@@ -80,7 +80,9 @@ class TestSingleTaskModel(unittest.TestCase):
     def test_checkpoint_error(self):
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
-        with self.assertRaisesRegex(RuntimeError, "The 'model-branch' option requires a multitask model"):
+        with self.assertRaisesRegex(
+            RuntimeError, "The 'model-branch' option requires a multitask model"
+        ):
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
 
     def tearDown(self):
