@@ -1,8 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test if `DeepPotential` facto function returns the right type of potential."""
 
+import tempfile
 import unittest
 
+from deepmd.infer.deep_polar import (
+    DeepGlobalPolar,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
+)
 from deepmd.tf.infer import (
     DeepDipole,
     DeepPolar,
@@ -35,16 +42,19 @@ class TestGetPotential(unittest.TestCase):
             str(self.work_dir / "deeppolar.pbtxt"), str(self.work_dir / "deep_polar.pb")
         )
 
-        # TODO add model files for globalpolar and WFC
-        # convert_pbtxt_to_pb(
-        #     str(self.work_dir / "deepglobalpolar.pbtxt"),
-        #     str(self.work_dir / "deep_globalpolar.pb")
-        # )
+        with open(self.work_dir / "deeppolar.pbtxt") as f:
+            deeppolar_pbtxt = f.read()
 
-        # convert_pbtxt_to_pb(
-        #     str(self.work_dir / "deepwfc.pbtxt"),
-        #     str(self.work_dir / "deep_wfc.pb")
-        # )
+        # not an actual globalpolar and wfc model, but still good enough for testing factory
+        with tempfile.NamedTemporaryFile(mode="w") as f:
+            f.write(deeppolar_pbtxt.replace("polar", "global_polar"))
+            f.flush()
+            convert_pbtxt_to_pb(f.name, str(self.work_dir / "deep_globalpolar.pb"))
+
+        with tempfile.NamedTemporaryFile(mode="w") as f:
+            f.write(deeppolar_pbtxt.replace("polar", "wfc"))
+            f.flush()
+            convert_pbtxt_to_pb(f.name, str(self.work_dir / "deep_wfc.pb"))
 
     def tearDown(self):
         for f in self.work_dir.glob("*.pb"):
@@ -62,11 +72,10 @@ class TestGetPotential(unittest.TestCase):
         dp = DeepPotential(self.work_dir / "deep_pot.pb")
         self.assertIsInstance(dp, DeepPot, msg.format(DeepPot, type(dp)))
 
-        # TODO add model files for globalpolar and WFC
-        # dp = DeepPotential(self.work_dir / "deep_globalpolar.pb")
-        # self.assertIsInstance(
-        #     dp, DeepGlobalPolar, msg.format(DeepGlobalPolar, type(dp))
-        # )
+        dp = DeepPotential(self.work_dir / "deep_globalpolar.pb")
+        self.assertIsInstance(
+            dp, DeepGlobalPolar, msg.format(DeepGlobalPolar, type(dp))
+        )
 
-        # dp = DeepPotential(self.work_dir / "deep_wfc.pb")
-        # self.assertIsInstance(dp, DeepWFC, msg.format(DeepWFC, type(dp)))
+        dp = DeepPotential(self.work_dir / "deep_wfc.pb")
+        self.assertIsInstance(dp, DeepWFC, msg.format(DeepWFC, type(dp)))

@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    ModelOutputDef,
+    OutputVariableDef,
+)
 from deepmd.infer.deep_tensor import (
-    DeepTensor,
+    OldDeepTensor,
 )
 
 
-class DeepWFC(DeepTensor):
+class DeepWFC(OldDeepTensor):
     """Deep WFC model.
 
     Parameters
@@ -26,3 +31,22 @@ class DeepWFC(DeepTensor):
     @property
     def output_tensor_name(self) -> str:
         return "wfc"
+
+    @property
+    def output_def(self) -> ModelOutputDef:
+        """Get the output definition of this model."""
+        # no reduciable or differentiable output is defined
+        return ModelOutputDef(
+            FittingOutputDef(
+                [
+                    OutputVariableDef(
+                        self.output_tensor_name,
+                        shape=[-1],
+                        reduciable=False,
+                        r_differentiable=False,
+                        c_differentiable=False,
+                        atomic=True,
+                    ),
+                ]
+            )
+        )
