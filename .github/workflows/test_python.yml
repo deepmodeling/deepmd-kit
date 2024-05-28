@@ -42,17 +42,18 @@ jobs:
     - name: Get durations from cache
       uses: actions/cache@v4
       with:
-        path: test_durations
+        path: .test_durations
         # the key must never match, even when restarting workflows, as that
         # will cause durations to get out of sync between groups, the
         # combined durations will be loaded if available
-        key: test-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.python }}-${{ matrix.group }}
+        key: test2-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.python }}-${{ matrix.group }}
         restore-keys: |
-          test-durations-combined-${{ matrix.python }}-${{ github.sha }}
-          test-durations-combined-${{ matrix.python }}
-    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations_${{ matrix.group }} --splitting-algorithm least_duration
+          test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
+          test2-durations-combined-${{ matrix.python }}
+    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
+    - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations
       uses: actions/upload-artifact@v4
       with:
@@ -77,15 +78,15 @@ jobs:
         # key won't match during the first run for the given commit, but
         # restore-key will if there's a previous stored durations file,
         # so cache will both be loaded and stored
-        key: test-durations-combined-${{ matrix.python }}-${{ github.sha }}
-        restore-keys: test-durations-combined-${{ matrix.python }}
+        key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
+        restore-keys: test2-durations-combined-${{ matrix.python }}
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
         pattern: split-${{ matrix.python }}-*
         merge-multiple: true
     - name: Combine test durations
-      run: jq '. + input' .test_durations_* > .test_durations
+      run: jq -s add .test_durations_* > .test_durations
   pass:
     name: Pass testing Python
     needs: [testpython, update_durations]
