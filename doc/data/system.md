@@ -77,7 +77,7 @@ This system contains `Nframes` frames with the same atom number `Natoms`, the to
 | type_map | Atom type names                  | type_map.raw        | Required          | Ntypes            | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table |
 | type     | Atom type indexes of each frame  | real_atom_types.npy | Required          | Nframes \* Natoms | Integers that describe atom types in each frame, corresponding to indexes in type_map. `-1` means virtual atoms.         |
 
-With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`). Note that this `mixed_type` format only supports `se_atten` descriptor.
+With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`).
 
 To put frames with different `Natoms` into the same system, one can pad systems by adding virtual atoms whose type is `-1`. Virtual atoms do not contribute to any fitting property, so the atomic property of virtual atoms (e.g. forces) should be given zero.
 
