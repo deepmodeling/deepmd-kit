@@ -267,9 +267,10 @@ def update_sel(jdata):
         train_data, type_map, jdata["model"]
     )
 
-    tf.constant(
-        min_nbor_dist,
-        name="train_attr/min_nbor_dist",
-        dtype=GLOBAL_ENER_FLOAT_PRECISION,
-    )
+    if min_nbor_dist is not None:
+        tf.constant(
+            min_nbor_dist,
+            name="train_attr/min_nbor_dist",
+            dtype=GLOBAL_ENER_FLOAT_PRECISION,
+        )
     return jdata_cpy
