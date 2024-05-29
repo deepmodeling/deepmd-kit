@@ -205,7 +205,7 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, False, box=self.cell
+                    xyz, atype, self.rcut, self.sel, False, box=self.cell
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
