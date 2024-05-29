@@ -20,7 +20,8 @@ Attention-based descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, whic
     \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
 ```
 
-where $\hat{\mathcal{G}}^i$ represents the embedding matrix $\mathcal{G}^i$ after additional self-attention mechanism and $\mathcal{R}^i$ is defined by the full case in the [`se_e2_a`](./train-se-e2-a.md). Note that we obtain $\mathcal{G}^i$ using the type embedding method by default in this descriptor. By default, we concat $s(r_{ij})$ and the type embeddings of central and neighboring atoms $\mathcal{A}^i$ and $\mathcal{A}^j$ as input of the embedding network $\mathcal{N}_{e,2}$:
+where $\hat{\mathcal{G}}^i$ represents the embedding matrix $\mathcal{G}^i$ after additional self-attention mechanism and $\mathcal{R}^i$ is defined by the full case in the [`se_e2_a`](./train-se-e2-a.md).
+Note that we obtain $\mathcal{G}^i$ using the type embedding method by default in this descriptor. By default, we concat $s(r_{ij})$ and the type embeddings of central and neighboring atoms $\mathcal{A}^i$ and $\mathcal{A}^j$ as input of the embedding network $\mathcal{N}_{e,2}$:
 
 ```math
    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\})
