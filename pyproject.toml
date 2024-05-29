@@ -92,7 +92,7 @@ lmp = [
     "lammps~=2023.8.2.3.0",
 ]
 ipi = [
-    "i-PI",
+    "ipi",
 ]
 gui = [
     "dpgui",
