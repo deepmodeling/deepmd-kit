@@ -32,6 +32,9 @@ from deepmd.tf.utils.pair_tab import (
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 
 @Model.register("pairtab")
@@ -66,7 +69,7 @@ class PairTabModel(Model):
     ):
         super().__init__()
         self.tab_file = tab_file
-        self.tab = PairTab(self.tab_file)
+        self.tab = PairTab(self.tab_file, rcut=rcut)
         self.ntypes = self.tab.ntypes
         self.rcut = rcut
         if isinstance(sel, int):
@@ -286,3 +289,8 @@ class PairTabModel(Model):
         """
         local_jdata_cpy = local_jdata.copy()
         return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return []

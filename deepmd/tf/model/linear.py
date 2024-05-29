@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import operator
 from enum import (
     Enum,
 )
 from functools import (
     lru_cache,
+    reduce,
 )
 from typing import (
     List,
@@ -21,6 +23,9 @@ from deepmd.tf.fit.fitting import (
 )
 from deepmd.tf.loss.loss import (
     Loss,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .model import (
@@ -144,6 +149,13 @@ class LinearModel(Model):
             for sub_jdata in local_jdata["models"]
         ]
         return local_jdata_cpy
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return reduce(
+            operator.iadd, [model.input_requirement for model in self.models], []
+        )
 
 
 @Model.register("linear_ener")

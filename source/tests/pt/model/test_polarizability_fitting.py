@@ -269,12 +269,7 @@ class TestEquivalence(unittest.TestCase):
 
     def test_trans(self):
         atype = self.atype.reshape(1, 5)
-        coord_s = torch.matmul(
-            torch.remainder(
-                torch.matmul(self.coord + self.shift, torch.linalg.inv(self.cell)), 1.0
-            ),
-            self.cell,
-        )
+        coord_s = self.coord + self.shift
         for fit_diag, scale in itertools.product([True, False], [None, self.scale]):
             ft0 = PolarFittingNet(
                 self.nt,

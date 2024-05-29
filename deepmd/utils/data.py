@@ -787,3 +787,11 @@ class DataRequirementItem:
         if key not in self.dict:
             raise KeyError(key)
         return self.dict[key]
+
+    def __eq__(self, __value: object) -> bool:
+        if not isinstance(__value, DataRequirementItem):
+            return False
+        return self.dict == __value.dict
+
+    def __repr__(self) -> str:
+        return f"DataRequirementItem({self.dict})"

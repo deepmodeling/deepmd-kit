@@ -7,9 +7,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.tf.common import (
-    add_data_requirement,
-)
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
@@ -19,6 +16,9 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.sess import (
     run_sess,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .descriptor import (
@@ -361,8 +361,6 @@ class DescrptSeAEfLower(DescrptSeA):
         self.dstd = None
         self.davg = None
 
-        add_data_requirement("efield", 3, atomic=True, must=True, high_prec=False)
-
         self.place_holders = {}
         avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
             GLOBAL_NP_FLOAT_PRECISION
@@ -586,3 +584,12 @@ class DescrptSeAEfLower(DescrptSeA):
             sysr2.append(sumr2)
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = super().input_requirement
+        data_requirement.append(
+            DataRequirementItem("efield", 3, atomic=True, must=True, high_prec=False)
+        )
+        return data_requirement

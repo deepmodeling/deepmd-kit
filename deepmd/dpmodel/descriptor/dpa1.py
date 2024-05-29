@@ -855,10 +855,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise NotImplementedError
 
-        input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
-            np.linalg.norm(
-                dmatrix.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True
-            ),
+        input_r = rr.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
+            np.linalg.norm(rr.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True),
             1e-12,
         )
         gg = self.dpa1_attention(

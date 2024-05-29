@@ -3,10 +3,6 @@ import os
 
 import numpy as np
 
-from deepmd.tf.common import (
-    data_requirement,
-    j_must_have,
-)
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
@@ -62,16 +58,16 @@ class TestDataModifier(tf.test.TestCase):
         rcut = model.model.get_rcut()
 
         # init data system
-        systems = j_must_have(jdata["training"], "systems")
+        systems = jdata["training"]["systems"]
         # systems[0] = tests_path / systems[0]
         systems = [tests_path / ii for ii in systems]
         set_pfx = "set"
-        batch_size = j_must_have(jdata["training"], "batch_size")
-        test_size = j_must_have(jdata["training"], "numb_test")
+        batch_size = jdata["training"]["batch_size"]
+        test_size = jdata["training"]["numb_test"]
         data = DeepmdDataSystem(
             systems, batch_size, test_size, rcut, set_prefix=set_pfx
         )
-        data.add_dict(data_requirement)
+        data.add_data_requirements(model.data_requirements)
 
         # clear the default graph
         tf.reset_default_graph()

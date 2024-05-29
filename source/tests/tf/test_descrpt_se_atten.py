@@ -5,9 +5,6 @@ import unittest
 import numpy as np
 from packaging.version import parse as parse_version
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeAtten,
 )
@@ -42,15 +39,14 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         set_pfx = "set"
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -219,15 +215,14 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         set_pfx = "set"
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -397,15 +392,14 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         set_pfx = "set"
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -568,15 +562,14 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         set_pfx = "set"
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
         batch_size = 2
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(jdata["model"]["type_map"])
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)

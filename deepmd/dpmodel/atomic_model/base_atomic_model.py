@@ -9,6 +9,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -25,7 +28,7 @@ from .make_base_atomic_model import (
 BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 
 
-class BaseAtomicModel(BaseAtomicModel_):
+class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def __init__(
         self,
         type_map: List[str],
@@ -191,6 +194,24 @@ class BaseAtomicModel(BaseAtomicModel_):
         ret_dict["mask"] = atom_mask
 
         return ret_dict
+
+    def call(
+        self,
+        extended_coord: np.ndarray,
+        extended_atype: np.ndarray,
+        nlist: np.ndarray,
+        mapping: Optional[np.ndarray] = None,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+    ) -> Dict[str, np.ndarray]:
+        return self.forward_common_atomic(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping=mapping,
+            fparam=fparam,
+            aparam=aparam,
+        )
 
     def serialize(self) -> dict:
         return {

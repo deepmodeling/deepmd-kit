@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    List,
+)
+
 import numpy as np
 
-from deepmd.tf.common import (
-    add_data_requirement,
-)
 from deepmd.tf.env import (
     global_cvt_2_ener_float,
     global_cvt_2_tf_float,
@@ -11,6 +12,9 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.sess import (
     run_sess,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .loss import (
@@ -56,13 +60,6 @@ class DOSLoss(Loss):
         self.has_cdf = self.start_pref_cdf != 0.0 or self.limit_pref_cdf != 0.0
         self.has_ados = self.start_pref_ados != 0.0 or self.limit_pref_ados != 0.0
         self.has_acdf = self.start_pref_acdf != 0.0 or self.limit_pref_acdf != 0.0
-        # data required
-        add_data_requirement(
-            "dos", self.numb_dos, atomic=False, must=True, high_prec=True
-        )
-        add_data_requirement(
-            "atom_dos", self.numb_dos, atomic=True, must=False, high_prec=True
-        )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
         dos = model_dict["dos"]
@@ -212,3 +209,20 @@ class DOSLoss(Loss):
             results["rmse_acdf"] = np.sqrt(error_acdf)
 
         return results
+
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        data_requirements = []
+        # data required
+        data_requirements.append(
+            DataRequirementItem(
+                "dos", self.numb_dos, atomic=False, must=True, high_prec=True
+            )
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                "atom_dos", self.numb_dos, atomic=True, must=False, high_prec=True
+            )
+        )
+        return data_requirements

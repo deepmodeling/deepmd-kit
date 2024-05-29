@@ -15,7 +15,6 @@ from typing import (
 
 from deepmd.tf.common import (
     j_loader,
-    j_must_have,
 )
 from deepmd.tf.env import (
     reset_default_tf_session_config,
@@ -195,6 +194,7 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
         train_data = get_data(
             jdata["training"]["training_data"], rcut, ipt_type_map, modifier
         )
+        train_data.add_data_requirements(model.data_requirements)
         train_data.print_summary("training")
         if jdata["training"].get("validation_data", None) is not None:
             valid_data = get_data(
@@ -203,13 +203,14 @@ def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = Fal
                 train_data.type_map,
                 modifier,
             )
+            valid_data.add_data_requirements(model.data_requirements)
             valid_data.print_summary("validation")
     else:
         if modifier is not None:
             modifier.build_fv_graph()
 
     # get training info
-    stop_batch = j_must_have(jdata["training"], "numb_steps")
+    stop_batch = jdata["training"]["numb_steps"]
     origin_type_map = jdata["model"].get("origin_type_map", None)
     if (
         origin_type_map is not None and not origin_type_map

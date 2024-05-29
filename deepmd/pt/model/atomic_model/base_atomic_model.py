@@ -256,6 +256,26 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
         return ret_dict
 
+    def forward(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+    ) -> Dict[str, torch.Tensor]:
+        return self.forward_common_atomic(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping=mapping,
+            fparam=fparam,
+            aparam=aparam,
+            comm_dict=comm_dict,
+        )
+
     def serialize(self) -> dict:
         return {
             "type_map": self.type_map,

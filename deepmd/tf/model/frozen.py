@@ -6,6 +6,7 @@ from enum import (
     Enum,
 )
 from typing import (
+    List,
     Optional,
     Union,
 )
@@ -33,6 +34,9 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.utils.graph import (
     get_tensor_by_name_from_graph,
     load_graph_def,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .model import (
@@ -261,3 +265,23 @@ class FrozenModel(Model):
     @classmethod
     def deserialize(cls, data: dict, suffix: str = ""):
         raise RuntimeError("Should not touch here.")
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = []
+        numb_fparam = self.model.get_dim_fparam()
+        numb_aparam = self.model.get_dim_aparam()
+        if numb_fparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "fparam", numb_fparam, atomic=False, must=True, high_prec=False
+                )
+            )
+        if numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", numb_aparam, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement

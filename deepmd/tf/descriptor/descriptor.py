@@ -23,6 +23,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils import (
     PluginVariant,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
@@ -512,3 +515,8 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             Name suffix to identify this descriptor
         """
         raise NotImplementedError(f"Not implemented in class {self.__name__}")
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return []
