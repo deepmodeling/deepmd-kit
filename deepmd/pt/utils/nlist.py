@@ -326,7 +326,7 @@ def extend_coord_with_ghosts(
         # +1: central cell
         nbuff = torch.ceil(rcut / to_face).to(torch.long)
         # 3
-        nbuff = torch.max(nbuff, dim=0, keepdim=False).values
+        nbuff = torch.amax(nbuff, dim=0)  # faster than torch.max
         nbuff_cpu = nbuff.cpu()
         xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu")
         yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu")
