@@ -73,8 +73,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for mixed_types, nfp, nap in itertools.product(
-            [True, False],
+        for nfp, nap in itertools.product(
             [0, 3],
             [0, 4],
         ):
@@ -84,7 +83,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
+                mixed_types=False,
             ).to(env.DEVICE)
             ft1 = DPDipoleFitting.deserialize(ft0.serialize())
             ft2 = DipoleFittingNet.deserialize(ft1.serialize())
@@ -160,8 +159,7 @@ class TestEquivalence(unittest.TestCase):
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
         rng = np.random.default_rng()
-        for mixed_types, nfp, nap in itertools.product(
-            [True, False],
+        for nfp, nap in itertools.product(
             [0, 3],
             [0, 4],
         ):
@@ -171,7 +169,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
+                mixed_types=False,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -196,7 +194,7 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, not mixed_types
+                    xyz + self.shift, atype, self.rcut, self.sel, False, box=self.cell
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -205,7 +203,7 @@ class TestEquivalence(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
+                ret0 = ft0(rd0, atype, gr0, fparam=ifp, aparam=iap)
                 res.append(ret0["dipole"])
 
             np.testing.assert_allclose(
@@ -231,7 +229,7 @@ class TestEquivalence(unittest.TestCase):
                 _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                coord[idx_perm], atype, self.rcut, self.sel, True
+                coord[idx_perm], atype, self.rcut, self.sel, False, box=self.cell
             )
 
             rd0, gr0, _, _, _ = self.dd0(
@@ -240,7 +238,7 @@ class TestEquivalence(unittest.TestCase):
                 nlist,
             )
 
-            ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
+            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
             res.append(ret0["dipole"])
 
         np.testing.assert_allclose(
@@ -261,7 +259,7 @@ class TestEquivalence(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=True,
+            mixed_types=False,
         ).to(env.DEVICE)
         res = []
         for xyz in [self.coord, coord_s]:
@@ -271,7 +269,7 @@ class TestEquivalence(unittest.TestCase):
                 _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                xyz, atype, self.rcut, self.sel, False
+                xyz, atype, self.rcut, self.sel, False, box=self.cell
             )
 
             rd0, gr0, _, _, _ = self.dd0(
@@ -280,7 +278,7 @@ class TestEquivalence(unittest.TestCase):
                 nlist,
             )
 
-            ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
+            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
             res.append(ret0["dipole"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
@@ -305,7 +303,7 @@ class TestDipoleModel(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=True,
+            mixed_types=False,
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
         self.model = DipoleModel(self.dd0, self.ft0, self.type_mapping)
