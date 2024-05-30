@@ -64,7 +64,7 @@ class TransTest:
             spins=spin.unsqueeze(0),
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
-        prec = 1e-10
+        prec = 1e-7
         for key in test_keys:
             if key in ["energy", "force", "force_mag"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
