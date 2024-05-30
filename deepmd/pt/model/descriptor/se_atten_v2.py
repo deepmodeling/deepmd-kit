@@ -2,8 +2,8 @@
 from typing import (
     List,
     Optional,
+    Tuple,
     Union,
-    Tuple
 )
 
 from deepmd.pt.model.descriptor.descriptor import (
