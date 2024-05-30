@@ -71,7 +71,7 @@ class TestPolarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=False,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -165,6 +165,8 @@ class TestEquivalence(unittest.TestCase):
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
+        # use larger cell to rotate only coord and shift to the center of cell
+        cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
 
         for nfp, nap, fit_diag, scale in itertools.product(
             [0, 3],
@@ -178,7 +180,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=False,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -205,7 +207,12 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, False, box=self.cell
+                    xyz + self.shift,
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=cell_rot,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -235,7 +242,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
-                mixed_types=False,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -248,7 +255,12 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    coord[idx_perm], atype, self.rcut, self.sel, False, box=self.cell
+                    coord[idx_perm],
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=self.cell,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -280,7 +292,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
-                mixed_types=False,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -292,7 +304,12 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz, atype, self.rcut, self.sel, False, box=self.cell
+                    xyz,
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=self.cell,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -326,7 +343,7 @@ class TestPolarModel(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=False,
+            mixed_types=self.dd0.mixed_types(),
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
         self.model = PolarModel(self.dd0, self.ft0, self.type_mapping)
