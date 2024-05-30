@@ -64,7 +64,7 @@ def np_normalize(x, axis=-1):
     return x / np.linalg.norm(x, axis=axis, keepdims=True)
 
 
-@BaseDescriptor.register("se_atten_v2")
+@BaseDescriptor.register("se_atten")
 @BaseDescriptor.register("dpa1")
 class DescrptDPA1(NativeOP, BaseDescriptor):
     r"""Attention-based descriptor which is proposed in the pretrainable DPA-1[1] model.
@@ -226,6 +226,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         neuron: List[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
+        tebd_input_mode: str = "concat",
         resnet_dt: bool = False,
         trainable: bool = True,
         type_one_side: bool = False,
@@ -243,6 +244,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
@@ -266,7 +268,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         if ln_eps is None:
             ln_eps = 1e-5
 
-        self.se_atten = DescrptBlockSeAttenV2(
+        self.se_atten = DescrptBlockSeAtten(
             rcut,
             rcut_smth,
             sel,
@@ -274,6 +276,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             neuron=neuron,
             axis_neuron=axis_neuron,
             tebd_dim=tebd_dim,
+            tebd_input_mode=tebd_input_mode,
             set_davg_zero=set_davg_zero,
             attn=attn,
             attn_layer=attn_layer,
@@ -285,6 +288,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             scaling_factor=scaling_factor,
             normalize=normalize,
             temperature=temperature,
+            smooth=smooth_type_embedding,
             type_one_side=type_one_side,
             exclude_types=exclude_types,
             env_protection=env_protection,
