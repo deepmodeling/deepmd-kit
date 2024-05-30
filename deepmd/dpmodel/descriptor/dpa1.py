@@ -871,8 +871,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )
 
 
-@DescriptorBlock.register("se_atten_v2")
-class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
+@BaseDescriptor.register("se_atten_v2")
+class DescrptSeAttenV2(DescrptDPA1):
     def __init__(
         self,
         rcut: float,
@@ -883,6 +883,7 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         resnet_dt: bool = False,
+        trainable: bool = True,
         type_one_side: bool = False,
         attn: int = 128,
         attn_layer: int = 2,
@@ -898,8 +899,15 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
         temperature: Optional[float] = None,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        concat_output_tebd: bool = True,
+        spin: Optional[Any] = None,
+        stripped_type_embedding: Optional[bool] = None,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
+        # consistent with argcheck, not used though
+        seed: Optional[int] = None,
     ) -> None:
-        DescrptBlockSeAtten.__init__(
+        DescrptDPA1.__init__(
             self,
             rcut,
             rcut_smth,
@@ -910,6 +918,7 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             tebd_dim=tebd_dim,
             tebd_input_mode="strip",
             resnet_dt=resnet_dt,
+            trainable=trainable,
             type_one_side=type_one_side,
             attn=attn,
             attn_layer=attn_layer,
@@ -925,7 +934,14 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             temperature=temperature,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
-            smooth=True,
+            smooth_type_embedding=True,
+            concat_output_tebd=concat_output_tebd,
+            spin=spin,
+            stripped_type_embedding=stripped_type_embedding,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
+            # consistent with argcheck, not used though
+            seed=seed,
         )
 
 

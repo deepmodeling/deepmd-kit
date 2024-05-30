@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from .dpa1 import (
     DescrptDPA1,
+    DescrptSeAttenV2,
 )
 from .dpa2 import (
     DescrptDPA2,
@@ -22,6 +23,7 @@ __all__ = [
     "DescrptSeA",
     "DescrptSeR",
     "DescrptDPA1",
+    "DescrptSeAttenV2",
     "DescrptDPA2",
     "DescrptHybrid",
     "make_base_descriptor",

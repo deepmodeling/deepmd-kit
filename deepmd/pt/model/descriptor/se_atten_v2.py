@@ -6,16 +6,16 @@ from typing import (
     Union,
 )
 
-from deepmd.pt.model.descriptor.descriptor import (
-    DescriptorBlock,
+from .base_descriptor import (
+    BaseDescriptor,
 )
-from deepmd.pt.model.descriptor.se_atten import (
-    DescrptBlockSeAtten,
+from deepmd.pt.model.descriptor.dpa1 import (
+    DescrptDPA1,
 )
 
 
-@DescriptorBlock.register("se_atten_v2")
-class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
+@BaseDescriptor.register("se_atten_v2")
+class DescrptSeAttenV2(DescrptDPA1):
     def __init__(
         self,
         rcut: float,
@@ -30,22 +30,29 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        scaling_factor=1.0,
-        normalize=True,
-        temperature=None,
-        type_one_side: bool = False,
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
+        scaling_factor: int = 1.0,
+        normalize=True,
+        temperature=None,
+        concat_output_tebd: bool = True,
+        trainable: bool = True,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        type_one_side: bool = False,
+        stripped_type_embedding: Optional[bool] = None,
         seed: Optional[int] = None,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
+        # not implemented
+        spin=None,
         type: Optional[str] = None,
         old_impl: bool = False,
     ) -> None:
-        r"""Construct an embedding net of type `se_atten`.
+        r"""Construct smooth version of embedding net of type `se_atten`.
 
         Parameters
         ----------
@@ -64,17 +71,8 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
         tebd_dim : int
             Dimension of the type embedding
-        resnet_dt : bool
-            Time-step `dt` in the resnet construction:
-            y = x + dt * \phi (Wx + b)
-        trainable_ln : bool
-            Whether to use trainable shift and scale weights in layer normalization.
-        ln_eps : float, Optional
-            The epsilon value for layer normalization.
-        type_one_side : bool
-            If 'False', type embeddings of both neighbor and central atoms are considered.
-            If 'True', only type embeddings of neighbor atoms are considered.
-            Default is 'False'.
+        set_davg_zero : bool
+            Set the shift of embedding net input to zero.
         attn : int
             Hidden dimension of the attention vectors
         attn_layer : int
@@ -85,17 +83,18 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version.)
             If mask the diagonal of attention weights
+        activation_function : str
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+        precision : str
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+        resnet_dt : bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
         exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-        set_davg_zero : bool
-            Set the shift of embedding net input to zero.
-        activation_function : str
-            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
-        precision : str
-            The precision of the embedding net parameters. Supported options are |PRECISION|
         scaling_factor : float
             The scaling factor of normalization in calculations of attention weights.
             If `temperature` is None, the scaling of attention weights is (N_dim * scaling_factor)**0.5
@@ -103,10 +102,18 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             Whether to normalize the hidden vectors in attention weights calculation.
         temperature : float
             If not None, the scaling of attention weights is `temperature` itself.
+        trainable_ln : bool
+            Whether to use trainable shift and scale weights in layer normalization.
+        ln_eps : float, Optional
+            The epsilon value for layer normalization.
+        type_one_side : bool
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
         seed : int, Optional
             Random seed for parameter initialization.
         """
-        DescrptBlockSeAtten.__init__(
+        DescrptDPA1.__init__(
             self,
             rcut,
             rcut_smth,
@@ -124,16 +131,23 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             activation_function=activation_function,
             precision=precision,
             resnet_dt=resnet_dt,
+            exclude_types=exclude_types,
+            env_protection=env_protection,
             scaling_factor=scaling_factor,
             normalize=normalize,
             temperature=temperature,
-            smooth=True,
-            type_one_side=type_one_side,
-            exclude_types=exclude_types,
-            env_protection=env_protection,
+            concat_output_tebd=concat_output_tebd,
+            trainable=trainable,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
+            smooth_type_embedding=True,
+            type_one_side=type_one_side,
+            stripped_type_embedding=stripped_type_embedding,
             seed=seed,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
+            # not implemented
+            spin=spin,
             type=type,
             old_impl=old_impl,
         )
