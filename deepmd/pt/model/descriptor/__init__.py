@@ -42,7 +42,7 @@ __all__ = [
     "make_default_type_embedding",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
-    "DescrptSeAttenV2",
+    "DescrptSeAttenV2"
     "DescrptSeA",
     "DescrptSeR",
     "DescrptDPA1",
