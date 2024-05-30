@@ -44,6 +44,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train import (
     training,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
@@ -297,6 +300,67 @@ def freeze(FLAGS):
     )
 
 
+def show(FLAGS):
+    if FLAGS.INPUT.split(".")[-1] == "pt":
+        state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        model_params = state_dict["_extra_state"]["model_params"]
+    elif FLAGS.INPUT.split(".")[-1] == "pth":
+        model_params_string = torch.jit.load(
+            FLAGS.INPUT, map_location=env.DEVICE
+        ).model_def_script
+        model_params = json.loads(model_params_string)
+    else:
+        raise RuntimeError(
+            "The model provided must be a checkpoint file with a .pt extension "
+            "or a frozen model with a .pth extension"
+        )
+    model_is_multi_task = "model_dict" in model_params
+    log.info("This is a multitask model") if model_is_multi_task else log.info(
+        "This is a singletask model"
+    )
+
+    if "model-branch" in FLAGS.ATTRIBUTES:
+        #  The model must be multitask mode
+        if not model_is_multi_task:
+            raise RuntimeError(
+                "The 'model-branch' option requires a multitask model."
+                " The provided model does not meet this criterion."
+            )
+        model_branches = list(model_params["model_dict"].keys())
+        log.info(f"Available model branches are {model_branches}")
+    if "type-map" in FLAGS.ATTRIBUTES:
+        if model_is_multi_task:
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                type_map = model_params["model_dict"][branch]["type_map"]
+                log.info(f"The type_map of branch {branch} is {type_map}")
+        else:
+            type_map = model_params["type_map"]
+            log.info(f"The type_map is {type_map}")
+    if "descriptor" in FLAGS.ATTRIBUTES:
+        if model_is_multi_task:
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                descriptor = model_params["model_dict"][branch]["descriptor"]
+                log.info(f"The descriptor parameter of branch {branch} is {descriptor}")
+        else:
+            descriptor = model_params["descriptor"]
+            log.info(f"The descriptor parameter is {descriptor}")
+    if "fitting-net" in FLAGS.ATTRIBUTES:
+        if model_is_multi_task:
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                fitting_net = model_params["model_dict"][branch]["fitting_net"]
+                log.info(
+                    f"The fitting_net parameter of branch {branch} is {fitting_net}"
+                )
+        else:
+            fitting_net = model_params["fitting_net"]
+            log.info(f"The fitting_net parameter is {fitting_net}")
+
+
 @record
 def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
@@ -319,6 +383,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
+    elif FLAGS.command == "show":
+        show(FLAGS)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 
