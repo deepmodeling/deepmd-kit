@@ -870,6 +870,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             sw,
         )
 
+
 @DescriptorBlock.register("se_atten_v2")
 class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
     def __init__(
@@ -926,6 +927,7 @@ class DescrptBlockSeAttenV2(DescrptBlockSeAtten):
             ln_eps=ln_eps,
             smooth=True,
         )
+
 
 class NeighborGatedAttention(NativeOP):
     def __init__(
