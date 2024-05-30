@@ -10,9 +10,6 @@ from .dpa1 import (
     DescrptBlockSeAtten,
     DescrptDPA1,
 )
-from .se_atten_v2 import (
-    DescrptSeAttenV2,
-)
 from .dpa2 import (
     DescrptDPA2,
 )
@@ -32,6 +29,9 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_atten_v2 import (
+    DescrptSeAttenV2,
+)
 from .se_r import (
     DescrptSeR,
 )
@@ -42,8 +42,7 @@ __all__ = [
     "make_default_type_embedding",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
-    "DescrptSeAttenV2"
-    "DescrptSeA",
+    "DescrptSeAttenV2" "DescrptSeA",
     "DescrptSeR",
     "DescrptDPA1",
     "DescrptDPA2",

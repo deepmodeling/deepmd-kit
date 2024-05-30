@@ -6,11 +6,12 @@ from typing import (
     Union,
 )
 
-from .base_descriptor import (
-    BaseDescriptor,
-)
 from deepmd.pt.model.descriptor.dpa1 import (
     DescrptDPA1,
+)
+
+from .base_descriptor import (
+    BaseDescriptor,
 )
 
 
