@@ -38,13 +38,15 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 from .se_atten import (
-    DescrptBlockSeAtten,
     NeighborGatedAttention,
+)
+from .se_atten_v2 import (
+    DescrptBlockSeAttenV2,
 )
 
 
 @BaseDescriptor.register("dpa1")
-@BaseDescriptor.register("se_atten")
+@BaseDescriptor.register("se_atten_v2")
 class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     r"""Attention-based descriptor which is proposed in the pretrainable DPA-1[1] model.
 
@@ -206,7 +208,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
         tebd_dim: int = 8,
-        tebd_input_mode: str = "concat",
         set_davg_zero: bool = True,
         attn: int = 128,
         attn_layer: int = 2,
@@ -224,7 +225,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
         seed: Optional[int] = None,
@@ -251,7 +251,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             ln_eps = 1e-5
 
         del type, spin, attn_mask
-        self.se_atten = DescrptBlockSeAtten(
+        self.se_atten = DescrptBlockSeAttenV2(
             rcut,
             rcut_smth,
             sel,
@@ -259,7 +259,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             neuron=neuron,
             axis_neuron=axis_neuron,
             tebd_dim=tebd_dim,
-            tebd_input_mode=tebd_input_mode,
             set_davg_zero=set_davg_zero,
             attn=attn,
             attn_layer=attn_layer,
@@ -271,7 +270,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             scaling_factor=scaling_factor,
             normalize=normalize,
             temperature=temperature,
-            smooth=smooth_type_embedding,
             type_one_side=type_one_side,
             exclude_types=exclude_types,
             env_protection=env_protection,
