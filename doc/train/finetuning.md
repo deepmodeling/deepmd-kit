@@ -99,11 +99,12 @@ $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHO
 ```
 
 :::{note}
-To check the available model branches, you can typically refer to the documentation of the pre-trained model.
-If you're still unsure about the available branches, you can try inputting an arbitrary branch name.
-This will prompt an error message that displays a list of all the available model branches.
+One can check the available model branches in multi-task pre-trained model by refering to the documentation of the pre-trained model or by using the following command:
 
-Please note that this feature will be improved in the upcoming version to provide a more user-friendly experience.
+```bash
+$ dp --pt show multitask_pretrained.pt model-branch
+```
+
 :::
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
