@@ -9,6 +9,9 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from deepmd.pt.model.descriptor.dpa1 import (
+    DescrptDPA1,
+)
 from deepmd.pt.model.network.mlp import (
     NetworkCollection,
 )
@@ -20,9 +23,6 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
-)
-from deepmd.pt.model.descriptor.dpa1 import (
-    DescrptDPA1,
 )
 from deepmd.utils.version import (
     check_version_compatibility,

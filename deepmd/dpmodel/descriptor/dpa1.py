@@ -1011,9 +1011,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         obj.se_atten["davg"] = variables["davg"]
         obj.se_atten["dstd"] = variables["dstd"]
         obj.se_atten.embeddings = NetworkCollection.deserialize(embeddings)
-        obj.se_atten.embeddings_strip = NetworkCollection.deserialize(
-            embeddings_strip
-        )
+        obj.se_atten.embeddings_strip = NetworkCollection.deserialize(embeddings_strip)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
         obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
             attention_layers
