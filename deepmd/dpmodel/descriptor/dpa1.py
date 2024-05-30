@@ -944,6 +944,82 @@ class DescrptSeAttenV2(DescrptDPA1):
             seed=seed,
         )
 
+    def serialize(self) -> dict:
+        """Serialize the descriptor to dict."""
+        obj = self.se_atten
+        data = {
+            "@class": "Descriptor",
+            "type": "se_attn_v2",
+            "@version": 1,
+            "rcut": obj.rcut,
+            "rcut_smth": obj.rcut_smth,
+            "sel": obj.sel,
+            "ntypes": obj.ntypes,
+            "neuron": obj.neuron,
+            "axis_neuron": obj.axis_neuron,
+            "tebd_dim": obj.tebd_dim,
+            "set_davg_zero": obj.set_davg_zero,
+            "attn": obj.attn,
+            "attn_layer": obj.attn_layer,
+            "attn_dotr": obj.attn_dotr,
+            "attn_mask": False,
+            "activation_function": obj.activation_function,
+            "resnet_dt": obj.resnet_dt,
+            "scaling_factor": obj.scaling_factor,
+            "normalize": obj.normalize,
+            "temperature": obj.temperature,
+            "trainable_ln": obj.trainable_ln,
+            "ln_eps": obj.ln_eps,
+            "type_one_side": obj.type_one_side,
+            "concat_output_tebd": self.concat_output_tebd,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
+            # make deterministic
+            "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
+            "embeddings": obj.embeddings.serialize(),
+            "embeddings_strip": obj.embeddings_strip.serialize(),
+            "attention_layers": obj.dpa1_attention.serialize(),
+            "env_mat": obj.env_mat.serialize(),
+            "type_embedding": self.type_embedding.serialize(),
+            "exclude_types": obj.exclude_types,
+            "env_protection": obj.env_protection,
+            "@variables": {
+                "davg": obj["davg"],
+                "dstd": obj["dstd"],
+            },
+            ## to be updated when the options are supported.
+            "trainable": self.trainable,
+            "spin": None,
+        }
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptDPA1":
+        """Deserialize from dict."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        variables = data.pop("@variables")
+        embeddings = data.pop("embeddings")
+        type_embedding = data.pop("type_embedding")
+        attention_layers = data.pop("attention_layers")
+        env_mat = data.pop("env_mat")
+        embeddings_strip = data.pop("embeddings_strip")
+        obj = cls(**data)
+
+        obj.se_atten["davg"] = variables["davg"]
+        obj.se_atten["dstd"] = variables["dstd"]
+        obj.se_atten.embeddings = NetworkCollection.deserialize(embeddings)
+        obj.se_atten.embeddings_strip = NetworkCollection.deserialize(
+            embeddings_strip
+        )
+        obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
+        obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
+            attention_layers
+        )
+        return obj
+
 
 class NeighborGatedAttention(NativeOP):
     def __init__(

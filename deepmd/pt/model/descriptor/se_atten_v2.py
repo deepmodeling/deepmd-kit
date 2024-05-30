@@ -6,12 +6,33 @@ from typing import (
     Union,
 )
 
+import torch
+
+from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from deepmd.pt.model.network.mlp import (
+    NetworkCollection,
+)
+from deepmd.pt.model.network.network import (
+    TypeEmbedNetConsistent,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.env import (
+    RESERVED_PRECISON_DICT,
+)
 from deepmd.pt.model.descriptor.dpa1 import (
     DescrptDPA1,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_descriptor import (
     BaseDescriptor,
+)
+from .se_atten import (
+    NeighborGatedAttention,
 )
 
 
@@ -152,3 +173,81 @@ class DescrptSeAttenV2(DescrptDPA1):
             type=type,
             old_impl=old_impl,
         )
+
+    def serialize(self) -> dict:
+        obj = self.se_atten
+        data = {
+            "@class": "Descriptor",
+            "type": "se_atten_v2",
+            "@version": 1,
+            "rcut": obj.rcut,
+            "rcut_smth": obj.rcut_smth,
+            "sel": obj.sel,
+            "ntypes": obj.ntypes,
+            "neuron": obj.neuron,
+            "axis_neuron": obj.axis_neuron,
+            "tebd_dim": obj.tebd_dim,
+            "set_davg_zero": obj.set_davg_zero,
+            "attn": obj.attn_dim,
+            "attn_layer": obj.attn_layer,
+            "attn_dotr": obj.attn_dotr,
+            "attn_mask": False,
+            "activation_function": obj.activation_function,
+            "resnet_dt": obj.resnet_dt,
+            "scaling_factor": obj.scaling_factor,
+            "normalize": obj.normalize,
+            "temperature": obj.temperature,
+            "trainable_ln": obj.trainable_ln,
+            "ln_eps": obj.ln_eps,
+            "type_one_side": obj.type_one_side,
+            "concat_output_tebd": self.concat_output_tebd,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
+            # make deterministic
+            "precision": RESERVED_PRECISON_DICT[obj.prec],
+            "embeddings": obj.filter_layers.serialize(),
+            "embeddings_strip": obj.filter_layers_strip.serialize(),
+            "attention_layers": obj.dpa1_attention.serialize(),
+            "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
+            "type_embedding": self.type_embedding.embedding.serialize(),
+            "exclude_types": obj.exclude_types,
+            "env_protection": obj.env_protection,
+            "@variables": {
+                "davg": obj["davg"].detach().cpu().numpy(),
+                "dstd": obj["dstd"].detach().cpu().numpy(),
+            },
+            "trainable": self.trainable,
+            "spin": None,
+        }
+        return data
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "DescrptDPA1":
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        variables = data.pop("@variables")
+        embeddings = data.pop("embeddings")
+        type_embedding = data.pop("type_embedding")
+        attention_layers = data.pop("attention_layers")
+        env_mat = data.pop("env_mat")
+        embeddings_strip = data.pop("embeddings_strip")
+        obj = cls(**data)
+
+        def t_cvt(xx):
+            return torch.tensor(xx, dtype=obj.se_atten.prec, device=env.DEVICE)
+
+        obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+            type_embedding
+        )
+        obj.se_atten["davg"] = t_cvt(variables["davg"])
+        obj.se_atten["dstd"] = t_cvt(variables["dstd"])
+        obj.se_atten.filter_layers = NetworkCollection.deserialize(embeddings)
+        obj.se_atten.filter_layers_strip = NetworkCollection.deserialize(
+            embeddings_strip
+        )
+        obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
+            attention_layers
+        )
+        return obj
