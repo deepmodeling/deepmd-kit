@@ -1,7 +1,7 @@
-# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }}
+# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
 ## DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation
@@ -83,10 +83,6 @@ With the training input script, data are also provided in the example directory.
 
 An example of the DPA-1 descriptor is provided as follows
 
-::::{tab-set}
-
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
-
 ```json
 	"descriptor" :{
           "type":		"se_atten",
@@ -115,41 +111,6 @@ An example of the DPA-1 descriptor is provided as follows
 - {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
 - {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
 - {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
-
-:::
-
-:::{tab-item} PyTorch {{ pytorch_icon }}
-
-```json
-	"descriptor" :{
-          "type":		"dpa1",
-          "rcut_smth":	0.50,
-          "rcut":		6.00,
-          "sel":		120,
-          "neuron":		[25, 50, 100],
-          "tebd_dim": 8,
-          "axis_neuron":	16,
-          "attn":	128,
-          "attn_layer":	2,
-          "attn_mask": false,
-          "attn_dotr": true,
-	}
-```
-
-- The {ref}`type <model/descriptor/type>` of the descriptor is set to `"dpa1"`, which will use DPA-1 structures.
-- {ref}`rcut <model/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts.
-- **{ref}`sel <model/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly affects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
-- The {ref}`neuron <model/descriptor[se_atten]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
-- The {ref}`tebd_dim <model/descriptor[se_atten]/tebd_dim>` specifies the dimension of the type embedding.
-- The {ref}`axis_neuron <model/descriptor[se_atten]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
-- {ref}`attn <model/descriptor[se_atten]/attn>` sets the length of a hidden vector during scale-dot attention computation.
-- {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
-- {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
-- {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
-
-:::
-
-::::
 
 ### Descriptor `"se_atten_v2"`
 
@@ -199,37 +160,7 @@ which should include all the elements in the dataset you want to train on.
 
 ## Data format
 
-DPA-1 supports the standard data format, which is detailed in [data-conv.md](../data/data-conv.md) and [system.md](../data/system.md).
-Note that in this format, only those frames with the same fingerprint (i.e. the number of atoms of different elements) can be put together as a unified system.
-This may lead to sparse frame numbers in those rare systems.
-
-An ideal way is to put systems with the same total number of atoms together, which is the way we trained DPA-1 on [OC2M](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md).
-This system format, which is called `mixed_type`, is proper to put frame-sparse systems together and is slightly different from the standard one.
-Take an example, a `mixed_type` may contain the following files:
-
-```
-type.raw
-type_map.raw
-set.*/box.npy
-set.*/coord.npy
-set.*/energy.npy
-set.*/force.npy
-set.*/real_atom_types.npy
-```
-
-This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element types contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
-
-| ID       | Property                         | File                | Required/Optional | Shape             | Description                                                                                                              |
-| -------- | -------------------------------- | ------------------- | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| /        | Atom type indexes (place holder) | type.raw            | Required          | Natoms            | All zeros to fake the type input                                                                                         |
-| type_map | Atom type names                  | type_map.raw        | Required          | Ntypes            | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table |
-| type     | Atom type indexes of each frame  | real_atom_types.npy | Required          | Nframes \* Natoms | Integers that describe atom types in each frame, corresponding to indexes in type_map. `-1` means virtual atoms.         |
-
-With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`). Note that this `mixed_type` format only supports `se_atten` descriptor.
-
-To put frames with different `Natoms` into the same system, one can pad systems by adding virtual atoms whose type is `-1`. Virtual atoms do not contribute to any fitting property, so the atomic property of virtual atoms (e.g. forces) should be given zero.
-
-The API to generate or transfer to `mixed_type` format is available on [dpdata](https://github.com/deepmodeling/dpdata) for a more convenient experience.
+DPA-1 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
 
 ## Training example
 

@@ -745,6 +745,29 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
+
+    # * show model ******************************************************************
+    parser_show = subparsers.add_parser(
+        "show",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch) Show the information of a model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp --pt show model.pt model-branch type-map descriptor fitting-net
+            dp --pt show frozen_model.pth type-map descriptor fitting-net
+        """
+        ),
+    )
+    parser_show.add_argument(
+        "INPUT", help="The input checkpoint file or frozen model file"
+    )
+    parser_show.add_argument(
+        "ATTRIBUTES",
+        choices=["model-branch", "type-map", "descriptor", "fitting-net"],
+        nargs="+",
+    )
     return parser
 
 
@@ -802,6 +825,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
+        "show",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:
