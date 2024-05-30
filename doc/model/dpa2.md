@@ -7,3 +7,7 @@
 The DPA-2 model implementation. See https://arxiv.org/abs/2312.15492 for more details.
 
 Training example: `examples/water/dpa2/input_torch.json`.
+
+## Data format
+
+DPA-2 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
