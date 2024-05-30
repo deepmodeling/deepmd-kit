@@ -10,9 +10,6 @@ from .dpa1 import (
     DescrptBlockSeAtten,
     DescrptDPA1,
 )
-from .se_atten_v2 import (
-    DescrptBlockSeAttenV2,
-)
 from .dpa2 import (
     DescrptDPA2,
 )
@@ -31,6 +28,9 @@ from .repformers import (
 from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
+)
+from .se_atten_v2 import (
+    DescrptBlockSeAttenV2,
 )
 from .se_r import (
     DescrptSeR,
