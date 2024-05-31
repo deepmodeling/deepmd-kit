@@ -234,3 +234,24 @@ class DeepTensor(DeepEval):
                 ]
             )
         )
+
+
+class OldDeepTensor(DeepTensor):
+    """Old tensor models from v1, which has no gradient output."""
+
+    # See https://github.com/deepmodeling/deepmd-kit/blob/1d1b251a2c5f05d1401aa89be792f9ed18b8f096/source/train/Model.py#L264
+    def eval_full(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        atomic: bool = False,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        mixed_type: bool = False,
+        **kwargs: dict,
+    ) -> Tuple[np.ndarray, ...]:
+        """Unsupported method."""
+        raise RuntimeError(
+            "This model does not support eval_full method. Use eval instead."
+        )

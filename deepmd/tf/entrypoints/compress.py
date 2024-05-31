@@ -32,6 +32,9 @@ from deepmd.tf.utils.graph import (
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    get_data,
+)
 
 from .freeze import (
     freeze,
@@ -115,9 +118,17 @@ def compress(
             log.info("stage 0: compute the min_nbor_dist")
             jdata = j_loader(training_script)
             jdata = update_deepmd_input(jdata)
+
+            type_map = jdata["model"].get("type_map", None)
+            train_data = get_data(
+                jdata["training"]["training_data"],
+                0,  # not used
+                type_map,
+                None,
+            )
             update_sel = UpdateSel()
             t_min_nbor_dist = update_sel.get_min_nbor_dist(
-                jdata, update_sel.get_rcut(jdata)
+                train_data,
             )
 
     _check_compress_type(graph)

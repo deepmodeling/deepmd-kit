@@ -17,6 +17,7 @@ from deepmd.tf.common import (
     j_loader,
 )
 from deepmd.tf.env import (
+    GLOBAL_ENER_FLOAT_PRECISION,
     reset_default_tf_session_config,
     tf,
 )
@@ -255,5 +256,21 @@ def update_sel(jdata):
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
     jdata_cpy = jdata.copy()
-    jdata_cpy["model"] = Model.update_sel(jdata, jdata["model"])
+    type_map = jdata["model"].get("type_map")
+    train_data = get_data(
+        jdata["training"]["training_data"],
+        0,  # not used
+        type_map,
+        None,  # not used
+    )
+    jdata_cpy["model"], min_nbor_dist = Model.update_sel(
+        train_data, type_map, jdata["model"]
+    )
+
+    if min_nbor_dist is not None:
+        tf.constant(
+            min_nbor_dist,
+            name="train_attr/min_nbor_dist",
+            dtype=GLOBAL_ENER_FLOAT_PRECISION,
+        )
     return jdata_cpy

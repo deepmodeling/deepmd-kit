@@ -8,11 +8,15 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
 from deepmd.common import (
     j_get_type,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -160,19 +164,33 @@ def make_base_descriptor(
 
         @classmethod
         @abstractmethod
-        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        def update_sel(
+            cls,
+            train_data: DeepmdDataSystem,
+            type_map: Optional[List[str]],
+            local_jdata: dict,
+        ) -> Tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters
             ----------
-            global_jdata : dict
-                The global data, containing the training section
+            train_data : DeepmdDataSystem
+                data used to do neighbor statictics
+            type_map : list[str], optional
+                The name of each type of atoms
             local_jdata : dict
                 The local data refer to the current class
+
+            Returns
+            -------
+            dict
+                The updated local data
+            float
+                The minimum distance between two atoms
             """
             # call subprocess
             cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
-            return cls.update_sel(global_jdata, local_jdata)
+            return cls.update_sel(train_data, type_map, local_jdata)
 
     setattr(BD, fwd_method_name, BD.fwd)
     delattr(BD, "fwd")

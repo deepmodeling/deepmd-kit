@@ -17,10 +17,14 @@ from .se_e2_a import (
 from .se_r import (
     DescrptSeR,
 )
+from .se_t import (
+    DescrptSeT,
+)
 
 __all__ = [
     "DescrptSeA",
     "DescrptSeR",
+    "DescrptSeT",
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptHybrid",

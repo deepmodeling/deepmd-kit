@@ -3,9 +3,6 @@ import argparse
 import json
 import logging
 import os
-from copy import (
-    deepcopy,
-)
 from pathlib import (
     Path,
 )
@@ -66,6 +63,7 @@ from deepmd.utils.compat import (
     update_deepmd_input,
 )
 from deepmd.utils.data_system import (
+    get_data,
     process_systems,
 )
 from deepmd.utils.path import (
@@ -236,24 +234,33 @@ def train(FLAGS):
         config = normalize(config)
 
     # do neighbor stat
+    min_nbor_dist = None
     if not FLAGS.skip_neighbor_stat:
         log.info(
             "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
         )
+
+        type_map = config["model"].get("type_map")
         if not multi_task:
-            config["model"] = BaseModel.update_sel(config, config["model"])
+            train_data = get_data(
+                config["training"]["training_data"], 0, type_map, None
+            )
+            config["model"], min_nbor_dist = BaseModel.update_sel(
+                train_data, type_map, config["model"]
+            )
         else:
-            training_jdata = deepcopy(config["training"])
-            training_jdata.pop("data_dict", {})
-            training_jdata.pop("model_prob", {})
+            min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
-                fake_global_jdata = {
-                    "model": deepcopy(config["model"]["model_dict"][model_item]),
-                    "training": deepcopy(config["training"]["data_dict"][model_item]),
-                }
-                fake_global_jdata["training"].update(training_jdata)
-                config["model"]["model_dict"][model_item] = BaseModel.update_sel(
-                    fake_global_jdata, config["model"]["model_dict"][model_item]
+                train_data = get_data(
+                    config["training"]["data_dict"][model_item]["training_data"],
+                    0,
+                    type_map,
+                    None,
+                )
+                config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
+                    BaseModel.update_sel(
+                        train_data, type_map, config["model"]["model_dict"][model_item]
+                    )
                 )
 
     with open(FLAGS.output, "w") as fp:
@@ -269,6 +276,13 @@ def train(FLAGS):
         shared_links=shared_links,
         finetune_links=finetune_links,
     )
+    # save min_nbor_dist
+    if min_nbor_dist is not None:
+        if not multi_task:
+            trainer.model.min_nbor_dist = min_nbor_dist
+        else:
+            for model_item in min_nbor_dist:
+                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
     trainer.run()
 
 

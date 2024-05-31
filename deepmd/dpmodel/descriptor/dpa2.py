@@ -15,6 +15,9 @@ from deepmd.dpmodel.utils.type_embed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -753,30 +756,46 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         return obj
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
         update_sel = UpdateSel()
-        local_jdata_cpy["repinit"] = update_sel.update_one_sel(
-            global_jdata,
-            local_jdata_cpy["repinit"],
+        min_nbor_dist, repinit_sel = update_sel.update_one_sel(
+            train_data,
+            type_map,
+            local_jdata_cpy["repinit"]["rcut"],
+            local_jdata_cpy["repinit"]["nsel"],
             True,
-            rcut_key="rcut",
-            sel_key="nsel",
         )
-        local_jdata_cpy["repformer"] = update_sel.update_one_sel(
-            global_jdata,
-            local_jdata_cpy["repformer"],
+        local_jdata_cpy["repinit"]["nsel"] = repinit_sel[0]
+        min_nbor_dist, repformer_sel = update_sel.update_one_sel(
+            train_data,
+            type_map,
+            local_jdata_cpy["repformer"]["rcut"],
+            local_jdata_cpy["repformer"]["nsel"],
             True,
-            rcut_key="rcut",
-            sel_key="nsel",
         )
-        return local_jdata_cpy
+        local_jdata_cpy["repformer"]["nsel"] = repformer_sel[0]
+        return local_jdata_cpy, min_nbor_dist
