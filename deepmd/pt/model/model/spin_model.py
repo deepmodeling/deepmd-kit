@@ -292,6 +292,11 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.get_model_def_script()
 
     @torch.jit.export
+    def get_min_nbor_dist(self) -> Optional[float]:
+        """Get the minimum neighbor distance."""
+        return self.backbone_model.get_min_nbor_dist()
+
+    @torch.jit.export
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         # for C++ interface
