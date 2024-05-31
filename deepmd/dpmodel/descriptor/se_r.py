@@ -81,6 +81,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     spin
             The deepspin object.
+    ntypes : int
+            Number of element types.
+            Not used in this descriptor, only to be compat with input.
 
     Limitations
     -----------
@@ -113,9 +116,11 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
+        del ntypes
         ## seed, uniform_seed, not included.
         if not type_one_side:
             raise NotImplementedError("type_one_side == False not implemented")

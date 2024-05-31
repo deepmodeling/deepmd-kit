@@ -346,7 +346,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         mapping: Optional[np.ndarray] = None,
     ):
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
-        nlist = nlist * exclude_mask
+        nlist = np.where(exclude_mask, nlist, -1)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
             coord_ext, atype_ext, nlist, self.mean, self.stddev

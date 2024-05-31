@@ -810,6 +810,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         nf, nloc, nnei, _ = dmatrix.shape
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
+        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
+        # nfnl x nnei
         nlist = nlist.reshape(nf * nloc, nnei)
         # nfnl x nnei x 4
         dmatrix = dmatrix.reshape(nf * nloc, nnei, 4)
@@ -821,6 +823,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         atype_embd_nnei = np.tile(atype_embd[:, np.newaxis, :], (1, nnei, 1))
         # nfnl x nnei
         nlist_mask = nlist != -1
+        # nfnl x nnei
+        nlist_mask = nlist_mask * exclude_mask.astype(bool)
         # nfnl x nnei x 1
         sw = np.where(nlist_mask[:, :, None], sw, 0.0)
         nlist_masked = np.where(nlist_mask, nlist, 0)
@@ -830,8 +834,6 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             nf * nloc, nnei, self.tebd_dim
         )
         ng = self.neuron[-1]
-        # nfnl x nnei
-        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
         # nfnl x nnei x 4
         rr = dmatrix.reshape(nf * nloc, nnei, 4)
         rr = rr * exclude_mask[:, :, None]
