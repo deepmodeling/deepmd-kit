@@ -2,6 +2,7 @@
 import numpy as np
 
 
+# originally copied from source/tests/pt/model/test_env_mat.py
 class TestCaseSingleFrameWithNlist:
     def setUp(self):
         # nloc == 3, nall == 4
