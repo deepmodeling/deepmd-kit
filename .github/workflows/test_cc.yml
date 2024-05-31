@@ -47,11 +47,9 @@ jobs:
         CMAKE_GENERATOR: Ninja
         CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
     # test lammps
-    # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
-    # TODO: remove ase version when ase has new release
     - run: |
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-        python -m uv pip install --system -e .[cpu,test,lmp] mpi4py "ase @ https://gitlab.com/ase/ase/-/archive/8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f/ase-8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f.tar.gz"
+        python -m uv pip install --system -e .[cpu,test,lmp] mpi4py
       env:
         DP_BUILD_TESTING: 1
       if: ${{ !matrix.check_memleak }}
