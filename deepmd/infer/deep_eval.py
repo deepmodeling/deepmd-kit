@@ -76,6 +76,9 @@ class DeepEvalBackend(ABC):
         "dos_redu": "dos",
         "mask_mag": "mask_mag",
         "mask": "mask",
+        # old models in v1
+        "global_polar": "global_polar",
+        "wfc": "wfc",
     }
 
     @abstractmethod

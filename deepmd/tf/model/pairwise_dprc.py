@@ -3,6 +3,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -35,6 +36,9 @@ from deepmd.tf.utils.update_sel import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 
@@ -410,20 +414,33 @@ class PairwiseDPRc(Model):
         return feed_dict
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         # do not update sel; only find min distance
-        # rcut is not important here
-        UpdateSel().get_min_nbor_dist(global_jdata, 6.0)
-        return local_jdata
+        min_nbor_dist = UpdateSel().get_min_nbor_dist(train_data)
+        return local_jdata, min_nbor_dist
 
     @property
     def input_requirement(self) -> List[DataRequirementItem]:
