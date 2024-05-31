@@ -35,6 +35,9 @@ from .se_atten_v2 import (
 from .se_r import (
     DescrptSeR,
 )
+from .se_t import (
+    DescrptSeT,
+)
 
 __all__ = [
     "BaseDescriptor",
@@ -45,6 +48,7 @@ __all__ = [
     "DescrptSeAttenV2",
     "DescrptSeA",
     "DescrptSeR",
+    "DescrptSeT",
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptHybrid",

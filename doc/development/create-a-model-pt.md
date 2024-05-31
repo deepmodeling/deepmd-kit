@@ -20,6 +20,7 @@ The framework-independent backend is implemented in pure NumPy, serving as a ref
 When creating a new descriptor, it is essential to inherit from both the {py:class}`deepmd.pt.model.descriptor.base_descriptor.BaseDescriptor` class and the {py:class}`torch.nn.Module` class. Abstract methods, including {py:class}`deepmd.pt.model.descriptor.base_descriptor.BaseDescriptor.forward`, must be implemented, while others remain optional. It is crucial to adhere to the original method arguments without any modifications. Once the implementation is complete, the next step involves registering the component with a designated key:
 
 ```py
+from deepmd.utils.data_system import DeepmdDataSystem
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -63,7 +64,12 @@ class SomeDescript(BaseDescriptor, torch.nn.Module):
     def deserialize(cls, data: dict) -> "SomeDescript":
         pass
 
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ):
         pass
 ```
 
