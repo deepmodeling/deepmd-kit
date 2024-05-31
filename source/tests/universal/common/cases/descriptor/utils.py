@@ -15,7 +15,7 @@ from ..cases import (
 
 
 class DescriptorTestCase(TestCaseSingleFrameWithNlist):
-    """Common test case for atomic model."""
+    """Common test case for descriptor."""
 
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
