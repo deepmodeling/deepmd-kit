@@ -59,8 +59,7 @@ class TestPolarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for mixed_types, nfp, nap, fit_diag, scale in itertools.product(
-            [True, False],
+        for nfp, nap, fit_diag, scale in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
@@ -72,7 +71,7 @@ class TestPolarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -166,9 +165,10 @@ class TestEquivalence(unittest.TestCase):
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
+        # use larger cell to rotate only coord and shift to the center of cell
+        cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
 
-        for mixed_types, nfp, nap, fit_diag, scale in itertools.product(
-            [True, False],
+        for nfp, nap, fit_diag, scale in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
@@ -180,7 +180,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=True,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -207,7 +207,12 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, mixed_types
+                    xyz + self.shift,
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=cell_rot,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -216,7 +221,7 @@ class TestEquivalence(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
+                ret0 = ft0(rd0, atype, gr0, fparam=ifp, aparam=iap)
                 res.append(ret0["polarizability"])
             np.testing.assert_allclose(
                 to_numpy_array(res[1]),
@@ -237,7 +242,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
-                mixed_types=True,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -250,7 +255,12 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    coord[idx_perm], atype, self.rcut, self.sel, False
+                    coord[idx_perm],
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=self.cell,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -259,7 +269,7 @@ class TestEquivalence(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=None, aparam=None)
+                ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
                 res.append(ret0["polarizability"])
 
             np.testing.assert_allclose(
@@ -269,7 +279,12 @@ class TestEquivalence(unittest.TestCase):
 
     def test_trans(self):
         atype = self.atype.reshape(1, 5)
-        coord_s = self.coord + self.shift
+        coord_s = torch.matmul(
+            torch.remainder(
+                torch.matmul(self.coord + self.shift, torch.linalg.inv(self.cell)), 1.0
+            ),
+            self.cell,
+        )
         for fit_diag, scale in itertools.product([True, False], [None, self.scale]):
             ft0 = PolarFittingNet(
                 self.nt,
@@ -277,7 +292,7 @@ class TestEquivalence(unittest.TestCase):
                 embedding_width=self.dd0.get_dim_emb(),
                 numb_fparam=0,
                 numb_aparam=0,
-                mixed_types=True,
+                mixed_types=self.dd0.mixed_types(),
                 fit_diag=fit_diag,
                 scale=scale,
             ).to(env.DEVICE)
@@ -289,7 +304,12 @@ class TestEquivalence(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz, atype, self.rcut, self.sel, False
+                    xyz,
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=self.cell,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -298,7 +318,7 @@ class TestEquivalence(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
+                ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
                 res.append(ret0["polarizability"])
 
             np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
@@ -323,7 +343,7 @@ class TestPolarModel(unittest.TestCase):
             embedding_width=self.dd0.get_dim_emb(),
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=True,
+            mixed_types=self.dd0.mixed_types(),
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
         self.model = PolarModel(self.dd0, self.ft0, self.type_mapping)
