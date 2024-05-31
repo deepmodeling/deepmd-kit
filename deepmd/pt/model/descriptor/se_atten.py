@@ -495,7 +495,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist_mask &= exclude_mask != 0
+        nlist_mask = nlist_mask & (exclude_mask != 0)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
