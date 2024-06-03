@@ -16,7 +16,7 @@ class TestDocTrainInput(unittest.TestCase):
         f = io.StringIO()
         with redirect_stdout(f):
             doc_train_input(out_type="rst")
-        self.assertTrue(f.getvalue() != "")
+        self.assertNotEqual(f.getvalue(), "")
 
     def test_json(self):
         f = io.StringIO()

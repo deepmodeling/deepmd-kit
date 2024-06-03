@@ -17,7 +17,7 @@ Training Parameters
 Writing JSON files using Visual Studio Code
 -------------------------------------------
 
-When writing JSON files using Visual Studio Code, one can benefit from IntelliSense and
+When writing JSON files using `Visual Studio Code <https://code.visualstudio.com/>`_, one can benefit from IntelliSense and
 validation by adding a `JSON schema <https://json-schema.org/>`_.
 To do so, in a VS Code workspace, one can generate a JSON schema file for the input file by running the following command:
 
