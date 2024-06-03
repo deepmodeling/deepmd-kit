@@ -126,7 +126,7 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
       "set_davg_zero": false
 ```
 
-When using PyTorch backend, you must continue to use descriptor `"se_atten"` and specify `tebd_input_mode` as `"strip"` and `smooth_type_embedding` as `"true"`, which achieves the effect of `"se_atten_v2"`. The `tebd_input_mode` can take `"concat"` and `"strip"` as values. When using TensorFlow backend, you need to use descriptor `"se_atten_v2"` and do not need to set `tebd_input_mode` and `smooth_type_embedding` because the default value of `tebd_input_mode` is `"strip"`, and the default value of `smooth_type_embedding` is `"true"` in TensorFlow backend. When `tebd_input_mode` is set to `"strip"`, the embedding matrix $\mathcal{G}^i$ is constructed as:
+You can either continue to use descriptor `"se_atten"` and specify `tebd_input_mode` as `"strip"` and `smooth_type_embedding` as `"true"`, which achieves the effect of `"se_atten_v2"`, or use descriptor `"se_atten_v2"` and do not need to set `tebd_input_mode` and `smooth_type_embedding` because the default value of `tebd_input_mode` is `"strip"` and the default value of `smooth_type_embedding` is `"true"`. When `tebd_input_mode` is set to `"strip"`, the embedding matrix $\mathcal{G}^i$ is constructed as:
 
 ```math
    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{\mathcal{A}^i, \mathcal{A}^j\}) \odot s(r_{ij})) \quad \mathrm{or}
