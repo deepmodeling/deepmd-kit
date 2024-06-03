@@ -1960,10 +1960,13 @@ class DescrptSeAtten(DescrptSeA):
             "spin": self.spin,
         }
         if self.tebd_input_mode in ["strip"]:
-            assert type(self) in [
-                DescrptDPA1Compat,
-                DescrptSeAttenV2,
-            ], "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
+            assert (
+                type(self)
+                in [
+                    DescrptDPA1Compat,
+                    DescrptSeAttenV2,
+                ]
+            ), "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
                     "embeddings_strip": self.serialize_network_strip(
