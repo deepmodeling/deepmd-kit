@@ -17,19 +17,13 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 

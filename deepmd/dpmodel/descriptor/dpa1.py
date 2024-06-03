@@ -1,6 +1,26 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
 import numpy as np
 
+from deepmd.dpmodel import (
+    DEFAULT_PRECISION,
+    PRECISION_DICT,
+    NativeOP,
+)
+from deepmd.dpmodel.utils import (
+    EmbeddingNet,
+    EnvMat,
+    NetworkCollection,
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
@@ -22,32 +42,6 @@ from deepmd.utils.path import (
 )
 from deepmd.utils.version import (
     check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
-from typing import (
-    Any,
-    Callable,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
-
-from deepmd.dpmodel import (
-    DEFAULT_PRECISION,
-    PRECISION_DICT,
-    NativeOP,
-)
-from deepmd.dpmodel.utils import (
-    EmbeddingNet,
-    EnvMat,
-    NetworkCollection,
-    PairExcludeMask,
 )
 
 from .base_descriptor import (
