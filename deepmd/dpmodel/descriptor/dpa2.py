@@ -32,6 +32,10 @@ from deepmd.dpmodel.utils.update_sel import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -39,10 +43,6 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
-from deepmd.utils.finetune import (
-    get_index_between_two_maps,
-    map_pair_exclude_types,
-)
 from .base_descriptor import (
     BaseDescriptor,
 )
