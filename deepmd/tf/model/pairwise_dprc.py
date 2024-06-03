@@ -88,13 +88,12 @@ class PairwiseDPRc(Model):
         if isinstance(type_embedding, TypeEmbedNet):
             self.typeebd = type_embedding
         else:
-            if type_embedding.get("use_econf_tebd", False):
-                type_embedding["type_map"] = type_map
             self.typeebd = TypeEmbedNet(
                 ntypes=self.ntypes,
                 **type_embedding,
                 # must use se_atten, so it must be True
                 padding=True,
+                type_map=type_map,
             )
 
         self.qm_model = Model(

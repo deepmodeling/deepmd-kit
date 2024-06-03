@@ -183,6 +183,12 @@ class EnergyFittingNetDirect(Fitting):
     def deserialize(cls) -> "EnergyFittingNetDirect":
         raise NotImplementedError
 
+    def slim_type_map(self, type_map: List[str]) -> None:
+        raise NotImplementedError
+
+    def get_type_map(self) -> List[str]:
+        raise NotImplementedError
+
     def forward(
         self,
         inputs: torch.Tensor,

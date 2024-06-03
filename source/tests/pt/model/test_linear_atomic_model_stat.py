@@ -112,6 +112,12 @@ class FooFittingB(torch.nn.Module, BaseFitting):
     def serialize(self) -> dict:
         raise NotImplementedError
 
+    def slim_type_map(self, type_map: List[str]) -> None:
+        raise NotImplementedError
+
+    def get_type_map(self) -> List[str]:
+        raise NotImplementedError
+
     def forward(
         self,
         descriptor: torch.Tensor,
