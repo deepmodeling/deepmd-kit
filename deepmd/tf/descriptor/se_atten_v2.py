@@ -116,10 +116,12 @@ class DescrptSeAttenV2(DescrptSeAtten):
     @classmethod
     def deserialize(cls, data: dict, suffix: str = ""):
         """Deserialize the model.
+
         Parameters
         ----------
         data : dict
             The serialized data
+
         Returns
         -------
         Model
@@ -159,10 +161,12 @@ class DescrptSeAttenV2(DescrptSeAtten):
 
     def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
+
         Parameters
         ----------
         suffix : str, optional
             The suffix of the scope
+
         Returns
         -------
         dict
@@ -171,9 +175,5 @@ class DescrptSeAttenV2(DescrptSeAtten):
         data = super().serialize(suffix)
         data.pop("smooth_type_embedding")
         data.pop("tebd_input_mode")
-        data.update(
-            {
-                "type": "se_atten_v2"
-            }
-        )
+        data.update({"type": "se_atten_v2"})
         return data
