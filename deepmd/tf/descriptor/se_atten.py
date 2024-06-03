@@ -718,18 +718,12 @@ class DescrptSeAtten(DescrptSeA):
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )
-            #  (nsamples * natoms * nnei, 1)
+            #  (nframes * nloc * nnei, 1)
             nei_exclude_mask = tf.slice(
                 tf.reshape(tf.cast(mask, self.filter_precision), [-1, 4]),
                 [0, 0],
                 [-1, 1],
             )
-            #  (nsamples * natoms, 1,  nnei)
-            self.nmask *= tf.reshape(
-                nei_exclude_mask,
-                [-1, 1, self.sel_all_a[0]],
-            )
-            self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
             if self.smooth:
                 inputs_i = tf.where(
                     tf.cast(mask, tf.bool),
@@ -739,12 +733,18 @@ class DescrptSeAtten(DescrptSeA):
                         tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]
                     ),
                 )
-                #  (nsamples, natoms, nnei)
+                #  (nframes, nloc, nnei)
                 self.recovered_switch *= tf.reshape(
                     nei_exclude_mask,
                     [-1, natoms[0], self.sel_all_a[0]],
                 )
             else:
+                #  (nframes * nloc, 1,  nnei)
+                self.nmask *= tf.reshape(
+                    nei_exclude_mask,
+                    [-1, 1, self.sel_all_a[0]],
+                )
+                self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
                 inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
             inputs_i = descrpt2r4(inputs_i, atype)

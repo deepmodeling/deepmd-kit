@@ -478,6 +478,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.rcut_smth,
             protection=self.env_protection,
         )
+        # nb x nloc x nnei
+        exclude_mask = self.emask(nlist, extended_atype)
+        nlist = torch.where(exclude_mask != 0, nlist, -1)
         nlist_mask = nlist != -1
         nlist = torch.where(nlist == -1, 0, nlist)
         sw = torch.squeeze(sw, -1)
@@ -493,9 +496,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
-        # nb x nloc x nnei
-        exclude_mask = self.emask(nlist, extended_atype)
-        nlist_mask = nlist_mask & (exclude_mask != 0)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei

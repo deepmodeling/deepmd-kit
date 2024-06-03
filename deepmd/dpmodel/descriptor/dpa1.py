@@ -813,6 +813,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
         # nfnl x nnei
         nlist = nlist.reshape(nf * nloc, nnei)
+        nlist = np.where(exclude_mask, nlist, -1)
         # nfnl x nnei x 4
         dmatrix = dmatrix.reshape(nf * nloc, nnei, 4)
         # nfnl x nnei x 1
@@ -823,8 +824,6 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         atype_embd_nnei = np.tile(atype_embd[:, np.newaxis, :], (1, nnei, 1))
         # nfnl x nnei
         nlist_mask = nlist != -1
-        # nfnl x nnei
-        nlist_mask = nlist_mask * exclude_mask.astype(bool)
         # nfnl x nnei x 1
         sw = np.where(nlist_mask[:, :, None], sw, 0.0)
         nlist_masked = np.where(nlist_mask, nlist, 0)

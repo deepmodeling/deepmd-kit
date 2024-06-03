@@ -26,7 +26,7 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
             "sel": self.sel,
         }
 
-    def test_forward(self):
+    def test_forward_consistency(self):
         ret = []
         for module in self.modules_to_test:
             module = self.forward_wrapper(module)
