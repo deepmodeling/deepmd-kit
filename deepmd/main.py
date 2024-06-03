@@ -258,7 +258,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "--use-pretrain-script",
         action="store_true",
-        help="(Supported Backend: PyTorch) Use model params in the script of the pretrained model instead of user input.",
+        help="(Supported Backend: PyTorch) Use model params in the script of the pretrained model instead of user input when doing finetuning.",
     )
     parser_train.add_argument(
         "-o",
