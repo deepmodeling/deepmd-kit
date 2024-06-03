@@ -66,7 +66,9 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
     "dpdata>=0.2.7",
-    "ase",
+    # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
+    # fixed in 3.23.0
+    "ase>=3.23.0",
     "pytest",
     "pytest-cov",
     "pytest-sugar",
