@@ -769,9 +769,6 @@ class DescrptSeR(DescrptSe):
             raise NotImplementedError("spin is unsupported")
         assert self.davg is not None
         assert self.dstd is not None
-        # TODO: tf: handle type embedding in DescrptSeR.serialize
-        # not sure how to handle type embedding - type embedding is not a model parameter,
-        # but instead a part of the input data. Maybe the interface should be refactored...
         return {
             "@class": "Descriptor",
             "type": "se_r",

@@ -1,8 +1,26 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import itertools
+from typing import (
+    Any,
+    List,
+    Optional,
+    Tuple,
+)
 
 import numpy as np
 
+from deepmd.dpmodel import (
+    DEFAULT_PRECISION,
+    PRECISION_DICT,
+    NativeOP,
+)
+from deepmd.dpmodel.utils import (
+    EmbeddingNet,
+    EnvMat,
+    NetworkCollection,
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
@@ -17,31 +35,6 @@ from deepmd.utils.path import (
 )
 from deepmd.utils.version import (
     check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
-import copy
-from typing import (
-    Any,
-    List,
-    Optional,
-    Tuple,
-)
-
-from deepmd.dpmodel import (
-    DEFAULT_PRECISION,
-    PRECISION_DICT,
-    NativeOP,
-)
-from deepmd.dpmodel.utils import (
-    EmbeddingNet,
-    EnvMat,
-    NetworkCollection,
-    PairExcludeMask,
 )
 
 from .base_descriptor import (
