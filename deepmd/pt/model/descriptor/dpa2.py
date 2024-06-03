@@ -294,6 +294,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """
         return True
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return True
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         # the env_protection of repinit is the same as that of the repformer

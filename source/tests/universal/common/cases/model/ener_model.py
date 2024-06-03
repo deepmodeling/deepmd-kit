@@ -16,3 +16,4 @@ class EnerModelTest(ModelTestCase):
         self.expected_aparam_nall = False
         self.expected_model_output_type = ["energy", "mask"]
         self.expected_sel = [8, 12]
+        self.expected_has_message_passing = False

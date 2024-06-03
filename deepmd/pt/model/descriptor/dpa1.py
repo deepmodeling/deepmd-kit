@@ -342,6 +342,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """
         return self.se_atten.mixed_types()
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return False
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()

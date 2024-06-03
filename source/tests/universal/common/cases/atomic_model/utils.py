@@ -31,6 +31,8 @@ class AtomicModelTestCase:
     """Expected output type for the model."""
     expected_sel: List[int]
     """Expected number of neighbors."""
+    expected_has_message_passing: bool
+    """Expected whether having message passing."""
     forward_wrapper: Callable[[Any], Any]
     """Calss wrapper for forward method."""
 

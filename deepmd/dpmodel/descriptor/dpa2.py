@@ -524,6 +524,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """
         return True
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return True
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.env_protection
