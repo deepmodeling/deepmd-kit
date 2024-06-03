@@ -1869,14 +1869,14 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
-        if type(self) not in [DescrptSeAtten, DescrptDPA1Compat]:
+        if type(self) not in [DescrptSeAtten, DescrptDPA1Compat, DescrptSeAttenV2, DescrptSeAttenV2Compat]:
             raise NotImplementedError(
                 f"Not implemented in class {self.__class__.__name__}"
             )
-        if self.stripped_type_embedding and type(self) is not DescrptDPA1Compat:
-            # only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'
+        if self.stripped_type_embedding and type(self) is (not DescrptDPA1Compat and not DescrptSeAttenV2 and not DescrptSeAttenV2Compat):
+            # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(
-                "serialization is unsupported by the native model when tebd_input_mode=='strip'"
+                f"{self.__class__.__name__}serialization is unsupported by the native model when tebd_input_mode=='strip'"
             )
         # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
         if self.stripped_type_embedding and self.type_one_side:
@@ -1954,7 +1954,7 @@ class DescrptSeAtten(DescrptSeA):
         }
         if self.tebd_input_mode in ["strip"]:
             assert (
-                type(self) is DescrptDPA1Compat
+                type(self) in [DescrptDPA1Compat, DescrptSeAttenV2, DescrptSeAttenV2Compat]
             ), "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
@@ -2330,6 +2330,527 @@ class DescrptDPA1Compat(DescrptSeAtten):
         data.update(
             {
                 "type": "dpa1",
+                "tebd_dim": self.tebd_dim,
+                "scaling_factor": self.scaling_factor,
+                "normalize": self.normalize,
+                "temperature": self.temperature,
+                "concat_output_tebd": self.concat_output_tebd,
+                "use_econf_tebd": self.use_econf_tebd,
+                "type_map": self.type_map,
+                "type_embedding": self.type_embedding.serialize(suffix),
+            }
+        )
+        data["attention_layers"] = self.update_attention_layers_serialize(
+            data["attention_layers"]
+        )
+        return data
+
+@Descriptor.register("se_atten_v2")
+class DescrptSeAttenV2(DescrptSeAtten):
+    r"""Smooth version 2.0 descriptor with attention.
+
+    Parameters
+    ----------
+    rcut
+            The cut-off radius :math:`r_c`
+    rcut_smth
+            From where the environment matrix should be smoothed :math:`r_s`
+    sel : int
+            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    neuron : list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+    axis_neuron
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable
+            If the weights of embedding net are trainable.
+    seed
+            Random seed for initializing the network parameters.
+    type_one_side
+            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    set_davg_zero
+            Set the shift of embedding net input to zero.
+    activation_function
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    uniform_seed
+            Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    attn
+            The length of hidden vector during scale-dot attention computation.
+    attn_layer
+            The number of layers in attention mechanism.
+    attn_dotr
+            Whether to dot the relative coordinates on the attention weights as a gated scheme.
+    attn_mask
+            Whether to mask the diagonal in the attention weights.
+    """
+
+    def __init__(
+        self,
+        rcut: float,
+        rcut_smth: float,
+        sel: int,
+        ntypes: int,
+        neuron: List[int] = [24, 48, 96],
+        axis_neuron: int = 8,
+        resnet_dt: bool = False,
+        trainable: bool = True,
+        seed: Optional[int] = None,
+        type_one_side: bool = True,
+        set_davg_zero: bool = False,
+        exclude_types: List[List[int]] = [],
+        activation_function: str = "tanh",
+        precision: str = "default",
+        uniform_seed: bool = False,
+        attn: int = 128,
+        attn_layer: int = 2,
+        attn_dotr: bool = True,
+        attn_mask: bool = False,
+        **kwargs,
+    ) -> None:
+        DescrptSeAtten.__init__(
+            self,
+            rcut,
+            rcut_smth,
+            sel,
+            ntypes,
+            neuron=neuron,
+            axis_neuron=axis_neuron,
+            resnet_dt=resnet_dt,
+            trainable=trainable,
+            seed=seed,
+            type_one_side=type_one_side,
+            set_davg_zero=set_davg_zero,
+            exclude_types=exclude_types,
+            activation_function=activation_function,
+            precision=precision,
+            uniform_seed=uniform_seed,
+            attn=attn,
+            attn_layer=attn_layer,
+            attn_dotr=attn_dotr,
+            attn_mask=attn_mask,
+            tebd_input_mode="strip",
+            smooth_type_embedding=True,
+            **kwargs,
+        )
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeAttenV2:
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        attention_layer_variables = cls.deserialize_attention_layers(
+            data.pop("attention_layers"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        type_one_side = data["type_one_side"]
+        two_side_embeeding_net_variables = cls.deserialize_network_strip(
+            data.pop("embeddings_strip"),
+            suffix=suffix,
+            type_one_side=type_one_side,
+        )
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.attention_layer_variables = attention_layer_variables
+        descriptor.two_side_embeeding_net_variables = two_side_embeeding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = super().serialize(suffix)
+        data.pop("smooth_type_embedding")
+        data.pop("tebd_input_mode")
+        data.update(
+            {
+                "type": "se_atten_v2"
+            }
+        )
+        return data
+    
+class DescrptSeAttenV2Compat(DescrptSeAttenV2):
+    r"""Consistent version of the model for testing with other backend references.
+
+    This model includes the type_embedding as attributes and other additional parameters.
+
+    Parameters
+    ----------
+    rcut: float
+            The cut-off radius :math:`r_c`
+    rcut_smth: float
+            From where the environment matrix should be smoothed :math:`r_s`
+    sel: list[int], int
+            list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+            int: the total maxmum number of atoms in the cut-off radius
+    ntypes: int
+            Number of element types
+    neuron: list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+    axis_neuron: int
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    tebd_dim: int
+            Dimension of the type embedding
+    tebd_input_mode: str
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+    resnet_dt: bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable: bool
+            If the weights of this descriptors are trainable.
+    trainable_ln: bool
+            Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
+    type_one_side: bool
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+    attn: int
+            Hidden dimension of the attention vectors
+    attn_layer: int
+            Number of attention layers
+    attn_dotr: bool
+            If dot the angular gate to the attention weights
+    attn_mask: bool
+            (Only support False to keep consistent with other backend references.)
+            If mask the diagonal of attention weights
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+    set_davg_zero: bool
+            Set the shift of embedding net input to zero.
+    activation_function: str
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision: str
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    scaling_factor: float
+            (Only to keep consistent with other backend references.)
+            (Not used in this version.)
+            The scaling factor of normalization in calculations of attention weights.
+            If `temperature` is None, the scaling of attention weights is (N_dim * scaling_factor)**0.5
+    normalize: bool
+            (Only support True to keep consistent with other backend references.)
+            (Not used in this version.)
+            Whether to normalize the hidden vectors in attention weights calculation.
+    temperature: float
+            (Only support 1.0 to keep consistent with other backend references.)
+            (Not used in this version.)
+            If not None, the scaling of attention weights is `temperature` itself.
+    smooth_type_embedding: bool
+            (Only support False to keep consistent with other backend references.)
+            Whether to use smooth process in attention weights calculation.
+    concat_output_tebd: bool
+            Whether to concat type embedding at the output of the descriptor.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
+    spin
+            (Only support None to keep consistent with old implementation.)
+            The old implementation of deepspin.
+    """
+
+    def __init__(
+        self,
+        rcut: float,
+        rcut_smth: float,
+        sel: Union[List[int], int],
+        ntypes: int,
+        neuron: List[int] = [25, 50, 100],
+        axis_neuron: int = 8,
+        tebd_dim: int = 8,
+        resnet_dt: bool = False,
+        trainable: bool = True,
+        type_one_side: bool = True,
+        attn: int = 128,
+        attn_layer: int = 2,
+        attn_dotr: bool = True,
+        attn_mask: bool = False,
+        exclude_types: List[List[int]] = [],
+        env_protection: float = 0.0,
+        set_davg_zero: bool = False,
+        activation_function: str = "tanh",
+        precision: str = "default",
+        scaling_factor=1.0,
+        normalize: bool = True,
+        temperature: Optional[float] = None,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-3,
+        concat_output_tebd: bool = True,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
+        spin: Optional[Any] = None,
+        # consistent with argcheck, not used though
+        seed: Optional[int] = None,
+        uniform_seed: bool = False,
+    ) -> None:
+        if not normalize:
+            raise NotImplementedError("Only support normalize == True in this version.")
+        if temperature != 1.0:
+            raise NotImplementedError(
+                "Only support temperature == 1.0 in this version."
+            )
+        if spin is not None:
+            raise NotImplementedError("Only support spin is None in this version.")
+        if attn_mask:
+            raise NotImplementedError(
+                "old implementation of attn_mask is not supported."
+            )
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-3
+
+        super().__init__(
+            rcut,
+            rcut_smth,
+            sel,
+            ntypes,
+            neuron=neuron,
+            axis_neuron=axis_neuron,
+            resnet_dt=resnet_dt,
+            trainable=trainable,
+            seed=seed,
+            type_one_side=type_one_side,
+            set_davg_zero=set_davg_zero,
+            exclude_types=exclude_types,
+            activation_function=activation_function,
+            precision=precision,
+            uniform_seed=uniform_seed,
+            attn=attn,
+            attn_layer=attn_layer,
+            attn_dotr=attn_dotr,
+            attn_mask=attn_mask,
+            trainable_ln=trainable_ln,
+            ln_eps=ln_eps,
+            env_protection=env_protection,
+        )
+        self.tebd_dim = tebd_dim
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        self.scaling_factor = scaling_factor
+        self.normalize = normalize
+        self.temperature = temperature
+        self.type_embedding = TypeEmbedNet(
+            ntypes=self.ntypes,
+            neuron=[self.tebd_dim],
+            padding=True,
+            activation_function="Linear",
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
+            # precision=precision,
+        )
+        self.concat_output_tebd = concat_output_tebd
+        self.embd_input_dim = 1
+
+    def build(
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box_: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        reuse: Optional[bool] = None,
+        suffix: str = "",
+    ) -> tf.Tensor:
+        type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)
+        input_dict["type_embedding"] = type_embedding
+
+        # nf x nloc x out_dim
+        self.dout = super().build(
+            coord_,
+            atype_,
+            natoms,
+            box_,
+            mesh,
+            input_dict,
+            reuse=reuse,
+            suffix=suffix,
+        )
+        # self.dout = tf.cast(self.dout, self.filter_precision)
+        if self.concat_output_tebd:
+            atype = tf.reshape(atype_, [-1, natoms[1]])
+            atype_nloc = tf.reshape(
+                tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+            )  ## lammps will have error without this
+            atom_embed = tf.reshape(
+                tf.nn.embedding_lookup(type_embedding, atype_nloc),
+                [-1, natoms[0], self.tebd_dim],
+            )
+            atom_embed = tf.cast(atom_embed, GLOBAL_TF_FLOAT_PRECISION)
+            # nf x nloc x (out_dim + tebd_dim)
+            self.dout = tf.concat([self.dout, atom_embed], axis=-1)
+        return self.dout
+
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        suffix: str = "",
+    ) -> None:
+        """Init the embedding net variables with the given dict.
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str, optional
+            The suffix of the scope
+        """
+        super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
+        self.type_embedding.init_variables(
+            graph=graph, graph_def=graph_def, suffix=suffix
+        )
+
+    def update_attention_layers_serialize(self, data: dict):
+        """Update the serialized data to be consistent with other backend references."""
+        new_dict = {
+            "@class": "NeighborGatedAttention",
+            "@version": 1,
+            "scaling_factor": self.scaling_factor,
+            "normalize": self.normalize,
+            "temperature": self.temperature,
+        }
+        new_dict.update(data)
+        update_info = {
+            "nnei": self.nnei_a,
+            "embed_dim": self.filter_neuron[-1],
+            "hidden_dim": self.att_n,
+            "dotr": self.attn_dotr,
+            "do_mask": self.attn_mask,
+            "scaling_factor": self.scaling_factor,
+            "normalize": self.normalize,
+            "temperature": self.temperature,
+            "precision": self.filter_precision.name,
+        }
+        for layer_idx in range(self.attn_layer):
+            new_dict["attention_layers"][layer_idx].update(update_info)
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                update_info
+            )
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                {
+                    "num_heads": 1,
+                }
+            )
+        return new_dict
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeAttenV2Compat:
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        attention_layer_variables = cls.deserialize_attention_layers(
+            data.pop("attention_layers"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        type_embedding = data.pop("type_embedding")
+        type_one_side = data["type_one_side"]
+        two_side_embeeding_net_variables = cls.deserialize_network_strip(
+            data.pop("embeddings_strip"),
+            suffix=suffix,
+            type_one_side=type_one_side,
+        )
+
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.attention_layer_variables = attention_layer_variables
+        descriptor.two_side_embeeding_net_variables = two_side_embeeding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.type_embedding = TypeEmbedNet.deserialize(
+            type_embedding, suffix=suffix
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = super().serialize(suffix)
+        data.update(
+            {
+                "type": "se_atten_v2",
                 "tebd_dim": self.tebd_dim,
                 "scaling_factor": self.scaling_factor,
                 "normalize": self.normalize,

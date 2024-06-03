@@ -964,7 +964,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         obj = self.se_atten
         data = {
             "@class": "Descriptor",
-            "type": "se_attn_v2",
+            "type": "se_atten_v2",
             "@version": 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
