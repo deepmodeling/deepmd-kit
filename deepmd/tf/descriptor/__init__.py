@@ -26,6 +26,8 @@ from .se_a_mask import (
 )
 from .se_atten import (
     DescrptSeAtten,
+)
+from .se_atten_v2 import (
     DescrptSeAttenV2,
 )
 from .se_r import (
