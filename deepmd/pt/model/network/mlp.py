@@ -41,11 +41,6 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
 
 def empty_t(shape, precision):
     return torch.empty(shape, dtype=precision, device=device)

@@ -1,24 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import numpy as np
-
-from deepmd.dpmodel.utils.update_sel import (
-    UpdateSel,
-)
-from deepmd.utils.data_system import (
-    DeepmdDataSystem,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
 import copy
 from typing import (
     Any,
@@ -26,6 +6,8 @@ from typing import (
     Optional,
     Tuple,
 )
+
+import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
@@ -38,8 +20,20 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_descriptor import (
