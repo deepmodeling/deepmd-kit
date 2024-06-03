@@ -198,8 +198,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
-            Only used if `use_econf_tebd` is `True` in type embedding net.
-
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
