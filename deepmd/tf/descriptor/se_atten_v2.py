@@ -5,6 +5,9 @@ from typing import (
     Optional,
 )
 
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 from .descriptor import (
     Descriptor,
 )
