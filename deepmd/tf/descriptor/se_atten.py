@@ -1869,17 +1869,12 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
-        if type(self) not in [
-            DescrptSeAtten,
-            DescrptDPA1Compat,
-            DescrptSeAttenV2
-        ]:
+        if type(self) not in [DescrptSeAtten, DescrptDPA1Compat, DescrptSeAttenV2]:
             raise NotImplementedError(
                 f"Not implemented in class {self.__class__.__name__}"
             )
         if self.stripped_type_embedding and type(self) is (
-            not DescrptDPA1Compat
-            and not DescrptSeAttenV2
+            not DescrptDPA1Compat and not DescrptSeAttenV2
         ):
             # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(

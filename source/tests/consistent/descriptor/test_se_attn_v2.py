@@ -18,7 +18,6 @@ from deepmd.env import (
 
 from ..common import (
     INSTALLED_PT,
-    INSTALLED_TF,
     CommonTest,
     parameterized,
 )
