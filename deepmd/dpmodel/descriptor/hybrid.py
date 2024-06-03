@@ -124,6 +124,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the number of element types."""
         return self.descrpt_list[0].get_ntypes()
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.descrpt_list[0].get_type_map()
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list]).item()
@@ -156,14 +160,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, np.ndarray],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, np.ndarray]:
-        """Update the type related params when loading from pretrained model with redundant types."""
-        raise NotImplementedError
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        for descrpt in self.descrpt_list:
+            descrpt.slim_type_map(type_map=type_map)
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""

@@ -17,6 +17,10 @@ from deepmd.env import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -32,7 +36,6 @@ except ImportError:
 from typing import (
     Any,
     Callable,
-    Dict,
     List,
     Optional,
     Tuple,
@@ -334,6 +337,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.se_atten.get_ntypes()
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         ret = self.se_atten.get_dim_out()
@@ -368,15 +375,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, np.ndarray],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, np.ndarray]:
-        """Update the type related params when loading from pretrained model with redundant types."""
-        raise NotImplementedError
-
     @property
     def dim_out(self):
         return self.get_dim_out()
@@ -396,6 +394,20 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     ) -> None:
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
+
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when serializing with slimmed type!"
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        obj = self.se_atten
+        obj.ntypes = len(type_map)
+        self.type_map = type_map
+        self.type_embedding.slim_type_map(type_map=type_map)
+        obj.exclude_types = map_pair_exclude_types(obj.exclude_types, slim_index)
+        obj["davg"] = obj["davg"][slim_index]
+        obj["dstd"] = obj["dstd"][slim_index]
 
     def call(
         self,

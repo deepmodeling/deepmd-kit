@@ -85,6 +85,8 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -101,6 +103,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
         seed: Optional[int] = None,
+        type_map: Optional[List[str]] = None,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -115,6 +118,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.seed = seed
+        self.type_map = type_map
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -166,6 +170,12 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the output dimension of this descriptor."""
         return self.get_dim_out()
 
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        raise NotImplementedError(
+            "Descriptor se_e3 does not support slimming for type related params!"
+        )
+
     def get_dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1]
@@ -207,6 +217,10 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
@@ -330,6 +344,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
                 "davg": self.davg,
                 "dstd": self.dstd,
             },
+            "type_map": self.type_map,
             "trainable": self.trainable,
         }
 

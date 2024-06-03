@@ -80,6 +80,8 @@ class DipoleFitting(GeneralFitting):
     c_differentiable
             If the variable is differentiated with respect to the cell tensor (pbc case).
             Only reduciable variable are differentiable.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -103,6 +105,7 @@ class DipoleFitting(GeneralFitting):
         exclude_types: List[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
+        type_map: Optional[List[str]] = None,
         old_impl=False,
         # not used
         seed: Optional[int] = None,
@@ -138,6 +141,7 @@ class DipoleFitting(GeneralFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            type_map=type_map,
         )
         self.old_impl = False
 
@@ -174,15 +178,6 @@ class DipoleFitting(GeneralFitting):
                 ),
             ]
         )
-
-    def update_type_params(
-        self,
-        state_dict: Dict[str, np.ndarray],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, np.ndarray]:
-        """Update the type related params when loading from pretrained model with redundant types."""
-        raise NotImplementedError
 
     def call(
         self,

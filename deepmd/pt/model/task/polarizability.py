@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    Dict,
     List,
     Optional,
     Union,
@@ -25,6 +24,9 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
+)
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -71,6 +73,9 @@ class PolarFittingNet(GeneralFitting):
         The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
+
     """
 
     def __init__(
@@ -91,6 +96,7 @@ class PolarFittingNet(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[Union[List[float], float]] = None,
         shift_diag: bool = True,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -130,6 +136,7 @@ class PolarFittingNet(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            type_map=type_map,
             **kwargs,
         )
         self.old_impl = False  # this only supports the new implementation.
@@ -154,35 +161,15 @@ class PolarFittingNet(GeneralFitting):
         else:
             return super().__getitem__(key)
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        assert self.mixed_types, "Only fitting net in mixed_types can be slimmed!"
-        updated_dict = {}
-        for key in state_dict.keys():
-            if f"{prefix}.constant_matrix" in key or f"{prefix}.scale" in key:
-                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
-        return updated_dict
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when serializing with slimmed type!"
+        super().slim_type_map(type_map=type_map)
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.scale = self.scale[slim_index]
+        self.constant_matrix = self.constant_matrix[slim_index]
 
     def serialize(self) -> dict:
         data = super().serialize()

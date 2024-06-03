@@ -13,6 +13,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -159,3 +162,14 @@ class TypeEmbedNet(NativeOP):
             "type_map": self.type_map,
             "embedding": self.embedding_net.serialize(),
         }
+
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        assert len(self.neuron) == 1, "Only one layer type embedding can be slimmed!"
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
+        self.embedding_net.layers[0].num_in = len(type_map)
+        self.embedding_net.layers[0].matrix = self.embedding_net.layers[0].matrix[
+            slim_index
+        ]

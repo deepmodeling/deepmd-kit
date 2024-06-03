@@ -147,40 +147,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         sorted_sels: List[int] = outer_sorted[:, 1].to(torch.int64).tolist()
         return sorted_rcuts, sorted_sels
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        updated_dict = {}
-        for index, model in enumerate(self.models):
-            updated_dict.update(
-                model.update_type_params(
-                    state_dict,
-                    mapping_index=mapping_index,
-                    prefix=prefix + f".models.{index}",
-                )
-            )
-        return updated_dict
-
     def forward_atomic(
         self,
         extended_coord: torch.Tensor,

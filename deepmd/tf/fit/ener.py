@@ -146,6 +146,8 @@ class EnerFitting(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -168,6 +170,7 @@ class EnerFitting(Fitting):
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
         mixed_types: bool = False,
+        type_map: Optional[List[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -202,6 +205,7 @@ class EnerFitting(Fitting):
         self.fitting_activation_fn = get_activation_func(activation_function)
         self.fitting_precision = get_precision(precision)
         self.trainable = trainable
+        self.type_map = type_map
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.n_neuron) + 1)]
         if isinstance(self.trainable, bool):
@@ -930,6 +934,7 @@ class EnerFitting(Fitting):
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
             },
+            "type_map": self.type_map,
         }
         return data
 

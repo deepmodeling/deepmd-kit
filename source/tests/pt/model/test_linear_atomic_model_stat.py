@@ -5,7 +5,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Dict,
     List,
     Optional,
 )
@@ -63,12 +62,10 @@ class FooFittingA(torch.nn.Module, BaseFitting):
     def serialize(self) -> dict:
         raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
+    def slim_type_map(self, type_map: List[str]) -> None:
+        raise NotImplementedError
+
+    def get_type_map(self) -> List[str]:
         raise NotImplementedError
 
     def forward(
@@ -113,14 +110,6 @@ class FooFittingB(torch.nn.Module, BaseFitting):
         )
 
     def serialize(self) -> dict:
-        raise NotImplementedError
-
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
         raise NotImplementedError
 
     def forward(

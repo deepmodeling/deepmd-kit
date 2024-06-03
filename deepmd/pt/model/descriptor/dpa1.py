@@ -30,6 +30,10 @@ from deepmd.pt.utils.update_sel import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -181,7 +185,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
-            Only used if `use_econf_tebd` is `True` in type embedding net.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -320,6 +323,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.se_atten.get_ntypes()
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         ret = self.se_atten.get_dim_out()
@@ -377,42 +384,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        updated_dict = {}
-        for key in state_dict.keys():
-            if f"{prefix}.se_atten.mean" in key or f"{prefix}.se_atten.stddev" in key:
-                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
-        updated_dict.update(
-            self.type_embedding.update_type_params(
-                state_dict,
-                mapping_index=mapping_index,
-                prefix=prefix + ".type_embedding",
-            )
-        )
-        return updated_dict
-
     def compute_input_stats(
         self,
         merged: Union[Callable[[], List[dict]], List[dict]],
@@ -443,6 +414,20 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     ) -> None:
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
+
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when serializing with slimmed type!"
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        obj = self.se_atten
+        obj.ntypes = len(type_map)
+        self.type_map = type_map
+        self.type_embedding.slim_type_map(type_map=type_map)
+        obj.exclude_types = map_pair_exclude_types(obj.exclude_types, slim_index)
+        obj["davg"] = obj["davg"][slim_index]
+        obj["dstd"] = obj["dstd"][slim_index]
 
     def serialize(self) -> dict:
         obj = self.se_atten

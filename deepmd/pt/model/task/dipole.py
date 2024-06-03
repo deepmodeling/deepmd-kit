@@ -70,6 +70,8 @@ class DipoleFittingNet(GeneralFitting):
     c_differentiable
         If the variable is differentiated with respect to the cell tensor (pbc case).
         Only reduciable variable are differentiable.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -89,6 +91,7 @@ class DipoleFittingNet(GeneralFitting):
         exclude_types: List[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -108,6 +111,7 @@ class DipoleFittingNet(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            type_map=type_map,
             **kwargs,
         )
         self.old_impl = False  # this only supports the new implementation.

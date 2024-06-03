@@ -219,37 +219,6 @@ class PairTabAtomicModel(BaseAtomicModel):
         """
         self.compute_or_load_out_stat(merged, stat_file_path)
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        updated_dict = BaseAtomicModel.update_type_params(
-            self, state_dict, mapping_index=mapping_index, prefix=prefix
-        )
-        for key in state_dict.keys():
-            if f"{prefix}.bias_atom_e" in key:
-                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
-        return updated_dict
-
     def forward_atomic(
         self,
         extended_coord: torch.Tensor,

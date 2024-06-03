@@ -27,7 +27,6 @@ except ImportError:
 import copy
 from typing import (
     Any,
-    Dict,
     List,
     Optional,
     Tuple,
@@ -125,6 +124,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     spin
             The deepspin object.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
 
     Limitations
     -----------
@@ -158,6 +159,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
@@ -179,6 +181,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
+        self.type_map = type_map
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -267,18 +270,19 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """
         raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, np.ndarray],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, np.ndarray]:
-        """Update the type related params when loading from pretrained model with redundant types."""
-        raise NotImplementedError
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        raise NotImplementedError(
+            "Descriptor se_e2_a does not support slimming for type related params!"
+        )
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
@@ -415,6 +419,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 "davg": self.davg,
                 "dstd": self.dstd,
             },
+            "type_map": self.type_map,
         }
 
     @classmethod

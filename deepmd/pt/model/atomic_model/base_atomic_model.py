@@ -35,6 +35,11 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_atom_exclude_types,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -276,6 +281,19 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             comm_dict=comm_dict,
         )
 
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.atom_exclude_types = map_atom_exclude_types(
+            self.atom_exclude_types, slim_index
+        )
+        self.pair_exclude_types = map_pair_exclude_types(
+            self.pair_exclude_types, slim_index
+        )
+        self.out_bias = self.out_bias[:, slim_index]
+        self.out_std = self.out_std[:, slim_index]
+
     def serialize(self) -> dict:
         return {
             "type_map": self.type_map,
@@ -430,35 +448,6 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             self._store_out_stat(bias_out, std_out)
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
-
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        updated_dict = {}
-        for key in state_dict.keys():
-            if f"{prefix}.out_bias" in key or f"{prefix}.out_std" in key:
-                updated_dict[key] = state_dict[key][:, mapping_index].clone().detach()
-        return updated_dict
 
     def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""

@@ -44,6 +44,7 @@ class EnergyFittingNet(InvarFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: List[int] = [],
+        type_map: Optional[List[str]] = None,
         # not used
         seed: Optional[int] = None,
     ):
@@ -67,6 +68,7 @@ class EnergyFittingNet(InvarFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            type_map=type_map,
         )
 
     @classmethod

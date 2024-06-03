@@ -20,6 +20,11 @@ from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_atom_exclude_types,
+    map_pair_exclude_types,
+)
 
 from .make_base_atomic_model import (
     make_base_atomic_model,
@@ -113,14 +118,18 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             ]
         )
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, np.ndarray],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, np.ndarray]:
-        """Update the type related params when loading from pretrained model with redundant types."""
-        raise NotImplementedError
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.atom_exclude_types = map_atom_exclude_types(
+            self.atom_exclude_types, slim_index
+        )
+        self.pair_exclude_types = map_pair_exclude_types(
+            self.pair_exclude_types, slim_index
+        )
+        self.out_bias = self.out_bias[:, slim_index]
+        self.out_std = self.out_std[:, slim_index]
 
     def forward_common_atomic(
         self,

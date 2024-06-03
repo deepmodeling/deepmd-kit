@@ -408,6 +408,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.do_grad_c(var_name)
 
+        def slim_type_map(self, type_map: List[str]) -> None:
+            """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+            self.atomic_model.slim_type_map(type_map=type_map)
+
         def serialize(self) -> dict:
             return self.atomic_model.serialize()
 

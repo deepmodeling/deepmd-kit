@@ -131,6 +131,13 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return ret
 
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        super().slim_type_map(type_map=type_map)
+        self.type_map = type_map
+        self.descriptor.slim_type_map(type_map=type_map)
+        self.fitting_net.slim_type_map(type_map=type_map)
+
     def serialize(self) -> dict:
         dd = super().serialize()
         dd.update(

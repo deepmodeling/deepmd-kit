@@ -106,6 +106,8 @@ class InvarFitting(GeneralFitting):
             If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
     exclude_types: List[int]
             Atomic contributions of the excluded atom types are set zero.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
 
     """
 
@@ -131,6 +133,7 @@ class InvarFitting(GeneralFitting):
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: List[int] = [],
+        type_map: Optional[List[str]] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:
@@ -168,6 +171,7 @@ class InvarFitting(GeneralFitting):
             remove_vaccum_contribution=None
             if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
             else [x is not None for x in atom_ener],
+            type_map=type_map,
         )
 
     def serialize(self) -> dict:

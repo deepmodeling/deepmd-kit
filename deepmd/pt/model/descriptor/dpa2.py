@@ -40,6 +40,10 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -271,6 +275,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.ntypes
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
     def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         ret = self.repformers.dim_out
@@ -339,46 +347,22 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        updated_dict = {}
-        for key in state_dict.keys():
-            if (
-                f"{prefix}.repinit.mean" in key
-                or f"{prefix}.repinit.stddev" in key
-                or f"{prefix}.repformers.mean" in key
-                or f"{prefix}.repformers.stddev" in key
-            ):
-                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
-        updated_dict.update(
-            self.type_embedding.update_type_params(
-                state_dict,
-                mapping_index=mapping_index,
-                prefix=prefix + ".type_embedding",
-            )
-        )
-        return updated_dict
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when serializing with slimmed type!"
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.exclude_types = map_pair_exclude_types(self.exclude_types, slim_index)
+        self.ntypes = len(type_map)
+        repinit = self.repinit
+        repformers = self.repformers
+        repinit["davg"] = repinit["davg"][slim_index]
+        repinit["dstd"] = repinit["dstd"][slim_index]
+        repformers["davg"] = repformers["davg"][slim_index]
+        repformers["dstd"] = repformers["dstd"][slim_index]
+        self.type_embedding.slim_type_map(type_map=type_map)
 
     @property
     def dim_out(self):

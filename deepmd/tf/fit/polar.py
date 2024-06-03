@@ -76,6 +76,8 @@ class PolarFittingSeA(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -95,6 +97,7 @@ class PolarFittingSeA(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
+        type_map: Optional[List[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -148,6 +151,7 @@ class PolarFittingSeA(Fitting):
         self.fitting_net_variables = None
         self.mixed_prec = None
         self.mixed_types = mixed_types
+        self.type_map = type_map
 
     def get_sel_type(self) -> List[int]:
         """Get selected atom types."""
@@ -579,6 +583,7 @@ class PolarFittingSeA(Fitting):
                 variables=self.fitting_net_variables,
                 suffix=suffix,
             ),
+            "type_map": self.type_map,
         }
         return data
 

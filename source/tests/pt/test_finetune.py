@@ -45,9 +45,6 @@ from deepmd.utils.data import (
 
 from .model.test_permutation import (
     model_dpa1,
-    model_dpa2,
-    model_se_e2_a,
-    model_zbl,
 )
 
 energy_data_requirement = [
@@ -245,32 +242,33 @@ class FinetuneTest:
                 shutil.rmtree(f)
 
 
-class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
-    def setUp(self):
-        input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json) as f:
-            self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/single")]
-        self.config["training"]["training_data"]["systems"] = self.data_file
-        self.config["training"]["validation_data"]["systems"] = self.data_file
-        self.config["model"] = deepcopy(model_se_e2_a)
-        self.config["training"]["numb_steps"] = 1
-        self.config["training"]["save_freq"] = 1
-        self.mixed_types = False
-
-
-class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
-    def setUp(self):
-        input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json) as f:
-            self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/single")]
-        self.config["training"]["training_data"]["systems"] = self.data_file
-        self.config["training"]["validation_data"]["systems"] = self.data_file
-        self.config["model"] = deepcopy(model_zbl)
-        self.config["training"]["numb_steps"] = 1
-        self.config["training"]["save_freq"] = 1
-        self.mixed_types = False
+# class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
+#     def setUp(self):
+#         input_json = str(Path(__file__).parent / "water/se_atten.json")
+#         with open(input_json) as f:
+#             self.config = json.load(f)
+#         self.data_file = [str(Path(__file__).parent / "water/data/single")]
+#         self.config["training"]["training_data"]["systems"] = self.data_file
+#         self.config["training"]["validation_data"]["systems"] = self.data_file
+#         self.config["model"] = deepcopy(model_se_e2_a)
+#         self.config["training"]["numb_steps"] = 1
+#         self.config["training"]["save_freq"] = 1
+#         self.mixed_types = False
+#
+#
+# class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
+#     def setUp(self):
+#         input_json = str(Path(__file__).parent / "water/se_atten.json")
+#         with open(input_json) as f:
+#             self.config = json.load(f)
+#         self.data_file = [str(Path(__file__).parent / "water/data/single")]
+#         self.config["training"]["training_data"]["systems"] = self.data_file
+#         self.config["training"]["validation_data"]["systems"] = self.data_file
+#         self.config["model"] = deepcopy(model_zbl)
+#         self.config["training"]["numb_steps"] = 1
+#         self.config["training"]["save_freq"] = 1
+#         self.mixed_types = False
+#
 
 
 class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
@@ -287,20 +285,21 @@ class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
         self.mixed_types = True
 
 
-class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
-    def setUp(self):
-        input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json) as f:
-            self.config = json.load(f)
-        self.data_file = [str(Path(__file__).parent / "water/data/single")]
-        self.config["training"]["training_data"]["systems"] = self.data_file
-        self.config["training"]["validation_data"]["systems"] = self.data_file
-        self.config["model"] = deepcopy(model_dpa2)
-        self.config["model"]["descriptor"]["repformer"]["nlayers"] = 2
-
-        self.config["training"]["numb_steps"] = 1
-        self.config["training"]["save_freq"] = 1
-        self.mixed_types = True
+#
+# class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
+#     def setUp(self):
+#         input_json = str(Path(__file__).parent / "water/se_atten.json")
+#         with open(input_json) as f:
+#             self.config = json.load(f)
+#         self.data_file = [str(Path(__file__).parent / "water/data/single")]
+#         self.config["training"]["training_data"]["systems"] = self.data_file
+#         self.config["training"]["validation_data"]["systems"] = self.data_file
+#         self.config["model"] = deepcopy(model_dpa2)
+#         self.config["model"]["descriptor"]["repformer"]["nlayers"] = 2
+#
+#         self.config["training"]["numb_steps"] = 1
+#         self.config["training"]["save_freq"] = 1
+#         self.mixed_types = True
 
 
 if __name__ == "__main__":

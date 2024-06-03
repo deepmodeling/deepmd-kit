@@ -64,19 +64,19 @@ def make_base_fitting(
             """Calculate fitting."""
             pass
 
-        @abstractmethod
-        def update_type_params(
-            self,
-            state_dict: Dict[str, t_tensor],
-            mapping_index: List[int],
-            prefix: str = "",
-        ) -> Dict[str, t_tensor]:
-            """Update the type related params when loading from pretrained model with redundant types."""
-            pass
-
         def compute_output_stats(self, merged):
             """Update the output bias for fitting net."""
             raise NotImplementedError
+
+        @abstractmethod
+        def get_type_map(self) -> List[str]:
+            """Get the name to each type of atoms."""
+            pass
+
+        @abstractmethod
+        def slim_type_map(self, type_map: List[str]) -> None:
+            """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+            pass
 
         @abstractmethod
         def serialize(self) -> dict:

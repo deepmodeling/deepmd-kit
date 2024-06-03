@@ -137,13 +137,7 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def update_type_params(
-            self,
-            state_dict: Dict[str, t_tensor],
-            mapping_index: List[int],
-            prefix: str = "",
-        ) -> Dict[str, t_tensor]:
-            """Update the type related params when loading from pretrained model with redundant types."""
+        def slim_type_map(self, type_map: List[str]) -> None:
             pass
 
         def make_atom_mask(

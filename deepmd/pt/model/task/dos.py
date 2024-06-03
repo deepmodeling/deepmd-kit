@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    Dict,
     List,
     Optional,
     Union,
@@ -58,6 +57,7 @@ class DOSFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         exclude_types: List[int] = [],
         mixed_types: bool = True,
+        type_map: Optional[List[str]] = None,
     ):
         if bias_dos is not None:
             self.bias_dos = bias_dos
@@ -82,6 +82,7 @@ class DOSFittingNet(InvarFitting):
             seed=seed,
             exclude_types=exclude_types,
             trainable=trainable,
+            type_map=type_map,
         )
 
     def output_def(self) -> FittingOutputDef:
@@ -96,36 +97,6 @@ class DOSFittingNet(InvarFitting):
                 ),
             ]
         )
-
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        assert self.mixed_types, "Only fitting net in mixed_types can be slimmed!"
-        updated_dict = {}
-        for key in state_dict.keys():
-            if f"{prefix}.bias_dos" in key:
-                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
-        return updated_dict
 
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":

@@ -335,16 +335,22 @@ class Trainer:
         dp_random.seed(training_params["seed"])
         if training_params["seed"] is not None:
             torch.manual_seed(training_params["seed"])
-        if not self.multi_task:
-            self.model = get_single_model(
-                model_params,
-            )
-        else:
-            self.model = {}
-            for model_key in self.model_keys:
-                self.model[model_key] = get_single_model(
-                    model_params["model_dict"][model_key],
+
+        def get_model_for_wrapper(_model_params):
+            if "model_dict" not in _model_params:
+                _model = get_single_model(
+                    _model_params,
                 )
+            else:
+                _model = {}
+                model_keys = list(_model_params["model_dict"])
+                for _model_key in model_keys:
+                    _model[_model_key] = get_single_model(
+                        _model_params["model_dict"][_model_key],
+                    )
+            return _model
+
+        self.model = get_model_for_wrapper(model_params)
 
         # Loss
         if not self.multi_task:
@@ -498,12 +504,33 @@ class Trainer:
                         log.warning(
                             f"Force load mode allowed! These keys are not in ckpt and will re-init: {slim_keys}"
                         )
-                # update model params in pretrained model
+                # update model params in the pretrained model
                 if finetune_model is not None:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
+                    # pretrained_model
+                    pretrained_model = get_model_for_wrapper(
+                        state_dict["_extra_state"]["model_params"]
+                    )
+                    pretrained_model_wrapper = ModelWrapper(pretrained_model)
+                    pretrained_model_wrapper.load_state_dict(state_dict)
+                    # update type related params
+                    for model_key in self.model_keys:
+                        finetune_rule_single = self.finetune_links[model_key]
+                        _model_key_from = finetune_rule_single.get_model_branch()
+                        # skip if updated
+                        if (
+                            finetune_rule_single.get_finetune_tmap()
+                            != pretrained_model_wrapper.model[
+                                _model_key_from
+                            ].get_type_map()
+                        ):
+                            pretrained_model_wrapper.model[
+                                _model_key_from
+                            ].slim_type_map(finetune_rule_single.get_finetune_tmap())
+                    state_dict = pretrained_model_wrapper.state_dict()
 
-                    def update_single_finetune_params(
+                    def collect_single_finetune_params(
                         _model_key,
                         _finetune_rule_single,
                         _new_state_dict,
@@ -512,7 +539,6 @@ class Trainer:
                     ):
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
-                        single_modified_state_dict = {}
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -521,7 +547,7 @@ class Trainer:
                         for item_key in target_keys:
                             if _new_fitting and ".fitting_net." in item_key:
                                 # print(f'Keep {item_key} in old model!')
-                                single_modified_state_dict[item_key] = (
+                                _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
                                 )
                             else:
@@ -529,22 +555,14 @@ class Trainer:
                                     f".{_model_key}.", f".{_model_key_from}."
                                 )
                                 # print(f'Replace {item_key} with {new_key} in pretrained_model!')
-                                single_modified_state_dict[item_key] = (
+                                _new_state_dict[item_key] = (
                                     _origin_state_dict[new_key].clone().detach()
                                 )
-                        if _finetune_rule_single.get_update_type():
-                            single_modified_state_dict.update(
-                                self.wrapper.model[_model_key].update_type_params(
-                                    single_modified_state_dict,
-                                    mapping_index=_finetune_rule_single.get_index_mapping(),
-                                    prefix=f".{_model_key}",
-                                )
-                            )
-                        _new_state_dict.update(single_modified_state_dict)
 
+                    # collect model params from the pretrained model
                     for model_key in self.model_keys:
                         finetune_rule_single = self.finetune_links[model_key]
-                        update_single_finetune_params(
+                        collect_single_finetune_params(
                             model_key,
                             finetune_rule_single,
                             new_state_dict,

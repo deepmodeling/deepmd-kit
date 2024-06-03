@@ -202,33 +202,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 bias_adjust_mode=bias_adjust_mode,
             )
 
-        def update_type_params(
-            self,
-            state_dict: Dict[str, torch.Tensor],
-            mapping_index: List[int],
-            prefix: str = "",
-        ) -> Dict[str, torch.Tensor]:
-            """
-            Update the type related params when loading from pretrained model with redundant types.
-
-            Parameters
-            ----------
-            state_dict : Dict[str, torch.Tensor]
-                The model state dict from the pretrained model.
-            mapping_index : List[int]
-                The mapping index of newly defined types to those in the pretrained model.
-            prefix : str
-            The prefix of the param keys.
-
-            Returns
-            -------
-            updated_dict: Dict[str, torch.Tensor]
-                Updated type related params.
-            """
-            return self.atomic_model.update_type_params(
-                state_dict, mapping_index=mapping_index, prefix=prefix + ".atomic_model"
-            )
-
         def forward_common_lower(
             self,
             extended_coord,
@@ -474,6 +447,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             if var_name is None, returns if any of the variable is c_differentiable.
             """
             return self.atomic_model.do_grad_c(var_name)
+
+        def slim_type_map(self, type_map: List[str]) -> None:
+            """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+            self.atomic_model.slim_type_map(type_map=type_map)
 
         def serialize(self) -> dict:
             return self.atomic_model.serialize()

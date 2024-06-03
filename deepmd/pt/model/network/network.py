@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
     List,
     Optional,
 )
@@ -39,6 +38,9 @@ from deepmd.dpmodel.common import (
 from deepmd.pt.utils.utils import (
     ActivationFn,
     to_torch_tensor,
+)
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
 )
 
 
@@ -620,32 +622,9 @@ class TypeEmbedNet(nn.Module):
         else:
             raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        return self.embedding.update_type_params(
-            state_dict, mapping_index=mapping_index, prefix=prefix + ".embedding"
-        )
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        self.embedding.slim_type_map(type_map=type_map)
 
 
 class TypeEmbedNetConsistent(nn.Module):
@@ -673,7 +652,6 @@ class TypeEmbedNetConsistent(nn.Module):
         Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
         A list of strings. Give the name to each type of atoms.
-        Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -761,35 +739,16 @@ class TypeEmbedNetConsistent(nn.Module):
             )
         return embed
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
         assert len(self.neuron) == 1, "Only one layer type embedding can be slimmed!"
-        updated_dict = {}
-        for key in state_dict.keys():
-            if f"{prefix}.embedding_net.layers.0.matrix" in key:
-                updated_dict[key] = state_dict[key][mapping_index].clone().detach()
-        return updated_dict
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
+        self.embedding_net.layers[0].num_in = len(type_map)
+        self.embedding_net.layers[0].matrix = nn.Parameter(
+            data=self.embedding_net.layers[0].matrix[slim_index]
+        )
 
     @classmethod
     def deserialize(cls, data: dict):

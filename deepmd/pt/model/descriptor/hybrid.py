@@ -129,6 +129,10 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.descrpt_list[0].get_ntypes()
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.descrpt_list[0].get_type_map()
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return sum([descrpt.get_dim_out() for descrpt in self.descrpt_list])
@@ -170,39 +174,10 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
-        updated_dict = {}
-        for index, des in enumerate(self.descrpt_list):
-            updated_dict.update(
-                des.update_type_params(
-                    state_dict,
-                    mapping_index=mapping_index,
-                    prefix=prefix + f".descrpt_list.{index}",
-                )
-            )
-        return updated_dict
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        for descrpt in self.descrpt_list:
+            descrpt.slim_type_map(type_map=type_map)
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""

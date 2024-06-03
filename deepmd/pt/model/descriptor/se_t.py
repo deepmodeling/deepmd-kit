@@ -101,6 +101,8 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -117,6 +119,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         precision: str = "float64",
         trainable: bool = True,
         seed: Optional[int] = None,
+        type_map: Optional[List[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # not implemented
         spin=None,
@@ -125,6 +128,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
+        self.type_map = type_map
         self.seat = DescrptBlockSeT(
             rcut,
             rcut_smth,
@@ -159,6 +163,10 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.seat.get_ntypes()
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -200,6 +208,12 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.seat.dim_out
+
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        raise NotImplementedError(
+            "Descriptor se_e3 does not support slimming for type related params!"
+        )
 
     def compute_input_stats(
         self,
@@ -300,6 +314,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
+            "type_map": self.type_map,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),

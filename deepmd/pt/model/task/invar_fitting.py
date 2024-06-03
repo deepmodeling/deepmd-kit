@@ -75,6 +75,8 @@ class InvarFitting(GeneralFitting):
         The value is a list specifying the bias. the elements can be None or np.array of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
         The `set_davg_zero` key in the descrptor should be set.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
 
     """
 
@@ -96,6 +98,7 @@ class InvarFitting(GeneralFitting):
         seed: Optional[int] = None,
         exclude_types: List[int] = [],
         atom_ener: Optional[List[Optional[torch.Tensor]]] = None,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         self.dim_out = dim_out
@@ -118,6 +121,7 @@ class InvarFitting(GeneralFitting):
             remove_vaccum_contribution=None
             if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
             else [x is not None for x in atom_ener],
+            type_map=type_map,
             **kwargs,
         )
 

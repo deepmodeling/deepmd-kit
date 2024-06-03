@@ -23,6 +23,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
     fitting_check_output,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -82,6 +85,8 @@ class PolarFitting(GeneralFitting):
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
             Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -107,6 +112,7 @@ class PolarFitting(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[List[float]] = None,
         shift_diag: bool = True,
+        type_map: Optional[List[str]] = None,
         # not used
         seed: Optional[int] = None,
     ):
@@ -159,6 +165,7 @@ class PolarFitting(GeneralFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            type_map=type_map,
         )
         self.old_impl = False
 
@@ -215,14 +222,15 @@ class PolarFitting(GeneralFitting):
             ]
         )
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, np.ndarray],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, np.ndarray]:
-        """Update the type related params when loading from pretrained model with redundant types."""
-        raise NotImplementedError
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when serializing with slimmed type!"
+        super().slim_type_map(type_map=type_map)
+        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        self.scale = self.scale[slim_index]
+        self.constant_matrix = self.constant_matrix[slim_index]
 
     def call(
         self,

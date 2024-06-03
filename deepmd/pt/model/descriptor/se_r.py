@@ -71,6 +71,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         old_impl: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -86,6 +87,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
+        self.type_map = type_map
         self.seed = seed
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
@@ -145,6 +147,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -207,29 +213,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def update_type_params(
-        self,
-        state_dict: Dict[str, torch.Tensor],
-        mapping_index: List[int],
-        prefix: str = "",
-    ) -> Dict[str, torch.Tensor]:
-        """
-        Update the type related params when loading from pretrained model with redundant types.
-
-        Parameters
-        ----------
-        state_dict : Dict[str, torch.Tensor]
-            The model state dict from the pretrained model.
-        mapping_index : List[int]
-            The mapping index of newly defined types to those in the pretrained model.
-        prefix : str
-            The prefix of the param keys.
-
-        Returns
-        -------
-        updated_dict: Dict[str, torch.Tensor]
-            Updated type related params.
-        """
+    def slim_type_map(self, type_map: List[str]) -> None:
+        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
         raise NotImplementedError(
             "Descriptor se_e2_r does not support slimming for type related params!"
         )
@@ -419,6 +404,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 "davg": self["davg"].detach().cpu().numpy(),
                 "dstd": self["dstd"].detach().cpu().numpy(),
             },
+            "type_map": self.type_map,
             ## to be updated when the options are supported.
             "trainable": True,
             "type_one_side": True,
