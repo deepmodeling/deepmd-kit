@@ -1885,7 +1885,7 @@ class DescrptSeAtten(DescrptSeA):
         ):
             # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(
-                f"{self.__class__.__name__}serialization is unsupported by the native model when tebd_input_mode=='strip'"
+                "serialization is unsupported by the native model when tebd_input_mode=='strip'"
             )
         # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
         if self.stripped_type_embedding and self.type_one_side:
@@ -1966,7 +1966,7 @@ class DescrptSeAtten(DescrptSeA):
                 DescrptDPA1Compat,
                 DescrptSeAttenV2,
                 DescrptSeAttenV2Compat,
-            ], "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
+            ], "only DescrptDPA1Compat,DescrptSeAttenV2 and DescrptSeAttenV2Compat can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
                     "embeddings_strip": self.serialize_network_strip(
