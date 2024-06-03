@@ -32,12 +32,7 @@ if INSTALLED_PT:
     )
 else:
     DescrptSeAttenV2PT = None
-if INSTALLED_TF:
-    from deepmd.tf.descriptor.se_atten import (
-        DescrptSeAttenV2Compat as DescrptSeAttenV2TF,
-    )
-else:
-    DescrptSeAttenV2TF = None
+DescrptSeAttenV2TF = None
 from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
 )
