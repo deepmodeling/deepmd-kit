@@ -1869,11 +1869,20 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
-        if type(self) not in [DescrptSeAtten, DescrptDPA1Compat, DescrptSeAttenV2, DescrptSeAttenV2Compat]:
+        if type(self) not in [
+            DescrptSeAtten,
+            DescrptDPA1Compat,
+            DescrptSeAttenV2,
+            DescrptSeAttenV2Compat,
+        ]:
             raise NotImplementedError(
                 f"Not implemented in class {self.__class__.__name__}"
             )
-        if self.stripped_type_embedding and type(self) is (not DescrptDPA1Compat and not DescrptSeAttenV2 and not DescrptSeAttenV2Compat):
+        if self.stripped_type_embedding and type(self) is (
+            not DescrptDPA1Compat
+            and not DescrptSeAttenV2
+            and not DescrptSeAttenV2Compat
+        ):
             # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(
                 f"{self.__class__.__name__}serialization is unsupported by the native model when tebd_input_mode=='strip'"
@@ -1953,9 +1962,11 @@ class DescrptSeAtten(DescrptSeA):
             "spin": self.spin,
         }
         if self.tebd_input_mode in ["strip"]:
-            assert (
-                type(self) in [DescrptDPA1Compat, DescrptSeAttenV2, DescrptSeAttenV2Compat]
-            ), "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
+            assert type(self) in [
+                DescrptDPA1Compat,
+                DescrptSeAttenV2,
+                DescrptSeAttenV2Compat,
+            ], "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
                     "embeddings_strip": self.serialize_network_strip(
@@ -2345,6 +2356,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         )
         return data
 
+
 @Descriptor.register("se_atten_v2")
 class DescrptSeAttenV2(DescrptSeAtten):
     r"""Smooth version 2.0 descriptor with attention.
@@ -2502,13 +2514,10 @@ class DescrptSeAttenV2(DescrptSeAtten):
         data = super().serialize(suffix)
         data.pop("smooth_type_embedding")
         data.pop("tebd_input_mode")
-        data.update(
-            {
-                "type": "se_atten_v2"
-            }
-        )
+        data.update({"type": "se_atten_v2"})
         return data
-    
+
+
 class DescrptSeAttenV2Compat(DescrptSeAttenV2):
     r"""Consistent version of the model for testing with other backend references.
 

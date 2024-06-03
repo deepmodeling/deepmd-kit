@@ -27,11 +27,15 @@ from .common import (
 )
 
 if INSTALLED_PT:
-    from deepmd.pt.model.descriptor.se_atten_v2 import DescrptSeAttenV2 as DescrptSeAttenV2PT
+    from deepmd.pt.model.descriptor.se_atten_v2 import (
+        DescrptSeAttenV2 as DescrptSeAttenV2PT,
+    )
 else:
     DescrptSeAttenV2PT = None
 if INSTALLED_TF:
-    from deepmd.tf.descriptor.se_atten import DescrptSeAttenV2Compat as DescrptSeAttenV2TF
+    from deepmd.tf.descriptor.se_atten import (
+        DescrptSeAttenV2Compat as DescrptSeAttenV2TF,
+    )
 else:
     DescrptSeAttenV2TF = None
 from deepmd.utils.argcheck import (
