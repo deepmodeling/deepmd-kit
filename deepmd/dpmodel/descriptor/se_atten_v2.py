@@ -4,7 +4,7 @@ from typing import (
     List,
     Optional,
     Tuple,
-    Union,    
+    Union,
 )
 
 import numpy as np

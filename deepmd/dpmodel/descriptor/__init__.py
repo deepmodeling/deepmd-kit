@@ -2,9 +2,6 @@
 from .dpa1 import (
     DescrptDPA1,
 )
-from .se_atten_v2 import (
-    DescrptSeAttenV2,
-)
 from .dpa2 import (
     DescrptDPA2,
 )
@@ -13,6 +10,9 @@ from .hybrid import (
 )
 from .make_base_descriptor import (
     make_base_descriptor,
+)
+from .se_atten_v2 import (
+    DescrptSeAttenV2,
 )
 from .se_e2_a import (
     DescrptSeA,
