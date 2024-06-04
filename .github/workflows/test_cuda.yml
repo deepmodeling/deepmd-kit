@@ -34,10 +34,7 @@ jobs:
       uses: mpi4py/setup-mpi@v1
       with:
         mpi: mpich
-    - uses: lukka/get-cmake@latest
-      with:
-        useLocalCache: true
-        useCloudCache: false
+    - run: pip install cmake
     - name: Install wget and unzip
       run: apt-get update && apt-get install -y wget unzip
     - run: |
