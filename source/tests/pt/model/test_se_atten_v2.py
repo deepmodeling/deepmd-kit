@@ -105,7 +105,7 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self,
     ):
         rng = np.random.default_rng()
-        nf, nloc, nnei = self.nlist.shape
+        _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
@@ -123,8 +123,6 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            err_msg = f"idt={idt} prec={prec}"
             # dpa1 new impl
             dd0 = DescrptSeAttenV2(
                 self.rcut,
@@ -140,6 +138,4 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
-            # dd1 = DescrptDPA1.deserialize(dd0.serialize())
-            model = torch.jit.script(dd0)
-            # model = torch.jit.script(dd1)
+            _ = torch.jit.script(dd0)
