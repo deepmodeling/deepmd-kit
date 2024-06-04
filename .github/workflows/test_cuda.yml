@@ -34,12 +34,12 @@ jobs:
       uses: mpi4py/setup-mpi@v1
       with:
         mpi: mpich
+    - name: Install wget and unzip
+      run: apt-get update && apt-get install -y wget unzip
     - uses: lukka/get-cmake@latest
       with:
         useLocalCache: true
         useCloudCache: false
-    - name: Install wget and unzip
-      run: apt-get update && apt-get install -y wget unzip
     - run: |
          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
          && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
