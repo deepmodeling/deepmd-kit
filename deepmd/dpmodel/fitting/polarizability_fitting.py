@@ -192,7 +192,7 @@ class PolarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 2
+        data["@version"] = 3
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
@@ -204,7 +204,7 @@ class PolarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "polar"
         return super().deserialize(data)
@@ -226,7 +226,8 @@ class PolarFitting(GeneralFitting):
         """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when serializing with slimmed type!"
+        ), "'type_map' must be defined when performing type slimming!"
+        assert self.mixed_types, "Only models in mixed types can perform type slimming!"
         super().slim_type_map(type_map=type_map)
         slim_index = get_index_between_two_maps(self.type_map, type_map)
         self.scale = self.scale[slim_index]

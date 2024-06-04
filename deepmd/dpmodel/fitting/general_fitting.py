@@ -201,7 +201,8 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when serializing with slimmed type!"
+        ), "'type_map' must be defined when performing type slimming!"
+        assert self.mixed_types, "Only models in mixed types can perform type slimming!"
         slim_index = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.ntypes = len(type_map)
@@ -251,7 +252,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 1,
+            "@version": 2,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

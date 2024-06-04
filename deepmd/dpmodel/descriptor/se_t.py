@@ -320,7 +320,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         return {
             "@class": "Descriptor",
             "type": "se_e3",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -345,7 +345,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptSeT":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")

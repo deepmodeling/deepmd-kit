@@ -350,7 +350,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when serializing with slimmed type!"
+        ), "'type_map' must be defined when performing type slimming!"
         slim_index = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.exclude_types = map_pair_exclude_types(self.exclude_types, slim_index)
