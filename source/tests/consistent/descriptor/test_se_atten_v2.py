@@ -209,24 +209,6 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             dtype=GLOBAL_NP_FLOAT_PRECISION,
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
-        (
-            tebd_dim,
-            resnet_dt,
-            type_one_side,
-            attn,
-            attn_layer,
-            attn_dotr,
-            excluded_types,
-            env_protection,
-            set_davg_zero,
-            scaling_factor,
-            normalize,
-            temperature,
-            ln_eps,
-            concat_output_tebd,
-            precision,
-            use_econf_tebd,
-        ) = self.param
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
         return self.build_tf_descriptor(

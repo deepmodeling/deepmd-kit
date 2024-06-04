@@ -231,7 +231,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         attention_layers = data.pop("attention_layers")
-        env_mat = data.pop("env_mat")
+        data.pop("env_mat")
         embeddings_strip = data.pop("embeddings_strip")
         obj = cls(**data)
 
