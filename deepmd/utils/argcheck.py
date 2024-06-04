@@ -669,7 +669,7 @@ def descrpt_se_atten_v2_args():
             doc=doc_stripped_type_embedding,
         ),
         Argument(
-            "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
+            "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
         Argument(
             "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
