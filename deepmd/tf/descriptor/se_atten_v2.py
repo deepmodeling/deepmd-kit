@@ -8,6 +8,7 @@ from typing import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
 from .descriptor import (
     Descriptor,
 )
