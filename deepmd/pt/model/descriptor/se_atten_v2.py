@@ -222,7 +222,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         return data
 
     @classmethod
-    def deserialize(cls, data: dict) -> "DescrptDPA1":
+    def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
