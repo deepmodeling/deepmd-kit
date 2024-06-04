@@ -1371,7 +1371,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1427,7 +1427,7 @@ class DescrptSeA(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,

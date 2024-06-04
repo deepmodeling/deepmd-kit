@@ -558,7 +558,7 @@ class PolarFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "polar",
-            "@version": 1,
+            "@version": 3,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
@@ -603,7 +603,7 @@ class PolarFittingSeA(Fitting):
         """
         data = data.copy()
         check_version_compatibility(
-            data.pop("@version", 1), 2, 1
+            data.pop("@version", 1), 3, 1
         )  # to allow PT version.
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(

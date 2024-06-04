@@ -730,7 +730,7 @@ class DescrptSeR(DescrptSe):
         if cls is not DescrptSeR:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
@@ -772,7 +772,7 @@ class DescrptSeR(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_r",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel_r,
