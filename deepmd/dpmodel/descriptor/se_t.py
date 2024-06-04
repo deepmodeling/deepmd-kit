@@ -78,6 +78,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
+    ntypes : int
+            Number of element types.
+            Not used in this descriptor, only to be compat with input.
     """
 
     def __init__(
@@ -94,7 +97,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
         seed: Optional[int] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
     ) -> None:
+        del ntypes
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.sel = sel
