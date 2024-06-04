@@ -66,12 +66,15 @@ class HessianTest:
         natoms = self.nloc
         nf = self.nf
         nv = self.nv
-        cell0 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        cell0 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell0 = 1.0 * (cell0 + cell0.T) + 5.0 * torch.eye(3, device=env.DEVICE)
-        cell1 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        cell1 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell1 = 1.0 * (cell1 + cell1.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         cell = torch.stack([cell0, cell1])
-        coord = torch.rand([nf, natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand(
+            [nf, natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord = torch.matmul(coord, cell)
         cell = cell.view([nf, 9])
         coord = coord.view([nf, natoms * 3])
@@ -86,8 +89,12 @@ class HessianTest:
             .to(env.DEVICE)
         )
         nfp, nap = 2, 3
-        fparam = torch.rand([nf, nfp], dtype=dtype, device=env.DEVICE)
-        aparam = torch.rand([nf, natoms * nap], dtype=dtype, device=env.DEVICE)
+        fparam = torch.rand(
+            [nf, nfp], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        aparam = torch.rand(
+            [nf, natoms * nap], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         # forward hess and valu models
         ret_dict0 = self.model_hess.forward_common(
             coord, atype, box=cell, fparam=fparam, aparam=aparam

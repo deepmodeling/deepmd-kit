@@ -52,7 +52,10 @@ class SmoothDenoiseTest:
             .view([-1, 3])
             .to(env.DEVICE)
         )
-        coord1 = torch.rand([natoms - coord0.shape[0], 3], dtype=dtype).to(env.DEVICE)
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        coord1 = torch.rand(
+            [natoms - coord0.shape[0], 3], dtype=dtype, genreator=generator
+        ).to(env.DEVICE)
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
 

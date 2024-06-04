@@ -19,7 +19,7 @@ class TestRegion(unittest.TestCase):
         self.prec = 1e-8
 
     def test_inter_to_phys(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         inter = rng.normal(size=[4, 5, 3, 3])
         phys = inter2phys(inter, self.cell)
         for ii in range(4):

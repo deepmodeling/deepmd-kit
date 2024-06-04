@@ -23,7 +23,7 @@ def update_sel(jdata):
 class TestTrain(unittest.TestCase):
     def setUp(self) -> None:
         self.update_sel = UpdateSel()
-        self.mock_min_nbor_dist = random.random()
+        self.mock_min_nbor_dist = random.Random(20240604).random()
         return super().setUp()
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")

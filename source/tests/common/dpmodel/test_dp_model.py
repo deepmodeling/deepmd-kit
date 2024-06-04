@@ -50,7 +50,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(ret0["energy_redu"], ret1["energy_redu"])
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -102,7 +102,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         TestCaseSingleFrameWithoutNlist.setUp(self)
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc = self.atype.shape
         ds = DescrptSeA(
             self.rcut,

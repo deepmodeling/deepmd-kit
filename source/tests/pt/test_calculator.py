@@ -53,7 +53,8 @@ class TestCalculator(unittest.TestCase):
 
         natoms = 5
         cell = torch.eye(3, dtype=dtype, device="cpu") * 10
-        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         atomic_numbers = [1, 1, 1, 8, 8]

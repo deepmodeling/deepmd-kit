@@ -12,7 +12,7 @@ from deepmd.pt.utils.utils import (
 
 class TestCvt(unittest.TestCase):
     def test_to_numpy(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         foo = rng.normal([3, 4])
         for ptp, npp in zip(
             [torch.float16, torch.float32, torch.float64],

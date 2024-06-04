@@ -57,12 +57,18 @@ class SmoothTest:
             dtype=dtype,
             device=env.DEVICE,
         ).view([-1, 3])
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
         coord1 = torch.rand(
-            [natoms - coord0.shape[0], 3], dtype=dtype, device=env.DEVICE
+            [natoms - coord0.shape[0], 3],
+            dtype=dtype,
+            device=env.DEVICE,
+            generator=generator,
         )
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord0 = torch.clone(coord)
         coord1 = torch.clone(coord)
         coord1[1][0] += epsilon

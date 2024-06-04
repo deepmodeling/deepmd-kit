@@ -23,7 +23,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_self_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
         dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
@@ -102,7 +102,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_self_exception(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
         dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
@@ -160,7 +160,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             3,
             1,
         )
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         foo = rng.normal([3, 4])
         for ii in [
             "bias_atom_e",

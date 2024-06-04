@@ -56,7 +56,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_get_parameters(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         ddsub0 = DescrptSeA(
             rcut=self.rcut,

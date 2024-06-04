@@ -33,7 +33,9 @@ if INSTALLED_TF:
 class TestActivationFunctionConsistent(unittest.TestCase):
     def setUp(self):
         (self.activation,) = self.param
-        self.random_input = np.random.default_rng().normal(scale=10, size=(10, 10))
+        self.random_input = np.random.default_rng(20240604).normal(
+            scale=10, size=(10, 10)
+        )
         self.ref = get_activation_fn_dp(self.activation)(self.random_input)
 
     @unittest.skipUnless(INSTALLED_TF, "TensorFlow is not installed")

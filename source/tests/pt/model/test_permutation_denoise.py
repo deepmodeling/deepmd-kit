@@ -37,10 +37,11 @@ class PermutationDenoiseTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        coord = torch.rand([natoms, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]

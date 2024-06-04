@@ -16,7 +16,7 @@ from deepmd.tf.utils.update_sel import (
 class TestTrain(unittest.TestCase):
     def setUp(self) -> None:
         self.update_sel = UpdateSel()
-        self.mock_min_nbor_dist = random.random()
+        self.mock_min_nbor_dist = random.Random(20240604).random()
         return super().setUp()
 
     def test_train_parse_auto_sel(self):

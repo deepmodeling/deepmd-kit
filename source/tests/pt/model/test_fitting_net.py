@@ -84,7 +84,7 @@ class TestFittingNet(unittest.TestCase):
         nloc = 7
         self.embedding_width = 30
         self.natoms = np.array([nloc, nloc, 2, 5], dtype=np.int32)
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         self.embedding = rng.uniform(size=[4, nloc * self.embedding_width])
         self.ntypes = self.natoms.size - 2
         self.n_neuron = [32, 32, 32]

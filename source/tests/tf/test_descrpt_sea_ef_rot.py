@@ -97,7 +97,8 @@ class TestEfRot(tf.test.TestCase):
         return energy, force, virial, atom_ener, atom_vir
 
     def make_test_data(self, nframes):
-        dcoord = np.random.default_rng().random([nframes, self.natoms[0], 3])
+        rng = np.random.default_rng(20240604)
+        dcoord = rng.random([nframes, self.natoms[0], 3])
         for ii in range(nframes):
             dcoord[ii, :, :] = dcoord[ii, :, :] - np.tile(
                 dcoord[ii, 0, :], [self.natoms[0], 1]
@@ -111,7 +112,7 @@ class TestEfRot(tf.test.TestCase):
         np.random.shuffle(one_type)  # noqa: NPY002
         one_type = np.array(one_type, dtype=int).reshape([1, -1])
         dtype = np.tile(one_type, [nframes, 1])
-        defield = np.random.default_rng().random(dcoord.shape)
+        defield = rng.random(dcoord.shape)
         return dcoord, dbox, dtype, defield
 
     def rotate_mat(self, axis_, theta):

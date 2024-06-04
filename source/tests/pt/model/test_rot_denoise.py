@@ -26,10 +26,13 @@ class RotDenoiseTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        coord = 2 * torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        coord = 2 * torch.rand([natoms, 3], dtype=dtype, generator=generator).to(
+            env.DEVICE
+        )
         shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         from scipy.stats import (
@@ -68,9 +71,9 @@ class RotDenoiseTest:
 
         # rotate coord and cell
         torch.manual_seed(0)
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        coord = torch.rand([natoms, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         coord_rot = torch.matmul(coord, rmat)

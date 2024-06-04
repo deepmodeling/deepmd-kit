@@ -19,7 +19,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_self_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 1))
         dstd = rng.normal(size=(self.nt, nnei, 1))

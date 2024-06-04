@@ -58,8 +58,13 @@ class ForwardLowerTest:
         prec = self.prec
         natoms = 5
         cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        coord = 3.0 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-        spin = 0.5 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        coord = 3.0 * torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        spin = 0.5 * torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int64, device=env.DEVICE)
         test_spin = getattr(self, "test_spin", False)
         if not test_spin:

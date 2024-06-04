@@ -34,7 +34,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         rd0, _, _, _, _ = dd0(
@@ -102,7 +102,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_new_old(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         dd = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         rd0, _, _, _, _ = dd(
@@ -176,7 +176,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             3,
             1,
         )
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         foo = rng.normal([3, 4])
         for ii in [
             "bias_atom_e",

@@ -35,11 +35,14 @@ class NullTest:
         self,
     ):
         natoms = 1
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
         # torch.manual_seed(1000)
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # large box to exclude images
         cell = (cell + cell.T) + 100.0 * torch.eye(3, device=env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         atype = torch.tensor([0], dtype=torch.int32, device=env.DEVICE)
         test_keys = ["energy", "force", "virial"]
         result = eval_model(self.model, coord.unsqueeze(0), cell.unsqueeze(0), atype)
@@ -58,10 +61,11 @@ class NullTest:
         self,
     ):
         natoms = 2
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # large box to exclude images
         cell = (cell + cell.T) + 3000.0 * torch.eye(3, device=env.DEVICE)
-        coord = torch.rand([1, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand([1, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # 2 far-away atoms
         coord = torch.cat([coord, coord + 100.0], dim=0)
         atype = torch.tensor([0, 2], dtype=torch.int32, device=env.DEVICE)

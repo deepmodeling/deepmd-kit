@@ -23,6 +23,7 @@ else:
 
 class TestEwaldRecp(tf.test.TestCase):
     def setUp(self):
+        rng = np.random.default_rng(20240604)
         boxl = 4.5  # NOTICE grid should not change before and after box pert...
         box_pert = 0.2
         self.natoms = 16
@@ -38,16 +39,16 @@ class TestEwaldRecp(tf.test.TestCase):
             box = np.eye(3) * boxl
             box[1][1] += 1
             box[2][2] += 2
-            box += np.random.default_rng().random([3, 3]) * box_pert
+            box += rng.random([3, 3]) * box_pert
             box = 0.5 * (box + box.T)
             self.dbox.append(box)
             # scaled
-            coord = np.random.default_rng().random([self.natoms, 3])
+            coord = rng.random([self.natoms, 3])
             self.rcoord.append(coord)
             # real coords
             self.dcoord.append(np.matmul(coord, box))
             # charge
-            dcharge = np.random.default_rng().random([self.natoms])
+            dcharge = rng.random([self.natoms])
             dcharge -= np.average(dcharge)
             assert np.abs(np.sum(self.dcharge) - 0) < 1e-12
             self.dcharge.append(dcharge)

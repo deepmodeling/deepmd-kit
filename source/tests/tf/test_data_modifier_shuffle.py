@@ -91,6 +91,7 @@ class TestDataModifier(tf.test.TestCase):
                 f.write(output_graph_def.SerializeToString())
 
     def _setUp_data(self):
+        rng = np.random.default_rng(20240604)
         jdata = self._setUp_jdata()
         # sys0
         self.atom_types0 = np.array([0, 3, 2, 1, 3, 4, 1, 4], dtype=int)
@@ -101,10 +102,8 @@ class TestDataModifier(tf.test.TestCase):
         self.nsel = 0
         for ii in self.sel_type:
             self.nsel += np.sum(self.atom_types0 == ii)
-        self.coords0 = (
-            np.random.default_rng().random([self.nframes, self.natoms * 3]) * scale
-        )
-        self.dipoles0 = np.random.default_rng().random([self.nframes, self.nsel * 3])
+        self.coords0 = rng.random([self.nframes, self.natoms * 3]) * scale
+        self.dipoles0 = rng.random([self.nframes, self.nsel * 3])
         self.box0 = np.reshape(np.eye(3) * scale, [-1, 9])
         self.box0 = np.tile(self.box0, [self.nframes, 1])
         self._write_sys_data(

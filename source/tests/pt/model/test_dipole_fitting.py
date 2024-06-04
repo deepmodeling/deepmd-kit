@@ -57,7 +57,7 @@ def finite_difference(f, x, a, delta=1e-6):
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(20240604)
         self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
@@ -147,11 +147,16 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        self.coord = 2 * torch.rand(
+            [self.natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         self.shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
         self.atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        self.cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        self.cell = torch.rand(
+            [3, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
     def test_rot(self):
@@ -160,7 +165,7 @@ class TestEquivalence(unittest.TestCase):
         coord_rot = torch.matmul(self.coord, rmat)
         # use larger cell to rotate only coord and shift to the center of cell
         cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         for nfp, nap in itertools.product(
             [0, 3],
             [0, 4],
@@ -304,8 +309,11 @@ class TestDipoleModel(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        self.coord = 2 * torch.rand(
+            [self.natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         self.atype = torch.IntTensor([0, 0, 0, 1, 1], device="cpu").to(env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)

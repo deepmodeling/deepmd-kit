@@ -130,7 +130,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
         args0 = [self.coord, self.atype, self.cell]
@@ -169,7 +169,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, self.nloc, nap])
         args0 = [self.coord, self.atype]
@@ -190,7 +190,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         )
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc = self.atype.shape
         ds = DPDescrptSeA(
             self.rcut,
@@ -292,7 +292,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
 
     def test_dp_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,
@@ -325,7 +325,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(20240604)
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,
