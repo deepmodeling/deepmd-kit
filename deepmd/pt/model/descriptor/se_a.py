@@ -149,7 +149,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
-        return False
+        return self.sea.has_message_passing()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -678,3 +678,7 @@ class DescrptBlockSeA(DescriptorBlock):
             None,
             sw,
         )
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False

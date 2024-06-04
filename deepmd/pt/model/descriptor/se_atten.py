@@ -1019,3 +1019,7 @@ class GatedAttentionLayer(nn.Module):
         obj.in_proj = MLPLayer.deserialize(in_proj)
         obj.out_proj = MLPLayer.deserialize(out_proj)
         return obj
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False
