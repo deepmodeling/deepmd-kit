@@ -410,7 +410,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist = nlist * exclude_mask
+        nlist = torch.where(exclude_mask != 0, nlist, -1)
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,

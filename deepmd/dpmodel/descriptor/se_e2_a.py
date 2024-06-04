@@ -119,6 +119,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The deepspin object.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
+    ntypes : int
+            Number of element types.
+            Not used in this descriptor, only to be compat with input.
 
     Limitations
     -----------
@@ -153,9 +156,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
         type_map: Optional[List[str]] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
+        del ntypes
         ## seed, uniform_seed, not included.
         if spin is not None:
             raise NotImplementedError("spin is not implemented")

@@ -80,6 +80,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             Random seed for initializing the network parameters.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
+    ntypes : int
+            Number of element types.
+            Not used in this descriptor, only to be compat with input.
     """
 
     def __init__(
@@ -97,7 +100,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         trainable: bool = True,
         seed: Optional[int] = None,
         type_map: Optional[List[str]] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
     ) -> None:
+        del ntypes
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.sel = sel
