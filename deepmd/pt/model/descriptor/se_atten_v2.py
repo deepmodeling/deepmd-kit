@@ -74,7 +74,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         type: Optional[str] = None,
         old_impl: bool = False,
     ) -> None:
-        r"""Construct smooth version of embedding net of type `se_atten`.
+        r"""Construct smooth version of embedding net of type `se_atten_v2`.
 
         Parameters
         ----------
