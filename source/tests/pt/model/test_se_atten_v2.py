@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel.descriptor.dpa1 import DescrptSeAttenV2 as DPDescrptSeAttenV2
+from deepmd.dpmodel.descriptor.se_atten_v2 import DescrptSeAttenV2 as DPDescrptSeAttenV2
 from deepmd.pt.model.descriptor.se_atten_v2 import (
     DescrptSeAttenV2,
 )

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from .dpa1 import (
     DescrptDPA1,
+)
+from .se_atten_v2 import (
     DescrptSeAttenV2,
 )
 from .dpa2 import (

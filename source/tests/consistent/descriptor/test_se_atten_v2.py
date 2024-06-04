@@ -11,7 +11,7 @@ from dargs import (
     Argument,
 )
 
-from deepmd.dpmodel.descriptor.dpa1 import DescrptSeAttenV2 as DescrptSeAttenV2DP
+from deepmd.dpmodel.descriptor.se_atten_v2 import DescrptSeAttenV2 as DescrptSeAttenV2DP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
