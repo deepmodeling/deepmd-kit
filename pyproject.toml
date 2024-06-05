@@ -39,7 +39,7 @@ dependencies = [
     'numpy',
     'scipy',
     'pyyaml',
-    'dargs >= 0.4.1',
+    'dargs >= 0.4.6',
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',

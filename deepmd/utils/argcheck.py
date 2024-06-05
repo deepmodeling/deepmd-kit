@@ -14,7 +14,13 @@ from dargs import (
     Variant,
     dargs,
 )
+from dargs.json_schema import (
+    generate_json_schema,
+)
 
+from deepmd import (
+    __version__,
+)
 from deepmd.common import (
     VALID_ACTIVATION,
     VALID_PRECISION,
@@ -2512,6 +2518,18 @@ def gen_args(**kwargs) -> List[Argument]:
         training_args(),
         nvnmd_args(),
     ]
+
+
+def gen_json_schema() -> str:
+    """Generate JSON schema.
+
+    Returns
+    -------
+    str
+        JSON schema.
+    """
+    arg = Argument("DeePMD-kit", dict, gen_args(), doc=f"DeePMD-kit {__version__}")
+    return json.dumps(generate_json_schema(arg))
 
 
 def normalize(data):
