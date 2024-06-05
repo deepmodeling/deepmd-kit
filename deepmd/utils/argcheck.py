@@ -652,22 +652,9 @@ def descrpt_se_atten_v2_args():
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
     )
-    doc_stripped_type_embedding = (
-        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
-        "Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'. "
-        "Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'."
-        "The default value is `None`, which means the `tebd_input_mode` setting will be used instead."
-    )
 
     return [
         *descrpt_se_atten_common_args(),
-        Argument(
-            "stripped_type_embedding",
-            bool,
-            optional=True,
-            default=None,
-            doc=doc_stripped_type_embedding,
-        ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
