@@ -35,7 +35,7 @@ class SmoothTest:
         self,
     ):
         # displacement of atoms
-        epsilon = 1e-5 if self.epsilon is None else self.epsilon
+        epsilon = 1e-6 if self.epsilon is None else self.epsilon
         # required prec. relative prec is not checked.
         rprec = 0
         aprec = 1e-5 if self.aprec is None else self.aprec
@@ -166,7 +166,7 @@ class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params).to(env.DEVICE)
         # less degree of smoothness,
         # error can be systematically removed by reducing epsilon
-        self.epsilon = 1e-5
+        self.epsilon = 1e-6
         self.aprec = 1e-5
 
 
@@ -178,7 +178,7 @@ class TestEnergyModelDPA1Excl1(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params).to(env.DEVICE)
         # less degree of smoothness,
         # error can be systematically removed by reducing epsilon
-        self.epsilon = 1e-5
+        self.epsilon = 1e-6
         self.aprec = 1e-5
 
 
@@ -190,7 +190,7 @@ class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
         self.model = get_model(model_params).to(env.DEVICE)
         # less degree of smoothness,
         # error can be systematically removed by reducing epsilon
-        self.epsilon = 1e-5
+        self.epsilon = 1e-6
         self.aprec = 1e-5
 
 
@@ -201,7 +201,7 @@ class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
         model_params["descriptor"]["repinit"]["rcut_smth"] = 3.5
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
-        self.epsilon, self.aprec = 1e-5, 1e-4
+        self.epsilon, self.aprec = 1e-6, 1e-4
 
 
 class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
