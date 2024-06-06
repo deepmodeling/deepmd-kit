@@ -37,7 +37,7 @@ class TransDenoiseTest:
         coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
-        shift = (torch.rand([3], dtype=dtype, generaotr=generator) - 0.5).to(
+        shift = (torch.rand([3], dtype=dtype, generator=generator) - 0.5).to(
             env.DEVICE
         ) * 2.0
         coord_s = torch.matmul(
