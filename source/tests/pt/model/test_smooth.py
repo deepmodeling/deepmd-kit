@@ -34,6 +34,7 @@ class SmoothTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         # displacement of atoms
         epsilon = 1e-6 if self.epsilon is None else self.epsilon
         # required prec. relative prec is not checked.
@@ -43,7 +44,9 @@ class SmoothTest:
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype, device=env.DEVICE)
         atype0 = torch.arange(3, dtype=dtype, device=env.DEVICE)
-        atype1 = torch.randint(0, 3, [natoms - 3], device=env.DEVICE)
+        atype1 = torch.randint(
+            0, 3, [natoms - 3], device=env.DEVICE, generator=generator
+        )
         atype = torch.cat([atype0, atype1]).view([natoms])
         coord0 = torch.tensor(
             [
@@ -60,7 +63,6 @@ class SmoothTest:
             dtype=dtype,
             device=env.DEVICE,
         ).view([-1, 3])
-        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         coord1 = torch.rand(
             [natoms - coord0.shape[0], 3],
             dtype=dtype,

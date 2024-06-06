@@ -36,7 +36,8 @@ class SmoothDenoiseTest:
 
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        atype = torch.randint(0, 3, [natoms])
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        atype = torch.randint(0, 3, [natoms], generator=generator, device=env.DEVICE)
         coord0 = (
             torch.tensor(
                 [
@@ -55,7 +56,6 @@ class SmoothDenoiseTest:
             .view([-1, 3])
             .to(env.DEVICE)
         )
-        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         coord1 = torch.rand(
             [natoms - coord0.shape[0], 3], dtype=dtype, generator=generator
         ).to(env.DEVICE)
