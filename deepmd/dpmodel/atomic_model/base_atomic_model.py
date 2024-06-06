@@ -128,8 +128,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.pair_exclude_types = map_pair_exclude_types(
             self.pair_exclude_types, slim_index
         )
-        self.out_bias = self.out_bias[:, slim_index]
-        self.out_std = self.out_std[:, slim_index]
+        self.out_bias = self.out_bias[:, slim_index, :]
+        self.out_std = self.out_std[:, slim_index, :]
 
     def forward_common_atomic(
         self,
