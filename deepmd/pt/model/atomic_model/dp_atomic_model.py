@@ -102,6 +102,10 @@ class DPAtomicModel(BaseAtomicModel):
         self.descriptor.slim_type_map(type_map=type_map)
         self.fitting_net.slim_type_map(type_map=type_map)
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return self.descriptor.has_message_passing()
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(

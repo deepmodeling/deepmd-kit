@@ -101,6 +101,10 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
+        def has_message_passing(self) -> bool:
+            """Returns whether the descriptor has message passing."""
+
+        @abstractmethod
         def get_env_protection(self) -> float:
             """Returns the protection of building environment matrix."""
             pass

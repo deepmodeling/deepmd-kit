@@ -80,6 +80,10 @@ class DPAtomicModel(BaseAtomicModel):
         """
         return self.descriptor.mixed_types()
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return self.descriptor.has_message_passing()
+
     def forward_atomic(
         self,
         extended_coord: np.ndarray,

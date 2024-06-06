@@ -535,6 +535,11 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.mixed_types()
 
+        @torch.jit.export
+        def has_message_passing(self) -> bool:
+            """Returns whether the model has message passing."""
+            return self.atomic_model.has_message_passing()
+
         def forward(
             self,
             coord,

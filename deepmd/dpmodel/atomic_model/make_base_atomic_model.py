@@ -116,6 +116,10 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
+        def has_message_passing(self) -> bool:
+            """Returns whether the descriptor has message passing."""
+
+        @abstractmethod
         def fwd(
             self,
             extended_coord: t_tensor,

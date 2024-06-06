@@ -31,6 +31,8 @@ class ModelTestCase:
     """Expected output type for the model."""
     expected_sel: List[int]
     """Expected number of neighbors."""
+    expected_has_message_passing: bool
+    """Expected whether having message passing."""
     forward_wrapper: Callable[[Any], Any]
     """Calss wrapper for forward method."""
 
@@ -81,6 +83,13 @@ class ModelTestCase:
         """Test get_ntypes."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_ntypes(), len(self.expected_type_map))
+
+    def test_has_message_passing(self):
+        """Test has_message_passing."""
+        for module in self.modules_to_test:
+            self.assertEqual(
+                module.has_message_passing(), self.expected_has_message_passing
+            )
 
     def test_forward(self):
         """Test forward and forward_lower."""

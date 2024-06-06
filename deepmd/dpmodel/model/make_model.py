@@ -475,6 +475,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.mixed_types()
 
+        def has_message_passing(self) -> bool:
+            """Returns whether the model has message passing."""
+            return self.atomic_model.has_message_passing()
+
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()

@@ -505,7 +505,7 @@ def main_parser() -> argparse.ArgumentParser:
     parsers_doc.add_argument(
         "--out-type",
         default="rst",
-        choices=["rst", "json"],
+        choices=["rst", "json", "json_schema"],
         type=str,
         help="The output type",
     )
