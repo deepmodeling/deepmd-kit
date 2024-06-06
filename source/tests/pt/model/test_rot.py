@@ -34,7 +34,7 @@ class RotTest:
     def test(
         self,
     ):
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)

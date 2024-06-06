@@ -60,7 +60,7 @@ class SmoothTest:
             dtype=dtype,
             device=env.DEVICE,
         ).view([-1, 3])
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         coord1 = torch.rand(
             [natoms - coord0.shape[0], 3],
             dtype=dtype,

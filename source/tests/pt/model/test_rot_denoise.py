@@ -29,12 +29,12 @@ class RotDenoiseTest:
     def test(
         self,
     ):
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        coord = 2 * torch.rand([natoms, 3], dtype=dtype, generator=generator).to(
-            env.DEVICE
+        coord = 2 * torch.rand(
+            [natoms, 3], dtype=dtype, generator=generator, device=env.DEVICE
         )
         shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)

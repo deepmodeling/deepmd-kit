@@ -150,7 +150,7 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         self.coord = 2 * torch.rand(
             [self.natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         )
@@ -312,7 +312,7 @@ class TestDipoleModel(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         self.coord = 2 * torch.rand(
             [self.natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         )

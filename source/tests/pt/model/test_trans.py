@@ -35,7 +35,7 @@ class TransTest:
         self,
     ):
         natoms = 5
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         coord = torch.rand(

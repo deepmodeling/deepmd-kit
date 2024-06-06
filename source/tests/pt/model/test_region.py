@@ -70,7 +70,7 @@ class TestLegacyRegion(unittest.TestCase):
         self.prec = 1e-6
 
     def test_inter_to_phys(self):
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         inter = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         reg = Region3D(self.cell)
         phys = reg.inter2phys(inter)
@@ -78,7 +78,7 @@ class TestLegacyRegion(unittest.TestCase):
         torch.testing.assert_close(phys, expected_phys, rtol=self.prec, atol=self.prec)
 
     def test_inter_to_inter(self):
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         inter = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         reg = Region3D(self.cell)
         new_inter = reg.phys2inter(reg.inter2phys(inter))

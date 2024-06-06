@@ -38,7 +38,7 @@ class NullTest:
         self,
     ):
         natoms = 1
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         # torch.manual_seed(1000)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # large box to exclude images
@@ -64,7 +64,7 @@ class NullTest:
         self,
     ):
         natoms = 2
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # large box to exclude images
         cell = (cell + cell.T) + 3000.0 * torch.eye(3, device=env.DEVICE)

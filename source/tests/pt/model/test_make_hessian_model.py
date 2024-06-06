@@ -70,7 +70,7 @@ class HessianTest:
         natoms = self.nloc
         nf = self.nf
         nv = self.nv
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         cell0 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell0 = 1.0 * (cell0 + cell0.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         cell1 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)

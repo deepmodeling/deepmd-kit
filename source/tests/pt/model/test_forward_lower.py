@@ -61,7 +61,7 @@ class ForwardLowerTest:
         prec = self.prec
         natoms = 5
         cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         coord = 3.0 * torch.rand(
             [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         )
