@@ -637,14 +637,78 @@ def descrpt_se_atten_args():
     ]
 
 
-@descrpt_args_plugin.register("se_atten_v2", doc=doc_only_tf_supported)
+@descrpt_args_plugin.register("se_atten_v2")
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
+    doc_scaling_factor = (
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
+        "Else, the scaling of attention weights is setting to `temperature`."
+    )
+    doc_normalize = (
+        "Whether to normalize the hidden vectors during attention calculation."
+    )
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
+        ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
+        # pt only
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "scaling_factor",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_scaling_factor,
+        ),
+        Argument(
+            "normalize",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_normalize,
+        ),
+        Argument(
+            "temperature",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_temperature,
+        ),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
         ),
     ]
 

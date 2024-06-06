@@ -11,6 +11,9 @@ from .hybrid import (
 from .make_base_descriptor import (
     make_base_descriptor,
 )
+from .se_atten_v2 import (
+    DescrptSeAttenV2,
+)
 from .se_e2_a import (
     DescrptSeA,
 )
@@ -26,6 +29,7 @@ __all__ = [
     "DescrptSeR",
     "DescrptSeT",
     "DescrptDPA1",
+    "DescrptSeAttenV2",
     "DescrptDPA2",
     "DescrptHybrid",
     "make_base_descriptor",
