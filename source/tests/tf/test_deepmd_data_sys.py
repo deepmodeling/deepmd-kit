@@ -16,6 +16,10 @@ from deepmd.tf.utils.data_system import (
     prob_sys_size_ext,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     places = 6
 else:
@@ -24,7 +28,7 @@ else:
 
 class TestDataSystem(unittest.TestCase):
     def setUp(self):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         self.nsys = 4
         self.nframes = [3, 6, 5, 4]
         self.natoms = [3, 4, 6, 5]

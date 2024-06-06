@@ -9,9 +9,13 @@ from deepmd.entrypoints.neighbor_stat import (
     neighbor_stat,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 def gen_sys(nframes):
-    rng = np.random.default_rng(20240604)
+    rng = np.random.default_rng(GLOBAL_SEED)
     natoms = 1000
     data = {}
     X, Y, Z = np.mgrid[0:2:3j, 0:2:3j, 0:2:3j]

@@ -23,6 +23,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -56,7 +59,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_get_parameters(
         self,
     ):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ddsub0 = DescrptSeA(
             rcut=self.rcut,

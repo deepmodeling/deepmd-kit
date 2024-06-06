@@ -16,6 +16,9 @@ from deepmd.dpmodel.descriptor.se_r import (
     DescrptSeR,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .case_single_frame_with_nlist import (
     TestCaseSingleFrameWithNlist,
 )
@@ -29,7 +32,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_get_parameters(
         self,
     ):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
@@ -72,7 +75,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_self_consistency(
         self,
     ):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))

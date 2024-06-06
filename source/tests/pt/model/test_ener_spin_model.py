@@ -20,6 +20,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (
     model_dpa1,
     model_dpa2,
@@ -59,7 +62,7 @@ class SpinTest:
         natoms = 5
         self.ntypes = 3  # ["O", "H", "B"] for test
         self.cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE).unsqueeze(0)
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         self.coord = 3.0 * torch.rand(
             [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         ).unsqueeze(0)

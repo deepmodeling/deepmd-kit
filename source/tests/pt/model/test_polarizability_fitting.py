@@ -32,6 +32,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -42,7 +45,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 class TestPolarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
-        self.rng = np.random.default_rng(20240604)
+        self.rng = np.random.default_rng(GLOBAL_SEED)
         self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.scale = self.rng.uniform(0, 1, self.nt).tolist()
@@ -152,7 +155,7 @@ class TestEquivalence(unittest.TestCase):
         self.sel = [46, 92, 4]
         self.nf = 1
         self.nt = 3
-        self.rng = np.random.default_rng(20240604)
+        self.rng = np.random.default_rng(GLOBAL_SEED)
         self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device=env.DEVICE)
         self.shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
         self.atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)

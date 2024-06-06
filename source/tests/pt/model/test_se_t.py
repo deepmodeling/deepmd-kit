@@ -16,6 +16,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -34,7 +37,7 @@ class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
@@ -108,7 +111,7 @@ class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))

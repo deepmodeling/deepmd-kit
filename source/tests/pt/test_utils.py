@@ -9,10 +9,14 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 class TestCvt(unittest.TestCase):
     def test_to_numpy(self):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         foo = rng.normal([3, 4])
         for ptp, npp in zip(
             [torch.float16, torch.float32, torch.float64],

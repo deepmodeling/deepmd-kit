@@ -13,6 +13,9 @@ from deepmd.tf.utils.data import (
     DeepmdData,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
 from .common import (
     tests_path,
 )
@@ -25,7 +28,7 @@ else:
 
 class TestDataTypeSel(unittest.TestCase):
     def setUp(self):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         self.data_name = "test_data"
         os.makedirs(self.data_name, exist_ok=True)
         os.makedirs(os.path.join(self.data_name, "set.foo"), exist_ok=True)
@@ -79,7 +82,7 @@ class TestDataTypeSel(unittest.TestCase):
 
 class TestData(unittest.TestCase):
     def setUp(self):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         self.data_name = "test_data"
         os.makedirs(self.data_name, exist_ok=True)
         os.makedirs(os.path.join(self.data_name, "set.foo"), exist_ok=True)

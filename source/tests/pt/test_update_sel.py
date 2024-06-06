@@ -12,6 +12,10 @@ from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 def update_sel(jdata):
     type_map = jdata["model"].get("type_map")
@@ -23,7 +27,7 @@ def update_sel(jdata):
 class TestTrain(unittest.TestCase):
     def setUp(self) -> None:
         self.update_sel = UpdateSel()
-        self.mock_min_nbor_dist = random.Random(20240604).random()
+        self.mock_min_nbor_dist = random.Random(GLOBAL_SEED).random()
         return super().setUp()
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")

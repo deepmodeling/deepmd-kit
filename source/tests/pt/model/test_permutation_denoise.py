@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
@@ -37,7 +40,7 @@ class PermutationDenoiseTest:
     def test(
         self,
     ):
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)

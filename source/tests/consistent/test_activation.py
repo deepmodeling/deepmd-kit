@@ -8,6 +8,9 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.utils.network import get_activation_fn as get_activation_fn_dp
 
+from ..seed import (
+    GLOBAL_SEED,
+)
 from .common import (
     INSTALLED_PT,
     INSTALLED_TF,
@@ -33,7 +36,7 @@ if INSTALLED_TF:
 class TestActivationFunctionConsistent(unittest.TestCase):
     def setUp(self):
         (self.activation,) = self.param
-        self.random_input = np.random.default_rng(20240604).normal(
+        self.random_input = np.random.default_rng(GLOBAL_SEED).normal(
             scale=10, size=(10, 10)
         )
         self.ref = get_activation_fn_dp(self.activation)(self.random_input)

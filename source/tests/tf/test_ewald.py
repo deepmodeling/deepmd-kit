@@ -11,6 +11,10 @@ from deepmd.tf.infer.ewald_recp import (
     op_module,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     global_default_fv_hh = 1e-2
     global_default_dw_hh = 1e-2
@@ -23,7 +27,7 @@ else:
 
 class TestEwaldRecp(tf.test.TestCase):
     def setUp(self):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         boxl = 4.5  # NOTICE grid should not change before and after box pert...
         box_pert = 0.2
         self.natoms = 16

@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation_denoise import (
     model_dpa1,
     model_dpa2,
@@ -26,7 +29,7 @@ class RotDenoiseTest:
     def test(
         self,
     ):
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)

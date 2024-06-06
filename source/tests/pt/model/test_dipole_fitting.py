@@ -33,6 +33,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -57,7 +60,7 @@ def finite_difference(f, x, a, delta=1e-6):
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
-        self.rng = np.random.default_rng(20240604)
+        self.rng = np.random.default_rng(GLOBAL_SEED)
         self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
@@ -147,7 +150,7 @@ class TestEquivalence(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         self.coord = 2 * torch.rand(
             [self.natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         )
@@ -165,7 +168,7 @@ class TestEquivalence(unittest.TestCase):
         coord_rot = torch.matmul(self.coord, rmat)
         # use larger cell to rotate only coord and shift to the center of cell
         cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         for nfp, nap in itertools.product(
             [0, 3],
             [0, 4],
@@ -309,7 +312,7 @@ class TestDipoleModel(unittest.TestCase):
         self.rcut_smth = 0.5
         self.sel = [46, 92, 4]
         self.nf = 1
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         self.coord = 2 * torch.rand(
             [self.natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         )

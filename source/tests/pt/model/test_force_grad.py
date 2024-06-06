@@ -23,6 +23,10 @@ from deepmd.utils.data import (
     DeepmdData,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 
 class CheckSymmetry(DeepmdData):
     def __init__(
@@ -85,7 +89,7 @@ class TestForceGrad(unittest.TestCase):
 
     @unittest.skip("it can be replaced by autodiff")
     def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         result0 = self.model(**get_data(self.origin_batch))
         np.random.default_rng(seed)
         errors = np.zeros((self.dpdatasystem.natoms, 3))

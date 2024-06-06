@@ -25,6 +25,10 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 dtype = torch.float64
 
 
@@ -66,7 +70,7 @@ class HessianTest:
         natoms = self.nloc
         nf = self.nf
         nv = self.nv
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         cell0 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell0 = 1.0 * (cell0 + cell0.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         cell1 = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)

@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
@@ -57,7 +60,7 @@ class SmoothTest:
             dtype=dtype,
             device=env.DEVICE,
         ).view([-1, 3])
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         coord1 = torch.rand(
             [natoms - coord0.shape[0], 3],
             dtype=dtype,

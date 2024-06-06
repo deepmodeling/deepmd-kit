@@ -17,6 +17,9 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
@@ -58,7 +61,7 @@ class ForwardLowerTest:
         prec = self.prec
         natoms = 5
         cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         coord = 3.0 * torch.rand(
             [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         )

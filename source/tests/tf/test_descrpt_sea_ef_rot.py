@@ -14,6 +14,10 @@ from deepmd.tf.env import (
     tf,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 class TestEfRot(tf.test.TestCase):
     def setUp(self):
@@ -97,7 +101,7 @@ class TestEfRot(tf.test.TestCase):
         return energy, force, virial, atom_ener, atom_vir
 
     def make_test_data(self, nframes):
-        rng = np.random.default_rng(20240604)
+        rng = np.random.default_rng(GLOBAL_SEED)
         dcoord = rng.random([nframes, self.natoms[0], 3])
         for ii in range(nframes):
             dcoord[ii, :, :] = dcoord[ii, :, :] - np.tile(

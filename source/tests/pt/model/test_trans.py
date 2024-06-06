@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
@@ -32,7 +35,7 @@ class TransTest:
         self,
     ):
         natoms = 5
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
         coord = torch.rand(

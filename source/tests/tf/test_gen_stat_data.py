@@ -21,9 +21,13 @@ from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 def gen_sys(nframes, atom_types):
-    rng = np.random.default_rng(20240604)
+    rng = np.random.default_rng(GLOBAL_SEED)
     natoms = len(atom_types)
     data = {}
     data["coords"] = rng.random([nframes, natoms, 3])

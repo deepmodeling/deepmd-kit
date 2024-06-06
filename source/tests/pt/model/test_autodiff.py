@@ -15,6 +15,10 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 dtype = torch.float64
 
 from .test_permutation import (
@@ -58,7 +62,7 @@ class ForceTest:
         places = 5
         delta = 1e-5
         natoms = 5
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
@@ -130,7 +134,7 @@ class VirialTest:
         places = 5
         delta = 1e-4
         natoms = 5
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
         cell = (cell) + 5.0 * torch.eye(3, device="cpu")
         coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)

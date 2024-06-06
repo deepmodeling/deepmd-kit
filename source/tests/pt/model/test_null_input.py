@@ -19,6 +19,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (
     model_dpa1,
     model_dpa2,
@@ -35,7 +38,7 @@ class NullTest:
         self,
     ):
         natoms = 1
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         # torch.manual_seed(1000)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # large box to exclude images
@@ -61,7 +64,7 @@ class NullTest:
         self,
     ):
         natoms = 2
-        generator = torch.Generator(device="cpu").manual_seed(20240604)
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         # large box to exclude images
         cell = (cell + cell.T) + 3000.0 * torch.eye(3, device=env.DEVICE)
