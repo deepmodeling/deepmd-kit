@@ -122,11 +122,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
         slim_index = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
-        self.atom_exclude_types = map_atom_exclude_types(
-            self.atom_exclude_types, slim_index
+        self.reinit_atom_exclude(
+            map_atom_exclude_types(self.atom_exclude_types, slim_index)
         )
-        self.pair_exclude_types = map_pair_exclude_types(
-            self.pair_exclude_types, slim_index
+        self.reinit_pair_exclude(
+            map_pair_exclude_types(self.pair_exclude_types, slim_index)
         )
         self.out_bias = self.out_bias[:, slim_index, :]
         self.out_std = self.out_std[:, slim_index, :]

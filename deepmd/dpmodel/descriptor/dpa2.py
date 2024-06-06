@@ -560,6 +560,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.ntypes = len(type_map)
         repinit = self.repinit
         repformers = self.repformers
+        repinit.reinit_exclude(self.exclude_types)
+        repformers.reinit_exclude(self.exclude_types)
         repinit["davg"] = repinit["davg"][slim_index]
         repinit["dstd"] = repinit["dstd"][slim_index]
         repformers["davg"] = repformers["davg"][slim_index]

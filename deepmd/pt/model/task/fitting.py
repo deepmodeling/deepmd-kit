@@ -264,7 +264,7 @@ class GeneralFitting(Fitting):
         slim_index = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.ntypes = len(type_map)
-        self.exclude_types = map_atom_exclude_types(self.exclude_types, slim_index)
+        self.reinit_exclude(map_atom_exclude_types(self.exclude_types, slim_index))
         self.bias_atom_e = self.bias_atom_e[slim_index]
 
     def serialize(self) -> dict:

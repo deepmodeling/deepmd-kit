@@ -401,7 +401,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         obj.ntypes = len(type_map)
         self.type_map = type_map
         self.type_embedding.slim_type_map(type_map=type_map)
-        obj.exclude_types = map_pair_exclude_types(obj.exclude_types, slim_index)
+        obj.reinit_exclude(map_pair_exclude_types(obj.exclude_types, slim_index))
         obj["davg"] = obj["davg"][slim_index]
         obj["dstd"] = obj["dstd"][slim_index]
 

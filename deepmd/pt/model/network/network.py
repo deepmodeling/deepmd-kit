@@ -32,8 +32,8 @@ from functools import (
 
 import torch.utils.checkpoint
 
-from deepmd.dpmodel.common import (
-    PRECISION_DICT,
+from deepmd.dpmodel.utils.type_embed import (
+    get_econf_tebd,
 )
 from deepmd.pt.utils.utils import (
     ActivationFn,
@@ -684,29 +684,10 @@ class TypeEmbedNetConsistent(nn.Module):
         self.econf_tebd = None
         embed_input_dim = ntypes
         if self.use_econf_tebd:
-            from deepmd.utils.econf_embd import (
-                ECONF_DIM,
-                electronic_configuration_embedding,
+            econf_tebd, embed_input_dim = get_econf_tebd(
+                self.type_map, precision=self.precision
             )
-            from deepmd.utils.econf_embd import type_map as periodic_table
-
-            assert (
-                self.type_map is not None
-            ), "When using electronic configuration type embedding, type_map must be provided!"
-
-            missing_types = [t for t in self.type_map if t not in periodic_table]
-            assert not missing_types, (
-                "When using electronic configuration type embedding, "
-                "all element in type_map should be in periodic table! "
-                f"Found these invalid elements: {missing_types}"
-            )
-            self.econf_tebd = to_torch_tensor(
-                np.array(
-                    [electronic_configuration_embedding[kk] for kk in self.type_map],
-                    dtype=PRECISION_DICT[self.precision],
-                )
-            )
-            embed_input_dim = ECONF_DIM
+            self.econf_tebd = to_torch_tensor(econf_tebd)
         self.embedding_net = EmbeddingNet(
             embed_input_dim,
             self.neuron,
@@ -741,14 +722,37 @@ class TypeEmbedNetConsistent(nn.Module):
 
     def slim_type_map(self, type_map: List[str]) -> None:
         """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
-        assert len(self.neuron) == 1, "Only one layer type embedding can be slimmed!"
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type slimming!"
         slim_index = get_index_between_two_maps(self.type_map, type_map)
+        if not self.use_econf_tebd:
+            first_layer_matrix = self.embedding_net.layers[0].matrix.data
+            eye_vector = torch.eye(
+                self.ntypes, dtype=self.prec, device=first_layer_matrix.device
+            )
+            # preprocess for resnet connection
+            if self.neuron[0] == self.ntypes:
+                first_layer_matrix += eye_vector
+            elif self.neuron[0] == self.ntypes * 2:
+                first_layer_matrix += torch.concat([eye_vector, eye_vector], dim=-1)
+            first_layer_matrix = first_layer_matrix[slim_index]
+            new_ntypes = len(type_map)
+            eye_vector = torch.eye(
+                new_ntypes, dtype=self.prec, device=first_layer_matrix.device
+            )
+
+            if self.neuron[0] == new_ntypes:
+                first_layer_matrix -= eye_vector
+            elif self.neuron[0] == new_ntypes * 2:
+                first_layer_matrix -= torch.concat([eye_vector, eye_vector], dim=-1)
+
+            self.embedding_net.layers[0].num_in = new_ntypes
+            self.embedding_net.layers[0].matrix = nn.Parameter(data=first_layer_matrix)
+        else:
+            self.econf_tebd = self.econf_tebd[slim_index]
         self.type_map = type_map
         self.ntypes = len(type_map)
-        self.embedding_net.layers[0].num_in = len(type_map)
-        self.embedding_net.layers[0].matrix = nn.Parameter(
-            data=self.embedding_net.layers[0].matrix[slim_index]
-        )
 
     @classmethod
     def deserialize(cls, data: dict):
