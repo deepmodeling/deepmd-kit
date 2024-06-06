@@ -295,7 +295,6 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
 
     def test_dp_consistency(self):
-        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,

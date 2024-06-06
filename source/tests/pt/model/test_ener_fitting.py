@@ -105,7 +105,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_new_old(
         self,
     ):
-        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         dd = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         rd0, _, _, _, _ = dd(
