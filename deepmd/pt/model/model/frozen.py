@@ -107,6 +107,11 @@ class FrozenModel(BaseModel):
         return self.model.mixed_types()
 
     @torch.jit.export
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return self.model.has_message_passing()
+
+    @torch.jit.export
     def forward(
         self,
         coord,

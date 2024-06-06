@@ -104,6 +104,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return True
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return any(model.has_message_passing() for model in self.models)
+
     def get_out_bias(self) -> torch.Tensor:
         return self.out_bias
 

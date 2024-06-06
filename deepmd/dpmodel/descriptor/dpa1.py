@@ -349,6 +349,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         return self.se_atten.mixed_types()
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return self.se_atten.has_message_passing()
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
@@ -885,6 +889,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             gr[..., 1:].reshape(-1, nloc, self.filter_neuron[-1], 3),
             sw,
         )
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False
 
 
 class NeighborGatedAttention(NativeOP):

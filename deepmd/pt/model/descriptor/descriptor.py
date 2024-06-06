@@ -169,6 +169,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """Calculate DescriptorBlock."""
         pass
 
+    @abstractmethod
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+
 
 def make_default_type_embedding(
     ntypes,

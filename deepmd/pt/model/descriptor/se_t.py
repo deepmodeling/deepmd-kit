@@ -174,6 +174,10 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """
         return self.seat.mixed_types()
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return self.seat.has_message_passing()
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.seat.get_env_protection()
@@ -687,3 +691,7 @@ class DescrptBlockSeT(DescriptorBlock):
             None,
             sw,
         )
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False
