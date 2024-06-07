@@ -16,6 +16,10 @@ from deepmd.tf.utils.data_system import (
     prob_sys_size_ext,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     places = 6
 else:
@@ -24,6 +28,7 @@ else:
 
 class TestDataSystem(unittest.TestCase):
     def setUp(self):
+        rng = np.random.default_rng(GLOBAL_SEED)
         self.nsys = 4
         self.nframes = [3, 6, 5, 4]
         self.natoms = [3, 4, 6, 5]
@@ -40,15 +45,13 @@ class TestDataSystem(unittest.TestCase):
                 set_name = os.path.join(sys_name, "set.%03d" % jj)
                 os.makedirs(set_name, exist_ok=True)
                 path = os.path.join(set_name, "coord.npy")
-                val = np.random.default_rng().random(
-                    [self.nframes[ii] + jj, self.natoms[ii] * 3]
-                )
+                val = rng.random([self.nframes[ii] + jj, self.natoms[ii] * 3])
                 np.save(path, val)
                 path = os.path.join(set_name, "box.npy")
-                val = np.random.default_rng().random([self.nframes[ii] + jj, 9]) * 10
+                val = rng.random([self.nframes[ii] + jj, 9]) * 10
                 np.save(path, val)
                 path = os.path.join(set_name, "test.npy")
-                val = np.random.default_rng().random(
+                val = rng.random(
                     [self.nframes[ii] + jj, self.natoms[ii] * self.test_ndof]
                 )
                 np.save(path, val)

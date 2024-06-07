@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
@@ -31,11 +34,16 @@ class RotTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        coord = 2 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-        spin = 2 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = 2 * torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        spin = 2 * torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         shift = torch.tensor([4, 4, 4], dtype=dtype, device=env.DEVICE)
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         from scipy.stats import (
@@ -89,11 +97,15 @@ class RotTest:
                 raise RuntimeError(f"Unexpected test key {key}")
         # rotate coord and cell
         torch.manual_seed(0)
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord = torch.matmul(coord, cell)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         coord_rot = torch.matmul(coord, rmat)
         spin_rot = torch.matmul(spin, rmat)

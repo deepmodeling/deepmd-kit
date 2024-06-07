@@ -26,6 +26,9 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
 from .model.test_embedding_net import (
     get_single_batch,
 )
@@ -68,7 +71,7 @@ class LossCommonTest(unittest.TestCase):
         natoms = np_batch["natoms"]
         self.nloc = natoms[0]
         nframes = np_batch["energy"].shape[0]
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
 
         if not self.spin:
             l_energy, l_force, l_virial = (

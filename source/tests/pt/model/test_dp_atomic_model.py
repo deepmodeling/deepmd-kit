@@ -75,7 +75,6 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
 
     def test_dp_consistency(self):
-        rng = np.random.default_rng()
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,

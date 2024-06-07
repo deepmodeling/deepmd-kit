@@ -8,6 +8,10 @@ from deepmd.dpmodel.utils import (
     to_face_distance,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 
 class TestRegion(unittest.TestCase):
     def setUp(self):
@@ -19,7 +23,7 @@ class TestRegion(unittest.TestCase):
         self.prec = 1e-8
 
     def test_inter_to_phys(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         inter = rng.normal(size=[4, 5, 3, 3])
         phys = inter2phys(inter, self.cell)
         for ii in range(4):

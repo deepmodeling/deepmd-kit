@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
@@ -31,6 +34,7 @@ class SmoothTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         # displacement of atoms
         epsilon = 1e-5 if self.epsilon is None else self.epsilon
         # required prec. relative prec is not checked.
@@ -40,7 +44,9 @@ class SmoothTest:
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype, device=env.DEVICE)
         atype0 = torch.arange(3, dtype=dtype, device=env.DEVICE)
-        atype1 = torch.randint(0, 3, [natoms - 3], device=env.DEVICE)
+        atype1 = torch.randint(
+            0, 3, [natoms - 3], device=env.DEVICE, generator=generator
+        )
         atype = torch.cat([atype0, atype1]).view([natoms])
         coord0 = torch.tensor(
             [
@@ -58,11 +64,16 @@ class SmoothTest:
             device=env.DEVICE,
         ).view([-1, 3])
         coord1 = torch.rand(
-            [natoms - coord0.shape[0], 3], dtype=dtype, device=env.DEVICE
+            [natoms - coord0.shape[0], 3],
+            dtype=dtype,
+            device=env.DEVICE,
+            generator=generator,
         )
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord0 = torch.clone(coord)
         coord1 = torch.clone(coord)
         coord1[1][0] += epsilon

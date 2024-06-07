@@ -32,6 +32,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -191,7 +194,8 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 class TestRemmapMethod(unittest.TestCase):
     def test_valid(self):
-        atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        atype = torch.randint(0, 3, (4, 20), device=env.DEVICE, generator=generator)
         commonl = ["H", "O", "S"]
         originl = ["Si", "H", "O", "S"]
         mapping = DPZBLLinearEnergyAtomicModel.remap_atype(originl, commonl)

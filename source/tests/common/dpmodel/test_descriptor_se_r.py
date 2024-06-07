@@ -7,6 +7,9 @@ from deepmd.dpmodel.descriptor import (
     DescrptSeR,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .case_single_frame_with_nlist import (
     TestCaseSingleFrameWithNlist,
 )
@@ -19,7 +22,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_self_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 1))
         dstd = rng.normal(size=(self.nt, nnei, 1))

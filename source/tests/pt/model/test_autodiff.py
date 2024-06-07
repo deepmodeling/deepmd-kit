@@ -15,6 +15,10 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 dtype = torch.float64
 
 from .test_permutation import (
@@ -58,11 +62,12 @@ class ForceTest:
         places = 5
         delta = 1e-5
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
-        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
-        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
@@ -129,9 +134,10 @@ class VirialTest:
         places = 5
         delta = 1e-4
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
         cell = (cell) + 5.0 * torch.eye(3, device="cpu")
-        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
