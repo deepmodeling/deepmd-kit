@@ -1882,12 +1882,8 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
-        if type(self) not in [DescrptSeAtten, DescrptDPA1Compat]:
-            raise NotImplementedError(
-                f"Not implemented in class {self.__class__.__name__}"
-            )
-        if self.stripped_type_embedding and type(self) is not DescrptDPA1Compat:
-            # only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'
+        if self.stripped_type_embedding and type(self) is DescrptSeAtten:
+            # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(
                 "serialization is unsupported by the native model when tebd_input_mode=='strip'"
             )
@@ -1968,8 +1964,8 @@ class DescrptSeAtten(DescrptSeA):
         }
         if self.tebd_input_mode in ["strip"]:
             assert (
-                type(self) is DescrptDPA1Compat
-            ), "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
+                type(self) is not DescrptSeAtten
+            ), "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
                     "embeddings_strip": self.serialize_network_strip(
