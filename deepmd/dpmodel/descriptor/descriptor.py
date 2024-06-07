@@ -125,3 +125,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     ):
         """Calculate DescriptorBlock."""
         pass
+
+    @abstractmethod
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""

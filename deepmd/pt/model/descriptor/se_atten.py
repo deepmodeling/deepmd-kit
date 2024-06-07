@@ -584,6 +584,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             sw,
         )
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False
+
 
 class NeighborGatedAttention(nn.Module):
     def __init__(

@@ -29,6 +29,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
     TestCaseSingleFrameWithoutNlist,
@@ -130,7 +133,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, nloc, nap])
         args0 = [self.coord, self.atype, self.cell]
@@ -169,7 +172,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         md0 = DPEnergyModel(ds, ft, type_map=type_map)
         md1 = EnergyModel.deserialize(md0.serialize()).to(env.DEVICE)
 
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         fparam = rng.normal(size=[self.nf, nfp])
         aparam = rng.normal(size=[self.nf, self.nloc, nap])
         args0 = [self.coord, self.atype]
@@ -190,7 +193,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         )
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc = self.atype.shape
         ds = DPDescrptSeA(
             self.rcut,
@@ -292,7 +295,6 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
 
     def test_dp_consistency(self):
-        rng = np.random.default_rng()
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,
@@ -325,7 +327,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,

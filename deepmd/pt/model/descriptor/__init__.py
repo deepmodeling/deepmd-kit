@@ -29,6 +29,9 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_atten_v2 import (
+    DescrptSeAttenV2,
+)
 from .se_r import (
     DescrptSeR,
 )
@@ -42,6 +45,7 @@ __all__ = [
     "make_default_type_embedding",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
+    "DescrptSeAttenV2",
     "DescrptSeA",
     "DescrptSeR",
     "DescrptSeT",

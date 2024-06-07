@@ -21,14 +21,19 @@ from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 def gen_sys(nframes, atom_types):
+    rng = np.random.default_rng(GLOBAL_SEED)
     natoms = len(atom_types)
     data = {}
-    data["coords"] = np.random.default_rng().random([nframes, natoms, 3])
-    data["forces"] = np.random.default_rng().random([nframes, natoms, 3])
-    data["cells"] = np.random.default_rng().random([nframes, 9])
-    data["energies"] = np.random.default_rng().random([nframes, 1])
+    data["coords"] = rng.random([nframes, natoms, 3])
+    data["forces"] = rng.random([nframes, natoms, 3])
+    data["cells"] = rng.random([nframes, 9])
+    data["energies"] = rng.random([nframes, 1])
     types = list(set(atom_types))
     types.sort()
     data["atom_names"] = []

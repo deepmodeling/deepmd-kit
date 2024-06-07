@@ -19,6 +19,9 @@ from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -37,7 +40,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 1))
         dstd = rng.normal(size=(self.nt, nnei, 1))
@@ -107,7 +110,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 )
 
     def test_load_stat(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 1))
         dstd = rng.normal(size=(self.nt, nnei, 1))
@@ -157,7 +160,7 @@ class TestDescrptSeR(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         _, _, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 1))
         dstd = rng.normal(size=(self.nt, nnei, 1))

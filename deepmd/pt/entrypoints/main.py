@@ -303,10 +303,7 @@ def train(FLAGS):
 
 def freeze(FLAGS):
     model = torch.jit.script(inference.Tester(FLAGS.model, head=FLAGS.head).model)
-    if '"type": "dpa2"' in model.get_model_def_script():
-        extra_files = {"type": "dpa2"}
-    else:
-        extra_files = {"type": "else"}
+    extra_files = {}
     torch.jit.save(
         model,
         FLAGS.output,

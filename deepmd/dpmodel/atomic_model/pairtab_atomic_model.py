@@ -131,6 +131,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         # to match DPA1 and DPA2.
         return True
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return False
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(

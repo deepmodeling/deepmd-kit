@@ -138,6 +138,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix. All descriptors should be the same."""
         all_protection = [descrpt.get_env_protection() for descrpt in self.descrpt_list]

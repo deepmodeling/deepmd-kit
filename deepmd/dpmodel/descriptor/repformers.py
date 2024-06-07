@@ -387,6 +387,10 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         rot_mat = np.transpose(h2g2, (0, 1, 3, 2))
         return g1, g2, h2, rot_mat.reshape(-1, nloc, self.dim_emb, 3), sw
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return True
+
 
 # translated by GPT and modified
 def get_residual(
