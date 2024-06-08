@@ -46,6 +46,9 @@ from deepmd.utils.version import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+from .descriptor import (
+    extend_descrpt_stat,
+)
 from .dpa1 import (
     DescrptBlockSeAtten,
 )
@@ -549,24 +552,46 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """
         raise NotImplementedError
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when performing type slimming!"
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
-        self.exclude_types = map_pair_exclude_types(self.exclude_types, slim_index)
+        self.type_embedding.change_type_map(type_map=type_map)
+        self.exclude_types = map_pair_exclude_types(self.exclude_types, remap_index)
         self.ntypes = len(type_map)
         repinit = self.repinit
         repformers = self.repformers
+        if has_new_type:
+            # the avg and std of new types need to be updated
+            extend_descrpt_stat(
+                repinit,
+                type_map,
+                des_with_stat=model_with_new_type_stat.repinit
+                if model_with_new_type_stat is not None
+                else None,
+            )
+            extend_descrpt_stat(
+                repformers,
+                type_map,
+                des_with_stat=model_with_new_type_stat.repformers
+                if model_with_new_type_stat is not None
+                else None,
+            )
+        repinit.ntypes = self.ntypes
+        repformers.ntypes = self.ntypes
         repinit.reinit_exclude(self.exclude_types)
         repformers.reinit_exclude(self.exclude_types)
-        repinit["davg"] = repinit["davg"][slim_index]
-        repinit["dstd"] = repinit["dstd"][slim_index]
-        repformers["davg"] = repformers["davg"][slim_index]
-        repformers["dstd"] = repformers["dstd"][slim_index]
-        self.type_embedding.slim_type_map(type_map=type_map)
+        repinit["davg"] = repinit["davg"][remap_index]
+        repinit["dstd"] = repinit["dstd"][remap_index]
+        repformers["davg"] = repformers["davg"][remap_index]
+        repformers["dstd"] = repformers["dstd"][remap_index]
 
     @property
     def dim_out(self):

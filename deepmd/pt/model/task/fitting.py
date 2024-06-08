@@ -255,17 +255,29 @@ class GeneralFitting(Fitting):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when performing type slimming!"
-        assert self.mixed_types, "Only models in mixed types can perform type slimming!"
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        ), "'type_map' must be defined when performing type changing!"
+        assert self.mixed_types, "Only models in mixed types can perform type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.ntypes = len(type_map)
-        self.reinit_exclude(map_atom_exclude_types(self.exclude_types, slim_index))
-        self.bias_atom_e = self.bias_atom_e[slim_index]
+        self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
+        if has_new_type:
+            extend_shape = [len(type_map), *list(self.bias_atom_e.shape[1:])]
+            extend_bias_atom_e = torch.zeros(
+                extend_shape,
+                dtype=self.bias_atom_e.dtype,
+                device=self.bias_atom_e.device,
+            )
+            self.bias_atom_e = torch.cat([self.bias_atom_e, extend_bias_atom_e], dim=0)
+        self.bias_atom_e = self.bias_atom_e[remap_index]
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""

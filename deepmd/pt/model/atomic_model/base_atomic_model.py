@@ -281,18 +281,36 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             comm_dict=comm_dict,
         )
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.reinit_atom_exclude(
-            map_atom_exclude_types(self.atom_exclude_types, slim_index)
+            map_atom_exclude_types(self.atom_exclude_types, remap_index)
         )
         self.reinit_pair_exclude(
-            map_pair_exclude_types(self.pair_exclude_types, slim_index)
+            map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
-        self.out_bias = self.out_bias[:, slim_index]
-        self.out_std = self.out_std[:, slim_index]
+        if has_new_type:
+            extend_shape = [
+                self.out_bias.shape[0],
+                len(type_map),
+                *list(self.out_bias.shape[2:]),
+            ]
+            extend_bias = torch.zeros(
+                extend_shape, dtype=self.out_bias.dtype, device=self.out_bias.device
+            )
+            self.out_bias = torch.cat([self.out_bias, extend_bias], dim=1)
+            extend_std = torch.ones(
+                extend_shape, dtype=self.out_std.dtype, device=self.out_std.device
+            )
+            self.out_std = torch.cat([self.out_std, extend_std], dim=1)
+        self.out_bias = self.out_bias[:, remap_index, :]
+        self.out_std = self.out_std[:, remap_index, :]
 
     def serialize(self) -> dict:
         return {

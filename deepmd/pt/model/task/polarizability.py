@@ -161,16 +161,35 @@ class PolarFittingNet(GeneralFitting):
         else:
             return super().__getitem__(key)
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when performing type slimming!"
-        assert self.mixed_types, "Only models in mixed types can perform type slimming!"
-        super().slim_type_map(type_map=type_map)
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
-        self.scale = self.scale[slim_index]
-        self.constant_matrix = self.constant_matrix[slim_index]
+        ), "'type_map' must be defined when performing type changing!"
+        assert self.mixed_types, "Only models in mixed types can perform type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        super().change_type_map(type_map=type_map)
+        if has_new_type:
+            extend_shape = [len(type_map), *list(self.scale.shape[1:])]
+            extend_scale = torch.ones(
+                extend_shape, dtype=self.scale.dtype, device=self.scale.device
+            )
+            self.scale = torch.cat([self.scale, extend_scale], dim=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = torch.zeros(
+                extend_shape,
+                dtype=self.constant_matrix.dtype,
+                device=self.constant_matrix.device,
+            )
+            self.constant_matrix = torch.cat(
+                [self.constant_matrix, extend_constant_matrix], dim=0
+            )
+        self.scale = self.scale[remap_index]
+        self.constant_matrix = self.constant_matrix[remap_index]
 
     def serialize(self) -> dict:
         data = super().serialize()

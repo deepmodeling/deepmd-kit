@@ -183,7 +183,9 @@ class EnergyFittingNetDirect(Fitting):
     def deserialize(cls) -> "EnergyFittingNetDirect":
         raise NotImplementedError
 
-    def slim_type_map(self, type_map: List[str]) -> None:
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
         raise NotImplementedError
 
     def get_type_map(self) -> List[str]:

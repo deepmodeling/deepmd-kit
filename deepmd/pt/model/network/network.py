@@ -622,9 +622,13 @@ class TypeEmbedNet(nn.Module):
         else:
             raise NotImplementedError
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
-        self.embedding.slim_type_map(type_map=type_map)
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        self.embedding.change_type_map(type_map=type_map)
 
 
 class TypeEmbedNetConsistent(nn.Module):
@@ -720,12 +724,16 @@ class TypeEmbedNetConsistent(nn.Module):
             )
         return embed
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when performing type slimming!"
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         if not self.use_econf_tebd:
             first_layer_matrix = self.embedding_net.layers[0].matrix.data
             eye_vector = torch.eye(
@@ -736,7 +744,19 @@ class TypeEmbedNetConsistent(nn.Module):
                 first_layer_matrix += eye_vector
             elif self.neuron[0] == self.ntypes * 2:
                 first_layer_matrix += torch.concat([eye_vector, eye_vector], dim=-1)
-            first_layer_matrix = first_layer_matrix[slim_index]
+
+            # randomly initialize params for the unseen types
+            if has_new_type:
+                extend_type_params = torch.rand(
+                    [len(type_map), first_layer_matrix.shape[-1]],
+                    device=first_layer_matrix.device,
+                    dtype=first_layer_matrix.dtype,
+                )
+                first_layer_matrix = torch.cat(
+                    [first_layer_matrix, extend_type_params], dim=0
+                )
+
+            first_layer_matrix = first_layer_matrix[remap_index]
             new_ntypes = len(type_map)
             eye_vector = torch.eye(
                 new_ntypes, dtype=self.prec, device=first_layer_matrix.device
@@ -750,7 +770,10 @@ class TypeEmbedNetConsistent(nn.Module):
             self.embedding_net.layers[0].num_in = new_ntypes
             self.embedding_net.layers[0].matrix = nn.Parameter(data=first_layer_matrix)
         else:
-            self.econf_tebd = self.econf_tebd[slim_index]
+            econf_tebd, embed_input_dim = get_econf_tebd(
+                type_map, precision=self.precision
+            )
+            self.econf_tebd = to_torch_tensor(econf_tebd)
         self.type_map = type_map
         self.ntypes = len(type_map)
 

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 from typing import (
     List,
     Tuple,
 )
+
+log = logging.getLogger(__name__)
 
 
 class FinetuneRuleItem:
@@ -35,16 +38,15 @@ class FinetuneRuleItem:
         self.model_branch = model_branch
         self.random_fitting = random_fitting
         self.resuming = resuming
-        missing_type = [i for i in type_map if i not in p_type_map]
-        assert not missing_type, (
-            "Only support for smaller type map when finetuning or resuming! "
-            f"While these types are not in the pretrained model: {missing_type}."
-        )
         self.update_type = not (self.p_type_map == self.type_map)
 
     def get_index_mapping(self):
         """Returns the mapping index of newly defined types to those in the pretrained model."""
-        return get_index_between_two_maps(self.p_type_map, self.type_map)
+        return get_index_between_two_maps(self.p_type_map, self.type_map)[0]
+
+    def get_has_new_type(self):
+        """Returns whether there are unseen types in the new type_map."""
+        return get_index_between_two_maps(self.p_type_map, self.type_map)[1]
 
     def get_model_branch(self):
         """Returns the chosen model branch."""
@@ -72,79 +74,87 @@ class FinetuneRuleItem:
 
 
 def get_index_between_two_maps(
-    large_map: List[str],
-    small_map: List[str],
+    old_map: List[str],
+    new_map: List[str],
 ):
-    """Returns the mapping index of types in small_map to those in the large_map.
+    """Returns the mapping index of types in new_map to those in the old_map.
 
     Parameters
     ----------
-    large_map : List[str]
-        The larger list of atom type names.
-    small_map : List[str]
-        The smaller list of atom type names.
+    old_map : List[str]
+        The old list of atom type names.
+    new_map : List[str]
+        The new list of atom type names.
 
     Returns
     -------
-    slimmed_index: List[int]
-        The indices in the larger type list that correspond to the types in the smaller type list.
+    index_map: List[int]
+        List contains len(new_map) indices, where index_map[i] is the index of new_map[i] in old_map.
+        If new_map[i] is not in the old_map, the index will be (i - len(new_map)).
+    has_new_type: bool
+        Whether there are unseen types in the new type_map.
     """
-    missing_type = [i for i in small_map if i not in large_map]
-    assert not missing_type, (
-        "Only support for smaller type map when doing type slimming!"
-        f"While these types are not in the pretrained model: {missing_type}."
-    )
-    return [large_map.index(i) for i in small_map]
+    missing_type = [i for i in new_map if i not in old_map]
+    has_new_type = False
+    if len(missing_type) > 0:
+        has_new_type = True
+        log.warning(
+            f"These types are not in the pretrained model and related params will be randomly initialized: {missing_type}."
+        )
+    index_map = []
+    for ii, t in enumerate(new_map):
+        index_map.append(old_map.index(t) if t in old_map else ii - len(new_map))
+    return index_map, has_new_type
 
 
 def map_atom_exclude_types(
     atom_exclude_types: List[int],
-    slim_index: List[int],
+    remap_index: List[int],
 ):
-    """Return the slimmed atom_exclude_types according to slim_index.
+    """Return the remapped atom_exclude_types according to remap_index.
 
     Parameters
     ----------
     atom_exclude_types : List[int]
         Exclude the atomic contribution of the given types.
-    slim_index : List[int]
-        The indices in the larger type list that correspond to the types in the smaller type list.
+    remap_index : List[int]
+        The indices in the old type list that correspond to the types in the new type list.
 
     Returns
     -------
-    slimmed_atom_exclude_types: List[int]
-        Slimmed atom_exclude_types that only keeps the types in the smaller type list.
+    remapped_atom_exclude_types: List[int]
+        Remapped atom_exclude_types that only keeps the types in the new type list.
 
     """
-    atom_exclude_types = [
-        slim_index.index(i) for i in atom_exclude_types if i in slim_index
+    remapped_atom_exclude_types = [
+        remap_index.index(i) for i in atom_exclude_types if i in remap_index
     ]
-    return atom_exclude_types
+    return remapped_atom_exclude_types
 
 
 def map_pair_exclude_types(
     pair_exclude_types: List[Tuple[int, int]],
-    slim_index: List[int],
+    remap_index: List[int],
 ):
-    """Return the slimmed atom_exclude_types according to slim_index.
+    """Return the remapped atom_exclude_types according to remap_index.
 
     Parameters
     ----------
     pair_exclude_types : List[Tuple[int, int]]
         Exclude the pair of atoms of the given types from computing the output
         of the atomic model.
-    slim_index : List[int]
-        The indices in the larger type list that correspond to the types in the smaller type list.
+    remap_index : List[int]
+        The indices in the old type list that correspond to the types in the new type list.
 
     Returns
     -------
-    slimmed_pair_exclude_typess: List[Tuple[int, int]]
-        Slimmed pair_exclude_types that only keeps the types in the smaller type list.
+    remapped_pair_exclude_typess: List[Tuple[int, int]]
+        Remapped pair_exclude_types that only keeps the types in the new type list.
 
     """
-    slimmed_pair_exclude_types = [
-        (slim_index.index(pair[0]), slim_index.index(pair[1]))
+    remapped_pair_exclude_typess = [
+        (remap_index.index(pair[0]), remap_index.index(pair[1]))
         for pair in pair_exclude_types
-        if pair[0] in slim_index and pair[1] in slim_index
+        if pair[0] in remap_index and pair[1] in remap_index
     ]
-    return slimmed_pair_exclude_types
+    return remapped_pair_exclude_typess

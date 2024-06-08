@@ -218,6 +218,7 @@ class Trainer:
             _validation_data,
             _stat_file_path,
             _data_requirement,
+            finetune_has_new_type=False,
         ):
             if _model.get_dim_fparam() > 0:
                 fparam_requirement_items = [
@@ -254,7 +255,7 @@ class Trainer:
                 )
                 return sampled
 
-            if not resuming and self.rank == 0:
+            if (not resuming or finetune_has_new_type) and self.rank == 0:
                 _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
@@ -383,6 +384,9 @@ class Trainer:
                 validation_data,
                 stat_file_path,
                 self.loss.label_requirement,
+                finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
+                if self.finetune_links is not None
+                else False,
             )
             (
                 self.training_dataloader,
@@ -416,6 +420,11 @@ class Trainer:
                     validation_data[model_key],
                     stat_file_path[model_key],
                     self.loss[model_key].label_requirement,
+                    finetune_has_new_type=self.finetune_links[
+                        model_key
+                    ].get_has_new_type()
+                    if self.finetune_links is not None
+                    else False,
                 )
                 (
                     self.training_dataloader[model_key],
@@ -525,9 +534,17 @@ class Trainer:
                                 _model_key_from
                             ].get_type_map()
                         ):
+                            model_with_new_type_stat = (
+                                self.wrapper.model[model_key]
+                                if finetune_rule_single.get_has_new_type()
+                                else None
+                            )
                             pretrained_model_wrapper.model[
                                 _model_key_from
-                            ].slim_type_map(finetune_rule_single.get_finetune_tmap())
+                            ].change_type_map(
+                                finetune_rule_single.get_finetune_tmap(),
+                                model_with_new_type_stat=model_with_new_type_stat,
+                            )
                     state_dict = pretrained_model_wrapper.state_dict()
 
                     def collect_single_finetune_params(

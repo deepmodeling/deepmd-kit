@@ -168,10 +168,16 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the output dimension of this descriptor."""
         return self.get_dim_out()
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
         raise NotImplementedError(
-            "Descriptor se_e3 does not support slimming for type related params!"
+            "Descriptor se_e3 does not support changing for type related params!"
+            "This feature is currently not implemented because it would require additional work to support the non-mixed-types case. "
+            "We may consider adding this support in the future if there is a clear demand for it."
         )
 
     def get_dim_out(self):

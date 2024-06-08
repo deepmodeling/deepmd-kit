@@ -141,7 +141,9 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def slim_type_map(self, type_map: List[str]) -> None:
+        def change_type_map(
+            self, type_map: List[str], model_with_new_type_stat=None
+        ) -> None:
             pass
 
         def make_atom_mask(

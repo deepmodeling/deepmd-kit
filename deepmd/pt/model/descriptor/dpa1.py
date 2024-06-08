@@ -44,6 +44,9 @@ from deepmd.utils.version import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+from .descriptor import (
+    extend_descrpt_stat,
+)
 from .se_atten import (
     DescrptBlockSeAtten,
     NeighborGatedAttention,
@@ -419,19 +422,32 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
         assert (
             self.type_map is not None
-        ), "'type_map' must be defined when performing type slimming!"
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         obj = self.se_atten
         obj.ntypes = len(type_map)
         self.type_map = type_map
-        self.type_embedding.slim_type_map(type_map=type_map)
-        obj.reinit_exclude(map_pair_exclude_types(obj.exclude_types, slim_index))
-        obj["davg"] = obj["davg"][slim_index]
-        obj["dstd"] = obj["dstd"][slim_index]
+        self.type_embedding.change_type_map(type_map=type_map)
+        obj.reinit_exclude(map_pair_exclude_types(obj.exclude_types, remap_index))
+        if has_new_type:
+            # the avg and std of new types need to be updated
+            extend_descrpt_stat(
+                obj,
+                type_map,
+                des_with_stat=model_with_new_type_stat.se_atten
+                if model_with_new_type_stat is not None
+                else None,
+            )
+        obj["davg"] = obj["davg"][remap_index]
+        obj["dstd"] = obj["dstd"][remap_index]
 
     def serialize(self) -> dict:
         obj = self.se_atten

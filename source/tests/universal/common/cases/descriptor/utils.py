@@ -99,7 +99,7 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
             )
             np.testing.assert_allclose(rd0, rd_ex)
 
-    def test_slim_type_map(self):
+    def test_change_type_map(self):
         if (
             not self.module.mixed_types()
             or getattr(self.module, "sel_no_mixed_types", None) is not None
@@ -132,56 +132,58 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
             "Cl",
             "Ar",
         ]  # 18 elements
-        for ltm, stm, em, econf in itertools.product(
+        for old_tm, new_tm, em, econf in itertools.product(
             [
                 deepcopy(full_type_map_test),  # 18 elements
                 deepcopy(
                     full_type_map_test[:16]
                 ),  # 16 elements, double of tebd default first dim
                 deepcopy(full_type_map_test[:8]),  # 8 elements, tebd default first dim
-            ],  # large_type_map
+                ["H", "O"],  # slimmed types
+            ],  # old_type_map
             [
+                deepcopy(full_type_map_test),  # 18 elements
                 deepcopy(
                     full_type_map_test[:16]
                 ),  # 16 elements, double of tebd default first dim
                 deepcopy(full_type_map_test[:8]),  # 8 elements, tebd default first dim
                 ["H", "O"],  # slimmed types
-            ],  # small_type_map
+            ],  # new_type_map
             [[], [[0, 1]], [[1, 1]]],  # exclude_types for original_type_map
             [False, True],  # use_econf_tebd
         ):
-            if len(ltm) < len(stm):
+            if len(old_tm) >= len(new_tm):
                 continue
             # use shuffled type_map
-            shuffle(ltm)
-            shuffle(stm)
-            ltm_index = np.array(
-                [ltm.index(i) for i in original_type_map], dtype=np.int32
+            shuffle(old_tm)
+            shuffle(new_tm)
+            old_tm_index = np.array(
+                [old_tm.index(i) for i in original_type_map], dtype=np.int32
             )
-            stm_index = np.array(
-                [stm.index(i) for i in original_type_map], dtype=np.int32
+            new_tm_index = np.array(
+                [new_tm.index(i) for i in original_type_map], dtype=np.int32
             )
-            ltm_em = remap_exclude_types(em, original_type_map, ltm)
-            ltm_input = update_input_type_map(self.input_dict, ltm)
-            ltm_input = update_input_use_econf_tebd(ltm_input, econf)
-            ltm_input = update_input_exclude_types(ltm_input, ltm_em)
-            ltm_module = self.module_class(**ltm_input)
-            ltm_dd = self.forward_wrapper(ltm_module)
-            rd_ltm, _, _, _, sw_ltm = ltm_dd(
+            old_tm_em = remap_exclude_types(em, original_type_map, old_tm)
+            old_tm_input = update_input_type_map(self.input_dict, old_tm)
+            old_tm_input = update_input_use_econf_tebd(old_tm_input, econf)
+            old_tm_input = update_input_exclude_types(old_tm_input, old_tm_em)
+            old_tm_module = self.module_class(**old_tm_input)
+            old_tm_dd = self.forward_wrapper(old_tm_module)
+            rd_old_tm, _, _, _, sw_old_tm = old_tm_dd(
                 coord_ext_device,
-                ltm_index[atype_ext_device],
+                old_tm_index[atype_ext_device],
                 nlist_device,
                 mapping=mapping_device,
             )
-            ltm_module.slim_type_map(stm)
-            stm_dd = self.forward_wrapper(ltm_module)
-            rd_stm, _, _, _, sw_stm = stm_dd(
+            old_tm_module.change_type_map(new_tm)
+            new_tm_dd = self.forward_wrapper(old_tm_module)
+            rd_new_tm, _, _, _, sw_new_tm = new_tm_dd(
                 coord_ext_device,
-                stm_index[atype_ext_device],
+                new_tm_index[atype_ext_device],
                 nlist_device,
                 mapping=mapping_device,
             )
-            np.testing.assert_allclose(rd_ltm, rd_stm)
+            np.testing.assert_allclose(rd_old_tm, rd_new_tm)
 
 
 def update_input_type_map(input_dict, type_map):

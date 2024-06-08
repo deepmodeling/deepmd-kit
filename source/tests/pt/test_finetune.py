@@ -153,7 +153,7 @@ class FinetuneTest:
 
         self.tearDown()
 
-    def test_finetune_slim_type(self):
+    def test_finetune_change_type(self):
         if not self.mixed_types:
             # skip when not mixed_types
             return
@@ -170,70 +170,75 @@ class FinetuneTest:
             nbatches=1,
         )
         data_type_map = self.config["model"]["type_map"]
-        large_type_map = ["H", "X1", "X2", "O", "B"]
-        large_type_map_index = np.array(
-            [large_type_map.index(i) for i in data_type_map], dtype=np.int32
-        )
-        slimed_type_map = ["O", "H"]
-
-        # get pretrained model with large type map
-        config_large_type_map = deepcopy(self.config)
-        config_large_type_map["model"]["type_map"] = large_type_map
-        trainer = get_trainer(config_large_type_map)
-        trainer.run()
-        finetune_model = (
-            config_large_type_map["training"].get("save_ckpt", "model.ckpt") + ".pt"
-        )
-
-        # finetune load the same type_map
-        config_large_type_map_finetune = deepcopy(self.config)
-        config_large_type_map_finetune["model"]["type_map"] = large_type_map
-        config_large_type_map_finetune["model"], finetune_links = get_finetune_rules(
-            finetune_model,
-            config_large_type_map_finetune["model"],
-        )
-        trainer_finetune_large = get_trainer(
-            config_large_type_map_finetune,
-            finetune_model=finetune_model,
-            finetune_links=finetune_links,
-        )
-
-        # finetune load the slim type_map
-        config_slimed_type_map_finetune = deepcopy(self.config)
-        config_slimed_type_map_finetune["model"]["type_map"] = slimed_type_map
-        config_slimed_type_map_finetune["model"], finetune_links = get_finetune_rules(
-            finetune_model,
-            config_slimed_type_map_finetune["model"],
-        )
-        trainer_finetune_slimed = get_trainer(
-            config_slimed_type_map_finetune,
-            finetune_model=finetune_model,
-            finetune_links=finetune_links,
-        )
-
-        # test consistency
-        ntest = 1
-        prec = 1e-10
-        model_large_result = trainer_finetune_large.model(
-            sampled[0]["coord"][:ntest],
-            to_torch_tensor(large_type_map_index)[sampled[0]["atype"][:ntest]],
-            box=sampled[0]["box"][:ntest],
-        )
-        model_slimed_result = trainer_finetune_slimed.model(
-            sampled[0]["coord"][:ntest],
-            sampled[0]["atype"][:ntest],
-            box=sampled[0]["box"][:ntest],
-        )
-        test_keys = ["energy", "force", "virial"]
-        for key in test_keys:
-            torch.testing.assert_close(
-                model_large_result[key],
-                model_slimed_result[key],
-                rtol=prec,
-                atol=prec,
+        for [old_type_map, new_type_map] in [
+            [["H", "X1", "X2", "O", "B"], ["O", "H", "B"]],
+            [["O", "H", "B"], ["H", "X1", "X2", "O", "B"]],
+        ]:
+            old_type_map_index = np.array(
+                [old_type_map.index(i) for i in data_type_map], dtype=np.int32
+            )
+            new_type_map_index = np.array(
+                [new_type_map.index(i) for i in data_type_map], dtype=np.int32
             )
 
-        self.tearDown()
+            # get pretrained model with old type map
+            config_old_type_map = deepcopy(self.config)
+            config_old_type_map["model"]["type_map"] = old_type_map
+            trainer = get_trainer(config_old_type_map)
+            trainer.run()
+            finetune_model = (
+                config_old_type_map["training"].get("save_ckpt", "model.ckpt") + ".pt"
+            )
+
+            # finetune load the same type_map
+            config_old_type_map_finetune = deepcopy(self.config)
+            config_old_type_map_finetune["model"]["type_map"] = old_type_map
+            config_old_type_map_finetune["model"], finetune_links = get_finetune_rules(
+                finetune_model,
+                config_old_type_map_finetune["model"],
+            )
+            trainer_finetune_old = get_trainer(
+                config_old_type_map_finetune,
+                finetune_model=finetune_model,
+                finetune_links=finetune_links,
+            )
+
+            # finetune load the slim type_map
+            config_new_type_map_finetune = deepcopy(self.config)
+            config_new_type_map_finetune["model"]["type_map"] = new_type_map
+            config_new_type_map_finetune["model"], finetune_links = get_finetune_rules(
+                finetune_model,
+                config_new_type_map_finetune["model"],
+            )
+            trainer_finetune_new = get_trainer(
+                config_new_type_map_finetune,
+                finetune_model=finetune_model,
+                finetune_links=finetune_links,
+            )
+
+            # test consistency
+            ntest = 1
+            prec = 1e-10
+            model_old_result = trainer_finetune_old.model(
+                sampled[0]["coord"][:ntest],
+                to_torch_tensor(old_type_map_index)[sampled[0]["atype"][:ntest]],
+                box=sampled[0]["box"][:ntest],
+            )
+            model_new_result = trainer_finetune_new.model(
+                sampled[0]["coord"][:ntest],
+                to_torch_tensor(new_type_map_index)[sampled[0]["atype"][:ntest]],
+                box=sampled[0]["box"][:ntest],
+            )
+            test_keys = ["energy", "force", "virial"]
+            for key in test_keys:
+                torch.testing.assert_close(
+                    model_old_result[key],
+                    model_new_result[key],
+                    rtol=prec,
+                    atol=prec,
+                )
+
+            self.tearDown()
 
     def tearDown(self):
         for f in os.listdir("."):

@@ -104,7 +104,7 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             )[var_name]
             np.testing.assert_allclose(rd, rd_ex)
 
-    def test_slim_type_map(self):
+    def test_change_type_map(self):
         if not self.module.mixed_types:
             # skip if not mixed_types
             return
@@ -131,57 +131,58 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             "Cl",
             "Ar",
         ]  # 18 elements
-        for ltm, stm, em in itertools.product(
+        for old_tm, new_tm, em in itertools.product(
             [
                 deepcopy(full_type_map_test[:8]),  # 8 elements
+                ["H", "O"],  # slimmed types
             ],  # large_type_map
             [
                 deepcopy(full_type_map_test[:8]),  # 8 elements
                 ["H", "O"],  # slimmed types
             ],  # small_type_map
-            [[], [0], [1]],  # exclude_types for original_type_map
+            [
+                [],
+            ],  # exclude_types for original_type_map
         ):
-            if len(ltm) < len(stm):
-                continue
             # use shuffled type_map
-            shuffle(ltm)
-            shuffle(stm)
-            ltm_index = np.array(
-                [ltm.index(i) for i in original_type_map], dtype=np.int32
+            shuffle(old_tm)
+            shuffle(new_tm)
+            old_tm_index = np.array(
+                [old_tm.index(i) for i in original_type_map], dtype=np.int32
             )
-            stm_index = np.array(
-                [stm.index(i) for i in original_type_map], dtype=np.int32
+            new_tm_index = np.array(
+                [new_tm.index(i) for i in original_type_map], dtype=np.int32
             )
-            ltm_em = remap_exclude_types(em, original_type_map, ltm)
-            ltm_input = deepcopy(self.input_dict)
-            ltm_input["type_map"] = ltm
-            ltm_input["ntypes"] = len(ltm)
-            ltm_input["exclude_types"] = ltm_em
-            ltm_module = self.module_class(**ltm_input)
-            serialize_dict = ltm_module.serialize()
+            old_tm_em = remap_exclude_types(em, original_type_map, old_tm)
+            old_tm_input = deepcopy(self.input_dict)
+            old_tm_input["type_map"] = old_tm
+            old_tm_input["ntypes"] = len(old_tm)
+            old_tm_input["exclude_types"] = old_tm_em
+            old_tm_module = self.module_class(**old_tm_input)
+            serialize_dict = old_tm_module.serialize()
             # set random bias
             rng = np.random.default_rng()
             serialize_dict["@variables"]["bias_atom_e"] = rng.random(
                 size=serialize_dict["@variables"]["bias_atom_e"].shape
             )
-            ltm_module = ltm_module.deserialize(serialize_dict)
-            var_name = ltm_module.var_name
+            old_tm_module = old_tm_module.deserialize(serialize_dict)
+            var_name = old_tm_module.var_name
             if var_name == "polar":
                 var_name = "polarizability"
-            ltm_ff = self.forward_wrapper(ltm_module)
-            rd_ltm = ltm_ff(
+            old_tm_ff = self.forward_wrapper(old_tm_module)
+            rd_old_tm = old_tm_ff(
                 self.mock_descriptor,
-                ltm_index[atype_device],
+                old_tm_index[atype_device],
                 gr=self.mock_gr,
             )[var_name]
-            ltm_module.slim_type_map(stm)
-            stm_ff = self.forward_wrapper(ltm_module)
-            rd_stm = stm_ff(
+            old_tm_module.change_type_map(new_tm)
+            new_tm_ff = self.forward_wrapper(old_tm_module)
+            rd_new_tm = new_tm_ff(
                 self.mock_descriptor,
-                stm_index[atype_device],
+                new_tm_index[atype_device],
                 gr=self.mock_gr,
             )[var_name]
-            np.testing.assert_allclose(rd_ltm, rd_stm)
+            np.testing.assert_allclose(rd_old_tm, rd_new_tm)
 
 
 def remap_exclude_types(exclude_types, ori_tm, new_tm):

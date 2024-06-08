@@ -178,10 +178,19 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         else:
             raise NotImplementedError
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
-        for descrpt in self.descrpt_list:
-            descrpt.slim_type_map(type_map=type_map)
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        for ii, descrpt in enumerate(self.descrpt_list):
+            descrpt.change_type_map(
+                type_map=type_map,
+                model_with_new_type_stat=model_with_new_type_stat.descrpt_list[ii]
+                if model_with_new_type_stat is not None
+                else None,
+            )
 
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""

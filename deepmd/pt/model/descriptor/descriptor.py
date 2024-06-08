@@ -180,3 +180,33 @@ def make_default_type_embedding(
     aux = {}
     aux["tebd_dim"] = 8
     return TypeEmbedNet(ntypes, aux["tebd_dim"]), aux
+
+
+def extend_descrpt_stat(des, type_map, des_with_stat=None):
+    """
+    Extend the statistics of a descriptor block with types in type_map.
+
+    Parameters
+    ----------
+    des : DescriptorBlock
+        The descriptor block to be extended.
+    type_map : List[str]
+        The name of each type of atoms to be extended.
+    des_with_stat : DescriptorBlock, Optional
+        The descriptor block has additional statistics in type_map.
+        If None, the default statistics will be used. Otherwise, the statistics provided in this DescriptorBlock will be used.
+
+    """
+    if des_with_stat is not None:
+        extend_davg = des_with_stat["davg"]
+        extend_dstd = des_with_stat["dstd"]
+    else:
+        extend_shape = [len(type_map), *list(des["davg"].shape[1:])]
+        extend_davg = torch.zeros(
+            extend_shape, dtype=des["davg"].dtype, device=des["davg"].device
+        )
+        extend_dstd = torch.ones(
+            extend_shape, dtype=des["dstd"].dtype, device=des["dstd"].device
+        )
+    des["davg"] = torch.cat([des["davg"], extend_davg], dim=0)
+    des["dstd"] = torch.cat([des["dstd"], extend_dstd], dim=0)

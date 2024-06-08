@@ -118,18 +118,22 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             ]
         )
 
-    def slim_type_map(self, type_map: List[str]) -> None:
-        """Change the type related params to slimmed ones, according to slimmed `type_map` and the original one in the model."""
-        slim_index = get_index_between_two_maps(self.type_map, type_map)
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.reinit_atom_exclude(
-            map_atom_exclude_types(self.atom_exclude_types, slim_index)
+            map_atom_exclude_types(self.atom_exclude_types, remap_index)
         )
         self.reinit_pair_exclude(
-            map_pair_exclude_types(self.pair_exclude_types, slim_index)
+            map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
-        self.out_bias = self.out_bias[:, slim_index, :]
-        self.out_std = self.out_std[:, slim_index, :]
+        self.out_bias = self.out_bias[:, remap_index, :]
+        self.out_std = self.out_std[:, remap_index, :]
 
     def forward_common_atomic(
         self,
