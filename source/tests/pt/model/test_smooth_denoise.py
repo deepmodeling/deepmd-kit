@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation_denoise import (
     model_dpa2,
 )
@@ -33,7 +36,8 @@ class SmoothDenoiseTest:
 
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        atype = torch.randint(0, 3, [natoms])
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        atype = torch.randint(0, 3, [natoms], generator=generator, device=env.DEVICE)
         coord0 = (
             torch.tensor(
                 [
@@ -52,7 +56,9 @@ class SmoothDenoiseTest:
             .view([-1, 3])
             .to(env.DEVICE)
         )
-        coord1 = torch.rand([natoms - coord0.shape[0], 3], dtype=dtype).to(env.DEVICE)
+        coord1 = torch.rand(
+            [natoms - coord0.shape[0], 3], dtype=dtype, generator=generator
+        ).to(env.DEVICE)
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
 

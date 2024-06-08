@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation_denoise import (
     model_dpa1,
     model_dpa2,
@@ -28,12 +31,15 @@ class TransDenoiseTest:
         self,
     ):
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
         coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
-        shift = (torch.rand([3], dtype=dtype) - 0.5).to(env.DEVICE) * 2.0
+        shift = (torch.rand([3], dtype=dtype, generator=generator) - 0.5).to(
+            env.DEVICE
+        ) * 2.0
         coord_s = torch.matmul(
             torch.remainder(torch.matmul(coord + shift, torch.linalg.inv(cell)), 1.0),
             cell,

@@ -15,6 +15,10 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 CUR_DIR = os.path.dirname(__file__)
 
 dtype = torch.float64
@@ -259,10 +263,15 @@ class PermutationTest:
         self,
     ):
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord = torch.matmul(coord, cell)
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]

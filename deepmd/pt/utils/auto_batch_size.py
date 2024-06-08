@@ -57,6 +57,7 @@ class AutoBatchSize(AutoBatchSizeBase):
         # (the meaningless error message should be considered as a bug in cusolver)
         if isinstance(e, RuntimeError) and (
             "CUDA out of memory." in e.args[0]
+            or "CUDA driver error: out of memory" in e.args[0]
             or "cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR" in e.args[0]
         ):
             # Release all unoccupied cached memory
