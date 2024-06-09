@@ -1,4 +1,4 @@
-file(GLOB OP_SRC print_summary.cc comm.cc)
+file(GLOB OP_SRC print_summary.cc comm.cc tabulate_multi_device.cc)
 
 add_library(deepmd_op_pt MODULE ${OP_SRC})
 # link: libdeepmd libtorch
