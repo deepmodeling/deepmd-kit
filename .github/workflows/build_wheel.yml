@@ -74,23 +74,19 @@ jobs:
         with:
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        if: runner.os != 'Linux'
       - uses: docker/setup-qemu-action@v3
         name: Setup QEMU
         if: matrix.platform_id == 'manylinux_aarch64' && matrix.os == 'ubuntu-latest'
       # detect version in advance. See #3168
-      - uses: actions/setup-python@v5
-        name: Install Python
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-        if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
       - run: |
-          python -m pip install setuptools_scm
-          python -c "from setuptools_scm import get_version;print('SETUPTOOLS_SCM_PRETEND_VERSION='+get_version())" >> $GITHUB_ENV
+          echo "SETUPTOOLS_SCM_PRETEND_VERSION=$(pipx run uv tool run --from setuptools_scm python -m setuptools_scm)" >> $GITHUB_ENV
           rm -rf .git
         if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.17
+        uses: pypa/cibuildwheel@v2.19
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
@@ -98,6 +94,7 @@ jobs:
           DP_VARIANT: ${{ matrix.dp_variant }}
           CUDA_VERSION: ${{ matrix.cuda_version }}
           DP_PKG_NAME: ${{ matrix.dp_pkg_name }}
+          CIBW_BUILD_FRONTEND: 'build[uv]'
       - uses: actions/upload-artifact@v4
         with:
           name: cibw-cp${{ matrix.python }}-${{ matrix.platform_id }}-cu${{ matrix.cuda_version }}-${{ strategy.job-index }}
@@ -109,14 +106,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
-        name: Install Python
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-      - run: python -m pip install build
       - name: Build sdist
-        run: python -m build --sdist
+        run: pipx run uv tool run --with build[uv] --from build python -m build --installer uv
 
       - uses: actions/upload-artifact@v4
         with:

@@ -203,7 +203,6 @@ test-extras = ["cpu", "test", "lmp", "ipi"]
 # Revert after https://github.com/h5py/h5py/issues/2408 is fixed;
 # or set UV_PREFER_BINARY when https://github.com/astral-sh/uv/issues/1794 is resolved.
 test-requires = ["h5py<3.11;platform_machine=='aarch64'"]
-before-test = ["python -m pip install replace-pip-with-uv-pip"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated
@@ -234,6 +233,8 @@ before-all = [
     """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
     "yum install -y mpich-devel",
+    # uv is not available in the old manylinux image
+    "pipx install uv",
 ]
 
 [tool.cibuildwheel.windows]
