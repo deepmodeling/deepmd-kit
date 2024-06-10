@@ -240,7 +240,7 @@ before-build = [
     """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
 ]
 test-requires = [
-    """h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'""",
+    """ "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'" """,
 ]
 
 [tool.cibuildwheel.windows]
