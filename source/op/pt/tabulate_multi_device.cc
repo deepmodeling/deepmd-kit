@@ -118,7 +118,6 @@ void TabulateFusionSeAGradForward(
   }
   print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
   print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
-  print_first_five_elements(dy_dtwo_tensor, "dy_dtwo_tensor");
 
 }
 
@@ -513,6 +512,9 @@ class TabulateFusionSeAOp : public torch::autograd::Function<TabulateFusionSeAOp
                                           descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor,
                                           dy_dtwo_tensor);
       
+      std::cout << "----------------------------------------------" << std::endl;
+      print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
+      print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
       return {at::Tensor(), at::Tensor(), dy_dem_x_tensor, dy_dem_tensor, at::Tensor()};
     }
 };
