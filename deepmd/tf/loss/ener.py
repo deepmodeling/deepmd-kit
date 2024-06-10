@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    List,
     Optional,
 )
 
 import numpy as np
 
-from deepmd.tf.common import (
-    add_data_requirement,
-)
 from deepmd.tf.env import (
     global_cvt_2_ener_float,
     global_cvt_2_tf_float,
@@ -15,6 +13,9 @@ from deepmd.tf.env import (
 )
 from deepmd.tf.utils.sess import (
     run_sess,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .loss import (
@@ -110,32 +111,6 @@ class EnerStdLoss(Loss):
         if self.has_gf and self.numb_generalized_coord < 1:
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
-            )
-        # data required
-        add_data_requirement("energy", 1, atomic=False, must=False, high_prec=True)
-        add_data_requirement("force", 3, atomic=True, must=False, high_prec=False)
-        add_data_requirement("virial", 9, atomic=False, must=False, high_prec=False)
-        add_data_requirement("atom_ener", 1, atomic=True, must=False, high_prec=False)
-        add_data_requirement(
-            "atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3
-        )
-        # drdq: the partial derivative of atomic coordinates w.r.t. generalized coordinates
-        if self.has_gf > 0:
-            add_data_requirement(
-                "drdq",
-                self.numb_generalized_coord * 3,
-                atomic=True,
-                must=False,
-                high_prec=False,
-            )
-        if self.enable_atom_ener_coeff:
-            add_data_requirement(
-                "atom_ener_coeff",
-                1,
-                atomic=True,
-                must=False,
-                high_prec=False,
-                default=1.0,
             )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
@@ -380,6 +355,54 @@ class EnerStdLoss(Loss):
             results["rmse_gf"] = np.sqrt(error_gf)
         return results
 
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        data_requirements = []
+        # data required
+        data_requirements.append(
+            DataRequirementItem("energy", 1, atomic=False, must=False, high_prec=True)
+        )
+        data_requirements.append(
+            DataRequirementItem("force", 3, atomic=True, must=False, high_prec=False)
+        )
+        data_requirements.append(
+            DataRequirementItem("virial", 9, atomic=False, must=False, high_prec=False)
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                "atom_ener", 1, atomic=True, must=False, high_prec=False
+            )
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                "atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3
+            )
+        )
+        # drdq: the partial derivative of atomic coordinates w.r.t. generalized coordinates
+        if self.has_gf > 0:
+            data_requirements.append(
+                DataRequirementItem(
+                    "drdq",
+                    self.numb_generalized_coord * 3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
+        if self.enable_atom_ener_coeff:
+            data_requirements.append(
+                DataRequirementItem(
+                    "atom_ener_coeff",
+                    1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    default=1.0,
+                )
+            )
+        return data_requirements
+
 
 class EnerSpinLoss(Loss):
     def __init__(
@@ -422,23 +445,6 @@ class EnerSpinLoss(Loss):
         self.has_fm = self.start_pref_fm != 0.0 or self.limit_pref_fm != 0.0
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
-        # data required
-        add_data_requirement("energy", 1, atomic=False, must=False, high_prec=True)
-        add_data_requirement("force", 3, atomic=True, must=False, high_prec=False)
-        add_data_requirement("virial", 9, atomic=False, must=False, high_prec=False)
-        add_data_requirement("atom_ener", 1, atomic=True, must=False, high_prec=False)
-        add_data_requirement(
-            "atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3
-        )
-        if self.enable_atom_ener_coeff:
-            add_data_requirement(
-                "atom_ener_coeff",
-                1,
-                atomic=True,
-                must=False,
-                high_prec=False,
-                default=1.0,
-            )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
         energy_pred = model_dict["energy"]
@@ -719,6 +725,43 @@ class EnerSpinLoss(Loss):
 
         return print_str
 
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        data_requirements = []
+        # data required
+        data_requirements.append(
+            DataRequirementItem("energy", 1, atomic=False, must=False, high_prec=True)
+        )
+        data_requirements.append(
+            DataRequirementItem("force", 3, atomic=True, must=False, high_prec=False)
+        )
+        data_requirements.append(
+            DataRequirementItem("virial", 9, atomic=False, must=False, high_prec=False)
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                "atom_ener", 1, atomic=True, must=False, high_prec=False
+            )
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                "atom_pref", 1, atomic=True, must=False, high_prec=False, repeat=3
+            )
+        )
+        if self.enable_atom_ener_coeff:
+            data_requirements.append(
+                DataRequirementItem(
+                    "atom_ener_coeff",
+                    1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    default=1.0,
+                )
+            )
+        return data_requirements
+
 
 class EnerDipoleLoss(Loss):
     def __init__(
@@ -734,11 +777,6 @@ class EnerDipoleLoss(Loss):
         self.limit_pref_e = limit_pref_e
         self.start_pref_ed = start_pref_ed
         self.limit_pref_ed = limit_pref_ed
-        # data required
-        add_data_requirement("energy", 1, atomic=False, must=True, high_prec=True)
-        add_data_requirement(
-            "energy_dipole", 3, atomic=False, must=True, high_prec=False
-        )
 
     def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
         coord = model_dict["coord"]
@@ -832,3 +870,18 @@ class EnerDipoleLoss(Loss):
             "rmse_ed": np.sqrt(error_ed),
         }
         return results
+
+    @property
+    def label_requirement(self) -> List[DataRequirementItem]:
+        """Return data label requirements needed for this loss calculation."""
+        data_requirements = []
+        # data required
+        data_requirements.append(
+            DataRequirementItem("energy", 1, atomic=False, must=False, high_prec=True)
+        )
+        data_requirements.append(
+            DataRequirementItem(
+                "energy_dipole", 3, atomic=False, must=True, high_prec=False
+            )
+        )
+        return data_requirements

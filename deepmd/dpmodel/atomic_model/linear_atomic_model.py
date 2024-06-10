@@ -54,6 +54,17 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     ):
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
+
+        # check all sub models are of mixed type.
+        model_mixed_type = []
+        for m in models:
+            if not m.mixed_types():
+                model_mixed_type.append(m)
+        if len(model_mixed_type) > 0:
+            raise ValueError(
+                f"LinearAtomicModel only supports AtomicModel of mixed type, the following models are not mixed type: {model_mixed_type}."
+            )
+
         self.models = models
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
@@ -80,6 +91,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         """
         return True
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return any(model.has_message_passing() for model in self.models)
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""

@@ -1,18 +1,28 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import re
 from typing import (
     List,
     Optional,
+    Set,
     Tuple,
 )
 
 import numpy as np
 
+from deepmd.dpmodel.utils.env_mat import (
+    EnvMat,
+)
+from deepmd.dpmodel.utils.network import (
+    EmbeddingNet,
+    NetworkCollection,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_activation_func,
     get_precision,
 )
 from deepmd.tf.env import (
+    EMBEDDING_NET_PATTERN,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     default_tf_session_config,
@@ -31,6 +41,9 @@ from deepmd.tf.utils.sess import (
 )
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .descriptor import (
@@ -75,6 +88,8 @@ class DescrptSeT(DescrptSe):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
     """
 
     def __init__(
@@ -86,11 +101,12 @@ class DescrptSeT(DescrptSe):
         resnet_dt: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
+        exclude_types: List[List[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        multi_task: bool = False,
+        env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -98,6 +114,10 @@ class DescrptSeT(DescrptSe):
             raise RuntimeError(
                 f"rcut_smth ({rcut_smth:f}) should be no more than rcut ({rcut:f})!"
             )
+        if exclude_types:
+            raise NotImplementedError("exclude_types != [] is not supported.")
+        if env_protection != 0.0:
+            raise NotImplementedError("env_protection != 0.0 is not supported.")
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -108,12 +128,15 @@ class DescrptSeT(DescrptSe):
         self.seed_shift = embedding_net_rand_seed_shift(self.filter_neuron)
         self.trainable = trainable
         self.filter_activation_fn = get_activation_func(activation_function)
+        self.activation_function_name = activation_function
         self.filter_precision = get_precision(precision)
-        # self.exclude_types = set()
-        # for tt in exclude_types:
-        #     assert(len(tt) == 2)
-        #     self.exclude_types.add((tt[0], tt[1]))
-        #     self.exclude_types.add((tt[1], tt[0]))
+        self.env_protection = env_protection
+        self.orig_exclude_types = exclude_types
+        self.exclude_types = set()
+        for tt in exclude_types:
+            assert len(tt) == 2
+            self.exclude_types.add((tt[0], tt[1]))
+            self.exclude_types.add((tt[1], tt[0]))
         self.set_davg_zero = set_davg_zero
 
         # descrpt config
@@ -172,15 +195,6 @@ class DescrptSeT(DescrptSe):
                 sel_r=self.sel_r,
             )
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
-        self.multi_task = multi_task
-        if multi_task:
-            self.stat_dict = {
-                "sumr": [],
-                "suma": [],
-                "sumn": [],
-                "sumr2": [],
-                "suma2": [],
-            }
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -256,21 +270,14 @@ class DescrptSeT(DescrptSe):
                 sumn.append(sysn)
                 sumr2.append(sysr2)
                 suma2.append(sysa2)
-            if not self.multi_task:
-                stat_dict = {
-                    "sumr": sumr,
-                    "suma": suma,
-                    "sumn": sumn,
-                    "sumr2": sumr2,
-                    "suma2": suma2,
-                }
-                self.merge_input_stats(stat_dict)
-            else:
-                self.stat_dict["sumr"] += sumr
-                self.stat_dict["suma"] += suma
-                self.stat_dict["sumn"] += sumn
-                self.stat_dict["sumr2"] += sumr2
-                self.stat_dict["suma2"] += suma2
+            stat_dict = {
+                "sumr": sumr,
+                "suma": suma,
+                "sumn": sumn,
+                "sumr2": sumr2,
+                "suma2": suma2,
+            }
+            self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict):
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
@@ -368,12 +375,8 @@ class DescrptSeT(DescrptSe):
             min_nbor_dist, table_extrapolate, table_stride_1 * 10, table_stride_2 * 10
         )
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def build(
         self,
@@ -711,3 +714,240 @@ class DescrptSeT(DescrptSe):
                     else:
                         result += res_ij
         return result, None
+
+    def serialize_network(
+        self,
+        ntypes: int,
+        ndim: int,
+        in_dim: int,
+        neuron: List[int],
+        activation_function: str,
+        resnet_dt: bool,
+        variables: dict,
+        excluded_types: Set[Tuple[int, int]] = set(),
+        suffix: str = "",
+    ) -> dict:
+        """Serialize network.
+
+        Parameters
+        ----------
+        ntypes : int
+            The number of types
+        ndim : int
+            The dimension of elements
+        in_dim : int
+            The input dimension
+        neuron : List[int]
+            The neuron list
+        activation_function : str
+            The activation function
+        resnet_dt : bool
+            Whether to use resnet
+        variables : dict
+            The input variables
+        excluded_types : Set[Tuple[int, int]], optional
+            The excluded types
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The converted network data
+        """
+        assert ndim == 2, "Embeddings in descriptor 'se_e3' must have two dimensions."
+        embeddings = NetworkCollection(
+            ntypes=ntypes,
+            ndim=ndim,
+            network_type="embedding_network",
+        )
+
+        def clear_ij(type_i, type_j):
+            # initialize an empty network
+            embeddings[(type_i, type_j)] = EmbeddingNet(
+                in_dim=in_dim,
+                neuron=neuron,
+                activation_function=activation_function,
+                resnet_dt=resnet_dt,
+                precision=self.precision.name,
+            )
+            embeddings[(type_i, type_j)].clear()
+
+        for i, j in excluded_types:
+            clear_ij(i, j)
+            clear_ij(j, i)
+        for i in range(ntypes):
+            for j in range(0, i):
+                clear_ij(i, j)
+
+        if suffix != "":
+            embedding_net_pattern = (
+                EMBEDDING_NET_PATTERN.replace("/(idt)", suffix + "/(idt)")
+                .replace("/(bias)", suffix + "/(bias)")
+                .replace("/(matrix)", suffix + "/(matrix)")
+            )
+        else:
+            embedding_net_pattern = EMBEDDING_NET_PATTERN
+        for key, value in variables.items():
+            m = re.search(embedding_net_pattern, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            typei = m[3]
+            typej = m[4]
+            layer_idx = int(m[2]) - 1
+            weight_name = m[1]
+            network_idx = (int(typei), int(typej))
+            if embeddings[network_idx] is None:
+                # initialize the network if it is not initialized
+                embeddings[network_idx] = EmbeddingNet(
+                    in_dim=in_dim,
+                    neuron=neuron,
+                    activation_function=activation_function,
+                    resnet_dt=resnet_dt,
+                    precision=self.precision.name,
+                )
+            assert embeddings[network_idx] is not None
+            if weight_name == "idt":
+                value = value.ravel()
+            embeddings[network_idx][layer_idx][weight_name] = value
+        return embeddings.serialize()
+
+    @classmethod
+    def deserialize_network(cls, data: dict, suffix: str = "") -> dict:
+        """Deserialize network.
+
+        Parameters
+        ----------
+        data : dict
+            The input network data
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        variables : dict
+            The input variables
+        """
+        embedding_net_variables = {}
+        embeddings = NetworkCollection.deserialize(data)
+        assert (
+            embeddings.ndim == 2
+        ), "Embeddings in descriptor 'se_e3' must have two dimensions."
+        for ii in range(embeddings.ntypes**embeddings.ndim):
+            net_idx = []
+            rest_ii = ii
+            for _ in range(embeddings.ndim):
+                net_idx.append(rest_ii % embeddings.ntypes)
+                rest_ii //= embeddings.ntypes
+            net_idx = tuple(net_idx)
+            key0 = "all"
+            key1 = f"_{net_idx[0]}"
+            key2 = f"_{net_idx[1]}"
+            network = embeddings[net_idx]
+            assert network is not None
+            for layer_idx, layer in enumerate(network.layers):
+                embedding_net_variables[
+                    f"filter_type_{key0}{suffix}/matrix_{layer_idx + 1}{key1}{key2}"
+                ] = layer.w
+                embedding_net_variables[
+                    f"filter_type_{key0}{suffix}/bias_{layer_idx + 1}{key1}{key2}"
+                ] = layer.b
+                if layer.idt is not None:
+                    embedding_net_variables[
+                        f"filter_type_{key0}{suffix}/idt_{layer_idx + 1}{key1}{key2}"
+                    ] = layer.idt.reshape(1, -1)
+                else:
+                    # prevent keyError
+                    embedding_net_variables[
+                        f"filter_type_{key0}{suffix}/idt_{layer_idx + 1}{key1}{key2}"
+                    ] = 0.0
+        return embedding_net_variables
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeT:
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        data.pop("type", None)
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        if type(self) is not DescrptSeT:
+            raise NotImplementedError(
+                f"Not implemented in class {self.__class__.__name__}"
+            )
+        if self.embedding_net_variables is None:
+            raise RuntimeError("init_variables must be called before serialize")
+        assert self.davg is not None
+        assert self.dstd is not None
+
+        return {
+            "@class": "Descriptor",
+            "type": "se_e3",
+            "@version": 1,
+            "rcut": self.rcut_r,
+            "rcut_smth": self.rcut_r_smth,
+            "sel": self.sel_a,
+            "neuron": self.filter_neuron,
+            "resnet_dt": self.filter_resnet_dt,
+            "set_davg_zero": self.set_davg_zero,
+            "activation_function": self.activation_function_name,
+            "precision": self.filter_precision.name,
+            "embeddings": self.serialize_network(
+                ntypes=self.ntypes,
+                ndim=2,
+                in_dim=1,
+                neuron=self.filter_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.filter_resnet_dt,
+                variables=self.embedding_net_variables,
+                excluded_types=self.exclude_types,
+                suffix=suffix,
+            ),
+            "env_mat": EnvMat(self.rcut_r, self.rcut_r_smth).serialize(),
+            "exclude_types": list(self.orig_exclude_types),
+            "env_protection": self.env_protection,
+            "@variables": {
+                "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
+                "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
+            },
+            "trainable": self.trainable,
+        }

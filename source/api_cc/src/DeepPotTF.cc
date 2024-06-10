@@ -2,6 +2,7 @@
 #ifdef BUILD_TENSORFLOW
 #include "DeepPotTF.h"
 
+#include <cstdint>
 #include <stdexcept>
 
 #include "AtomMap.h"
@@ -549,7 +550,7 @@ void DeepPotTF::tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
     out_param.resize(static_cast<size_t>(nframes) * dparam);
     for (int ii = 0; ii < nframes; ++ii) {
       std::copy(param.begin(), param.end(),
-                out_param.begin() + static_cast<unsigned long>(ii) * dparam);
+                out_param.begin() + static_cast<std::uint64_t>(ii) * dparam);
     }
   } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
     out_param = param;

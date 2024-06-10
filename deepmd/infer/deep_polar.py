@@ -7,8 +7,14 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    ModelOutputDef,
+    OutputVariableDef,
+)
 from deepmd.infer.deep_tensor import (
     DeepTensor,
+    OldDeepTensor,
 )
 
 
@@ -36,7 +42,7 @@ class DeepPolar(DeepTensor):
         return "polar"
 
 
-class DeepGlobalPolar(DeepTensor):
+class DeepGlobalPolar(OldDeepTensor):
     @property
     def output_tensor_name(self) -> str:
         return "global_polar"
@@ -50,7 +56,7 @@ class DeepGlobalPolar(DeepTensor):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: dict,
+        **kwargs,
     ) -> np.ndarray:
         """Evaluate the model.
 
@@ -94,4 +100,23 @@ class DeepGlobalPolar(DeepTensor):
             aparam=aparam,
             mixed_type=mixed_type,
             **kwargs,
+        )
+
+    @property
+    def output_def(self) -> ModelOutputDef:
+        """Get the output definition of this model."""
+        # no atomic or differentiable output is defined
+        return ModelOutputDef(
+            FittingOutputDef(
+                [
+                    OutputVariableDef(
+                        self.output_tensor_name,
+                        shape=[-1],
+                        reduciable=False,
+                        r_differentiable=False,
+                        c_differentiable=False,
+                        atomic=False,
+                    ),
+                ]
+            )
         )

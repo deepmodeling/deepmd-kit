@@ -17,6 +17,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -46,7 +49,6 @@ class DescrptHybrid(Descriptor):
     def __init__(
         self,
         list: List[Union[Descriptor, Dict[str, Any]]],
-        multi_task: bool = False,
         ntypes: Optional[int] = None,
         spin: Optional[Spin] = None,
         **kwargs,
@@ -59,13 +61,12 @@ class DescrptHybrid(Descriptor):
                 "cannot build descriptor from an empty list of descriptors."
             )
         formatted_descript_list = []
-        self.multi_task = multi_task
         for ii in descrpt_list:
             if isinstance(ii, Descriptor):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
                 formatted_descript_list.append(
-                    Descriptor(**ii, ntypes=ntypes, spin=spin, multi_task=multi_task)
+                    Descriptor(**ii, ntypes=ntypes, spin=spin)
                 )
             else:
                 raise NotImplementedError
@@ -425,22 +426,42 @@ class DescrptHybrid(Descriptor):
         return any(ii.explicit_ntypes for ii in self.descrpt_list)
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["list"] = [
-            Descriptor.update_sel(global_jdata, sub_jdata)
-            for sub_jdata in local_jdata["list"]
-        ]
-        return local_jdata_cpy
+        new_list = []
+        min_nbor_dist = None
+        for sub_jdata in local_jdata["list"]:
+            new_sub_jdata, min_nbor_dist_ = Descriptor.update_sel(
+                train_data, type_map, sub_jdata
+            )
+            if min_nbor_dist_ is not None:
+                min_nbor_dist = min_nbor_dist_
+            new_list.append(new_sub_jdata)
+        local_jdata_cpy["list"] = new_list
+        return local_jdata_cpy, min_nbor_dist
 
     def serialize(self, suffix: str = "") -> dict:
         return {

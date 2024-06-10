@@ -6,10 +6,6 @@ See issue #2982 for more information.
 
 import copy
 import itertools
-import json
-from datetime import (
-    datetime,
-)
 from typing import (
     Callable,
     ClassVar,
@@ -19,125 +15,35 @@ from typing import (
     Union,
 )
 
-import h5py
 import numpy as np
-
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
-def traverse_model_dict(model_obj, callback: callable, is_variable: bool = False):
-    """Traverse a model dict and call callback on each variable.
-
-    Parameters
-    ----------
-    model_obj : object
-        The model object to traverse.
-    callback : callable
-        The callback function to call on each variable.
-    is_variable : bool, optional
-        Whether the current node is a variable.
-
-    Returns
-    -------
-    object
-        The model object after traversing.
-    """
-    if isinstance(model_obj, dict):
-        for kk, vv in model_obj.items():
-            model_obj[kk] = traverse_model_dict(
-                vv, callback, is_variable=is_variable or kk == "@variables"
-            )
-    elif isinstance(model_obj, list):
-        for ii, vv in enumerate(model_obj):
-            model_obj[ii] = traverse_model_dict(vv, callback, is_variable=is_variable)
-    elif model_obj is None:
-        return model_obj
-    elif is_variable:
-        model_obj = callback(model_obj)
-    return model_obj
-
-
-class Counter:
-    """A callable counter.
-
-    Examples
-    --------
-    >>> counter = Counter()
-    >>> counter()
-    0
-    >>> counter()
-    1
-    """
-
+class Identity(NativeOP):
     def __init__(self):
-        self.count = -1
+        super().__init__()
 
-    def __call__(self):
-        self.count += 1
-        return self.count
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """The Identity operation layer."""
+        return x
 
-
-# TODO: move save_dp_model and load_dp_model to a seperated module
-# should be moved to otherwhere...
-def save_dp_model(filename: str, model_dict: dict) -> None:
-    """Save a DP model to a file in the native format.
-
-    Parameters
-    ----------
-    filename : str
-        The filename to save to.
-    model_dict : dict
-        The model dict to save.
-    """
-    model_dict = model_dict.copy()
-    variable_counter = Counter()
-    with h5py.File(filename, "w") as f:
-        model_dict = traverse_model_dict(
-            model_dict,
-            lambda x: f.create_dataset(
-                f"variable_{variable_counter():04d}", data=x
-            ).name,
-        )
-        save_dict = {
-            "software": "deepmd-kit",
-            "version": __version__,
-            # use UTC+0 time
-            "time": str(datetime.utcnow()),
-            **model_dict,
+    def serialize(self) -> dict:
+        return {
+            "@class": "Identity",
+            "@version": 1,
         }
-        f.attrs["json"] = json.dumps(save_dict, separators=(",", ":"))
 
-
-def load_dp_model(filename: str) -> dict:
-    """Load a DP model from a file in the native format.
-
-    Parameters
-    ----------
-    filename : str
-        The filename to load from.
-
-    Returns
-    -------
-    dict
-        The loaded model dict, including meta information.
-    """
-    with h5py.File(filename, "r") as f:
-        model_dict = json.loads(f.attrs["json"])
-        model_dict = traverse_model_dict(model_dict, lambda x: f[x][()].copy())
-    return model_dict
+    @classmethod
+    def deserialize(cls, data: dict) -> "Identity":
+        return Identity()
 
 
 class NativeLayer(NativeOP):
@@ -166,12 +72,13 @@ class NativeLayer(NativeOP):
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
         # only use_timestep when skip connection is established.
         use_timestep = use_timestep and (num_out == num_in or num_out == num_in * 2)
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed)
         self.w = rng.normal(size=(num_in, num_out)).astype(prec)
         self.b = rng.normal(size=(num_out,)).astype(prec) if bias else None
         self.idt = rng.normal(size=(num_out,)).astype(prec) if use_timestep else None
@@ -381,6 +288,163 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
         raise NotImplementedError(activation_function)
 
 
+class LayerNorm(NativeLayer):
+    """Implementation of Layer Normalization layer.
+
+    Parameters
+    ----------
+    num_in : int
+        The input dimension of the layer.
+    eps : float, optional
+        A small value added to prevent division by zero in calculations.
+    uni_init : bool, optional
+        If initialize the weights to be zeros and ones.
+    """
+
+    def __init__(
+        self,
+        num_in: int,
+        eps: float = 1e-5,
+        uni_init: bool = True,
+        trainable: bool = True,
+        precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
+    ) -> None:
+        self.eps = eps
+        self.uni_init = uni_init
+        self.num_in = num_in
+        super().__init__(
+            num_in=1,
+            num_out=num_in,
+            bias=True,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            precision=precision,
+            seed=seed,
+        )
+        self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
+        if self.uni_init:
+            self.w = np.ones_like(self.w)
+            self.b = np.zeros_like(self.b)
+        # only to keep consistent with other backends
+        self.trainable = trainable
+
+    def serialize(self) -> dict:
+        """Serialize the layer to a dict.
+
+        Returns
+        -------
+        dict
+            The serialized layer.
+        """
+        data = {
+            "w": self.w,
+            "b": self.b,
+        }
+        return {
+            "@class": "LayerNorm",
+            "@version": 1,
+            "eps": self.eps,
+            "trainable": self.trainable,
+            "precision": self.precision,
+            "@variables": data,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "LayerNorm":
+        """Deserialize the layer from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            The dict to deserialize from.
+        """
+        data = copy.deepcopy(data)
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        variables = data.pop("@variables")
+        if variables["w"] is not None:
+            assert len(variables["w"].shape) == 1
+        if variables["b"] is not None:
+            assert len(variables["b"].shape) == 1
+        (num_in,) = variables["w"].shape
+        obj = cls(
+            num_in,
+            **data,
+        )
+        (obj.w,) = (variables["w"],)
+        (obj.b,) = (variables["b"],)
+        obj._check_shape_consistency()
+        return obj
+
+    def _check_shape_consistency(self):
+        if self.b is not None and self.w.shape[0] != self.b.shape[0]:
+            raise ValueError(
+                f"dim 1 of w {self.w.shape[0]} is not equal to shape "
+                f"of b {self.b.shape[0]}",
+            )
+
+    def __setitem__(self, key, value):
+        if key in ("w", "matrix"):
+            self.w = value
+        elif key in ("b", "bias"):
+            self.b = value
+        elif key == "trainable":
+            self.trainable = value
+        elif key == "precision":
+            self.precision = value
+        elif key == "eps":
+            self.eps = value
+        else:
+            raise KeyError(key)
+
+    def __getitem__(self, key):
+        if key in ("w", "matrix"):
+            return self.w
+        elif key in ("b", "bias"):
+            return self.b
+        elif key == "trainable":
+            return self.trainable
+        elif key == "precision":
+            return self.precision
+        elif key == "eps":
+            return self.eps
+        else:
+            raise KeyError(key)
+
+    def dim_out(self) -> int:
+        return self.w.shape[0]
+
+    def call(self, x: np.ndarray) -> np.ndarray:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            The input.
+
+        Returns
+        -------
+        np.ndarray
+            The output.
+        """
+        y = self.layer_norm_numpy(x, (self.num_in,), self.w, self.b, self.eps)
+        return y
+
+    @staticmethod
+    def layer_norm_numpy(x, shape, weight=None, bias=None, eps=1e-5):
+        # mean and variance
+        mean = np.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        var = np.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        # normalize
+        x_normalized = (x - mean) / np.sqrt(var + eps)
+        # shift and scale
+        if weight is not None and bias is not None:
+            x_normalized = x_normalized * weight + bias
+        return x_normalized
+
+
 def make_multilayer_network(T_NetworkLayer, ModuleBase):
     class NN(ModuleBase):
         """Native representation of a neural network.
@@ -502,6 +566,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
+            seed: Optional[int] = None,
         ):
             layers = []
             i_in = in_dim
@@ -516,6 +581,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         activation_function=activation_function,
                         resnet=True,
                         precision=precision,
+                        seed=seed,
                     ).serialize()
                 )
                 i_in = i_ot
@@ -602,6 +668,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
+            seed: Optional[int] = None,
         ):
             super().__init__(
                 in_dim,
@@ -621,6 +688,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     activation_function=None,
                     resnet=False,
                     precision=precision,
+                    seed=seed,
                 )
             )
             self.out_dim = out_dim

@@ -28,7 +28,7 @@ def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    atomic: Literal[False] = False,
+    atomic: Literal[False] = ...,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
@@ -37,9 +37,17 @@ def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    *,
-    atomic: Literal[True],
+    atomic: Literal[True] = ...,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
+
+
+@overload
+def calc_model_devi_f(
+    fs: np.ndarray,
+    real_f: Optional[np.ndarray] = None,
+    relative: Optional[float] = None,
+    atomic: bool = False,
+) -> Tuple[np.ndarray, ...]: ...
 
 
 def calc_model_devi_f(
@@ -350,7 +358,6 @@ def make_model_devi(
     *,
     models: list,
     system: str,
-    set_prefix: str,
     output: str,
     frequency: int,
     real_error: bool = False,
@@ -367,8 +374,6 @@ def make_model_devi(
         A list of paths of models to use for making model deviation
     system : str
         The path of system to make model deviation calculation
-    set_prefix : str
-        The set prefix of the system
     output : str
         The output file for model deviation results
     frequency : int
@@ -410,7 +415,7 @@ def make_model_devi(
     for system in all_sys:
         # create data-system
         dp_data = DeepmdData(
-            system, set_prefix, shuffle_test=False, type_map=tmap, sort_atoms=False
+            system, "set", shuffle_test=False, type_map=tmap, sort_atoms=False
         )
         if first_dp.get_dim_fparam() > 0:
             dp_data.add(

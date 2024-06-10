@@ -2,9 +2,6 @@
 import numpy as np
 import scipy.spatial.distance
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.env import (
     tf,
 )
@@ -30,8 +27,8 @@ class TestModel(tf.test.TestCase):
     def test_model(self):
         jfile = "water.json"
         jdata = j_loader(jfile)
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        systems = jdata["systems"]
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
 
@@ -42,7 +39,7 @@ class TestModel(tf.test.TestCase):
             "rcut": 6,
             "sel": [6],
         }
-        rcut = j_must_have(jdata["model"], "rcut")
+        rcut = jdata["model"]["rcut"]
 
         def pair_pot(r: float):
             # LJ, as exmaple

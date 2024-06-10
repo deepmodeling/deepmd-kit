@@ -9,19 +9,13 @@ from pathlib import (
 import torch
 
 from deepmd.pt.model.descriptor import (
-    DescrptBlockHybrid,
     DescrptDPA2,
-)
-from deepmd.pt.model.network.network import (
-    TypeEmbedNet,
 )
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
-    build_multiple_neighbor_list,
     extend_input_and_build_neighbor_list,
-    get_multiple_nlist_key,
 )
 
 CUR_DIR = os.path.dirname(__file__)
@@ -112,76 +106,8 @@ class TestDPA2(unittest.TestCase):
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
             device=env.DEVICE,
         )
-        with open(Path(CUR_DIR) / "models" / "dpa2_hyb.json") as fp:
-            self.model_json = json.load(fp)
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pth"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
-
-    # TODO This test for hybrid descriptor should be removed!
-    def test_descriptor_hyb(self):
-        # torch.manual_seed(0)
-        model_hybrid_dpa2 = self.model_json
-        dparams = model_hybrid_dpa2["descriptor"]
-        ntypes = len(model_hybrid_dpa2["type_map"])
-        dlist = dparams.pop("list")
-        des = DescrptBlockHybrid(
-            dlist,
-            ntypes,
-            hybrid_mode=dparams["hybrid_mode"],
-        ).to(env.DEVICE)
-        model_dict = torch.load(self.file_model_param)
-        # type_embd of repformer is removed
-        model_dict.pop("descriptor_list.1.type_embd.embedding.weight")
-        des.load_state_dict(model_dict)
-        all_rcut = sorted([ii["rcut"] for ii in dlist])
-        all_nsel = sorted([ii["sel"] for ii in dlist])
-        rcut_max = max(all_rcut)
-        sel_max = max(all_nsel)
-        coord = self.coord
-        atype = self.atype
-        box = self.cell
-        # handel type_embedding
-        type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
-        type_embedding.load_state_dict(torch.load(self.file_type_embed))
-
-        ## to save model parameters
-        # torch.save(des.state_dict(), 'model_weights.pth')
-        # torch.save(type_embedding.state_dict(), 'model_weights.pth')
-        (
-            extended_coord,
-            extended_atype,
-            mapping,
-            nlist_max,
-        ) = extend_input_and_build_neighbor_list(
-            coord,
-            atype,
-            rcut_max,
-            sel_max,
-            mixed_types=des.mixed_types(),
-            box=box,
-        )
-        nlist_dict = build_multiple_neighbor_list(
-            extended_coord,
-            nlist_max,
-            all_rcut,
-            all_nsel,
-        )
-        nlist_list = []
-        for ii in des.descriptor_list:
-            nlist_list.append(
-                nlist_dict[get_multiple_nlist_key(ii.get_rcut(), ii.get_nsel())]
-            )
-        nlist = torch.cat(nlist_list, -1)
-        descriptor, env_mat, diff, rot_mat, sw = des(
-            nlist,
-            extended_coord,
-            extended_atype,
-            type_embedding(extended_atype),
-            mapping=mapping,
-        )
-        torch.testing.assert_close(
-            descriptor.view(-1), self.ref_d, atol=1e-10, rtol=1e-10
-        )
 
     def test_descriptor(self):
         with open(Path(CUR_DIR) / "models" / "dpa2.json") as fp:
@@ -198,9 +124,9 @@ class TestDPA2(unittest.TestCase):
         target_dict = des.state_dict()
         source_dict = torch.load(self.file_model_param)
         # type_embd of repformer is removed
-        source_dict.pop("descriptor_list.1.type_embd.embedding.weight")
+        source_dict.pop("type_embedding.embedding.embedding_net.layers.0.bias")
         type_embd_dict = torch.load(self.file_type_embed)
-        target_dict = translate_hybrid_and_type_embd_dicts_to_dpa2(
+        target_dict = translate_type_embd_dicts_to_dpa2(
             target_dict,
             source_dict,
             type_embd_dict,
@@ -250,7 +176,7 @@ class TestDPA2(unittest.TestCase):
         self.assertEqual(descriptor.shape[-1], des.get_dim_out())
 
 
-def translate_hybrid_and_type_embd_dicts_to_dpa2(
+def translate_type_embd_dicts_to_dpa2(
     target_dict,
     source_dict,
     type_embd_dict,
@@ -258,11 +184,8 @@ def translate_hybrid_and_type_embd_dicts_to_dpa2(
     all_keys = list(target_dict.keys())
     record = [False for ii in all_keys]
     for kk, vv in source_dict.items():
-        tk = kk.replace("descriptor_list.1", "repformers")
-        tk = tk.replace("descriptor_list.0", "repinit")
-        tk = tk.replace("sequential_transform.0", "g1_shape_tranform")
-        record[all_keys.index(tk)] = True
-        target_dict[tk] = vv
+        record[all_keys.index(kk)] = True
+        target_dict[kk] = vv
     assert len(type_embd_dict.keys()) == 2
     it = iter(type_embd_dict.keys())
     for _ in range(2):

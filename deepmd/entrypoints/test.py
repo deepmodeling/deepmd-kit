@@ -46,14 +46,7 @@ from deepmd.utils.weight_avg import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.tf.infer import (
-        DeepDipole,
-        DeepDOS,
-        DeepPolar,
-        DeepPot,
-        DeepWFC,
-    )
-    from deepmd.tf.infer.deep_tensor import (
+    from deepmd.infer.deep_tensor import (
         DeepTensor,
     )
 
@@ -67,7 +60,6 @@ def test(
     model: str,
     system: str,
     datafile: str,
-    set_prefix: str,
     numb_test: int,
     rand_seed: Optional[int],
     shuffle_test: bool,
@@ -86,8 +78,6 @@ def test(
         system directory
     datafile : str
         the path to the list of systems to test
-    set_prefix : str
-        string prefix of set
     numb_test : int
         munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
@@ -137,7 +127,7 @@ def test(
         tmap = dp.get_type_map() if isinstance(dp, DeepPot) else None
         data = DeepmdData(
             system,
-            set_prefix,
+            set_prefix="set",
             shuffle_test=shuffle_test,
             type_map=tmap,
             sort_atoms=False,
@@ -460,14 +450,14 @@ def test_ener(
         save_txt_file(
             detail_path.with_suffix(".e.out"),
             pe,
-            header="%s: data_e pred_e" % system,
+            header=f"{system}: data_e pred_e",
             append=append_detail,
         )
         pe_atom = pe / natoms
         save_txt_file(
             detail_path.with_suffix(".e_peratom.out"),
             pe_atom,
-            header="%s: data_e pred_e" % system,
+            header=f"{system}: data_e pred_e",
             append=append_detail,
         )
         if not out_put_spin:
@@ -481,7 +471,7 @@ def test_ener(
             save_txt_file(
                 detail_path.with_suffix(".f.out"),
                 pf,
-                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
                 append=append_detail,
             )
         else:
@@ -496,14 +486,13 @@ def test_ener(
             save_txt_file(
                 detail_path.with_suffix(".fr.out"),
                 pf_real,
-                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
                 append=append_detail,
             )
             save_txt_file(
                 detail_path.with_suffix(".fm.out"),
                 pf_mag,
-                header="%s: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz"
-                % system,
+                header=f"{system}: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz",
                 append=append_detail,
             )
         pv = np.concatenate(

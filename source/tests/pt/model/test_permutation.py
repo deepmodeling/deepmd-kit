@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import os
 import unittest
 
 import torch
@@ -13,6 +14,12 @@ from deepmd.pt.model.model import (
 from deepmd.pt.utils import (
     env,
 )
+
+from ...seed import (
+    GLOBAL_SEED,
+)
+
+CUR_DIR = os.path.dirname(__file__)
 
 dtype = torch.float64
 
@@ -60,19 +67,27 @@ model_dos = {
 
 model_zbl = {
     "type_map": ["O", "H", "B"],
-    "use_srtab": "source/tests/pt/model/water/data/zbl_tab_potential/H2O_tab_potential.txt",
+    "use_srtab": f"{CUR_DIR}/water/data/zbl_tab_potential/H2O_tab_potential.txt",
     "smin_alpha": 0.1,
     "sw_rmin": 0.2,
-    "sw_rmax": 1.0,
+    "sw_rmax": 4.0,
     "descriptor": {
-        "type": "se_e2_a",
-        "sel": [46, 92, 4],
-        "rcut_smth": 0.50,
-        "rcut": 6.00,
+        "type": "se_atten",
+        "sel": 40,
+        "rcut_smth": 0.5,
+        "rcut": 4.0,
         "neuron": [25, 50, 100],
-        "resnet_dt": False,
         "axis_neuron": 16,
-        "seed": 1,
+        "attn": 64,
+        "attn_layer": 2,
+        "attn_dotr": True,
+        "attn_mask": False,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": False,
+        "temperature": 1.0,
+        "set_davg_zero": True,
+        "type_one_side": True,
     },
     "fitting_net": {
         "neuron": [24, 24, 24],
@@ -111,32 +126,36 @@ model_dpa2 = {
     "type_map": ["O", "H", "B"],
     "descriptor": {
         "type": "dpa2",
-        "repinit_rcut": 6.0,
-        "repinit_rcut_smth": 2.0,
-        "repinit_nsel": 30,
-        "repformer_rcut": 4.0,
-        "repformer_rcut_smth": 0.5,
-        "repformer_nsel": 20,
-        "repinit_neuron": [2, 4, 8],
-        "repinit_axis_neuron": 4,
-        "repinit_activation": "tanh",
-        "repformer_nlayers": 12,
-        "repformer_g1_dim": 8,
-        "repformer_g2_dim": 5,
-        "repformer_attn2_hidden": 3,
-        "repformer_attn2_nhead": 1,
-        "repformer_attn1_hidden": 5,
-        "repformer_attn1_nhead": 1,
-        "repformer_axis_dim": 4,
-        "repformer_update_h2": False,
-        "repformer_update_g1_has_conv": True,
-        "repformer_update_g1_has_grrg": True,
-        "repformer_update_g1_has_drrd": True,
-        "repformer_update_g1_has_attn": True,
-        "repformer_update_g2_has_g1g1": True,
-        "repformer_update_g2_has_attn": True,
-        "repformer_attn2_has_gate": True,
-        "repformer_add_type_ebd_to_seq": False,
+        "repinit": {
+            "rcut": 6.0,
+            "rcut_smth": 2.0,
+            "nsel": 100,
+            "neuron": [2, 4, 8],
+            "axis_neuron": 4,
+            "activation_function": "tanh",
+        },
+        "repformer": {
+            "rcut": 4.0,
+            "rcut_smth": 0.5,
+            "nsel": 40,
+            "nlayers": 12,
+            "g1_dim": 8,
+            "g2_dim": 5,
+            "attn2_hidden": 3,
+            "attn2_nhead": 1,
+            "attn1_hidden": 5,
+            "attn1_nhead": 1,
+            "axis_neuron": 4,
+            "update_h2": False,
+            "update_g1_has_conv": True,
+            "update_g1_has_grrg": True,
+            "update_g1_has_drrd": True,
+            "update_g1_has_attn": True,
+            "update_g2_has_g1g1": True,
+            "update_g2_has_attn": True,
+            "attn2_has_gate": True,
+        },
+        "add_tebd_to_repinit_out": False,
     },
     "fitting_net": {
         "neuron": [24, 24],
@@ -158,12 +177,8 @@ model_dpa1 = {
         "attn_layer": 2,
         "attn_dotr": True,
         "attn_mask": False,
-        "post_ln": True,
-        "ffn": False,
-        "ffn_embed_dim": 512,
         "activation_function": "tanh",
         "scaling_factor": 1.0,
-        "head_num": 1,
         "normalize": False,
         "temperature": 1.0,
         "set_davg_zero": True,
@@ -193,43 +208,43 @@ model_hybrid = {
                 "attn_layer": 0,
                 "attn_dotr": True,
                 "attn_mask": False,
-                "post_ln": True,
-                "ffn": False,
-                "ffn_embed_dim": 1024,
                 "activation_function": "tanh",
                 "scaling_factor": 1.0,
-                "head_num": 1,
                 "normalize": True,
                 "temperature": 1.0,
             },
             {
                 "type": "dpa2",
-                "repinit_rcut": 6.0,
-                "repinit_rcut_smth": 2.0,
-                "repinit_nsel": 30,
-                "repformer_rcut": 4.0,
-                "repformer_rcut_smth": 0.5,
-                "repformer_nsel": 10,
-                "repinit_neuron": [2, 4, 8],
-                "repinit_axis_neuron": 4,
-                "repinit_activation": "tanh",
-                "repformer_nlayers": 12,
-                "repformer_g1_dim": 8,
-                "repformer_g2_dim": 5,
-                "repformer_attn2_hidden": 3,
-                "repformer_attn2_nhead": 1,
-                "repformer_attn1_hidden": 5,
-                "repformer_attn1_nhead": 1,
-                "repformer_axis_dim": 4,
-                "repformer_update_h2": False,
-                "repformer_update_g1_has_conv": True,
-                "repformer_update_g1_has_grrg": True,
-                "repformer_update_g1_has_drrd": True,
-                "repformer_update_g1_has_attn": True,
-                "repformer_update_g2_has_g1g1": True,
-                "repformer_update_g2_has_attn": True,
-                "repformer_attn2_has_gate": True,
-                "repformer_add_type_ebd_to_seq": False,
+                "repinit": {
+                    "rcut": 6.0,
+                    "rcut_smth": 2.0,
+                    "nsel": 30,
+                    "neuron": [2, 4, 8],
+                    "axis_neuron": 4,
+                    "activation_function": "tanh",
+                },
+                "repformer": {
+                    "rcut": 4.0,
+                    "rcut_smth": 0.5,
+                    "nsel": 10,
+                    "nlayers": 12,
+                    "g1_dim": 8,
+                    "g2_dim": 5,
+                    "attn2_hidden": 3,
+                    "attn2_nhead": 1,
+                    "attn1_hidden": 5,
+                    "attn1_nhead": 1,
+                    "axis_neuron": 4,
+                    "update_h2": False,
+                    "update_g1_has_conv": True,
+                    "update_g1_has_grrg": True,
+                    "update_g1_has_drrd": True,
+                    "update_g1_has_attn": True,
+                    "update_g2_has_g1g1": True,
+                    "update_g2_has_attn": True,
+                    "attn2_has_gate": True,
+                },
+                "add_tebd_to_repinit_out": False,
             },
         ],
     },
@@ -248,10 +263,15 @@ class PermutationTest:
         self,
     ):
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord = torch.matmul(coord, cell)
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         idx_perm = [1, 0, 4, 3, 2]
@@ -316,13 +336,6 @@ class TestEnergyModelDPA1(unittest.TestCase, PermutationTest):
 
 class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -330,13 +343,6 @@ class TestEnergyModelDPA2(unittest.TestCase, PermutationTest):
 
 class TestForceModelDPA2(unittest.TestCase, PermutationTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "direct_force_ener"
         self.type_split = True

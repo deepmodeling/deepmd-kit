@@ -18,12 +18,8 @@
     "attn_layer": 2,
     "attn_dotr": true,
     "attn_mask": false,
-    "post_ln": true,
-    "ffn": false,
-    "ffn_embed_dim": 10,
     "activation_function": "tanh",
     "scaling_factor": 1.0,
-    "head_num": 1,
     "normalize": true,
     "temperature": 1.0
   },

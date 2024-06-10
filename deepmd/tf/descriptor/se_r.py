@@ -102,7 +102,6 @@ class DescrptSeR(DescrptSe):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        multi_task: bool = False,
         spin: Optional[Spin] = None,
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
@@ -211,9 +210,6 @@ class DescrptSeR(DescrptSe):
             self.sub_sess = tf.Session(
                 graph=sub_graph, config=default_tf_session_config
             )
-        self.multi_task = multi_task
-        if multi_task:
-            self.stat_dict = {"sumr": [], "sumn": [], "sumr2": []}
 
     def get_rcut(self):
         """Returns the cut-off radius."""
@@ -282,13 +278,8 @@ class DescrptSeR(DescrptSe):
             sumr.append(sysr)
             sumn.append(sysn)
             sumr2.append(sysr2)
-        if not self.multi_task:
-            stat_dict = {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
-            self.merge_input_stats(stat_dict)
-        else:
-            self.stat_dict["sumr"] += sumr
-            self.stat_dict["sumn"] += sumn
-            self.stat_dict["sumr2"] += sumr2
+        stat_dict = {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
+        self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict):
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
@@ -376,12 +367,8 @@ class DescrptSeR(DescrptSe):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def build(
         self,
@@ -737,7 +724,7 @@ class DescrptSeR(DescrptSe):
             The deserialized model
         """
         if cls is not DescrptSeR:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         embedding_net_variables = cls.deserialize_network(
@@ -770,7 +757,7 @@ class DescrptSeR(DescrptSe):
         """
         if type(self) is not DescrptSeR:
             raise NotImplementedError(
-                "Not implemented in class %s" % self.__class__.__name__
+                f"Not implemented in class {self.__class__.__name__}"
             )
         if self.embedding_net_variables is None:
             raise RuntimeError("init_variables must be called before serialize")
@@ -778,9 +765,6 @@ class DescrptSeR(DescrptSe):
             raise NotImplementedError("spin is unsupported")
         assert self.davg is not None
         assert self.dstd is not None
-        # TODO: tf: handle type embedding in DescrptSeR.serialize
-        # not sure how to handle type embedding - type embedding is not a model parameter,
-        # but instead a part of the input data. Maybe the interface should be refactored...
         return {
             "@class": "Descriptor",
             "type": "se_r",

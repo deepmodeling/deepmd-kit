@@ -16,6 +16,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.tf.utils.pair_tab import (
+    PairTab,
+)
 from deepmd.tf.utils.spin import (
     Spin,
 )
@@ -105,6 +108,16 @@ class EnerModel(StandardModel):
         )
         self.numb_fparam = self.fitting.get_numb_fparam()
         self.numb_aparam = self.fitting.get_numb_aparam()
+
+        self.srtab_name = use_srtab
+        if self.srtab_name is not None:
+            self.srtab = PairTab(self.srtab_name, rcut=self.get_rcut())
+            self.smin_alpha = smin_alpha
+            self.sw_rmin = sw_rmin
+            self.sw_rmax = sw_rmax
+            self.srtab_add_bias = srtab_add_bias
+        else:
+            self.srtab = None
 
     def get_rcut(self):
         return self.rcut
@@ -376,7 +389,7 @@ class EnerModel(StandardModel):
             self.fitting.init_variables(graph, graph_def, suffix=suffix)
             tf.constant("compressed_model", name="model_type", dtype=tf.string)
         else:
-            raise RuntimeError("Unknown model type %s" % model_type)
+            raise RuntimeError(f"Unknown model type {model_type}")
         if (
             self.typeebd is not None
             and self.typeebd.type_embedding_net_variables is None

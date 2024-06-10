@@ -61,6 +61,17 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     ):
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
+
+        # check all sub models are of mixed type.
+        model_mixed_type = []
+        for m in models:
+            if not m.mixed_types():
+                model_mixed_type.append(m)
+        if len(model_mixed_type) > 0:
+            raise ValueError(
+                f"LinearAtomicModel only supports AtomicModel of mixed type, the following models are not mixed type: {model_mixed_type}."
+            )
+
         self.models = torch.nn.ModuleList(models)
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
@@ -92,6 +103,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         """
         return True
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return any(model.has_message_passing() for model in self.models)
 
     def get_out_bias(self) -> torch.Tensor:
         return self.out_bias
@@ -144,6 +159,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -489,8 +505,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             extended_coord, masked_nlist
         )
         numerator = torch.sum(
-            pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha), dim=-1
-        )  # masked nnei will be zero, no need to handle
+            torch.where(
+                nlist_larger != -1,
+                pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha),
+                torch.zeros_like(nlist_larger),
+            ),
+            dim=-1,
+        )
         denominator = torch.sum(
             torch.where(
                 nlist_larger != -1,
@@ -510,5 +531,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
+
+        # to handle masked atoms
+        coef = torch.where(sigma != 0, coef, torch.zeros_like(coef))
         self.zbl_weight = coef  # nframes, nloc
         return [1 - coef.unsqueeze(-1), coef.unsqueeze(-1)]  # to match the model order.

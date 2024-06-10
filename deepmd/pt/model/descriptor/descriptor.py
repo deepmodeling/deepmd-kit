@@ -59,6 +59,11 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         pass
 
     @abstractmethod
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        pass
+
+    @abstractmethod
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         pass
@@ -80,12 +85,17 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     @abstractmethod
     def get_dim_in(self) -> int:
-        """Returns the output dimension."""
+        """Returns the input dimension."""
         pass
 
     @abstractmethod
     def get_dim_emb(self) -> int:
         """Returns the embedding dimension."""
+        pass
+
+    @abstractmethod
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
         pass
 
     def compute_input_stats(
@@ -158,6 +168,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
     ):
         """Calculate DescriptorBlock."""
         pass
+
+    @abstractmethod
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
 
 
 def make_default_type_embedding(

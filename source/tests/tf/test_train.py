@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import random
 import unittest
 from unittest.mock import (
     patch,
@@ -11,10 +12,15 @@ from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 class TestTrain(unittest.TestCase):
     def setUp(self) -> None:
         self.update_sel = UpdateSel()
+        self.mock_min_nbor_dist = random.Random(GLOBAL_SEED).random()
         return super().setUp()
 
     def test_train_parse_auto_sel(self):
@@ -34,22 +40,25 @@ class TestTrain(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.update_sel.parse_auto_sel_ratio([1, 2, 3])
 
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_sel")
-    def test_update_one_sel(self, sel_mock):
-        sel_mock.return_value = [10, 20]
-        jdata = {}
-        descriptor = {"type": "se_e2_a", "rcut": 6, "sel": "auto"}
-        descriptor = self.update_sel.update_one_sel(jdata, descriptor)
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_one_sel(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
+        get_data_mock.return_value = None
+        min_nbor_dist, sel = self.update_sel.update_one_sel(None, None, 6, "auto")
         # self.assertEqual(descriptor['sel'], [11,22])
-        self.assertEqual(descriptor["sel"], [12, 24])
-        descriptor = {"type": "se_e2_a", "rcut": 6, "sel": "auto:1.5"}
-        descriptor = self.update_sel.update_one_sel(jdata, descriptor)
+        self.assertEqual(sel, [12, 24])
+        self.assertAlmostEqual(min_nbor_dist, self.mock_min_nbor_dist)
+        min_nbor_dist, sel = self.update_sel.update_one_sel(None, None, 6, "auto:1.5")
         # self.assertEqual(descriptor['sel'], [15,30])
-        self.assertEqual(descriptor["sel"], [16, 32])
+        self.assertEqual(sel, [16, 32])
+        self.assertAlmostEqual(min_nbor_dist, self.mock_min_nbor_dist)
 
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_sel")
-    def test_update_sel_hybrid(self, sel_mock):
-        sel_mock.return_value = [10, 20]
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_hybrid(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "descriptor": {
@@ -59,7 +68,8 @@ class TestTrain(unittest.TestCase):
                         {"type": "se_e2_a", "rcut": 6, "sel": "auto:1.5"},
                     ],
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = {
             "model": {
@@ -70,24 +80,33 @@ class TestTrain(unittest.TestCase):
                         {"type": "se_e2_a", "rcut": 6, "sel": [16, 32]},
                     ],
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_sel")
-    def test_update_sel(self, sel_mock):
-        sel_mock.return_value = [10, 20]
-        jdata = {"model": {"descriptor": {"type": "se_e2_a", "rcut": 6, "sel": "auto"}}}
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
+        get_data_mock.return_value = None
+        jdata = {
+            "model": {"descriptor": {"type": "se_e2_a", "rcut": 6, "sel": "auto"}},
+            "training": {"training_data": {}},
+        }
         expected_out = {
-            "model": {"descriptor": {"type": "se_e2_a", "rcut": 6, "sel": [12, 24]}}
+            "model": {"descriptor": {"type": "se_e2_a", "rcut": 6, "sel": [12, 24]}},
+            "training": {"training_data": {}},
         }
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_sel")
-    def test_update_sel_atten_auto(self, sel_mock):
-        sel_mock.return_value = [25]
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_atten_auto(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [25]
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "descriptor": {
@@ -95,7 +114,8 @@ class TestTrain(unittest.TestCase):
                     "sel": "auto",
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = {
             "model": {
@@ -104,14 +124,17 @@ class TestTrain(unittest.TestCase):
                     "sel": 28,
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_sel")
-    def test_update_sel_atten_int(self, sel_mock):
-        sel_mock.return_value = [25]
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_atten_int(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [25]
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "descriptor": {
@@ -119,7 +142,8 @@ class TestTrain(unittest.TestCase):
                     "sel": 30,
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = {
             "model": {
@@ -128,14 +152,17 @@ class TestTrain(unittest.TestCase):
                     "sel": 30,
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_sel")
-    def test_update_sel_atten_list(self, sel_mock):
-        sel_mock.return_value = [25]
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_atten_list(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [25]
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "descriptor": {
@@ -143,7 +170,8 @@ class TestTrain(unittest.TestCase):
                     "sel": 30,
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = {
             "model": {
@@ -152,19 +180,23 @@ class TestTrain(unittest.TestCase):
                     "sel": 30,
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    def test_skip_loc_frame(self):
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    def test_skip_loc_frame(self, get_data_mock):
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "descriptor": {
                     "type": "loc_frame",
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = {
             "model": {
@@ -172,22 +204,28 @@ class TestTrain(unittest.TestCase):
                     "type": "loc_frame",
                     "rcut": 6,
                 }
-            }
+            },
+            "training": {"training_data": {}},
         }
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    def test_skip_frozen(self):
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    def test_skip_frozen(self, get_data_mock):
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "type": "frozen",
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = jdata.copy()
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    def test_skip_linear_frozen(self):
+    @patch("deepmd.tf.entrypoints.train.get_data")
+    def test_skip_linear_frozen(self, get_data_mock):
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "type": "linear_ener",
@@ -197,15 +235,18 @@ class TestTrain(unittest.TestCase):
                     {"type": "frozen"},
                     {"type": "frozen"},
                 ],
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = jdata.copy()
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
+    @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_min_nbor_dist")
-    def test_pairwise_dprc(self, sel_mock):
-        sel_mock.return_value = 0.5
+    def test_pairwise_dprc(self, sel_mock, get_data_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist
+        get_data_mock.return_value = None
         jdata = {
             "model": {
                 "type": "pairwise_dprc",
@@ -215,7 +256,8 @@ class TestTrain(unittest.TestCase):
                     {"type": "frozen"},
                     {"type": "frozen"},
                 ],
-            }
+            },
+            "training": {"training_data": {}},
         }
         expected_out = jdata.copy()
         jdata = update_sel(jdata)

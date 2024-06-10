@@ -20,7 +20,6 @@ from .gaussian_lcc import (
     DescrptGaussianLcc,
 )
 from .hybrid import (
-    DescrptBlockHybrid,
     DescrptHybrid,
 )
 from .repformers import (
@@ -30,8 +29,14 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_atten_v2 import (
+    DescrptSeAttenV2,
+)
 from .se_r import (
     DescrptSeR,
+)
+from .se_t import (
+    DescrptSeT,
 )
 
 __all__ = [
@@ -40,13 +45,14 @@ __all__ = [
     "make_default_type_embedding",
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
+    "DescrptSeAttenV2",
     "DescrptSeA",
     "DescrptSeR",
+    "DescrptSeT",
     "DescrptDPA1",
     "DescrptDPA2",
     "DescrptHybrid",
     "prod_env_mat",
     "DescrptGaussianLcc",
-    "DescrptBlockHybrid",
     "DescrptBlockRepformers",
 ]

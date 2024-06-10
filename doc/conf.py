@@ -150,7 +150,7 @@ numpydoc_xref_aliases = {}
 import typing
 
 for typing_type in typing.__all__:
-    numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
+    numpydoc_xref_aliases[typing_type] = f"typing.{typing_type}"
 
 rst_epilog = f"""
 .. |ACTIVATION_FN| replace:: {list_to_doc(ACTIVATION_FN_DICT.keys())}

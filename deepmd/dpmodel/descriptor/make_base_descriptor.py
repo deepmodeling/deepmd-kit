@@ -7,11 +7,15 @@ from typing import (
     Callable,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
 from deepmd.common import (
     j_get_type,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -52,6 +56,11 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
+        def get_rcut_smth(self) -> float:
+            """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+            pass
+
+        @abstractmethod
         def get_sel(self) -> List[int]:
             """Returns the number of selected neighboring atoms for each type."""
             pass
@@ -84,6 +93,15 @@ def make_base_descriptor(
             """Returns if the descriptor requires a neighbor list that distinguish different
             atomic types or not.
             """
+            pass
+
+        @abstractmethod
+        def has_message_passing(self) -> bool:
+            """Returns whether the descriptor has message passing."""
+
+        @abstractmethod
+        def get_env_protection(self) -> float:
+            """Returns the protection of building environment matrix."""
             pass
 
         @abstractmethod
@@ -135,23 +153,37 @@ def make_base_descriptor(
             """
             if cls is BD:
                 return BD.get_class_by_type(data["type"]).deserialize(data)
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
         @classmethod
         @abstractmethod
-        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        def update_sel(
+            cls,
+            train_data: DeepmdDataSystem,
+            type_map: Optional[List[str]],
+            local_jdata: dict,
+        ) -> Tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters
             ----------
-            global_jdata : dict
-                The global data, containing the training section
+            train_data : DeepmdDataSystem
+                data used to do neighbor statictics
+            type_map : list[str], optional
+                The name of each type of atoms
             local_jdata : dict
                 The local data refer to the current class
+
+            Returns
+            -------
+            dict
+                The updated local data
+            float
+                The minimum distance between two atoms
             """
             # call subprocess
             cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
-            return cls.update_sel(global_jdata, local_jdata)
+            return cls.update_sel(train_data, type_map, local_jdata)
 
     setattr(BD, fwd_method_name, BD.fwd)
     delattr(BD, "fwd")

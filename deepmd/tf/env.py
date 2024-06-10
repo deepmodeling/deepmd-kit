@@ -77,7 +77,8 @@ if platform.system() == "Linux":
 
 # keras 3 is incompatible with tf.compat.v1
 # https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+# 2024/04/24: deepmd.tf doesn't import tf.keras any more
+
 # import tensorflow v1 compatability
 try:
     import tensorflow.compat.v1 as tf
@@ -110,7 +111,6 @@ __all__ = [
     "EMBEDDING_NET_PATTERN",
     "TYPE_EMBEDDING_PATTERN",
     "ATTENTION_LAYER_PATTERN",
-    "REMOVE_SUFFIX_DICT",
     "TF_VERSION",
     "tf_py_version",
 ]
@@ -138,6 +138,7 @@ EMBEDDING_NET_PATTERN = str(
     r"filter_type_(all)/(bias)_(\d+)_(\d+)_(\d+)|"
     r"filter_type_(all)/(bias)_(\d+)_(\d+)|"
     r"filter_type_(all)/(bias)_(\d+)|"
+    r"filter_type_(all)/(idt)_(\d+)_(\d+)_(\d+)|"
     r"filter_type_(all)/(idt)_(\d+)_(\d+)|"
     r"filter_type_(all)/(idt)_(\d+)|"
 )[:-1]
@@ -178,19 +179,19 @@ TYPE_EMBEDDING_PATTERN = str(
 )[:-1]
 
 ATTENTION_LAYER_PATTERN = str(
-    r"attention_layer_\d+/c_query/matrix|"
-    r"attention_layer_\d+/c_query/bias|"
-    r"attention_layer_\d+/c_key/matrix|"
-    r"attention_layer_\d+/c_key/bias|"
-    r"attention_layer_\d+/c_value/matrix|"
-    r"attention_layer_\d+/c_value/bias|"
-    r"attention_layer_\d+/c_out/matrix|"
-    r"attention_layer_\d+/c_out/bias|"
-    r"attention_layer_\d+/layer_normalization/beta|"
-    r"attention_layer_\d+/layer_normalization/gamma|"
-    r"attention_layer_\d+/layer_normalization_\d+/beta|"
-    r"attention_layer_\d+/layer_normalization_\d+/gamma|"
-)
+    r"attention_layer_(\d+)/(c_query)/(matrix)|"
+    r"attention_layer_(\d+)/(c_query)/(bias)|"
+    r"attention_layer_(\d+)/(c_key)/(matrix)|"
+    r"attention_layer_(\d+)/(c_key)/(bias)|"
+    r"attention_layer_(\d+)/(c_value)/(matrix)|"
+    r"attention_layer_(\d+)/(c_value)/(bias)|"
+    r"attention_layer_(\d+)/(c_out)/(matrix)|"
+    r"attention_layer_(\d+)/(c_out)/(bias)|"
+    r"attention_layer_(\d+)/(layer_normalization)/(beta)|"
+    r"attention_layer_(\d+)/(layer_normalization)/(gamma)|"
+    r"attention_layer_(\d+)/(layer_normalization)_\d+/(beta)|"
+    r"attention_layer_(\d+)/(layer_normalization)_\d+/(gamma)|"
+)[:-1]
 
 TRANSFER_PATTERN = (
     EMBEDDING_NET_PATTERN
@@ -207,31 +208,6 @@ TRANSFER_PATTERN = (
         r"model_attr/t_tab_data|"
     )
 )
-
-REMOVE_SUFFIX_DICT = {
-    "model_attr/sel_type_{}": "model_attr/sel_type",
-    "model_attr/output_dim_{}": "model_attr/output_dim",
-    "_{}/": "/",
-    # when atom_ener is set
-    "_{}_1/": "_1/",
-    "o_energy_{}": "o_energy",
-    "o_force_{}": "o_force",
-    "o_virial_{}": "o_virial",
-    "o_atom_energy_{}": "o_atom_energy",
-    "o_atom_virial_{}": "o_atom_virial",
-    "o_dipole_{}": "o_dipole",
-    "o_global_dipole_{}": "o_global_dipole",
-    "o_polar_{}": "o_polar",
-    "o_global_polar_{}": "o_global_polar",
-    "o_rmat_{}": "o_rmat",
-    "o_rmat_deriv_{}": "o_rmat_deriv",
-    "o_nlist_{}": "o_nlist",
-    "o_rij_{}": "o_rij",
-    "o_dm_force_{}": "o_dm_force",
-    "o_dm_virial_{}": "o_dm_virial",
-    "o_dm_av_{}": "o_dm_av",
-    "o_wfc_{}": "o_wfc",
-}
 
 
 def set_mkl():

@@ -5,6 +5,10 @@ from typing import (
     Optional,
 )
 
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
+
 from .descriptor import (
     Descriptor,
 )
@@ -59,8 +63,6 @@ class DescrptSeAttenV2(DescrptSeAtten):
             Whether to dot the relative coordinates on the attention weights as a gated scheme.
     attn_mask
             Whether to mask the diagonal in the attention weights.
-    multi_task
-            If the model has multi fitting nets to train.
     """
 
     def __init__(
@@ -84,7 +86,6 @@ class DescrptSeAttenV2(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        multi_task: bool = False,
         **kwargs,
     ) -> None:
         DescrptSeAtten.__init__(
@@ -108,8 +109,72 @@ class DescrptSeAttenV2(DescrptSeAtten):
             attn_layer=attn_layer,
             attn_dotr=attn_dotr,
             attn_mask=attn_mask,
-            multi_task=multi_task,
-            stripped_type_embedding=True,
-            smooth_type_embdding=True,
+            tebd_input_mode="strip",
+            smooth_type_embedding=True,
             **kwargs,
         )
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeAttenV2:
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        attention_layer_variables = cls.deserialize_attention_layers(
+            data.pop("attention_layers"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        type_one_side = data["type_one_side"]
+        two_side_embeeding_net_variables = cls.deserialize_network_strip(
+            data.pop("embeddings_strip"),
+            suffix=suffix,
+            type_one_side=type_one_side,
+        )
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.attention_layer_variables = attention_layer_variables
+        descriptor.two_side_embeeding_net_variables = two_side_embeeding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = super().serialize(suffix)
+        data.pop("smooth_type_embedding")
+        data.pop("tebd_input_mode")
+        data.update({"type": "se_atten_v2"})
+        return data

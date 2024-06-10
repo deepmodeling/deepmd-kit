@@ -216,60 +216,70 @@ def get_extra_embedding_net_suffix(type_one_side: bool):
     return extra_suffix
 
 
-def get_variables_from_graph_def_as_numpy_array(graph_def: tf.GraphDef, pattern: str):
-    """Get variables from the given tf.GraphDef object, with numpy array returns.
+def get_extra_embedding_net_nodes_from_graph_def(
+    graph_def: tf.GraphDef,
+    suffix: str = "",
+    extra_suffix: str = "",
+) -> Dict:
+    """Get the extra embedding net nodes with the given tf.GraphDef object.
 
     Parameters
     ----------
     graph_def
         The input tf.GraphDef object
-    pattern : str
-        The name of variable
-
-    Returns
-    -------
-    np.ndarray
-        The numpy array of the variable
-    """
-    node = get_pattern_nodes_from_graph_def(graph_def, pattern)[pattern]
-    return tf.make_ndarray(node)
-
-
-def get_extra_embedding_net_variables_from_graph_def(
-    graph_def: tf.GraphDef, suffix: str, extra_suffix: str, layer_size: int
-):
-    """Get extra embedding net variables from the given tf.GraphDef object.
-    The "extra embedding net" means the embedding net with only type embeddings input,
-    which occurs in "se_atten_v2" and "se_a_ebd_v2" descriptor.
-
-    Parameters
-    ----------
-    graph_def
-        The input tf.GraphDef object
-    suffix : str
-        The "common" suffix in the descriptor
+    suffix : str, optional
+        The scope suffix
     extra_suffix : str
-        This value depends on the value of "type_one_side".
-        It should always be "_one_side_ebd" or "_two_side_ebd"
-    layer_size : int
-        The layer size of the embedding net
+        The extra scope suffix
 
     Returns
     -------
     Dict
-        The extra embedding net variables within the given tf.GraphDef object
+        The embedding net nodes within the given tf.GraphDef object
     """
-    extra_embedding_net_variables = {}
-    for i in range(1, layer_size + 1):
-        matrix_pattern = f"filter_type_all{suffix}/matrix_{i}{extra_suffix}"
-        extra_embedding_net_variables[matrix_pattern] = (
-            get_variables_from_graph_def_as_numpy_array(graph_def, matrix_pattern)
+    embedding_net_pattern_strip = str(
+        rf"filter_type_(all)/(matrix)_(\d+){extra_suffix}|"
+        rf"filter_type_(all)/(bias)_(\d+){extra_suffix}|"
+        rf"filter_type_(all)/(idt)_(\d+){extra_suffix}|"
+    )[:-1]
+    if suffix != "":
+        embedding_net_pattern_strip = (
+            embedding_net_pattern_strip.replace("/(idt)", suffix + "/(idt)")
+            .replace("/(bias)", suffix + "/(bias)")
+            .replace("/(matrix)", suffix + "/(matrix)")
         )
-        bias_pattern = f"filter_type_all{suffix}/bias_{i}{extra_suffix}"
-        extra_embedding_net_variables[bias_pattern] = (
-            get_variables_from_graph_def_as_numpy_array(graph_def, bias_pattern)
-        )
-    return extra_embedding_net_variables
+
+    embedding_net_nodes_strip = get_pattern_nodes_from_graph_def(
+        graph_def, embedding_net_pattern_strip
+    )
+    return embedding_net_nodes_strip
+
+
+def get_extra_embedding_net_variables_from_graph_def(
+    graph_def: tf.GraphDef,
+    suffix: str = "",
+    extra_suffix: str = "",
+) -> Dict:
+    """Get the embedding net variables with the given tf.GraphDef object.
+
+    Parameters
+    ----------
+    graph_def
+        The input tf.GraphDef object
+    suffix : str, optional
+        The suffix of the scope
+    extra_suffix
+        The extra scope suffix
+
+    Returns
+    -------
+    Dict
+        The embedding net variables within the given tf.GraphDef object
+    """
+    extra_embedding_net_nodes = get_extra_embedding_net_nodes_from_graph_def(
+        graph_def, extra_suffix=extra_suffix, suffix=suffix
+    )
+    return convert_tensor_to_ndarray_in_dict(extra_embedding_net_nodes)
 
 
 def get_embedding_net_variables(model_file: str, suffix: str = "") -> Dict:
@@ -455,11 +465,11 @@ def get_attention_layer_nodes_from_graph_def(
     """
     if suffix != "":
         attention_layer_pattern = (
-            ATTENTION_LAYER_PATTERN.replace("/c_query", suffix + "/c_query")
-            .replace("/c_key", suffix + "/c_key")
-            .replace("/c_value", suffix + "/c_value")
-            .replace("/c_out", suffix + "/c_out")
-            .replace("/layer_normalization", suffix + "/layer_normalization")
+            ATTENTION_LAYER_PATTERN.replace("/(c_query)", suffix + "/(c_query)")
+            .replace("/(c_key)", suffix + "/(c_key)")
+            .replace("/(c_value)", suffix + "/(c_value)")
+            .replace("/(c_out)", suffix + "/(c_out)")
+            .replace("/(layer_normalization)", suffix + "/(layer_normalization)")
         )
     else:
         attention_layer_pattern = ATTENTION_LAYER_PATTERN

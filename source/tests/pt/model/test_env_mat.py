@@ -14,6 +14,10 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
@@ -33,8 +37,11 @@ class TestCaseSingleFrameWithNlist:
             dtype=np.float64,
         ).reshape([1, self.nall, 3])
         self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
+        self.mapping = np.array([0, 1, 2, 0], dtype=int).reshape([1, self.nall])
         # sel = [5, 2]
         self.sel = [5, 2]
+        self.sel_mix = [7]
+        self.natoms = [3, 3, 2, 1]
         self.nlist = np.array(
             [
                 [1, 3, -1, -1, -1, 2, -1],
@@ -55,6 +62,10 @@ class TestCaseSingleFrameWithNlist:
         self.atype_ext = np.concatenate(
             [self.atype_ext, self.atype_ext[:, self.perm]], axis=0
         )
+        self.mapping = np.concatenate(
+            [self.mapping, self.mapping[:, self.perm]], axis=0
+        )
+
         # permute the nlist
         nlist1 = self.nlist[:, self.perm[: self.nloc], :]
         mask = nlist1 == -1
@@ -83,6 +94,8 @@ class TestCaseSingleFrameWithNlistWithVirtual:
         self.atype_ext = np.array([0, -1, 0, 1, 0], dtype=int).reshape([1, self.nall])
         # sel = [5, 2]
         self.sel = [5, 2]
+        self.sel_mix = [7]
+        self.natoms = [3, 3, 2, 1]
         self.nlist = np.array(
             [
                 [2, 4, -1, -1, -1, 3, -1],
@@ -131,6 +144,8 @@ class TestCaseSingleFrameWithoutNlist:
         self.cell = 2.0 * np.eye(3).reshape([1, 9])
         # sel = [5, 2]
         self.sel = [16, 8]
+        self.sel_mix = [24]
+        self.natoms = [3, 3, 2, 1]
         self.rcut = 2.2
         self.rcut_smth = 0.4
         self.atol = 1e-12
@@ -144,14 +159,16 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
         em0 = EnvMat(self.rcut, self.rcut_smth)
-        mm0, ww0 = em0.call(self.coord_ext, self.atype_ext, self.nlist, davg, dstd)
-        mm1, _, ww1 = prod_env_mat(
+        mm0, diff0, ww0 = em0.call(
+            self.coord_ext, self.atype_ext, self.nlist, davg, dstd
+        )
+        mm1, diff1, ww1 = prod_env_mat(
             torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
             torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
             torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE),
@@ -161,5 +178,6 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut_smth,
         )
         np.testing.assert_allclose(mm0, mm1.detach().cpu().numpy())
+        np.testing.assert_allclose(diff0, diff1.detach().cpu().numpy())
         np.testing.assert_allclose(ww0, ww1.detach().cpu().numpy())
         np.testing.assert_allclose(mm0[0][self.perm[: self.nloc]], mm0[1])

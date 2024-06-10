@@ -24,6 +24,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.network import (
     embedding_net_rand_seed_shift,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 from .descriptor import (
     Descriptor,
@@ -128,7 +131,7 @@ class DescrptSeAMask(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        stripped_type_embedding: bool = False,
+        tebd_input_mode: str = "concat",
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -160,6 +163,8 @@ class DescrptSeAMask(DescrptSeA):
         # numb of neighbors and numb of descrptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei = self.nnei_a
+        # to be compat with old option of `stripped_type_embedding`
+        stripped_type_embedding = tebd_input_mode == "strip"
         self.stripped_type_embedding = stripped_type_embedding
 
         self.ndescrpt_a = self.nnei_a * 4
@@ -418,14 +423,28 @@ class DescrptSeAMask(DescrptSeA):
         return force, virial, atom_virial
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
-        return local_jdata
+        return local_jdata, None

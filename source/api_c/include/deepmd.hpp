@@ -25,9 +25,9 @@ namespace hpp {
  **/
 struct deepmd_exception : public std::runtime_error {
  public:
-  deepmd_exception() : runtime_error("DeePMD-kit C API Error!"){};
+  deepmd_exception() : runtime_error("DeePMD-kit C API Error!") {};
   deepmd_exception(const std::string &msg)
-      : runtime_error(std::string("DeePMD-kit C API Error: ") + msg){};
+      : runtime_error(std::string("DeePMD-kit C API Error: ") + msg) {};
 };
 }  // namespace hpp
 }  // namespace deepmd
@@ -572,6 +572,34 @@ struct InputNlist {
         nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
+  InputNlist(int inum_,
+             int *ilist_,
+             int *numneigh_,
+             int **firstneigh_,
+             int nswap,
+             int *sendnum,
+             int *recvnum,
+             int *firstrecv,
+             int **sendlist,
+             int *sendproc,
+             int *recvproc,
+             void *world)
+      : inum(inum_),
+        ilist(ilist_),
+        numneigh(numneigh_),
+        firstneigh(firstneigh_),
+        nl(DP_NewNlist_comm(inum_,
+                            ilist_,
+                            numneigh_,
+                            firstneigh_,
+                            nswap,
+                            sendnum,
+                            recvnum,
+                            firstrecv,
+                            sendlist,
+                            sendproc,
+                            recvproc,
+                            world)) {};
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist *nl;
@@ -620,7 +648,7 @@ class DeepPot {
   /**
    * @brief DP constructor without initialization.
    **/
-  DeepPot() : dp(nullptr){};
+  DeepPot() : dp(nullptr) {};
   ~DeepPot() { DP_DeleteDeepPot(dp); };
   /**
    * @brief DP constructor with initialization.
@@ -1160,7 +1188,7 @@ class DeepPotModelDevi {
   /**
    * @brief DP model deviation constructor without initialization.
    **/
-  DeepPotModelDevi() : dp(nullptr){};
+  DeepPotModelDevi() : dp(nullptr) {};
   ~DeepPotModelDevi() { DP_DeleteDeepPotModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
@@ -1785,7 +1813,7 @@ class DeepTensor {
   /**
    * @brief Deep Tensor constructor without initialization.
    **/
-  DeepTensor() : dt(nullptr){};
+  DeepTensor() : dt(nullptr) {};
   ~DeepTensor() { DP_DeleteDeepTensor(dt); };
   /**
    * @brief DeepTensor constructor with initialization.
@@ -2161,7 +2189,7 @@ class DipoleChargeModifier {
   /**
    * @brief DipoleChargeModifier constructor without initialization.
    **/
-  DipoleChargeModifier() : dcm(nullptr){};
+  DipoleChargeModifier() : dcm(nullptr) {};
   ~DipoleChargeModifier() { DP_DeleteDipoleChargeModifier(dcm); };
   /**
    * @brief DipoleChargeModifier constructor with initialization.

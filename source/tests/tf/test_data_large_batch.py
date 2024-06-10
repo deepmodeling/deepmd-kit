@@ -5,9 +5,6 @@ import unittest
 import numpy as np
 from packaging.version import parse as parse_version
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeAtten,
 )
@@ -50,11 +47,11 @@ class TestDataLargeBatch(tf.test.TestCase):
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        type_map = j_must_have(jdata["model"], "type_map")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        type_map = jdata["model"]["type_map"]
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {
@@ -248,11 +245,11 @@ class TestDataLargeBatch(tf.test.TestCase):
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        type_map = j_must_have(jdata["model"], "type_map")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        type_map = jdata["model"]["type_map"]
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {
@@ -309,7 +306,7 @@ class TestDataLargeBatch(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
         jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
@@ -446,11 +443,11 @@ class TestDataLargeBatch(tf.test.TestCase):
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
+        systems = jdata["systems"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        type_map = j_must_have(jdata["model"], "type_map")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        type_map = jdata["model"]["type_map"]
 
         data = DeepmdDataSystem(systems, batch_size, test_size, rcut, type_map=type_map)
         data_requirement = {
@@ -507,7 +504,7 @@ class TestDataLargeBatch(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()

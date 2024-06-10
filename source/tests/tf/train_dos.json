@@ -53,7 +53,6 @@
     "systems": [
       "system/"
     ],
-    "set_prefix": "set",
     "stop_batch": 100000,
     "batch_size": 1,
     "seed": 1,

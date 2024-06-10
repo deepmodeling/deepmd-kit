@@ -7,9 +7,14 @@ from abc import (
 from typing import (
     Any,
     List,
+    Optional,
+    Tuple,
     Type,
 )
 
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.plugin import (
     PluginVariant,
     make_plugin_registry,
@@ -126,14 +131,23 @@ def make_base_model() -> Type[object]:
                 if model_type == "standard":
                     model_type = data.get("fitting", {}).get("type", "ener")
                 return cls.get_class_by_type(model_type).deserialize(data)
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
         model_def_script: str
+        """The model definition script."""
+        min_nbor_dist: Optional[float]
+        """The minimum distance between two atoms. Used for model compression.
+        None when skipping neighbor statistics.
+        """
 
         @abstractmethod
         def get_model_def_script(self) -> str:
             """Get the model definition script."""
             pass
+
+        def get_min_nbor_dist(self) -> Optional[float]:
+            """Get the minimum distance between two atoms."""
+            return self.min_nbor_dist
 
         @abstractmethod
         def get_nnei(self) -> int:
@@ -148,22 +162,36 @@ def make_base_model() -> Type[object]:
 
         @classmethod
         @abstractmethod
-        def update_sel(cls, global_jdata: dict, local_jdata: dict):
+        def update_sel(
+            cls,
+            train_data: DeepmdDataSystem,
+            type_map: Optional[List[str]],
+            local_jdata: dict,
+        ) -> Tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters
             ----------
-            global_jdata : dict
-                The global data, containing the training section
+            train_data : DeepmdDataSystem
+                data used to do neighbor statictics
+            type_map : list[str], optional
+                The name of each type of atoms
             local_jdata : dict
                 The local data refer to the current class
+
+            Returns
+            -------
+            dict
+                The updated local data
+            float
+                The minimum distance between two atoms
             """
             # getting model type based on fitting type
             model_type = local_jdata.get("type", "standard")
             if model_type == "standard":
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
-            return cls.update_sel(global_jdata, local_jdata)
+            return cls.update_sel(train_data, type_map, local_jdata)
 
     return BaseBaseModel
 
@@ -186,6 +214,7 @@ class BaseModel(make_base_model()):
 
     def __init__(self) -> None:
         self.model_def_script = ""
+        self.min_nbor_dist = None
 
     def get_model_def_script(self) -> str:
         """Get the model definition script."""

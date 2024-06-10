@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeA,
 )
@@ -33,15 +30,14 @@ class TestModel(tf.test.TestCase):
         jfile = "train_dos.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata["training"], "systems")
-        set_pfx = j_must_have(jdata["training"], "set_prefix")
-        batch_size = j_must_have(jdata["training"], "batch_size")
-        test_size = j_must_have(jdata["training"], "numb_test")
+        systems = jdata["training"]["systems"]
+        set_pfx = "set"
+        batch_size = jdata["training"]["batch_size"]
+        test_size = jdata["training"]["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata["training"], "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
-        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        rcut = jdata["model"]["descriptor"]["rcut"]
+        sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(sel)
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)

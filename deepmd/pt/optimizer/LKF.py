@@ -75,7 +75,7 @@ class LKFOptimizer(Optimizer):
 
         P = []
         params_packed_index = []
-        logging.info("LKF parameter nums: %s" % param_nums)
+        logging.info(f"LKF parameter nums: {param_nums}")
         if self.dist_init:
             block_num = 0
             for param_num in param_nums:

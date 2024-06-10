@@ -11,6 +11,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -53,14 +54,14 @@ from deepmd.tf.utils.data_system import (
 from deepmd.tf.utils.graph import (
     load_graph_def,
 )
-from deepmd.tf.utils.pair_tab import (
-    PairTab,
-)
 from deepmd.tf.utils.spin import (
     Spin,
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 from deepmd.utils.plugin import (
     make_plugin_registry,
@@ -116,11 +117,6 @@ class Model(ABC, make_plugin_registry("model")):
         data_stat_nbatch: int = 10,
         data_bias_nsample: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
-        srtab_add_bias: bool = True,
         spin: Optional[Spin] = None,
         compress: Optional[dict] = None,
         **kwargs,
@@ -142,15 +138,6 @@ class Model(ABC, make_plugin_registry("model")):
         self.data_stat_nbatch = data_stat_nbatch
         self.data_bias_nsample = data_bias_nsample
         self.data_stat_protect = data_stat_protect
-        self.srtab_name = use_srtab
-        if self.srtab_name is not None:
-            self.srtab = PairTab(self.srtab_name)
-            self.smin_alpha = smin_alpha
-            self.sw_rmin = sw_rmin
-            self.sw_rmax = sw_rmax
-            self.srtab_add_bias = srtab_add_bias
-        else:
-            self.srtab = None
 
     def get_type_map(self) -> list:
         """Get the type map."""
@@ -283,11 +270,11 @@ class Model(ABC, make_plugin_registry("model")):
         else:
             tf.constant(
                 self.rcut,
-                name="descrpt_attr%s/rcut" % suffix,
+                name=f"descrpt_attr{suffix}/rcut",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
             tf.constant(
-                self.ntypes, name="descrpt_attr%s/ntypes" % suffix, dtype=tf.int32
+                self.ntypes, name=f"descrpt_attr{suffix}/ntypes", dtype=tf.int32
             )
             if "global_feed_dict" in input_dict:
                 feed_dict = input_dict["global_feed_dict"]
@@ -302,7 +289,7 @@ class Model(ABC, make_plugin_registry("model")):
                 )
             return_elements = [
                 *self.descrpt.get_tensor_names(suffix=suffix),
-                "o_descriptor%s:0" % suffix,
+                f"o_descriptor{suffix}:0",
             ]
             if frz_model is not None:
                 imported_tensors = self._import_graph_def_from_frz_model(
@@ -525,7 +512,12 @@ class Model(ABC, make_plugin_registry("model")):
 
     @classmethod
     @abstractmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Notes
@@ -534,8 +526,10 @@ class Model(ABC, make_plugin_registry("model")):
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
 
@@ -543,9 +537,11 @@ class Model(ABC, make_plugin_registry("model")):
         -------
         dict
             The updated local data
+        float
+            The minimum distance between two atoms
         """
         cls = cls.get_class_by_type(local_jdata.get("type", "standard"))
-        return cls.update_sel(global_jdata, local_jdata)
+        return cls.update_sel(train_data, type_map, local_jdata)
 
     @classmethod
     def deserialize(cls, data: dict, suffix: str = "") -> "Model":
@@ -571,7 +567,7 @@ class Model(ABC, make_plugin_registry("model")):
                 data,
                 suffix=suffix,
             )
-        raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+        raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
     def serialize(self, suffix: str = "") -> dict:
         """Serialize the model.
@@ -586,7 +582,12 @@ class Model(ABC, make_plugin_registry("model")):
         suffix : str, optional
             Name suffix to identify this descriptor
         """
-        raise NotImplementedError("Not implemented in class %s" % self.__name__)
+        raise NotImplementedError(f"Not implemented in class {self.__name__}")
+
+    @property
+    @abstractmethod
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
 
 
 @Model.register("standard")
@@ -679,6 +680,8 @@ class StandardModel(Model):
         if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
             self.typeebd = type_embedding
         elif type_embedding is not None:
+            if type_embedding.get("use_econf_tebd", False):
+                type_embedding["type_map"] = type_map
             self.typeebd = TypeEmbedNet(
                 ntypes=self.ntypes,
                 **type_embedding,
@@ -751,21 +754,35 @@ class StandardModel(Model):
         return self.ntypes
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["descriptor"] = Descriptor.update_sel(
-            global_jdata, local_jdata["descriptor"]
+        local_jdata_cpy["descriptor"], min_nbor_dist = Descriptor.update_sel(
+            train_data, type_map, local_jdata["descriptor"]
         )
-        return local_jdata_cpy
+        return local_jdata_cpy, min_nbor_dist
 
     @classmethod
     def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
@@ -840,3 +857,8 @@ class StandardModel(Model):
                 "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),
             },
         }
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return self.descrpt.input_requirement + self.fitting.input_requirement

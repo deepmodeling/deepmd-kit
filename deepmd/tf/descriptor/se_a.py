@@ -152,8 +152,6 @@ class DescrptSeA(DescrptSe):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
-    multi_task
-            If the model has multi fitting nets to train.
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
 
@@ -181,9 +179,8 @@ class DescrptSeA(DescrptSe):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        multi_task: bool = False,
         spin: Optional[Spin] = None,
-        stripped_type_embedding: bool = False,
+        tebd_input_mode: str = "concat",
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -194,6 +191,8 @@ class DescrptSeA(DescrptSe):
             )
         if env_protection != 0.0:
             raise NotImplementedError("env_protection != 0.0 is not supported.")
+        # to be compat with old option of `stripped_type_embedding`
+        stripped_type_embedding = tebd_input_mode == "strip"
         self.sel_a = sel
         self.rcut_r = rcut
         self.rcut_r_smth = rcut_smth
@@ -302,15 +301,6 @@ class DescrptSeA(DescrptSe):
                 self.stat_descrpt *= tf.reshape(mask, tf.shape(self.stat_descrpt))
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
         self.original_sel = None
-        self.multi_task = multi_task
-        if multi_task:
-            self.stat_dict = {
-                "sumr": [],
-                "suma": [],
-                "sumn": [],
-                "sumr2": [],
-                "suma2": [],
-            }
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -390,21 +380,14 @@ class DescrptSeA(DescrptSe):
                 sumn.append(sysn)
                 sumr2.append(sysr2)
                 suma2.append(sysa2)
-            if not self.multi_task:
-                stat_dict = {
-                    "sumr": sumr,
-                    "suma": suma,
-                    "sumn": sumn,
-                    "sumr2": sumr2,
-                    "suma2": suma2,
-                }
-                self.merge_input_stats(stat_dict)
-            else:
-                self.stat_dict["sumr"] += sumr
-                self.stat_dict["suma"] += suma
-                self.stat_dict["sumn"] += sumn
-                self.stat_dict["sumr2"] += sumr2
-                self.stat_dict["suma2"] += suma2
+            stat_dict = {
+                "sumr": sumr,
+                "suma": suma,
+                "sumn": sumn,
+                "sumr2": sumr2,
+                "suma2": suma2,
+            }
+            self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict):
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
@@ -554,12 +537,8 @@ class DescrptSeA(DescrptSe):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
@@ -1056,7 +1035,7 @@ class DescrptSeA(DescrptSe):
                 )
                 if self.compress:
                     raise RuntimeError(
-                        "compression of type embedded descriptor is not supported when stripped_type_embedding == False"
+                        "compression of type embedded descriptor is not supported when tebd_input_mode is not set to 'strip'"
                     )
         # natom x 4 x outputs_size
         if nvnmd_cfg.enable:
@@ -1305,14 +1284,14 @@ class DescrptSeA(DescrptSe):
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
         try:
             self.original_sel = get_tensor_by_name_from_graph(
-                graph, "descrpt_attr%s/original_sel" % suffix
+                graph, f"descrpt_attr{suffix}/original_sel"
             )
         except GraphWithoutTensorError:
             # original_sel is not restored in old graphs, assume sel never changed before
             pass
         # check sel == original sel?
         try:
-            sel = get_tensor_by_name_from_graph(graph, "descrpt_attr%s/sel" % suffix)
+            sel = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/sel")
         except GraphWithoutTensorError:
             # sel is not restored in old graphs
             pass
@@ -1361,7 +1340,6 @@ class DescrptSeA(DescrptSe):
                     graph_def,
                     suffix,
                     get_extra_embedding_net_suffix(self.type_one_side),
-                    self.layer_size,
                 )
             )
 
@@ -1387,7 +1365,7 @@ class DescrptSeA(DescrptSe):
             The deserialized model
         """
         if cls is not DescrptSeA:
-            raise NotImplementedError("Not implemented in class %s" % cls.__name__)
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
@@ -1422,11 +1400,11 @@ class DescrptSeA(DescrptSe):
         """
         if type(self) is not DescrptSeA:
             raise NotImplementedError(
-                "Not implemented in class %s" % self.__class__.__name__
+                f"Not implemented in class {self.__class__.__name__}"
             )
         if self.stripped_type_embedding:
             raise NotImplementedError(
-                "stripped_type_embedding is unsupported by the native model"
+                "Serialization is unsupported when tebd_input_mode is set to 'strip'"
             )
         if (self.original_sel != self.sel_a).any():
             raise NotImplementedError(

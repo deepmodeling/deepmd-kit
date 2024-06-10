@@ -7,6 +7,13 @@ extern "C" {
 #include <stdbool.h>
 #endif
 
+/** @file */
+
+/** C API version. Bumped whenever the API is changed.
+ * @since API version 22
+ */
+#define DP_C_API_VERSION 22
+
 /**
  * @brief Neighbor list.
  */
@@ -24,12 +31,49 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int* ilist_,
                              int* numneigh_,
                              int** firstneigh_);
+/*
+ * @brief Create a new neighbor list with communication capabilities.
+ * @details This function extends DP_NewNlist by adding support for parallel
+ * communication, allowing the neighbor list to be used in distributed
+ * environments.
+ * @param[in] inum_ Number of core region atoms.
+ * @param[in] ilist_ Array storing the core region atom's index.
+ * @param[in] numneigh_ Array storing the core region atom's neighbor atom
+ * number.
+ * @param[in] firstneigh_ Array storing the core region atom's neighbor index.
+ * @param[in] nswap Number of swaps to be performed in communication.
+ * @param[in] sendnum Array storing the number of atoms to send for each swap.
+ * @param[in] recvnum Array storing the number of atoms to receive for each
+ * swap.
+ * @param[in] firstrecv Index of the first receive operation for each swap.
+ * @param[in] sendlist List of atoms to be sent for each swap.
+ * @param[in] sendproc Array of processor IDs to send atoms to for each swap.
+ * @param[in] recvproc Array of processor IDs from which atoms are received for
+ * each swap.
+ * @param[in] world Pointer to the MPI communicator or similar communication
+ * world used for the operation.
+ * @returns A pointer to the initialized neighbor list with communication
+ * capabilities.
+ */
+extern DP_Nlist* DP_NewNlist_comm(int inum_,
+                                  int* ilist_,
+                                  int* numneigh_,
+                                  int** firstneigh_,
+                                  int nswap,
+                                  int* sendnum,
+                                  int* recvnum,
+                                  int* firstrecv,
+                                  int** sendlist,
+                                  int* sendproc,
+                                  int* recvproc,
+                                  void* world);
 
 /**
  * @brief Delete a neighbor list.
  *
  * @param nl Neighbor list to delete.
- */
+ *
+ **/
 extern void DP_DeleteNlist(DP_Nlist* nl);
 
 /**

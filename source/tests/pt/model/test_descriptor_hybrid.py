@@ -53,6 +53,39 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dd0 = torch.jit.script(dd0)
         dd1 = torch.jit.script(dd1)
 
+    def test_get_parameters(
+        self,
+    ):
+        nf, nloc, nnei = self.nlist.shape
+        ddsub0 = DescrptSeA(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=self.sel,
+        )
+        ddsub1 = DescrptDPA1(
+            rcut=self.rcut,
+            rcut_smth=self.rcut_smth,
+            sel=np.sum(self.sel).item() - 1,
+            ntypes=len(self.sel),
+        )
+        ddsub2 = DescrptSeR(
+            rcut=self.rcut / 2,
+            rcut_smth=self.rcut_smth - 0.1,
+            sel=[3, 1],
+        )
+        em0 = DescrptHybrid(list=[ddsub0, ddsub1, ddsub2])
+        self.assertAlmostEqual(em0.get_env_protection(), 0.0)
+        self.assertAlmostEqual(em0.get_rcut_smth(), self.rcut_smth - 0.1)
+        ddsub3 = DescrptSeR(
+            rcut=self.rcut / 2,
+            rcut_smth=self.rcut_smth - 0.1,
+            sel=[3, 1],
+            env_protection=0.1,
+        )
+        em0 = DescrptHybrid(list=[ddsub0, ddsub1, ddsub3])
+        with self.assertRaises(ValueError):
+            self.assertAlmostEqual(em0.get_env_protection(), 0.0)
+
     def test_hybrid_mixed_and_no_mixed(self):
         coord_ext = to_torch_tensor(self.coord_ext)
         atype_ext = to_torch_tensor(self.atype_ext)

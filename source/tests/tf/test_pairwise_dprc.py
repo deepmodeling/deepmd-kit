@@ -13,7 +13,6 @@ from deepmd.tf import (
 )
 from deepmd.tf.common import (
     j_loader,
-    j_must_have,
 )
 from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -33,6 +32,9 @@ from deepmd.tf.utils.data_system import (
 )
 from deepmd.tf.utils.sess import (
     run_sess,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from .common import (
@@ -434,7 +436,7 @@ class TestPairwiseModel(tf.test.TestCase):
         idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
         np.save("system/set.000/aparam.npy", idxs)
 
-        systems = j_must_have(jdata["training"]["training_data"], "systems")
+        systems = jdata["training"]["training_data"]["systems"]
         batch_size = 1
         test_size = 1
         rcut = model.get_rcut()
@@ -522,6 +524,12 @@ class TestPairwiseModel(tf.test.TestCase):
         self.assertAllClose(f[1] + f[2] + f[3] - 3 * f[0], f[4] - f[0])
         self.assertAllClose(e[0], 0.189075, 1e-6)
         self.assertAllClose(f[0, 0], 0.060047, 1e-6)
+
+        # test input requirement for the model
+        self.assertCountEqual(
+            model.input_requirement,
+            [DataRequirementItem("aparam", 1, atomic=True, must=True, high_prec=False)],
+        )
 
     def test_nloc(self):
         jfile = tests_path / "pairwise_dprc.json"
@@ -616,7 +624,7 @@ class TestPairwiseModel(tf.test.TestCase):
         idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
         np.save("system/set.000/aparam.npy", idxs)
 
-        systems = j_must_have(jdata["training"]["training_data"], "systems")
+        systems = jdata["training"]["training_data"]["systems"]
         batch_size = 1
         test_size = 1
         rcut = model.get_rcut()

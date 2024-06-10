@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor.se_a_ebd import (
     DescrptSeAEbd,
 )
@@ -36,14 +33,14 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_a_ebd.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        stop_batch = jdata["stop_batch"]
+        rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
 

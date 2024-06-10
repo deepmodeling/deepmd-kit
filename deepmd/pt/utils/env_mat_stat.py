@@ -141,10 +141,9 @@ class EnvMatStatSe(EnvMatStat):
                 zero_mean,
                 one_stddev,
                 self.descriptor.get_rcut(),
-                # TODO: export rcut_smth from DescriptorBlock
-                self.descriptor.rcut_smth,
+                self.descriptor.get_rcut_smth(),
                 radial_only,
-                protection=self.descriptor.env_protection,
+                protection=self.descriptor.get_env_protection(),
             )
             # apply excluded_types
             exclude_mask = self.descriptor.emask(nlist, extended_atype)

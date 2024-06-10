@@ -8,6 +8,9 @@ from packaging.version import (
     Version,
 )
 
+from deepmd.tf.common import (
+    clear_session,
+)
 from deepmd.tf.env import (
     TF_VERSION,
 )
@@ -61,3 +64,4 @@ class TestMixedPrecTraining(unittest.TestCase):
         _file_delete("model.ckpt-100.data-00000-of-00001")
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
+        clear_session()

@@ -35,6 +35,9 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -67,6 +70,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         old_impl: bool = False,
         trainable: bool = True,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         super().__init__()
@@ -82,6 +86,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
+        self.seed = seed
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
@@ -113,6 +118,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
+                seed=self.seed,
             )
         self.filter_layers = filter_layers
         self.stats = None
@@ -123,6 +129,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
+
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
 
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
@@ -159,6 +169,14 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         """
         return False
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return False
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
 
     def share_params(self, base_class, shared_level, resume=False):
         """
@@ -402,15 +420,32 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         return obj
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
+        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
+        )
+        return local_jdata_cpy, min_nbor_dist

@@ -25,9 +25,12 @@ from .model.test_permutation import (
     model_se_e2_a,
 )
 
-multitask_template_json = str(Path(__file__).parent / "water/multitask.json")
-with open(multitask_template_json) as f:
-    multitask_template = json.load(f)
+
+def setUpModule():
+    global multitask_template
+    multitask_template_json = str(Path(__file__).parent / "water/multitask.json")
+    with open(multitask_template_json) as f:
+        multitask_template = json.load(f)
 
 
 class MultiTaskTrainTest:

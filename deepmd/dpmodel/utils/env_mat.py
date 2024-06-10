@@ -109,17 +109,19 @@ class EnvMat(NativeOP):
         -------
         env_mat
             The environment matrix. shape: nf x nloc x nnei x (4 or 1)
+        diff
+            The relative coordinate of neighbors. shape: nf x nloc x nnei x 3
         switch
             The value of switch function. shape: nf x nloc x nnei
         """
-        em, sw = self._call(nlist, coord_ext, radial_only)
+        em, diff, sw = self._call(nlist, coord_ext, radial_only)
         nf, nloc, nnei = nlist.shape
         atype = atype_ext[:, :nloc]
         if davg is not None:
             em -= davg[atype]
         if dstd is not None:
             em /= dstd[atype]
-        return em, sw
+        return em, diff, sw
 
     def _call(self, nlist, coord_ext, radial_only):
         em, diff, ww = _make_env_mat(
@@ -130,7 +132,7 @@ class EnvMat(NativeOP):
             radial_only=radial_only,
             protection=self.protection,
         )
-        return em, ww
+        return em, diff, ww
 
     def serialize(
         self,

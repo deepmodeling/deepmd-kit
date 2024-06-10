@@ -1,7 +1,7 @@
-# Interpolation or combination with a pairwise potential {{ tensorflow_icon }}
+# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
 ## Theory
@@ -47,7 +47,7 @@ The pairwise potential $u^{\textrm{pair}}(r)$ is defined by a user-defined table
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
-DeePMD-kit also supports combination with a pairwise potential:
+DeePMD-kit also supports combination with a pairwise potential {{ tensorflow_icon }}:
 
 ```math
   E_i = E_i^{\mathrm{DP}} + E_i^{\mathrm{pair}},
@@ -80,7 +80,7 @@ In instances where the interaction at the cut-off distance is not delineated wit
 
 {ref}`sw_rmin <model/sw_rmin>` and {ref}`sw_rmax <model/sw_rmax>` must be smaller than the cutoff radius of the DP model.
 
-## Combination with a pairwise potential
+## Combination with a pairwise potential {{ tensorflow_icon }}
 
 To combine with a pairwise potential, use the [linear model](./linear.md):
 

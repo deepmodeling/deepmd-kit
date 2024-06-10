@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 class DescrptSeAEbdV2(DescrptSeA):
     r"""A compressible se_a_ebd model.
 
-    This model is a warpper for DescriptorSeA, which set stripped_type_embedding=True.
+    This model is a warpper for DescriptorSeA, which set tebd_input_mode='strip'.
     """
 
     def __init__(
@@ -43,7 +43,6 @@ class DescrptSeAEbdV2(DescrptSeA):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        multi_task: bool = False,
         spin: Optional[Spin] = None,
         **kwargs,
     ) -> None:
@@ -63,8 +62,7 @@ class DescrptSeAEbdV2(DescrptSeA):
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
-            multi_task=multi_task,
             spin=spin,
-            stripped_type_embedding=True,
+            tebd_input_mode="strip",
             **kwargs,
         )

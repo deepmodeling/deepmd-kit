@@ -1,13 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import operator
 from enum import (
     Enum,
 )
 from functools import (
     lru_cache,
+    reduce,
 )
 from typing import (
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -21,6 +24,12 @@ from deepmd.tf.fit.fitting import (
 )
 from deepmd.tf.loss.loss import (
     Loss,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .model import (
@@ -128,22 +137,49 @@ class LinearModel(Model):
         return self.models[0].get_type_map()
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["models"] = [
-            Model.update_sel(global_jdata, sub_jdata)
-            for sub_jdata in local_jdata["models"]
-        ]
-        return local_jdata_cpy
+        new_list = []
+        min_nbor_dist = None
+        for sub_jdata in local_jdata["models"]:
+            new_sub_jdata, min_nbor_dist_ = Model.update_sel(
+                train_data, type_map, sub_jdata
+            )
+            if min_nbor_dist_ is not None:
+                min_nbor_dist = min_nbor_dist_
+            new_list.append(new_sub_jdata)
+        local_jdata_cpy["models"] = new_list
+        return local_jdata_cpy, min_nbor_dist
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return reduce(
+            operator.iadd, [model.input_requirement for model in self.models], []
+        )
 
 
 @Model.register("linear_ener")

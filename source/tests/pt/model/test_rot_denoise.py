@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation_denoise import (
     model_dpa1,
     model_dpa2,
@@ -26,10 +29,13 @@ class RotDenoiseTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         prec = 1e-10
         natoms = 5
         cell = 10.0 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        coord = 2 * torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        coord = 2 * torch.rand(
+            [natoms, 3], dtype=dtype, generator=generator, device=env.DEVICE
+        )
         shift = torch.tensor([4, 4, 4], dtype=dtype).to(env.DEVICE)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         from scipy.stats import (
@@ -68,9 +74,9 @@ class RotDenoiseTest:
 
         # rotate coord and cell
         torch.manual_seed(0)
-        cell = torch.rand([3, 3], dtype=dtype).to(env.DEVICE)
+        cell = torch.rand([3, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         cell = (cell + cell.T) + 5.0 * torch.eye(3).to(env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype).to(env.DEVICE)
+        coord = torch.rand([natoms, 3], dtype=dtype, generator=generator).to(env.DEVICE)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1]).to(env.DEVICE)
         coord_rot = torch.matmul(coord, rmat)
@@ -107,13 +113,6 @@ class TestDenoiseModelDPA1(unittest.TestCase, RotDenoiseTest):
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, RotDenoiseTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)

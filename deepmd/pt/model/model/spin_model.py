@@ -170,15 +170,20 @@ class SpinModel(torch.nn.Module):
         nlist_shift = nlist + nall
         nlist[~nlist_mask] = -1
         nlist_shift[~nlist_mask] = -1
-        self_spin = torch.arange(0, nloc, dtype=nlist.dtype, device=nlist.device) + nall
-        self_spin = self_spin.view(1, -1, 1).expand(nframes, -1, -1)
-        # self spin + real neighbor + virtual neighbor
-        # nf x nloc x (1 + nnei + nnei)
-        extended_nlist = torch.cat([self_spin, nlist, nlist_shift], dim=-1)
-        # nf x (nloc + nloc) x (1 + nnei + nnei)
-        extended_nlist = torch.cat(
-            [extended_nlist, -1 * torch.ones_like(extended_nlist)], dim=-2
+        self_real = (
+            torch.arange(0, nloc, dtype=nlist.dtype, device=nlist.device)
+            .view(1, -1, 1)
+            .expand(nframes, -1, -1)
         )
+        self_spin = self_real + nall
+        # real atom's neighbors: self spin + real neighbor + virtual neighbor
+        # nf x nloc x (1 + nnei + nnei)
+        real_nlist = torch.cat([self_spin, nlist, nlist_shift], dim=-1)
+        # spin atom's neighbors: real + real neighbor + virtual neighbor
+        # nf x nloc x (1 + nnei + nnei)
+        spin_nlist = torch.cat([self_real, nlist, nlist_shift], dim=-1)
+        # nf x (nloc + nloc) x (1 + nnei + nnei)
+        extended_nlist = torch.cat([real_nlist, spin_nlist], dim=-2)
         # update the index for switch
         first_part_index = (nloc <= extended_nlist) & (extended_nlist < nall)
         second_part_index = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
@@ -285,6 +290,11 @@ class SpinModel(torch.nn.Module):
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         return self.backbone_model.get_model_def_script()
+
+    @torch.jit.export
+    def get_min_nbor_dist(self) -> Optional[float]:
+        """Get the minimum neighbor distance."""
+        return self.backbone_model.get_min_nbor_dist()
 
     @torch.jit.export
     def get_nnei(self) -> int:

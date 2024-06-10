@@ -15,8 +15,8 @@ class DeepTensorBase {
   /**
    * @brief Deep Tensor constructor without initialization.
    **/
-  DeepTensorBase(){};
-  virtual ~DeepTensorBase(){};
+  DeepTensorBase() {};
+  virtual ~DeepTensorBase() {};
   /**
    * @brief Deep Tensor constructor with initialization..
    * @param[in] model The name of the frozen model file.

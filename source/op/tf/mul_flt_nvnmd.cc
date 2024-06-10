@@ -52,7 +52,7 @@ template <typename Device, typename FPTYPE>
 class MulFltNvnmdOp : public OpKernel {
  public:
   /// Constructor.
-  explicit MulFltNvnmdOp(OpKernelConstruction* context) : OpKernel(context){};
+  explicit MulFltNvnmdOp(OpKernelConstruction* context) : OpKernel(context) {};
 
   /// Compute the descriptor
   /// param: context

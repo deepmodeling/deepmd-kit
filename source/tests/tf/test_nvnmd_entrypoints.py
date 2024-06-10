@@ -391,11 +391,12 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
             2.24079704,
         ]
         np.testing.assert_almost_equal(pred, ref_dout, 8)
-        # close
-        nvnmd_cfg.enable = False
 
     @pytest.mark.run(order=1)
     def test_model_qnn_v0(self):
+        # without calling test_mapt_cnn_v0, this test will fail when running individually
+        self.test_mapt_cnn_v0()
+
         tf.reset_default_graph()
         # open NVNMD
         jdata_cf = jdata_deepmd_input_v0["nvnmd"]
@@ -510,6 +511,8 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         pred = valuedic["o_energy"]
         ref_dout = -62.60181403
         np.testing.assert_almost_equal(pred, ref_dout, 8)
+
+    def tearDown(self):
         # close
         nvnmd_cfg.enable = False
 
@@ -700,11 +703,12 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             3.24079514,
         ]
         np.testing.assert_almost_equal(pred, ref_dout, 8)
-        # close
-        nvnmd_cfg.enable = False
 
     @pytest.mark.run(order=1)
     def test_model_qnn_v1(self):
+        # without calling test_mapt_cnn_v1, this test will fail when running individually
+        self.test_mapt_cnn_v1()
+
         tf.reset_default_graph()
         # open NVNMD
         jdata_cf = jdata_deepmd_input_v1["nvnmd"]
@@ -846,11 +850,12 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             pred = d2[key]
             ref_dout = d1[key]
             np.testing.assert_almost_equal(pred, ref_dout, 8)
-        # close
-        nvnmd_cfg.enable = False
 
     @pytest.mark.run(order=2)
     def test_wrap_qnn_v1(self):
+        # without calling test_mapt_cnn_v1, this test will fail when running individually
+        self.test_mapt_cnn_v1()
+
         tf.reset_default_graph()
         jdata = {}
         jdata["nvnmd_config"] = str(tests_path / "nvnmd" / "ref" / "config_v1_cnn.npy")
@@ -865,6 +870,8 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         pred = [data[i] for i in idx]
         red_dout = [249, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 254, 95, 24, 176]
         np.testing.assert_equal(pred, red_dout)
+
+    def tearDown(self):
         # close
         nvnmd_cfg.enable = False
 

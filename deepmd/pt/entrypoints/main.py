@@ -3,9 +3,6 @@ import argparse
 import json
 import logging
 import os
-from copy import (
-    deepcopy,
-)
 from pathlib import (
     Path,
 )
@@ -44,6 +41,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train import (
     training,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
 )
@@ -63,6 +63,7 @@ from deepmd.utils.compat import (
     update_deepmd_input,
 )
 from deepmd.utils.data_system import (
+    get_data,
     process_systems,
 )
 from deepmd.utils.path import (
@@ -248,24 +249,33 @@ def train(FLAGS):
         config = normalize(config)
 
     # do neighbor stat
+    min_nbor_dist = None
     if not FLAGS.skip_neighbor_stat:
         log.info(
             "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
         )
+
+        type_map = config["model"].get("type_map")
         if not multi_task:
-            config["model"] = BaseModel.update_sel(config, config["model"])
+            train_data = get_data(
+                config["training"]["training_data"], 0, type_map, None
+            )
+            config["model"], min_nbor_dist = BaseModel.update_sel(
+                train_data, type_map, config["model"]
+            )
         else:
-            training_jdata = deepcopy(config["training"])
-            training_jdata.pop("data_dict", {})
-            training_jdata.pop("model_prob", {})
+            min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
-                fake_global_jdata = {
-                    "model": deepcopy(config["model"]["model_dict"][model_item]),
-                    "training": deepcopy(config["training"]["data_dict"][model_item]),
-                }
-                fake_global_jdata["training"].update(training_jdata)
-                config["model"]["model_dict"][model_item] = BaseModel.update_sel(
-                    fake_global_jdata, config["model"]["model_dict"][model_item]
+                train_data = get_data(
+                    config["training"]["data_dict"][model_item]["training_data"],
+                    0,
+                    type_map,
+                    None,
+                )
+                config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
+                    BaseModel.update_sel(
+                        train_data, type_map, config["model"]["model_dict"][model_item]
+                    )
                 )
 
     with open(FLAGS.output, "w") as fp:
@@ -281,16 +291,85 @@ def train(FLAGS):
         FLAGS.init_frz_model,
         shared_links=shared_links,
     )
+    # save min_nbor_dist
+    if min_nbor_dist is not None:
+        if not multi_task:
+            trainer.model.min_nbor_dist = min_nbor_dist
+        else:
+            for model_item in min_nbor_dist:
+                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
     trainer.run()
 
 
 def freeze(FLAGS):
     model = torch.jit.script(inference.Tester(FLAGS.model, head=FLAGS.head).model)
+    extra_files = {}
     torch.jit.save(
         model,
         FLAGS.output,
-        {},
+        extra_files,
     )
+
+
+def show(FLAGS):
+    if FLAGS.INPUT.split(".")[-1] == "pt":
+        state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        model_params = state_dict["_extra_state"]["model_params"]
+    elif FLAGS.INPUT.split(".")[-1] == "pth":
+        model_params_string = torch.jit.load(
+            FLAGS.INPUT, map_location=env.DEVICE
+        ).model_def_script
+        model_params = json.loads(model_params_string)
+    else:
+        raise RuntimeError(
+            "The model provided must be a checkpoint file with a .pt extension "
+            "or a frozen model with a .pth extension"
+        )
+    model_is_multi_task = "model_dict" in model_params
+    log.info("This is a multitask model") if model_is_multi_task else log.info(
+        "This is a singletask model"
+    )
+
+    if "model-branch" in FLAGS.ATTRIBUTES:
+        #  The model must be multitask mode
+        if not model_is_multi_task:
+            raise RuntimeError(
+                "The 'model-branch' option requires a multitask model."
+                " The provided model does not meet this criterion."
+            )
+        model_branches = list(model_params["model_dict"].keys())
+        log.info(f"Available model branches are {model_branches}")
+    if "type-map" in FLAGS.ATTRIBUTES:
+        if model_is_multi_task:
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                type_map = model_params["model_dict"][branch]["type_map"]
+                log.info(f"The type_map of branch {branch} is {type_map}")
+        else:
+            type_map = model_params["type_map"]
+            log.info(f"The type_map is {type_map}")
+    if "descriptor" in FLAGS.ATTRIBUTES:
+        if model_is_multi_task:
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                descriptor = model_params["model_dict"][branch]["descriptor"]
+                log.info(f"The descriptor parameter of branch {branch} is {descriptor}")
+        else:
+            descriptor = model_params["descriptor"]
+            log.info(f"The descriptor parameter is {descriptor}")
+    if "fitting-net" in FLAGS.ATTRIBUTES:
+        if model_is_multi_task:
+            model_branches = list(model_params["model_dict"].keys())
+            for branch in model_branches:
+                fitting_net = model_params["model_dict"][branch]["fitting_net"]
+                log.info(
+                    f"The fitting_net parameter of branch {branch} is {fitting_net}"
+                )
+        else:
+            fitting_net = model_params["fitting_net"]
+            log.info(f"The fitting_net parameter is {fitting_net}")
 
 
 @record
@@ -315,6 +394,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = FLAGS.checkpoint_folder
         FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         freeze(FLAGS)
+    elif FLAGS.command == "show":
+        show(FLAGS)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 

@@ -52,7 +52,18 @@ class AutoBatchSize(AutoBatchSizeBase):
         e : Exception
             Exception
         """
-        return isinstance(e, RuntimeError) and "CUDA out of memory." in e.args[0]
+        # several sources think CUSOLVER_STATUS_INTERNAL_ERROR is another out-of-memory error,
+        # such as https://github.com/JuliaGPU/CUDA.jl/issues/1924
+        # (the meaningless error message should be considered as a bug in cusolver)
+        if isinstance(e, RuntimeError) and (
+            "CUDA out of memory." in e.args[0]
+            or "CUDA driver error: out of memory" in e.args[0]
+            or "cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR" in e.args[0]
+        ):
+            # Release all unoccupied cached memory
+            torch.cuda.empty_cache()
+            return True
+        return False
 
     def execute_all(
         self, callable: Callable, total_size: int, natoms: int, *args, **kwargs

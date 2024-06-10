@@ -32,6 +32,9 @@ from deepmd.tf.utils.graph import (
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    get_data,
+)
 
 from .freeze import (
     freeze,
@@ -102,11 +105,10 @@ def compress(
     except GraphWithoutTensorError as e:
         if training_script is None:
             raise RuntimeError(
-                "The input frozen model: %s has no training script or min_nbor_dist information, "
+                f"The input frozen model: {input} has no training script or min_nbor_dist information, "
                 "which is not supported by the model compression interface. "
                 "Please consider using the --training-script command within the model compression interface to provide the training script of the input frozen model. "
                 "Note that the input training script must contain the correct path to the training data."
-                % input
             ) from e
         elif not os.path.exists(training_script):
             raise RuntimeError(
@@ -116,9 +118,17 @@ def compress(
             log.info("stage 0: compute the min_nbor_dist")
             jdata = j_loader(training_script)
             jdata = update_deepmd_input(jdata)
+
+            type_map = jdata["model"].get("type_map", None)
+            train_data = get_data(
+                jdata["training"]["training_data"],
+                0,  # not used
+                type_map,
+                None,
+            )
             update_sel = UpdateSel()
             t_min_nbor_dist = update_sel.get_min_nbor_dist(
-                jdata, update_sel.get_rcut(jdata)
+                train_data,
             )
 
     _check_compress_type(graph)
@@ -164,10 +174,10 @@ def compress(
         )
     except GraphTooLargeError as e:
         raise RuntimeError(
-            "The uniform step size of the tabulation's first table is %f, "
+            f"The uniform step size of the tabulation's first table is {step:f}, "
             "which is too small. This leads to a very large graph size, "
             "exceeding protobuf's limitation (2 GB). You should try to "
-            "increase the step size." % step
+            "increase the step size."
         ) from e
 
     # reset the graph, otherwise the size limitation will be only 2 GB / 2 = 1 GB
@@ -180,10 +190,10 @@ def compress(
         freeze(checkpoint_folder=checkpoint_folder, output=output, node_names=None)
     except GraphTooLargeError as e:
         raise RuntimeError(
-            "The uniform step size of the tabulation's first table is %f, "
+            f"The uniform step size of the tabulation's first table is {step:f}, "
             "which is too small. This leads to a very large graph size, "
             "exceeding protobuf's limitation (2 GB). You should try to "
-            "increase the step size." % step
+            "increase the step size."
         ) from e
 
 

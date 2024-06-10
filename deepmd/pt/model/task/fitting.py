@@ -156,6 +156,7 @@ class GeneralFitting(Fitting):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
+        self.seed = seed
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -229,14 +230,12 @@ class GeneralFitting(Fitting):
                         self.resnet_dt,
                         self.precision,
                         bias_out=True,
+                        seed=seed,
                     )
                     for ii in range(self.ntypes if not self.mixed_types else 1)
                 ],
             )
             self.filter_layers_old = None
-
-        if seed is not None:
-            torch.manual_seed(seed)
         # set trainable
         for param in self.parameters():
             param.requires_grad = self.trainable

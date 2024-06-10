@@ -192,7 +192,7 @@ class OnlineResource:
     @property
     def gzip_path(self) -> Path:
         if self.gzip is None:
-            raise RuntimeError("gzip is None for %s" % self.path)
+            raise RuntimeError(f"gzip is None for {self.path}")
         return PACKAGE_DIR / self.gzip
 
     @property
@@ -257,10 +257,9 @@ class Build(metaclass=ABCMeta):
                     dd()
                 else:
                     dlog.info(
-                        "Skip installing %s, which has been already installed"
-                        % dd.__class__.__name__
+                        f"Skip installing {dd.__class__.__name__}, which has been already installed"
                     )
-            dlog.info("Start installing %s..." % self.__class__.__name__)
+            dlog.info(f"Start installing {self.__class__.__name__}...")
             with tempfile.TemporaryDirectory() as tmpdirname:
                 self._prefix = Path(tmpdirname)
                 self.build()
@@ -621,7 +620,7 @@ class BuildTensorFlow(Build):
 
     def build(self):
         tf_res = self.resources["tensorflow"]
-        src = tf_res.gzip_path / ("tensorflow-%s" % self.version)
+        src = tf_res.gzip_path / (f"tensorflow-{self.version}")
         with set_directory(src):
             # configure -- need bazelisk in PATH
             call(

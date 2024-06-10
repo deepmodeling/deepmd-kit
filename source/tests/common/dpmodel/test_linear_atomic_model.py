@@ -15,8 +15,8 @@ from deepmd.dpmodel.atomic_model.linear_atomic_model import (
 from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
     PairTabAtomicModel,
 )
-from deepmd.dpmodel.descriptor.se_e2_a import (
-    DescrptSeA,
+from deepmd.dpmodel.descriptor import (
+    DescrptDPA1,
 )
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
@@ -39,10 +39,11 @@ class TestWeightCalculation(unittest.TestCase):
         extended_atype = np.array([[0, 0]])
         nlist = np.array([[[1], [-1]]])
 
-        ds = DescrptSeA(
+        ds = DescrptDPA1(
             rcut_smth=0.3,
             rcut=0.4,
             sel=[3],
+            ntypes=2,
         )
         ft = InvarFitting(
             "energy",
@@ -134,10 +135,11 @@ class TestIntegration(unittest.TestCase):
                 [0.02, 0.25, 0.4, 0.75],
             ]
         )
-        ds = DescrptSeA(
+        ds = DescrptDPA1(
             self.rcut,
             self.rcut_smth,
-            self.sel,
+            sum(self.sel),
+            self.nt,
         )
         ft = InvarFitting(
             "energy",

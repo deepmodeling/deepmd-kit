@@ -186,6 +186,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -207,6 +208,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             frame parameters, shape: nf x dim_fparam
         aparam
             atomic parameter, shape: nf x nloc x dim_aparam
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------
@@ -234,6 +237,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            comm_dict=comm_dict,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
@@ -251,6 +255,26 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         ret_dict["mask"] = atom_mask
 
         return ret_dict
+
+    def forward(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+    ) -> Dict[str, torch.Tensor]:
+        return self.forward_common_atomic(
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping=mapping,
+            fparam=fparam,
+            aparam=aparam,
+            comm_dict=comm_dict,
+        )
 
     def serialize(self) -> dict:
         return {

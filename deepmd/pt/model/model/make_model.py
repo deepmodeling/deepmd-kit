@@ -211,6 +211,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
+            comm_dict: Optional[Dict[str, torch.Tensor]] = None,
         ):
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -233,6 +234,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 whether calculate atomic virial.
+            comm_dict
+                The data needed for communication for parallel inference.
 
             Returns
             -------
@@ -254,6 +257,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
+                comm_dict=comm_dict,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
@@ -526,6 +530,11 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             return self.atomic_model.mixed_types()
+
+        @torch.jit.export
+        def has_message_passing(self) -> bool:
+            """Returns whether the model has message passing."""
+            return self.atomic_model.has_message_passing()
 
         def forward(
             self,

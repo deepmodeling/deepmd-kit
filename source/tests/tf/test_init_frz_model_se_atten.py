@@ -136,15 +136,15 @@ def _init_models(model_setup, i):
 if not parse_version(tf.__version__) < parse_version("1.15"):
 
     def previous_se_atten(jdata):
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = False
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "concat"
         jdata["model"]["descriptor"]["attn_layer"] = 2
 
     def stripped_model(jdata):
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 2
 
     def compressible_model(jdata):
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
 
 

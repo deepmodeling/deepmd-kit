@@ -58,7 +58,6 @@
         "../data/e3000_i2000/",
         "../data/e8000_i2000/"
       ],
-      "set_prefix": "set",
       "batch_size": 1
     },
     "stop_batch": 1000000,

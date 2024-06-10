@@ -152,6 +152,8 @@ The model compression interface requires the version of DeePMD-kit used in the o
 
 Descriptors with `se_e2_a`, `se_e3`, `se_e2_r` and `se_atten_v2` types are supported by the model compression feature. `Hybrid` mixed with the above descriptors is also supported.
 
+Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model/descriptor[se_atten_v2]/attn_layer>` set to 0.
+
 **Available activation functions for descriptor:**
 
 - tanh

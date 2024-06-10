@@ -143,7 +143,7 @@ TYPED_TEST(TestInferDeepPotR, cpu_build_nlist_numfv) {
 
    public:
     MyModel(deepmd::DeepPot& dp_, const std::vector<int>& atype_)
-        : mydp(dp_), atype(atype_){};
+        : mydp(dp_), atype(atype_) {};
     virtual void compute(double& ener,
                          std::vector<VALUETYPE>& force,
                          std::vector<VALUETYPE>& virial,

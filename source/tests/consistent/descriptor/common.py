@@ -57,7 +57,9 @@ class DescriptorTest:
             t_mesh: make_default_mesh(True, False),
         }
 
-    def eval_dp_descriptor(self, dp_obj: Any, natoms, coords, atype, box) -> Any:
+    def eval_dp_descriptor(
+        self, dp_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+    ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             coords.reshape(1, -1, 3),
             atype.reshape(1, -1),
@@ -70,11 +72,13 @@ class DescriptorTest:
             natoms[0],
             dp_obj.get_rcut(),
             dp_obj.get_sel(),
-            distinguish_types=True,
+            distinguish_types=(not mixed_types),
         )
-        return dp_obj(ext_coords, ext_atype, nlist=nlist)
+        return dp_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
 
-    def eval_pt_descriptor(self, pt_obj: Any, natoms, coords, atype, box) -> Any:
+    def eval_pt_descriptor(
+        self, pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+    ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
             torch.from_numpy(atype).to(PT_DEVICE).reshape(1, -1),
@@ -87,9 +91,9 @@ class DescriptorTest:
             natoms[0],
             pt_obj.get_rcut(),
             pt_obj.get_sel(),
-            distinguish_types=True,
+            distinguish_types=(not mixed_types),
         )
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in pt_obj(ext_coords, ext_atype, nlist=nlist)
+            for x in pt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
         ]

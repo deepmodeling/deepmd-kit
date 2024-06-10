@@ -5,9 +5,6 @@ import unittest
 import numpy as np
 from packaging.version import parse as parse_version
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeAtten,
 )
@@ -50,14 +47,12 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
+        test_size = jdata["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
 
@@ -204,13 +199,11 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
         ntypes = 2
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -277,14 +270,11 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
 
@@ -293,7 +283,7 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
@@ -433,13 +423,12 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
+        batch_size = jdata["batch_size"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
         ntypes = 2
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -461,7 +450,7 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
         typeebd = TypeEmbedNet(
             ntypes=descrpt.get_ntypes(),
@@ -508,14 +497,12 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
+        test_size = jdata["numb_test"]
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
 
@@ -524,7 +511,7 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 2
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
         jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
@@ -667,13 +654,13 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
         ntypes = 2
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
@@ -695,7 +682,7 @@ class TestModel(tf.test.TestCase):
         # successful
         descrpt = DescrptSeAtten(ntypes=ntypes, **jdata["model"]["descriptor"])
         typeebd_param = jdata["model"]["type_embedding"]
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 2
         typeebd = TypeEmbedNet(
             ntypes=descrpt.get_ntypes(),
@@ -747,14 +734,11 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
-        batch_size = j_must_have(jdata, "batch_size")
-        test_size = j_must_have(jdata, "numb_test")
+        systems = jdata["systems"]
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
-        stop_batch = j_must_have(jdata, "stop_batch")
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
 
@@ -763,8 +747,8 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
-        jdata["model"]["descriptor"]["smooth_type_embdding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
+        jdata["model"]["descriptor"]["smooth_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0
         jdata["model"]["descriptor"]["rcut_smth"] = 4.0
@@ -896,11 +880,11 @@ class TestModel(tf.test.TestCase):
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
-        systems = j_must_have(jdata, "systems")
-        set_pfx = j_must_have(jdata, "set_prefix")
+        systems = jdata["systems"]
+        set_pfx = "set"
         batch_size = 1
         test_size = 1
-        rcut = j_must_have(jdata["model"]["descriptor"], "rcut")
+        rcut = jdata["model"]["descriptor"]["rcut"]
 
         data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
 
@@ -909,8 +893,8 @@ class TestModel(tf.test.TestCase):
 
         jdata["model"]["descriptor"].pop("type", None)
         jdata["model"]["descriptor"]["ntypes"] = 2
-        jdata["model"]["descriptor"]["stripped_type_embedding"] = True
-        jdata["model"]["descriptor"]["smooth_type_embdding"] = True
+        jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
+        jdata["model"]["descriptor"]["smooth_type_embedding"] = True
         jdata["model"]["descriptor"]["attn_layer"] = 1
         jdata["model"]["descriptor"]["rcut"] = 6.0
         jdata["model"]["descriptor"]["rcut_smth"] = 4.0

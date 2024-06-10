@@ -667,8 +667,7 @@ class DataSets:
         ]
         if any(has_fparam) and (not all(has_fparam)):
             raise RuntimeError(
-                "system %s: if any set has frame parameter, then all sets should have frame parameter"
-                % sys_path
+                f"system {sys_path}: if any set has frame parameter, then all sets should have frame parameter"
             )
         if all(has_fparam):
             self.has_fparam = 0
@@ -680,8 +679,7 @@ class DataSets:
         ]
         if any(has_aparam) and (not all(has_aparam)):
             raise RuntimeError(
-                "system %s: if any set has frame parameter, then all sets should have frame parameter"
-                % sys_path
+                f"system {sys_path}: if any set has frame parameter, then all sets should have frame parameter"
             )
         if all(has_aparam):
             self.has_aparam = 0
@@ -771,7 +769,7 @@ class DataSets:
                 return data
             return 1, data
         elif is_necessary:
-            raise OSError("%s not found!" % path)
+            raise OSError(f"{path} not found!")
         else:
             data = np.zeros(shape)
         return 0, data
@@ -1025,7 +1023,7 @@ class DataSystem:
         sys_width = 42
         tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
         tmp_msg += "find %d system(s):\n" % self.nsystems
-        tmp_msg += "%s  " % self.format_name_length("system", sys_width)
+        tmp_msg += "{}  ".format(self.format_name_length("system", sys_width))
         tmp_msg += "{}  {}  {}\n".format("natoms", "bch_sz", "n_bch")
         for ii in range(self.nsystems):
             tmp_msg += "%s  %6d  %6d  %5d\n" % (

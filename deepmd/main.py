@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import textwrap
+import warnings
 from collections import (
     defaultdict,
 )
@@ -67,6 +68,24 @@ class BackendOption(argparse.Action):
 
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, BACKEND_TABLE[values])
+
+
+class DeprecateAction(argparse.Action):
+    # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
+    def __init__(self, *args, **kwargs):
+        self.call_count = 0
+        if "help" in kwargs:
+            kwargs["help"] = f'[DEPRECATED] {kwargs["help"]}'
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if self.call_count == 0:
+            warnings.warn(
+                f"The option `{option_string}` is deprecated. It will be ignored.",
+                FutureWarning,
+            )
+            delattr(namespace, self.dest)
+        self.call_count += 1
 
 
 def main_parser() -> argparse.ArgumentParser:
@@ -305,12 +324,6 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: TensorFlow) the name of weight file (.npy), if set, save the model's weight into the file",
     )
     parser_frz.add_argument(
-        "--united-model",
-        action="store_true",
-        default=False,
-        help="(Supported backend: TensorFlow) When in multi-task mode, freeze all nodes into one united model",
-    )
-    parser_frz.add_argument(
         "--head",
         default=None,
         type=str,
@@ -355,9 +368,8 @@ def main_parser() -> argparse.ArgumentParser:
     parser_tst.add_argument(
         "-S",
         "--set-prefix",
-        default="set",
-        type=str,
-        help="(Supported backend: TensorFlow) The set prefix",
+        action=DeprecateAction,
+        help="Deprecated argument.",
     )
     parser_tst.add_argument(
         "-n",
@@ -371,7 +383,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--rand-seed",
         type=int,
         default=None,
-        help="(Supported backend: TensorFlow) The random seed",
+        help="The random seed",
     )
     parser_tst.add_argument(
         "--shuffle-test", action="store_true", default=False, help="Shuffle test data"
@@ -388,13 +400,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--atomic",
         action="store_true",
         default=False,
-        help="(Supported backend: TensorFlow) Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
-    )
-    parser_tst.add_argument(
-        "-i",
-        "--input_script",
-        type=str,
-        help="(Supported backend: PyTorch) The input script of the model",
+        help="Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
     )
     parser_tst.add_argument(
         "--head",
@@ -494,7 +500,7 @@ def main_parser() -> argparse.ArgumentParser:
     parsers_doc.add_argument(
         "--out-type",
         default="rst",
-        choices=["rst", "json"],
+        choices=["rst", "json", "json_schema"],
         type=str,
         help="The output type",
     )
@@ -528,7 +534,7 @@ def main_parser() -> argparse.ArgumentParser:
         help="The system directory. Recursively detect systems in this directory.",
     )
     parser_model_devi.add_argument(
-        "-S", "--set-prefix", default="set", type=str, help="The set prefix"
+        "-S", "--set-prefix", action=DeprecateAction, help="Deprecated argument."
     )
     parser_model_devi.add_argument(
         "-o",
@@ -650,7 +656,7 @@ def main_parser() -> argparse.ArgumentParser:
 
     # --version
     parser.add_argument(
-        "--version", action="version", version="DeePMD-kit v%s" % __version__
+        "--version", action="version", version=f"DeePMD-kit v{__version__}"
     )
 
     # * train nvnmd script ******************************************************************
@@ -739,6 +745,29 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
+
+    # * show model ******************************************************************
+    parser_show = subparsers.add_parser(
+        "show",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch) Show the information of a model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp --pt show model.pt model-branch type-map descriptor fitting-net
+            dp --pt show frozen_model.pth type-map descriptor fitting-net
+        """
+        ),
+    )
+    parser_show.add_argument(
+        "INPUT", help="The input checkpoint file or frozen model file"
+    )
+    parser_show.add_argument(
+        "ATTRIBUTES",
+        choices=["model-branch", "type-map", "descriptor", "fitting-net"],
+        nargs="+",
+    )
     return parser
 
 
@@ -796,6 +825,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
+        "show",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

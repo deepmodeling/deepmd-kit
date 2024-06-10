@@ -15,8 +15,8 @@ from deepmd.pt.model.atomic_model import (
     DPZBLLinearEnergyAtomicModel,
     PairTabAtomicModel,
 )
-from deepmd.pt.model.descriptor.se_a import (
-    DescrptSeA,
+from deepmd.pt.model.descriptor import (
+    DescrptDPA1,
 )
 from deepmd.pt.model.model import (
     DPZBLModel,
@@ -32,6 +32,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -55,10 +58,11 @@ class TestWeightCalculation(unittest.TestCase):
         extended_atype = torch.tensor([[0, 0]], device=env.DEVICE)
         nlist = torch.tensor([[[1], [-1]]], device=env.DEVICE)
 
-        ds = DescrptSeA(
+        ds = DescrptDPA1(
             rcut_smth=0.3,
             rcut=0.4,
             sel=[3],
+            ntypes=2,
         ).to(env.DEVICE)
         ft = InvarFitting(
             "energy",
@@ -128,10 +132,11 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 [0.02, 0.25, 0.4, 0.75],
             ]
         )
-        ds = DescrptSeA(
+        ds = DescrptDPA1(
             self.rcut,
             self.rcut_smth,
-            self.sel,
+            sum(self.sel),
+            self.nt,
         ).to(env.DEVICE)
         ft = InvarFitting(
             "energy",
@@ -189,7 +194,8 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 class TestRemmapMethod(unittest.TestCase):
     def test_valid(self):
-        atype = torch.randint(0, 3, (4, 20), device=env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        atype = torch.randint(0, 3, (4, 20), device=env.DEVICE, generator=generator)
         commonl = ["H", "O", "S"]
         originl = ["Si", "H", "O", "S"]
         mapping = DPZBLLinearEnergyAtomicModel.remap_atype(originl, commonl)

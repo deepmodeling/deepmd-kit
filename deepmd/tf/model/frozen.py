@@ -6,7 +6,9 @@ from enum import (
     Enum,
 )
 from typing import (
+    List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -33,6 +35,12 @@ from deepmd.tf.loss.loss import (
 from deepmd.tf.utils.graph import (
     get_tensor_by_name_from_graph,
     load_graph_def,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .model import (
@@ -233,18 +241,32 @@ class FrozenModel(Model):
         return self.model.get_type_map()
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         # we don't know how to compress it, so no neighbor statistics here
-        return local_jdata
+        return local_jdata, None
 
     def serialize(self, suffix: str = "") -> dict:
         # try to recover the original model
@@ -261,3 +283,23 @@ class FrozenModel(Model):
     @classmethod
     def deserialize(cls, data: dict, suffix: str = ""):
         raise RuntimeError("Should not touch here.")
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = []
+        numb_fparam = self.model.get_dim_fparam()
+        numb_aparam = self.model.get_dim_aparam()
+        if numb_fparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "fparam", numb_fparam, atomic=False, must=True, high_prec=False
+                )
+            )
+        if numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", numb_aparam, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement

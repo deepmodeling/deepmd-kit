@@ -12,12 +12,9 @@ from .network import (
     NativeLayer,
     NativeNet,
     NetworkCollection,
-    load_dp_model,
     make_embedding_network,
     make_fitting_network,
     make_multilayer_network,
-    save_dp_model,
-    traverse_model_dict,
 )
 from .nlist import (
     build_multiple_neighbor_list,
@@ -31,6 +28,11 @@ from .region import (
     normalize_coord,
     phys2inter,
     to_face_distance,
+)
+from .serialization import (
+    load_dp_model,
+    save_dp_model,
+    traverse_model_dict,
 )
 
 __all__ = [
@@ -46,8 +48,6 @@ __all__ = [
     "load_dp_model",
     "save_dp_model",
     "traverse_model_dict",
-    "PRECISION_DICT",
-    "DEFAULT_PRECISION",
     "build_neighbor_list",
     "nlist_distinguish_types",
     "get_multiple_nlist_key",

@@ -10,6 +10,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Type,
     Union,
 )
 
@@ -138,7 +139,6 @@ class DeepEval(DeepEvalBackend):
         self.has_fparam = self.tensors["fparam"] is not None
         self.has_aparam = self.tensors["aparam"] is not None
         self.has_spin = self.ntypes_spin > 0
-        self.modifier_type = None
 
         # looks ugly...
         if self.modifier_type == "dipole_charge":
@@ -200,6 +200,8 @@ class DeepEval(DeepEvalBackend):
             "ntypes_spin": "spin_attr/ntypes_spin:0",
             # descriptor
             "descriptor": "o_descriptor:0",
+            # modifier
+            "modifier_type": "modifier_attr/type:0",
         }
         # output tensors
         output_tensor_names = {}
@@ -259,10 +261,14 @@ class DeepEval(DeepEvalBackend):
         else:
             self.numb_dos = 0
         self.tmap = tmap.decode("utf-8").split()
+        if self.tensors["modifier_type"] is not None:
+            self.modifier_type = run_sess(self.sess, [self.tensors["modifier_type"]])[0]
+        else:
+            self.modifier_type = None
 
     @property
     @lru_cache(maxsize=None)
-    def model_type(self) -> "DeepEvalWrapper":
+    def model_type(self) -> Type["DeepEvalWrapper"]:
         """Get type of model.
 
         :type:str
@@ -693,13 +699,13 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> Dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -1023,7 +1029,7 @@ class DeepEval(DeepEvalBackend):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -1080,7 +1086,7 @@ class DeepEval(DeepEvalBackend):
     def _eval_descriptor_inner(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,

@@ -95,6 +95,10 @@ class DPAtomicModel(BaseAtomicModel):
         """
         return self.descriptor.mixed_types()
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return self.descriptor.has_message_passing()
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(
@@ -130,6 +134,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -163,6 +168,7 @@ class DPAtomicModel(BaseAtomicModel):
             extended_atype,
             nlist,
             mapping=mapping,
+            comm_dict=comm_dict,
         )
         assert descriptor is not None
         # energy, force

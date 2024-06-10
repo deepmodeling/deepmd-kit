@@ -7,7 +7,6 @@ References
 https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc
 """
 
-import json
 import logging
 from os.path import (
     abspath,
@@ -27,7 +26,6 @@ import google.protobuf.message
 import deepmd.tf.op  # noqa: F401
 from deepmd.tf.env import (
     FITTING_NET_PATTERN,
-    REMOVE_SUFFIX_DICT,
     tf,
 )
 from deepmd.tf.nvnmd.entrypoints.freeze import (
@@ -75,103 +73,6 @@ def _transfer_fitting_net_trainable_variables(sess, old_graph_def, raw_graph_def
         tensor = tf.make_ndarray(raw_graph_nodes[node.name + "_1"])
         node.attr["value"].tensor.tensor_content = tensor.tostring()
     return old_graph_def
-
-
-def _remove_fitting_net_suffix(output_graph_def, out_suffix):
-    """Remove fitting net suffix for multi-task mode.
-
-    Parameters
-    ----------
-    output_graph_def : tf.GraphDef
-        The output graph to remove suffix.
-    out_suffix : str
-        The suffix to remove.
-    """
-
-    def change_name(name, suffix):
-        if suffix in name:
-            for item in REMOVE_SUFFIX_DICT:
-                if item.format(suffix) in name:
-                    name = name.replace(item.format(suffix), REMOVE_SUFFIX_DICT[item])
-                    break
-            assert suffix not in name, "fitting net name illegal!"
-        return name
-
-    for node in output_graph_def.node:
-        if out_suffix in node.name:
-            node.name = change_name(node.name, out_suffix)
-        for idx in range(len(node.input)):
-            if out_suffix in node.input[idx]:
-                node.input[idx] = change_name(node.input[idx], out_suffix)
-        attr_list = node.attr["_class"].list.s
-        for idx in range(len(attr_list)):
-            if out_suffix in bytes.decode(attr_list[idx]):
-                attr_list[idx] = bytes(
-                    change_name(bytes.decode(attr_list[idx]), out_suffix),
-                    encoding="utf8",
-                )
-    return output_graph_def
-
-
-def _modify_model_suffix(output_graph_def, out_suffix, freeze_type):
-    """Modify model suffix in graph nodes for multi-task mode, including fitting net, model attr and training script.
-
-    Parameters
-    ----------
-    output_graph_def : tf.GraphDef
-        The output graph to remove suffix.
-    out_suffix : str
-        The suffix to remove.
-    freeze_type : str
-        The model type to freeze.
-    """
-    output_graph_def = _remove_fitting_net_suffix(output_graph_def, out_suffix)
-    for node in output_graph_def.node:
-        if "model_attr/model_type" in node.name:
-            node.attr["value"].tensor.string_val[0] = bytes(
-                freeze_type, encoding="utf8"
-            )
-        # change the input script for frozen model
-        elif "train_attr/training_script" in node.name:
-            jdata = json.loads(node.attr["value"].tensor.string_val[0])
-            # fitting net
-            assert out_suffix in jdata["model"]["fitting_net_dict"]
-            jdata["model"]["fitting_net"] = jdata["model"].pop("fitting_net_dict")[
-                out_suffix
-            ]
-            # data systems
-            systems = jdata["training"].pop("data_dict")
-            if out_suffix in systems:
-                jdata["training"]["training_data"] = systems[out_suffix][
-                    "training_data"
-                ]
-                if "validation_data" in systems[out_suffix]:
-                    jdata["training"]["validation_data"] = systems[out_suffix][
-                        "validation_data"
-                    ]
-            else:
-                jdata["training"]["training_data"] = {}
-                log.warning(
-                    f"The fitting net {out_suffix} has no training data in input script, resulting in "
-                    "untrained frozen model, and cannot be compressed directly! "
-                )
-            # loss
-            if "loss_dict" in jdata:
-                loss_dict = jdata.pop("loss_dict")
-                if out_suffix in loss_dict:
-                    jdata["loss"] = loss_dict[out_suffix]
-            # learning_rate
-            if "learning_rate_dict" in jdata:
-                learning_rate_dict = jdata.pop("learning_rate_dict")
-                if out_suffix in learning_rate_dict:
-                    jdata["learning_rate"] = learning_rate_dict[out_suffix]
-            # fitting weight
-            if "fitting_weight" in jdata["training"]:
-                jdata["training"].pop("fitting_weight")
-            node.attr["value"].tensor.string_val[0] = bytes(
-                json.dumps(jdata), encoding="utf8"
-            )
-    return output_graph_def
 
 
 def _make_node_names(
@@ -272,10 +173,6 @@ def _make_node_names(
             "model_attr/sel_type",
             "model_attr/output_dim",
         ]
-    elif model_type == "multi_task":
-        assert (
-            node_names is not None
-        ), "node_names must be defined in multi-task united model! "
     else:
         raise RuntimeError(f"unknown model type {model_type}")
     if modifier_type == "dipole_charge":
@@ -368,9 +265,9 @@ def freeze_graph(
         different_set -= set(optional_node)
         if different_set:
             log.warning(
-                "The following nodes are not in the graph: %s. "
+                f"The following nodes are not in the graph: {different_set}. "
                 "Skip freezeing these nodes. You may be freezing "
-                "a checkpoint generated by an old version." % different_set
+                "a checkpoint generated by an old version."
             )
         # use intersection as output list
         output_node = list(set(output_node) & set(input_node))
@@ -381,11 +278,6 @@ def freeze_graph(
         input_graph,  # The graph_def is used to retrieve the nodes
         output_node,  # The output node names are used to select the usefull nodes
     )
-    # if multi-task, change fitting_net suffix and model_type
-    if out_suffix != "":
-        output_graph_def = _modify_model_suffix(
-            output_graph_def, out_suffix, freeze_type
-        )
 
     # If we need to transfer the fitting net variables
     output_graph_def = _transfer_fitting_net_trainable_variables(
@@ -398,89 +290,12 @@ def freeze_graph(
     log.info(f"{len(output_graph_def.node):d} ops in the final graph.")
 
 
-def freeze_graph_multi(
-    sess,
-    input_graph,
-    input_node,
-    modifier,
-    out_graph_name,
-    node_names,
-    united_model: bool = False,
-):
-    """Freeze multiple graphs for multi-task model.
-
-    Parameters
-    ----------
-    sess : tf.Session
-        The default session.
-    input_graph : tf.GraphDef
-        The input graph_def stored from the checkpoint.
-    input_node : List[str]
-        The expected nodes to freeze.
-    modifier : Optional[str], optional
-        Modifier type if any, by default None.
-    out_graph_name : str
-        The output graph.
-    node_names : Optional[str], optional
-        Names of nodes to output, by default None.
-    united_model : bool
-        If freeze all nodes into one unit model
-    """
-    input_script = json.loads(
-        run_sess(sess, "train_attr/training_script:0", feed_dict={})
-    )
-    assert (
-        "model" in input_script.keys() and "fitting_net_dict" in input_script["model"]
-    )
-    if not united_model:
-        for fitting_key in input_script["model"]["fitting_net_dict"]:
-            fitting_type = input_script["model"]["fitting_net_dict"][fitting_key][
-                "type"
-            ]
-            if out_graph_name[-3:] == ".pb":
-                output_graph_item = out_graph_name[:-3] + f"_{fitting_key}.pb"
-            else:
-                output_graph_item = out_graph_name + f"_{fitting_key}"
-            freeze_graph(
-                sess,
-                input_graph,
-                input_node,
-                fitting_type,
-                modifier,
-                output_graph_item,
-                node_names,
-                out_suffix=fitting_key,
-            )
-    else:
-        node_multi = []
-        for fitting_key in input_script["model"]["fitting_net_dict"]:
-            fitting_type = input_script["model"]["fitting_net_dict"][fitting_key][
-                "type"
-            ]
-            node_multi += _make_node_names(
-                fitting_type, modifier, out_suffix=fitting_key
-            )
-        node_multi = list(set(node_multi))
-        if node_names is not None:
-            node_multi = node_names
-        freeze_graph(
-            sess,
-            input_graph,
-            input_node,
-            "multi_task",
-            modifier,
-            out_graph_name,
-            node_multi,
-        )
-
-
 def freeze(
     *,
     checkpoint_folder: str,
     output: str,
     node_names: Optional[str] = None,
     nvnmd_weight: Optional[str] = None,
-    united_model: bool = False,
     **kwargs,
 ):
     """Freeze the graph in supplied folder.
@@ -495,8 +310,6 @@ def freeze(
         names of nodes to output, by default None
     nvnmd_weight : Optional[str], optional
         nvnmd weight file
-    united_model : bool
-        when in multi-task mode, freeze all nodes into one unit model
     **kwargs
         other arguments
     """
@@ -560,23 +373,12 @@ def freeze(
             modifier_type = None
         if nvnmd_weight is not None:
             save_weight(sess, nvnmd_weight)  # nvnmd
-        if model_type != "multi_task":
-            freeze_graph(
-                sess,
-                input_graph_def,
-                nodes,
-                model_type,
-                modifier_type,
-                output_graph,
-                node_names,
-            )
-        else:
-            freeze_graph_multi(
-                sess,
-                input_graph_def,
-                nodes,
-                modifier_type,
-                output_graph,
-                node_names,
-                united_model=united_model,
-            )
+        freeze_graph(
+            sess,
+            input_graph_def,
+            nodes,
+            model_type,
+            modifier_type,
+            output_graph,
+            node_names,
+        )

@@ -65,7 +65,6 @@
         "data"
       ],
       "batch_size": "auto",
-      "set_prefix": "set",
       "_comment8": "that's all"
     },
 

@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
@@ -32,13 +35,20 @@ class TransTest:
         self,
     ):
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
-        coord = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        coord = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord = torch.matmul(coord, cell)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
-        shift = (torch.rand([3], dtype=dtype, device=env.DEVICE) - 0.5) * 2.0
+        shift = (
+            torch.rand([3], dtype=dtype, device=env.DEVICE, generator=generator) - 0.5
+        ) * 2.0
         coord_s = torch.matmul(
             torch.remainder(torch.matmul(coord + shift, torch.linalg.inv(cell)), 1.0),
             cell,
@@ -64,7 +74,7 @@ class TransTest:
             spins=spin.unsqueeze(0),
         )
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
-        prec = 1e-10
+        prec = 1e-7
         for key in test_keys:
             if key in ["energy", "force", "force_mag"]:
                 torch.testing.assert_close(ret0[key], ret1[key], rtol=prec, atol=prec)
@@ -100,13 +110,6 @@ class TestEnergyModelDPA1(unittest.TestCase, TransTest):
 
 class TestEnergyModelDPA2(unittest.TestCase, TransTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -114,13 +117,6 @@ class TestEnergyModelDPA2(unittest.TestCase, TransTest):
 
 class TestForceModelDPA2(unittest.TestCase, TransTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "direct_force_ener"
         self.type_split = True

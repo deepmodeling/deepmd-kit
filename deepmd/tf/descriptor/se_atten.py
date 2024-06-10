@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import re
 import warnings
 from typing import (
+    Any,
     List,
     Optional,
     Set,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -13,11 +16,21 @@ from packaging.version import (
     Version,
 )
 
+from deepmd.dpmodel.utils.env_mat import (
+    EnvMat,
+)
+from deepmd.dpmodel.utils.network import (
+    EmbeddingNet,
+    LayerNorm,
+    NativeLayer,
+    NetworkCollection,
+)
 from deepmd.tf.common import (
     cast_precision,
     get_np_precision,
 )
 from deepmd.tf.env import (
+    ATTENTION_LAYER_PATTERN,
     GLOBAL_NP_FLOAT_PRECISION,
     GLOBAL_TF_FLOAT_PRECISION,
     TF_VERSION,
@@ -50,6 +63,7 @@ from deepmd.tf.utils.graph import (
 )
 from deepmd.tf.utils.network import (
     embedding_net,
+    layernorm,
     one_layer,
 )
 from deepmd.tf.utils.sess import (
@@ -58,8 +72,17 @@ from deepmd.tf.utils.sess import (
 from deepmd.tf.utils.tabulate import (
     DPTabulate,
 )
+from deepmd.tf.utils.type_embed import (
+    TypeEmbedNet,
+)
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .descriptor import (
@@ -79,53 +102,65 @@ class DescrptSeAtten(DescrptSeA):
 
     Parameters
     ----------
-    rcut
+    rcut: float
             The cut-off radius :math:`r_c`
-    rcut_smth
+    rcut_smth: float
             From where the environment matrix should be smoothed :math:`r_s`
-    sel : int
-            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
-    neuron : list[int]
+    sel: list[int], int
+            list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+            int: the total maxmum number of atoms in the cut-off radius
+    neuron: list[int]
             Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
-    axis_neuron
+    axis_neuron: int
             Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
-    resnet_dt
+    resnet_dt: bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    trainable
+    trainable: bool
             If the weights of embedding net are trainable.
-    seed
+    seed: int, Optional
             Random seed for initializing the network parameters.
-    type_one_side
-            Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
+    type_one_side: bool
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
     exclude_types : List[List[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-    set_davg_zero
+    set_davg_zero: bool
             Set the shift of embedding net input to zero.
-    activation_function
+    activation_function: str
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
-    precision
+    precision: str
             The precision of the embedding net parameters. Supported options are |PRECISION|
-    uniform_seed
+    uniform_seed: bool
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
-    attn
+    attn: int
             The length of hidden vector during scale-dot attention computation.
-    attn_layer
+    attn_layer: int
             The number of layers in attention mechanism.
-    attn_dotr
+    attn_dotr: bool
             Whether to dot the relative coordinates on the attention weights as a gated scheme.
-    attn_mask
+    attn_mask: bool
             Whether to mask the diagonal in the attention weights.
-    multi_task
-            If the model has multi fitting nets to train.
-    stripped_type_embedding
-            Whether to strip the type embedding into a separated embedding network.
-            Default value will be True in `se_atten_v2` descriptor.
-    smooth_type_embdding
-            When using stripped type embedding, whether to dot smooth factor on the network output of type embedding
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
+    tebd_input_mode: str
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+            Default value will be `strip` in `se_atten_v2` descriptor.
+    smooth_type_embedding: bool
+            Whether to use smooth process in attention weights calculation.
+            And when using stripped type embedding, whether to dot smooth factor on the network output of type embedding
             to keep the network smooth, instead of setting `set_davg_zero` to be True.
             Default value will be True in `se_atten_v2` descriptor.
+    stripped_type_embedding: bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
 
     Raises
     ------
@@ -137,9 +172,9 @@ class DescrptSeAtten(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: int,
+        sel: Union[List[int], int],
         ntypes: int,
-        neuron: List[int] = [24, 48, 96],
+        neuron: List[int] = [25, 50, 100],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
@@ -154,44 +189,47 @@ class DescrptSeAtten(DescrptSeA):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        multi_task: bool = False,
-        stripped_type_embedding: bool = False,
-        smooth_type_embdding: bool = False,
+        smooth_type_embedding: bool = False,
+        tebd_input_mode: str = "concat",
         # not implemented
-        post_ln=True,
-        ffn=False,
-        ffn_embed_dim=1024,
         scaling_factor=1.0,
-        head_num=1,
         normalize=True,
         temperature=None,
-        return_rot=False,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-3,
         concat_output_tebd: bool = True,
+        env_protection: float = 0.0,  # not implement!!
+        stripped_type_embedding: Optional[bool] = None,
         **kwargs,
     ) -> None:
-        if not set_davg_zero and not (stripped_type_embedding and smooth_type_embdding):
+        # Ensure compatibility with the deprecated stripped_type_embedding option.
+        if stripped_type_embedding is None:
+            stripped_type_embedding = tebd_input_mode == "strip"
+        else:
+            # Use the user-set stripped_type_embedding parameter first
+            tebd_input_mode = "strip" if stripped_type_embedding else "concat"
+        if not set_davg_zero and not (
+            stripped_type_embedding and smooth_type_embedding
+        ):
             warnings.warn(
                 "Set 'set_davg_zero' False in descriptor 'se_atten' "
                 "may cause unexpected incontinuity during model inference!"
             )
-        if not post_ln:
-            raise NotImplementedError("post_ln is not supported.")
-        if ffn:
-            raise NotImplementedError("ffn is not supported.")
-        if ffn_embed_dim != 1024:
-            raise NotImplementedError("ffn_embed_dim is not supported.")
         if scaling_factor != 1.0:
             raise NotImplementedError("scaling_factor is not supported.")
-        if head_num != 1:
-            raise NotImplementedError("head_num is not supported.")
         if not normalize:
             raise NotImplementedError("normalize is not supported.")
         if temperature is not None:
             raise NotImplementedError("temperature is not supported.")
-        if return_rot:
-            raise NotImplementedError("return_rot is not supported.")
         if not concat_output_tebd:
             raise NotImplementedError("concat_output_tebd is not supported.")
+        if env_protection != 0.0:
+            raise NotImplementedError("env_protection != 0.0 is not supported.")
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-3
+        if isinstance(sel, list):
+            sel = sum(sel)
         DescrptSeA.__init__(
             self,
             rcut,
@@ -208,7 +246,6 @@ class DescrptSeAtten(DescrptSeA):
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
-            multi_task=multi_task,
         )
         """
         Constructor
@@ -220,7 +257,10 @@ class DescrptSeAtten(DescrptSeA):
         if ntypes == 0:
             raise ValueError("`model/type_map` is not set or empty!")
         self.stripped_type_embedding = stripped_type_embedding
-        self.smooth = smooth_type_embdding
+        self.tebd_input_mode = tebd_input_mode
+        self.smooth = smooth_type_embedding
+        self.trainable_ln = trainable_ln
+        self.ln_eps = ln_eps
         self.ntypes = ntypes
         self.att_n = attn
         self.attn_layer = attn_layer
@@ -237,12 +277,6 @@ class DescrptSeAtten(DescrptSeA):
             GLOBAL_NP_FLOAT_PRECISION
         )
         std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
-            GLOBAL_NP_FLOAT_PRECISION
-        )
-        self.beta = np.zeros([self.attn_layer, self.filter_neuron[-1]]).astype(
-            GLOBAL_NP_FLOAT_PRECISION
-        )
-        self.gamma = np.ones([self.attn_layer, self.filter_neuron[-1]]).astype(
             GLOBAL_NP_FLOAT_PRECISION
         )
         self.attention_layer_variables = None
@@ -368,21 +402,14 @@ class DescrptSeAtten(DescrptSeA):
                     sumn.append(sysn)
                     sumr2.append(sysr2)
                     suma2.append(sysa2)
-            if not self.multi_task:
-                stat_dict = {
-                    "sumr": sumr,
-                    "suma": suma,
-                    "sumn": sumn,
-                    "sumr2": sumr2,
-                    "suma2": suma2,
-                }
-                self.merge_input_stats(stat_dict)
-            else:
-                self.stat_dict["sumr"] += sumr
-                self.stat_dict["suma"] += suma
-                self.stat_dict["sumn"] += sumn
-                self.stat_dict["sumr2"] += sumr2
-                self.stat_dict["suma2"] += suma2
+            stat_dict = {
+                "sumr": sumr,
+                "suma": suma,
+                "sumn": sumn,
+                "sumr2": sumr2,
+                "suma2": suma2,
+            }
+            self.merge_input_stats(stat_dict)
 
     def enable_compression(
         self,
@@ -477,12 +504,8 @@ class DescrptSeAtten(DescrptSeA):
         )
         self.two_embd = make_data(self, self.final_type_embedding)
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def build(
         self,
@@ -695,6 +718,12 @@ class DescrptSeAtten(DescrptSeA):
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )
+            #  (nframes * nloc * nnei, 1)
+            nei_exclude_mask = tf.slice(
+                tf.reshape(tf.cast(mask, self.filter_precision), [-1, 4]),
+                [0, 0],
+                [-1, 1],
+            )
             if self.smooth:
                 inputs_i = tf.where(
                     tf.cast(mask, tf.bool),
@@ -704,15 +733,18 @@ class DescrptSeAtten(DescrptSeA):
                         tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]
                     ),
                 )
+                #  (nframes, nloc, nnei)
                 self.recovered_switch *= tf.reshape(
-                    tf.slice(
-                        tf.reshape(tf.cast(mask, self.filter_precision), [-1, 4]),
-                        [0, 0],
-                        [-1, 1],
-                    ),
+                    nei_exclude_mask,
                     [-1, natoms[0], self.sel_all_a[0]],
                 )
             else:
+                #  (nframes * nloc, 1,  nnei)
+                self.nmask *= tf.reshape(
+                    nei_exclude_mask,
+                    [-1, 1, self.sel_all_a[0]],
+                )
+                self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
                 inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
             inputs_i = descrpt2r4(inputs_i, atype)
@@ -883,38 +915,6 @@ class DescrptSeAtten(DescrptSeA):
             return self.embedding_input_2
         return self.embedding_input
 
-    def _feedforward(self, input_xyz, d_in, d_mid):
-        residual = input_xyz
-        input_xyz = tf.nn.relu(
-            one_layer(
-                input_xyz,
-                d_mid,
-                name="c_ffn1",
-                reuse=tf.AUTO_REUSE,
-                seed=self.seed,
-                activation_fn=None,
-                precision=self.filter_precision,
-                trainable=True,
-                uniform_seed=self.uniform_seed,
-                initial_variables=self.attention_layer_variables,
-            )
-        )
-        input_xyz = one_layer(
-            input_xyz,
-            d_in,
-            name="c_ffn2",
-            reuse=tf.AUTO_REUSE,
-            seed=self.seed,
-            activation_fn=None,
-            precision=self.filter_precision,
-            trainable=True,
-            uniform_seed=self.uniform_seed,
-            initial_variables=self.attention_layer_variables,
-        )
-        input_xyz += residual
-        input_xyz = tf.keras.layers.LayerNormalization()(input_xyz)
-        return input_xyz
-
     def _scaled_dot_attn(
         self,
         Q,
@@ -1051,12 +1051,19 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
-                input_xyz = tf.keras.layers.LayerNormalization(
-                    beta_initializer=tf.constant_initializer(self.beta[i]),
-                    gamma_initializer=tf.constant_initializer(self.gamma[i]),
-                    dtype=self.filter_precision,
-                )(input_xyz)
-                # input_xyz = self._feedforward(input_xyz, outputs_size[-1], self.att_n)
+                input_xyz = layernorm(
+                    input_xyz,
+                    outputs_size[-1],
+                    precision=self.filter_precision,
+                    name="layer_normalization",
+                    scope=name + "/",
+                    reuse=tf.AUTO_REUSE,
+                    seed=self.seed,
+                    uniform_seed=self.uniform_seed,
+                    trainable=self.trainable_ln,
+                    eps=self.ln_eps,
+                    initial_variables=self.attention_layer_variables,
+                )
         return input_xyz
 
     def _filter_lower(
@@ -1364,20 +1371,17 @@ class DescrptSeAtten(DescrptSeA):
         self.attention_layer_variables = get_attention_layer_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        if self.attn_layer > 0:
-            self.beta[0] = self.attention_layer_variables[
-                f"attention_layer_0{suffix}/layer_normalization/beta"
-            ]
-            self.gamma[0] = self.attention_layer_variables[
-                f"attention_layer_0{suffix}/layer_normalization/gamma"
-            ]
-            for i in range(1, self.attn_layer):
-                self.beta[i] = self.attention_layer_variables[
-                    f"attention_layer_{i}{suffix}/layer_normalization_{i}/beta"
-                ]
-                self.gamma[i] = self.attention_layer_variables[
-                    f"attention_layer_{i}{suffix}/layer_normalization_{i}/gamma"
-                ]
+
+        def compat_ln_pattern(old_key):
+            pattern = r"attention_layer_(\d+)/(layer_normalization)_\d+"
+            replacement = r"attention_layer_\1/\2"
+            if bool(re.search(pattern, old_key)):
+                new_key = re.sub(pattern, replacement, old_key)
+                v = self.attention_layer_variables.pop(old_key)
+                self.attention_layer_variables[new_key] = v
+
+        for item_key in list(self.attention_layer_variables.keys()):
+            compat_ln_pattern(item_key)
 
         if self.stripped_type_embedding:
             self.two_side_embeeding_net_variables = (
@@ -1385,7 +1389,6 @@ class DescrptSeAtten(DescrptSeA):
                     graph_def,
                     suffix,
                     get_extra_embedding_net_suffix(type_one_side=False),
-                    self.layer_size,
                 )
             )
 
@@ -1479,15 +1482,870 @@ class DescrptSeAtten(DescrptSeA):
         return True
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+        min_nbor_dist, sel = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
+        )
+        local_jdata_cpy["sel"] = sel[0]
+        return local_jdata_cpy, min_nbor_dist
+
+    def serialize_attention_layers(
+        self,
+        nlayer: int,
+        nnei: int,
+        embed_dim: int,
+        hidden_dim: int,
+        dotr: bool,
+        do_mask: bool,
+        trainable_ln: bool,
+        ln_eps: float,
+        variables: dict,
+        bias: bool = True,
+        suffix: str = "",
+    ) -> dict:
+        data = {
+            "layer_num": nlayer,
+            "nnei": nnei,
+            "embed_dim": embed_dim,
+            "hidden_dim": hidden_dim,
+            "dotr": dotr,
+            "do_mask": do_mask,
+            "trainable_ln": trainable_ln,
+            "ln_eps": ln_eps,
+            "precision": self.precision.name,
+            "attention_layers": [],
+        }
+        if suffix != "":
+            attention_layer_pattern = (
+                ATTENTION_LAYER_PATTERN.replace("/(c_query)", suffix + "/(c_query)")
+                .replace("/(c_key)", suffix + "/(c_key)")
+                .replace("/(c_value)", suffix + "/(c_value)")
+                .replace("/(c_out)", suffix + "/(c_out)")
+                .replace("/(layer_normalization)", suffix + "/(layer_normalization)")
+            )
+        else:
+            attention_layer_pattern = ATTENTION_LAYER_PATTERN
+        attention_layer_params = [{} for _ in range(nlayer)]
+        for key, value in variables.items():
+            m = re.search(attention_layer_pattern, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            assert len(m) == 3
+            if m[1] not in attention_layer_params[int(m[0])]:
+                attention_layer_params[int(m[0])][m[1]] = {}
+            attention_layer_params[int(m[0])][m[1]][m[2]] = value
+
+        for layer_idx in range(nlayer):
+            in_proj = NativeLayer(
+                embed_dim,
+                hidden_dim * 3,
+                bias=bias,
+                use_timestep=False,
+                precision=self.precision.name,
+            )
+            matrix_list = [
+                attention_layer_params[layer_idx][key]["matrix"]
+                for key in ["c_query", "c_key", "c_value"]
+            ]
+            in_proj["matrix"] = np.concatenate(matrix_list, axis=-1)
+            if bias:
+                bias_list = [
+                    attention_layer_params[layer_idx][key]["bias"]
+                    for key in ["c_query", "c_key", "c_value"]
+                ]
+                in_proj["bias"] = np.concatenate(bias_list, axis=-1)
+            out_proj = NativeLayer(
+                hidden_dim,
+                embed_dim,
+                bias=bias,
+                use_timestep=False,
+                precision=self.precision.name,
+            )
+            out_proj["matrix"] = attention_layer_params[layer_idx]["c_out"]["matrix"]
+            if bias:
+                out_proj["bias"] = attention_layer_params[layer_idx]["c_out"]["bias"]
+
+            layer_norm = LayerNorm(
+                embed_dim,
+                trainable=self.trainable_ln,
+                eps=self.ln_eps,
+                precision=self.precision.name,
+            )
+            layer_norm["matrix"] = attention_layer_params[layer_idx][
+                "layer_normalization"
+            ]["gamma"]
+            layer_norm["bias"] = attention_layer_params[layer_idx][
+                "layer_normalization"
+            ]["beta"]
+            data["attention_layers"].append(
+                {
+                    "attention_layer": {
+                        "in_proj": in_proj.serialize(),
+                        "out_proj": out_proj.serialize(),
+                        "bias": bias,
+                        "smooth": self.smooth,
+                    },
+                    "attn_layer_norm": layer_norm.serialize(),
+                    "trainable_ln": self.trainable_ln,
+                    "ln_eps": self.ln_eps,
+                }
+            )
+        return data
+
+    def serialize_network_strip(
+        self,
+        ntypes: int,
+        ndim: int,
+        in_dim: int,
+        neuron: List[int],
+        activation_function: str,
+        resnet_dt: bool,
+        variables: dict,
+        suffix: str = "",
+        type_one_side: bool = False,
+    ) -> dict:
+        """Serialize network.
+
+        Parameters
+        ----------
+        ntypes : int
+            The number of types
+        ndim : int
+            The dimension of elements
+        in_dim : int
+            The input dimension
+        neuron : List[int]
+            The neuron list
+        activation_function : str
+            The activation function
+        resnet_dt : bool
+            Whether to use resnet
+        variables : dict
+            The input variables
+        suffix : str, optional
+            The suffix of the scope
+        type_one_side : bool, optional
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+
+        Returns
+        -------
+        dict
+            The converted network data
+        """
+        assert ndim == 0, "only supports descriptors with type embedding!"
+        embeddings = NetworkCollection(
+            ntypes=ntypes,
+            ndim=ndim,
+            network_type="embedding_network",
+        )
+        name_suffix = get_extra_embedding_net_suffix(type_one_side=type_one_side)
+        embedding_net_pattern_strip = str(
+            rf"filter_type_(all)/(matrix)_(\d+){name_suffix}|"
+            rf"filter_type_(all)/(bias)_(\d+){name_suffix}|"
+            rf"filter_type_(all)/(idt)_(\d+){name_suffix}|"
+        )[:-1]
+        if suffix != "":
+            embedding_net_pattern = (
+                embedding_net_pattern_strip.replace("/(idt)", suffix + "/(idt)")
+                .replace("/(bias)", suffix + "/(bias)")
+                .replace("/(matrix)", suffix + "/(matrix)")
+            )
+        else:
+            embedding_net_pattern = embedding_net_pattern_strip
+        for key, value in variables.items():
+            m = re.search(embedding_net_pattern, key)
+            m = [mm for mm in m.groups() if mm is not None]
+            layer_idx = int(m[2]) - 1
+            weight_name = m[1]
+            network_idx = ()
+            if embeddings[network_idx] is None:
+                # initialize the network if it is not initialized
+                embeddings[network_idx] = EmbeddingNet(
+                    in_dim=in_dim,
+                    neuron=neuron,
+                    activation_function=activation_function,
+                    resnet_dt=resnet_dt,
+                    precision=self.precision.name,
+                )
+            assert embeddings[network_idx] is not None
+            if weight_name == "idt":
+                value = value.ravel()
+            embeddings[network_idx][layer_idx][weight_name] = value
+        return embeddings.serialize()
+
+    @classmethod
+    def deserialize_attention_layers(cls, data: dict, suffix: str = "") -> dict:
+        """Deserialize attention layers.
+
+        Parameters
+        ----------
+        data : dict
+            The input attention layer data
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        variables : dict
+            The input variables
+        """
+        attention_layer_variables = {}
+        nlayer = data["layer_num"]
+        hidden_dim = data["hidden_dim"]
+
+        for layer_idx in range(nlayer):
+            in_proj = NativeLayer.deserialize(
+                data["attention_layers"][layer_idx]["attention_layer"]["in_proj"]
+            )
+            out_proj = NativeLayer.deserialize(
+                data["attention_layers"][layer_idx]["attention_layer"]["out_proj"]
+            )
+            layer_norm = LayerNorm.deserialize(
+                data["attention_layers"][layer_idx]["attn_layer_norm"]
+            )
+
+            # Deserialize in_proj
+            c_query_matrix = in_proj["matrix"][:, :hidden_dim]
+            c_key_matrix = in_proj["matrix"][:, hidden_dim : 2 * hidden_dim]
+            c_value_matrix = in_proj["matrix"][:, 2 * hidden_dim :]
+            attention_layer_variables[
+                f"attention_layer_{layer_idx}{suffix}/c_query/matrix"
+            ] = c_query_matrix
+            attention_layer_variables[
+                f"attention_layer_{layer_idx}{suffix}/c_key/matrix"
+            ] = c_key_matrix
+            attention_layer_variables[
+                f"attention_layer_{layer_idx}{suffix}/c_value/matrix"
+            ] = c_value_matrix
+            if data["attention_layers"][layer_idx]["attention_layer"]["bias"]:
+                c_query_bias = in_proj["bias"][:hidden_dim]
+                c_key_bias = in_proj["bias"][hidden_dim : 2 * hidden_dim]
+                c_value_bias = in_proj["bias"][2 * hidden_dim :]
+                attention_layer_variables[
+                    f"attention_layer_{layer_idx}{suffix}/c_query/bias"
+                ] = c_query_bias
+                attention_layer_variables[
+                    f"attention_layer_{layer_idx}{suffix}/c_key/bias"
+                ] = c_key_bias
+                attention_layer_variables[
+                    f"attention_layer_{layer_idx}{suffix}/c_value/bias"
+                ] = c_value_bias
+
+            # Deserialize out_proj
+            attention_layer_variables[
+                f"attention_layer_{layer_idx}{suffix}/c_out/matrix"
+            ] = out_proj["matrix"]
+            if data["attention_layers"][layer_idx]["attention_layer"]["bias"]:
+                attention_layer_variables[
+                    f"attention_layer_{layer_idx}{suffix}/c_out/bias"
+                ] = out_proj["bias"]
+
+            # Deserialize layer_norm
+            attention_layer_variables[
+                f"attention_layer_{layer_idx}{suffix}/layer_normalization/beta"
+            ] = layer_norm["bias"]
+            attention_layer_variables[
+                f"attention_layer_{layer_idx}{suffix}/layer_normalization/gamma"
+            ] = layer_norm["matrix"]
+        return attention_layer_variables
+
+    @classmethod
+    def deserialize_network_strip(
+        cls, data: dict, suffix: str = "", type_one_side: bool = False
+    ) -> dict:
+        """Deserialize network.
+
+        Parameters
+        ----------
+        data : dict
+            The input network data
+        suffix : str, optional
+            The suffix of the scope
+        type_one_side : bool, optional
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+
+        Returns
+        -------
+        variables : dict
+            The input variables
+        """
+        embedding_net_variables = {}
+        embeddings = NetworkCollection.deserialize(data)
+        assert embeddings.ndim == 0, "only supports descriptors with type embedding!"
+        name_suffix = get_extra_embedding_net_suffix(type_one_side=type_one_side)
+        net_idx = ()
+        network = embeddings[net_idx]
+        assert network is not None
+        for layer_idx, layer in enumerate(network.layers):
+            embedding_net_variables[
+                f"filter_type_all{suffix}/matrix_{layer_idx + 1}{name_suffix}"
+            ] = layer.w
+            embedding_net_variables[
+                f"filter_type_all{suffix}/bias_{layer_idx + 1}{name_suffix}"
+            ] = layer.b
+            if layer.idt is not None:
+                embedding_net_variables[
+                    f"filter_type_all{suffix}/idt_{layer_idx + 1}{name_suffix}"
+                ] = layer.idt.reshape(1, -1)
+            else:
+                # prevent keyError
+                embedding_net_variables[
+                    f"filter_type_all{suffix}/idt_{layer_idx + 1}{name_suffix}"
+                ] = 0.0
+        return embedding_net_variables
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptSeAtten:
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        attention_layer_variables = cls.deserialize_attention_layers(
+            data.pop("attention_layers"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        tebd_input_mode = data["tebd_input_mode"]
+        if tebd_input_mode in ["strip"]:
+            raise ValueError(
+                "Deserialization is unsupported for `tebd_input_mode='strip'` in the native model."
+            )
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.attention_layer_variables = attention_layer_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        if self.stripped_type_embedding and type(self) is DescrptSeAtten:
+            # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
+            raise NotImplementedError(
+                "serialization is unsupported by the native model when tebd_input_mode=='strip'"
+            )
+        # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
+        if self.stripped_type_embedding and self.type_one_side:
+            raise NotImplementedError(
+                "serialization is unsupported when tebd_input_mode=='strip' and type_one_side is True"
+            )
+        if (self.original_sel != self.sel_a).any():
+            raise NotImplementedError(
+                "Adjusting sel is unsupported by the native model"
+            )
+        if self.embedding_net_variables is None:
+            raise RuntimeError("init_variables must be called before serialize")
+        if self.spin is not None:
+            raise NotImplementedError("spin is unsupported")
+        assert self.davg is not None
+        assert self.dstd is not None
+
+        data = {
+            "@class": "Descriptor",
+            "type": "se_atten",
+            "@version": 1,
+            "rcut": self.rcut_r,
+            "rcut_smth": self.rcut_r_smth,
+            "sel": self.sel_a,
+            "ntypes": self.ntypes,
+            "neuron": self.filter_neuron,
+            "axis_neuron": self.n_axis_neuron,
+            "set_davg_zero": self.set_davg_zero,
+            "attn": self.att_n,
+            "attn_layer": self.attn_layer,
+            "attn_dotr": self.attn_dotr,
+            "attn_mask": self.attn_mask,
+            "activation_function": self.activation_function_name,
+            "resnet_dt": self.filter_resnet_dt,
+            "smooth_type_embedding": self.smooth,
+            "tebd_input_mode": self.tebd_input_mode,
+            "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
+            "precision": self.filter_precision.name,
+            "embeddings": self.serialize_network(
+                ntypes=self.ntypes,
+                ndim=0,
+                in_dim=1
+                if not hasattr(self, "embd_input_dim")
+                else self.embd_input_dim,
+                neuron=self.filter_neuron,
+                activation_function=self.activation_function_name,
+                resnet_dt=self.filter_resnet_dt,
+                variables=self.embedding_net_variables,
+                excluded_types=self.exclude_types,
+                suffix=suffix,
+            ),
+            "attention_layers": self.serialize_attention_layers(
+                nlayer=self.attn_layer,
+                nnei=self.nnei_a,
+                embed_dim=self.filter_neuron[-1],
+                hidden_dim=self.att_n,
+                dotr=self.attn_dotr,
+                do_mask=self.attn_mask,
+                trainable_ln=self.trainable_ln,
+                ln_eps=self.ln_eps,
+                variables=self.attention_layer_variables,
+                suffix=suffix,
+            ),
+            "env_mat": EnvMat(self.rcut_r, self.rcut_r_smth).serialize(),
+            "exclude_types": list(self.orig_exclude_types),
+            "env_protection": self.env_protection,
+            "@variables": {
+                "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
+                "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
+            },
+            "trainable": self.trainable,
+            "type_one_side": self.type_one_side,
+            "spin": self.spin,
+        }
+        if self.tebd_input_mode in ["strip"]:
+            assert (
+                type(self) is not DescrptSeAtten
+            ), "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
+            data.update(
+                {
+                    "embeddings_strip": self.serialize_network_strip(
+                        ntypes=self.ntypes,
+                        ndim=0,
+                        in_dim=2
+                        * self.tebd_dim,  # only DescrptDPA1Compat has this attribute
+                        neuron=self.filter_neuron,
+                        activation_function=self.activation_function_name,
+                        resnet_dt=self.filter_resnet_dt,
+                        variables=self.two_side_embeeding_net_variables,
+                        suffix=suffix,
+                        type_one_side=self.type_one_side,
+                    )
+                }
+            )
+        return data
+
+
+class DescrptDPA1Compat(DescrptSeAtten):
+    r"""Consistent version of the model for testing with other backend references.
+
+    This model includes the type_embedding as attributes and other additional parameters.
+
+    Parameters
+    ----------
+    rcut: float
+            The cut-off radius :math:`r_c`
+    rcut_smth: float
+            From where the environment matrix should be smoothed :math:`r_s`
+    sel: list[int], int
+            list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+            int: the total maxmum number of atoms in the cut-off radius
+    ntypes: int
+            Number of element types
+    neuron: list[int]
+            Number of neurons in each hidden layers of the embedding net :math:`\mathcal{N}`
+    axis_neuron: int
+            Number of the axis neuron :math:`M_2` (number of columns of the sub-matrix of the embedding matrix)
+    tebd_dim: int
+            Dimension of the type embedding
+    tebd_input_mode: str
+            The input mode of the type embedding. Supported modes are ["concat", "strip"].
+            - "concat": Concatenate the type embedding with the smoothed radial information as the union input for the embedding network.
+            - "strip": Use a separated embedding network for the type embedding and combine the output with the radial embedding network output.
+    resnet_dt: bool
+            Time-step `dt` in the resnet construction:
+            y = x + dt * \phi (Wx + b)
+    trainable: bool
+            If the weights of this descriptors are trainable.
+    trainable_ln: bool
+            Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps: float, Optional
+            The epsilon value for layer normalization.
+    type_one_side: bool
+            If 'False', type embeddings of both neighbor and central atoms are considered.
+            If 'True', only type embeddings of neighbor atoms are considered.
+            Default is 'False'.
+    attn: int
+            Hidden dimension of the attention vectors
+    attn_layer: int
+            Number of attention layers
+    attn_dotr: bool
+            If dot the angular gate to the attention weights
+    attn_mask: bool
+            (Only support False to keep consistent with other backend references.)
+            If mask the diagonal of attention weights
+    exclude_types : List[List[int]]
+            The excluded pairs of types which have no interaction with each other.
+            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection: float
+            Protection parameter to prevent division by zero errors during environment matrix calculations.
+    set_davg_zero: bool
+            Set the shift of embedding net input to zero.
+    activation_function: str
+            The activation function in the embedding net. Supported options are |ACTIVATION_FN|
+    precision: str
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    scaling_factor: float
+            (Only to keep consistent with other backend references.)
+            (Not used in this version.)
+            The scaling factor of normalization in calculations of attention weights.
+            If `temperature` is None, the scaling of attention weights is (N_dim * scaling_factor)**0.5
+    normalize: bool
+            (Only support True to keep consistent with other backend references.)
+            (Not used in this version.)
+            Whether to normalize the hidden vectors in attention weights calculation.
+    temperature: float
+            (Only support 1.0 to keep consistent with other backend references.)
+            (Not used in this version.)
+            If not None, the scaling of attention weights is `temperature` itself.
+    smooth_type_embedding: bool
+            (Only support False to keep consistent with other backend references.)
+            Whether to use smooth process in attention weights calculation.
+    concat_output_tebd: bool
+            Whether to concat type embedding at the output of the descriptor.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
+    spin
+            (Only support None to keep consistent with old implementation.)
+            The old implementation of deepspin.
+    """
+
+    def __init__(
+        self,
+        rcut: float,
+        rcut_smth: float,
+        sel: Union[List[int], int],
+        ntypes: int,
+        neuron: List[int] = [25, 50, 100],
+        axis_neuron: int = 8,
+        tebd_dim: int = 8,
+        tebd_input_mode: str = "concat",
+        resnet_dt: bool = False,
+        trainable: bool = True,
+        type_one_side: bool = True,
+        attn: int = 128,
+        attn_layer: int = 2,
+        attn_dotr: bool = True,
+        attn_mask: bool = False,
+        exclude_types: List[List[int]] = [],
+        env_protection: float = 0.0,
+        set_davg_zero: bool = False,
+        activation_function: str = "tanh",
+        precision: str = "default",
+        scaling_factor=1.0,
+        normalize: bool = True,
+        temperature: Optional[float] = None,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-3,
+        smooth_type_embedding: bool = True,
+        concat_output_tebd: bool = True,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
+        spin: Optional[Any] = None,
+        # consistent with argcheck, not used though
+        seed: Optional[int] = None,
+        uniform_seed: bool = False,
+    ) -> None:
+        if not normalize:
+            raise NotImplementedError("Only support normalize == True in this version.")
+        if temperature != 1.0:
+            raise NotImplementedError(
+                "Only support temperature == 1.0 in this version."
+            )
+        if spin is not None:
+            raise NotImplementedError("Only support spin is None in this version.")
+        if attn_mask:
+            raise NotImplementedError(
+                "old implementation of attn_mask is not supported."
+            )
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-3
+
+        super().__init__(
+            rcut,
+            rcut_smth,
+            sel,
+            ntypes,
+            neuron=neuron,
+            axis_neuron=axis_neuron,
+            resnet_dt=resnet_dt,
+            trainable=trainable,
+            seed=seed,
+            type_one_side=type_one_side,
+            set_davg_zero=set_davg_zero,
+            exclude_types=exclude_types,
+            activation_function=activation_function,
+            precision=precision,
+            uniform_seed=uniform_seed,
+            attn=attn,
+            attn_layer=attn_layer,
+            attn_dotr=attn_dotr,
+            attn_mask=attn_mask,
+            trainable_ln=trainable_ln,
+            ln_eps=ln_eps,
+            smooth_type_embedding=smooth_type_embedding,
+            tebd_input_mode=tebd_input_mode,
+            env_protection=env_protection,
+        )
+        self.tebd_dim = tebd_dim
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        self.scaling_factor = scaling_factor
+        self.normalize = normalize
+        self.temperature = temperature
+        self.type_embedding = TypeEmbedNet(
+            ntypes=self.ntypes,
+            neuron=[self.tebd_dim],
+            padding=True,
+            activation_function="Linear",
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
+            # precision=precision,
+        )
+        self.concat_output_tebd = concat_output_tebd
+        if self.tebd_input_mode in ["concat"]:
+            if not self.type_one_side:
+                self.embd_input_dim = 1 + self.tebd_dim * 2
+            else:
+                self.embd_input_dim = 1 + self.tebd_dim
+        else:
+            self.embd_input_dim = 1
+
+    def build(
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box_: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        reuse: Optional[bool] = None,
+        suffix: str = "",
+    ) -> tf.Tensor:
+        type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)
+        input_dict["type_embedding"] = type_embedding
+
+        # nf x nloc x out_dim
+        self.dout = super().build(
+            coord_,
+            atype_,
+            natoms,
+            box_,
+            mesh,
+            input_dict,
+            reuse=reuse,
+            suffix=suffix,
+        )
+        # self.dout = tf.cast(self.dout, self.filter_precision)
+        if self.concat_output_tebd:
+            atype = tf.reshape(atype_, [-1, natoms[1]])
+            atype_nloc = tf.reshape(
+                tf.slice(atype, [0, 0], [-1, natoms[0]]), [-1]
+            )  ## lammps will have error without this
+            atom_embed = tf.reshape(
+                tf.nn.embedding_lookup(type_embedding, atype_nloc),
+                [-1, natoms[0], self.tebd_dim],
+            )
+            atom_embed = tf.cast(atom_embed, GLOBAL_TF_FLOAT_PRECISION)
+            # nf x nloc x (out_dim + tebd_dim)
+            self.dout = tf.concat([self.dout, atom_embed], axis=-1)
+        return self.dout
+
+    def init_variables(
+        self,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        suffix: str = "",
+    ) -> None:
+        """Init the embedding net variables with the given dict.
+
+        Parameters
+        ----------
+        graph : tf.Graph
+            The input frozen model graph
+        graph_def : tf.GraphDef
+            The input frozen model graph_def
+        suffix : str, optional
+            The suffix of the scope
+        """
+        super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
+        self.type_embedding.init_variables(
+            graph=graph, graph_def=graph_def, suffix=suffix
+        )
+
+    def update_attention_layers_serialize(self, data: dict):
+        """Update the serialized data to be consistent with other backend references."""
+        new_dict = {
+            "@class": "NeighborGatedAttention",
+            "@version": 1,
+            "scaling_factor": self.scaling_factor,
+            "normalize": self.normalize,
+            "temperature": self.temperature,
+        }
+        new_dict.update(data)
+        update_info = {
+            "nnei": self.nnei_a,
+            "embed_dim": self.filter_neuron[-1],
+            "hidden_dim": self.att_n,
+            "dotr": self.attn_dotr,
+            "do_mask": self.attn_mask,
+            "scaling_factor": self.scaling_factor,
+            "normalize": self.normalize,
+            "temperature": self.temperature,
+            "precision": self.filter_precision.name,
+        }
+        for layer_idx in range(self.attn_layer):
+            new_dict["attention_layers"][layer_idx].update(update_info)
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                update_info
+            )
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                {
+                    "num_heads": 1,
+                }
+            )
+        return new_dict
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = ""):
+        """Deserialize the model.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized data
+
+        Returns
+        -------
+        Model
+            The deserialized model
+        """
+        if cls is not DescrptDPA1Compat:
+            raise NotImplementedError(f"Not implemented in class {cls.__name__}")
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        data.pop("type")
+        embedding_net_variables = cls.deserialize_network(
+            data.pop("embeddings"), suffix=suffix
+        )
+        attention_layer_variables = cls.deserialize_attention_layers(
+            data.pop("attention_layers"), suffix=suffix
+        )
+        data.pop("env_mat")
+        variables = data.pop("@variables")
+        type_embedding = data.pop("type_embedding")
+        tebd_input_mode = data["tebd_input_mode"]
+        type_one_side = data["type_one_side"]
+        if tebd_input_mode in ["strip"]:
+            two_side_embeeding_net_variables = cls.deserialize_network_strip(
+                data.pop("embeddings_strip"),
+                suffix=suffix,
+                type_one_side=type_one_side,
+            )
+        else:
+            two_side_embeeding_net_variables = None
+        descriptor = cls(**data)
+        descriptor.embedding_net_variables = embedding_net_variables
+        descriptor.attention_layer_variables = attention_layer_variables
+        descriptor.two_side_embeeding_net_variables = two_side_embeeding_net_variables
+        descriptor.davg = variables["davg"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.dstd = variables["dstd"].reshape(
+            descriptor.ntypes, descriptor.ndescrpt
+        )
+        descriptor.type_embedding = TypeEmbedNet.deserialize(
+            type_embedding, suffix=suffix
+        )
+        return descriptor
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the model.
+
+        Parameters
+        ----------
+        suffix : str, optional
+            The suffix of the scope
+
+        Returns
+        -------
+        dict
+            The serialized data
+        """
+        data = super().serialize(suffix)
+        data.update(
+            {
+                "type": "dpa1",
+                "tebd_dim": self.tebd_dim,
+                "scaling_factor": self.scaling_factor,
+                "normalize": self.normalize,
+                "temperature": self.temperature,
+                "concat_output_tebd": self.concat_output_tebd,
+                "use_econf_tebd": self.use_econf_tebd,
+                "type_map": self.type_map,
+                "type_embedding": self.type_embedding.serialize(suffix),
+            }
+        )
+        data["attention_layers"] = self.update_attention_layers_serialize(
+            data["attention_layers"]
+        )
+        return data

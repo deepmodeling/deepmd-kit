@@ -45,3 +45,40 @@ In general, we always use the following convention of units:
 | Force    | eV/Å |
 | Virial   | eV   |
 | Pressure | Bar  |
+
+## Mixed type
+
+:::{note}
+Only the [DPA-1](../model/train-se-atten.md) and [DPA-2](../model/dpa2.md) descriptors support this format.
+:::
+
+In the standard data format, only those frames with the same fingerprint (i.e. the number of atoms of different elements) can be put together as a unified system.
+This may lead to sparse frame numbers in those rare systems.
+
+An ideal way is to put systems with the same total number of atoms together, which is the way we trained DPA-1 on [OC2M](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md).
+This system format, which is called `mixed_type`, is proper to put frame-sparse systems together and is slightly different from the standard one.
+Take an example, a `mixed_type` may contain the following files:
+
+```
+type.raw
+type_map.raw
+set.*/box.npy
+set.*/coord.npy
+set.*/energy.npy
+set.*/force.npy
+set.*/real_atom_types.npy
+```
+
+This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element types contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
+
+| ID       | Property                         | File                | Required/Optional | Shape             | Description                                                                                                              |
+| -------- | -------------------------------- | ------------------- | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| /        | Atom type indexes (place holder) | type.raw            | Required          | Natoms            | All zeros to fake the type input                                                                                         |
+| type_map | Atom type names                  | type_map.raw        | Required          | Ntypes            | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table |
+| type     | Atom type indexes of each frame  | real_atom_types.npy | Required          | Nframes \* Natoms | Integers that describe atom types in each frame, corresponding to indexes in type_map. `-1` means virtual atoms.         |
+
+With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`).
+
+To put frames with different `Natoms` into the same system, one can pad systems by adding virtual atoms whose type is `-1`. Virtual atoms do not contribute to any fitting property, so the atomic property of virtual atoms (e.g. forces) should be given zero.
+
+The API to generate or transfer to `mixed_type` format is available on [dpdata](https://github.com/deepmodeling/dpdata) for a more convenient experience.

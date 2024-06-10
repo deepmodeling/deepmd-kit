@@ -2,6 +2,7 @@
 import re
 from typing import (
     List,
+    Optional,
     Set,
     Tuple,
 )
@@ -20,6 +21,9 @@ from deepmd.tf.utils.graph import (
 )
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .descriptor import (
@@ -141,12 +145,8 @@ class DescrptSe(Descriptor):
         self.embedding_net_variables = get_embedding_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     @property
     def precision(self) -> tf.DType:
@@ -154,19 +154,36 @@ class DescrptSe(Descriptor):
         return self.filter_precision
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         # default behavior is to update sel which is a list
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
+        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
+        )
+        return local_jdata_cpy, min_nbor_dist
 
     def serialize_network(
         self,
@@ -296,7 +313,10 @@ class DescrptSe(Descriptor):
                 net_idx.append(rest_ii % embeddings.ntypes)
                 rest_ii //= embeddings.ntypes
             net_idx = tuple(net_idx)
-            if embeddings.ndim in (0, 1):
+            if embeddings.ndim == 0:
+                key0 = "all"
+                key1 = ""
+            elif embeddings.ndim == 1:
                 key0 = "all"
                 key1 = f"_{ii}"
             elif embeddings.ndim == 2:

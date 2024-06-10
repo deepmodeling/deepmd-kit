@@ -384,7 +384,7 @@ class DeepmdData:
     def avg(self, key):
         """Return the average value of an item."""
         if key not in self.data_dict.keys():
-            raise RuntimeError("key %s has not been added" % key)
+            raise RuntimeError(f"key {key} has not been added")
         info = self.data_dict[key]
         ndof = info["ndof"]
         eners = []
@@ -670,7 +670,7 @@ class DeepmdData:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(1.0), data
         elif must:
-            raise RuntimeError("%s not found!" % path)
+            raise RuntimeError(f"{path} not found!")
         else:
             if atomic and type_sel is not None and not output_natoms_for_type_sel:
                 ndof = ndof_ * natoms_sel
@@ -787,3 +787,11 @@ class DataRequirementItem:
         if key not in self.dict:
             raise KeyError(key)
         return self.dict[key]
+
+    def __eq__(self, __value: object) -> bool:
+        if not isinstance(__value, DataRequirementItem):
+            return False
+        return self.dict == __value.dict
+
+    def __repr__(self) -> str:
+        return f"DataRequirementItem({self.dict})"

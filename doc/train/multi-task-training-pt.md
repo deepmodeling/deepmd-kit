@@ -74,13 +74,7 @@ An example input for multi-task training two models in water system is shown as 
 :linenos:
 ```
 
-## Finetune from the pretrained multi-task model
+## Finetune from the pre-trained multi-task model
 
 To finetune based on the checkpoint `model.pt` after the multi-task pre-training is completed,
-users only need to prepare the normal input for single-task training `input_single.json`,
-and then select one of the trained model's task names `model_key`.
-Run the following command:
-
-```bash
-$ dp --pt train input_single.json --finetune model.pt --model-branch model_key
-```
+users can refer to [this section](./finetuning.md#fine-tuning-from-a-multi-task-pre-trained-model).

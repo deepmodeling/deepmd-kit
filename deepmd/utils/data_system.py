@@ -17,15 +17,14 @@ import numpy as np
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
-    data_requirement,
     expand_sys_str,
-    j_must_have,
     make_default_mesh,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.data import (
+    DataRequirementItem,
     DeepmdData,
 )
 from deepmd.utils.out_stat import (
@@ -267,7 +266,7 @@ class DeepmdDataSystem:
         )
         return energy_shift.ravel()
 
-    def add_dict(self, adict: dict) -> None:
+    def add_dict(self, adict: Dict[str, Dict[str, Any]]) -> None:
         """Add items to the data system by a `dict`.
         `adict` should have items like
         .. code-block:: python.
@@ -298,6 +297,12 @@ class DeepmdDataSystem:
                     "output_natoms_for_type_sel", False
                 ),
             )
+
+    def add_data_requirements(
+        self, data_requirements: List[DataRequirementItem]
+    ) -> None:
+        """Add items to the data system by a list of `DataRequirementItem`."""
+        self.add_dict({rr.key: rr.dict for rr in data_requirements})
 
     def add(
         self,
@@ -661,7 +666,7 @@ def print_summary(
     )
     log.info("found %d system(s):" % nsystems)
     log.info(
-        ("%s  " % _format_name_length("system", sys_width))
+        ("{}  ".format(_format_name_length("system", sys_width)))
         + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
     )
     for ii in range(nsystems):
@@ -786,10 +791,10 @@ def get_data(
     DeepmdDataSystem
         The data system
     """
-    systems = j_must_have(jdata, "systems")
+    systems = jdata["systems"]
     systems = process_systems(systems)
 
-    batch_size = j_must_have(jdata, "batch_size")
+    batch_size = jdata["batch_size"]
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     optional_type_map = not multi_task_mode
@@ -807,6 +812,5 @@ def get_data(
         sys_probs=sys_probs,
         auto_prob_style=auto_prob,
     )
-    data.add_dict(data_requirement)
 
     return data
