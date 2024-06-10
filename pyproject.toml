@@ -43,6 +43,7 @@ dependencies = [
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',
+    "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
     'packaging',
     'ml_dtypes',
