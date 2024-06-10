@@ -22,7 +22,6 @@ class TypeEmbdTestCase(TestCaseSingleFrameWithNlist):
         self.input_dict = {
             "ntypes": self.nt,
             "neuron": [8],
-            "activation_function": "Linear",
             "type_map": ["O", "H"],
             "use_econf_tebd": False,
         }
@@ -53,7 +52,7 @@ class TypeEmbdTestCase(TestCaseSingleFrameWithNlist):
             "Ar",
         ]  # 18 elements
         rng = np.random.default_rng(GLOBAL_SEED)
-        for old_tm, new_tm, neuron, econf in itertools.product(
+        for old_tm, new_tm, neuron, act, econf in itertools.product(
             [
                 full_type_map_test[:],  # 18 elements
                 full_type_map_test[
@@ -70,9 +69,19 @@ class TypeEmbdTestCase(TestCaseSingleFrameWithNlist):
                 full_type_map_test[:8],  # 8 elements, tebd default first dim
                 ["H", "O"],  # slimmed types
             ],  # new_type_map
-            [[8], [8, 16, 32]],
+            [[8], [8, 16, 32]],  # neuron
+            ["Linear", "tanh"],  # activation_function
             [False, True],  # use_econf_tebd
         ):
+            do_resnet = neuron[0] in [
+                len(old_tm),
+                len(old_tm) * 2,
+                len(new_tm),
+                len(new_tm) * 2,
+            ]
+            if do_resnet and act != "Linear":
+                # `activation_function` must be "Linear" when performing type changing on resnet structure
+                continue
             # use shuffled type_map
             rng.shuffle(old_tm)
             rng.shuffle(new_tm)
@@ -85,6 +94,8 @@ class TypeEmbdTestCase(TestCaseSingleFrameWithNlist):
             old_tm_input = deepcopy(self.input_dict)
             old_tm_input["type_map"] = old_tm
             old_tm_input["ntypes"] = len(old_tm)
+            old_tm_input["neuron"] = neuron
+            old_tm_input["activation_function"] = act
             old_tm_input["use_econf_tebd"] = econf
             old_tm_module = self.module_class(**old_tm_input)
             old_tm_dd = self.forward_wrapper(old_tm_module)

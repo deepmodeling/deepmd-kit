@@ -735,6 +735,15 @@ class TypeEmbedNetConsistent(nn.Module):
         ), "'type_map' must be defined when performing type changing!"
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         if not self.use_econf_tebd:
+            do_resnet = self.neuron[0] in [
+                self.ntypes,
+                self.ntypes * 2,
+                len(type_map),
+                len(type_map) * 2,
+            ]
+            assert (
+                not do_resnet or self.activation_function == "Linear"
+            ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
             first_layer_matrix = self.embedding_net.layers[0].matrix.data
             eye_vector = torch.eye(
                 self.ntypes, dtype=self.prec, device=first_layer_matrix.device
