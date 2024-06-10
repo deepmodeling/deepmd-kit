@@ -25,6 +25,7 @@ void TabulateFusionSeAForward(
   const torch::Tensor& table_info_tensor,
   const torch::Tensor& em_x_tensor,
   const torch::Tensor& em_tensor,
+  const torch::Tensor& two_embed_tensor,
   int64_t last_layer_size,
   torch::Tensor& descriptor_tensor
 ){
@@ -35,6 +36,8 @@ void TabulateFusionSeAForward(
     throw std::invalid_argument("Dim of input should be 2");
   if(em_tensor.dim() != 3)
     throw std::invalid_argument("Dim of input should be 3");
+  if(two_embed_tensor == nullptr || two_embed_tensor.dim() != 2)
+    throw std::invalid_argument("Dim of input should be 2");
   // get the device
   std::string device;
   GetTensorDevice(table_tensor, device);
@@ -45,7 +48,8 @@ void TabulateFusionSeAForward(
   const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* two_embed = nullptr;
+  const FPTYPE* two_embed = (two_embed_tensor == nullptr) ? nullptr : two_embed_tensor.view({-1}).data_ptr<FPTYPE>();
+
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   // compute
@@ -66,6 +70,7 @@ void TabulateFusionSeAGradForward(
   const torch::Tensor& table_info_tensor,
   const torch::Tensor& em_x_tensor,
   const torch::Tensor& em_tensor,
+  const torch::Tensor& two_embed_tensor,
   const torch::Tensor& dy_tensor,
   const torch::Tensor& descriptor_tensor,
   torch::Tensor& dy_dem_x_tensor,
@@ -77,29 +82,23 @@ void TabulateFusionSeAGradForward(
     throw std::invalid_argument("Dim of dy_tensor should be 3");
   }
   // check input value
-  // print_first_five_elements(table_tensor, "table_tensor");
-  // print_first_five_elements(table_info_tensor, "table_info_tensor");
-  // print_first_five_elements(em_x_tensor, "em_x_tensor");
-  // print_first_five_elements(em_tensor, "em_tensor");
   print_first_five_elements(dy_tensor, "dy_tensor");
   print_first_five_elements(descriptor_tensor, "descriptor_tensor");
   print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
   print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
-  print_first_five_elements(dy_dtwo_tensor, "dy_dtwo_tensor");
-
   // get the device
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
   FPTYPE* dy_dem_x = dy_dem_x_tensor.view({-1}).data_ptr<FPTYPE>();
   FPTYPE* dy_dem = dy_dem_tensor.view({-1}).data_ptr<FPTYPE>();
-  FPTYPE* dy_dtwo = dy_dtwo_tensor.view({-1}).data_ptr<FPTYPE>();
+  FPTYPE* dy_dtwo = (dy_dtwo_tensor == nullptr) ? nullptr : dy_dtwo_tensor.view({-1}).data_ptr<FPTYPE>();
 
   const FPTYPE* table = table_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* two_embed = nullptr;
+  const FPTYPE* two_embed = (two_embed_tensor == nullptr) ? nullptr : two_embed_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* descriptor = descriptor_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
@@ -129,8 +128,10 @@ void TabulateFusionSeAGradGradForward(
   const torch::Tensor& table_info_tensor,
   const torch::Tensor& em_x_tensor,
   const torch::Tensor& em_tensor,
+  const torch::Tensor& two_embed_tensor,
   const torch::Tensor& dz_dy_dem_x_tensor,
   const torch::Tensor& dz_dy_dem_tensor,
+  const torch::Tensor& dz_dy_dtwo_tensor,
   const torch::Tensor& descriptor_tensor,
   bool is_sorted,
   torch::Tensor& dz_dy_tensor
@@ -145,14 +146,15 @@ void TabulateFusionSeAGradGradForward(
   GetTensorDevice(table_tensor, device);
   // flat the tensors
   FPTYPE* dz_dy = dz_dy_tensor.view({-1}).data_ptr<FPTYPE>();
+
   const FPTYPE* table = table_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* two_embed = nullptr;
+  const FPTYPE* two_embed = (two_embed_tensor == nullptr) ? nullptr : two_embed_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dz_dy_dem_x = dz_dy_dem_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dz_dy_dem = dz_dy_dem_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* dz_dy_dtwo = nullptr;
+  const FPTYPE* dz_dy_dtwo = (dz_dy_dtwo_tensor == nullptr) ? nullptr : dz_dy_dtwo_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   const int64_t last_layer_size = descriptor_tensor.size(2);
@@ -173,6 +175,141 @@ void TabulateFusionSeAGradGradForward(
   }
 }
 
+template <typename FPTYPE>
+void TabulateFusionSeTForward(
+  const torch::Tensor& table_tensor,
+  const torch::Tensor& table_info_tensor,
+  const torch::Tensor& em_x_tensor,
+  const torch::Tensor& em_tensor,
+  int64_t last_layer_size,
+  torch::Tensor& descriptor_tensor
+){
+  // check input shape
+  if(table_tensor.dim() != 2)
+    throw std::invalid_argument("Dim of table should be 2");
+  if(em_x_tensor.dim() != 2)
+    throw std::invalid_argument("Dim of input should be 2");
+  if(em_tensor.dim() != 3)
+    throw std::invalid_argument("Dim of input should be 3");
+  // get the device
+  std::string device;
+  GetTensorDevice(table_tensor, device);
+  // flat the tensors
+  FPTYPE* descriptor = descriptor_tensor.view({-1}).data_ptr<FPTYPE>();
+
+  const FPTYPE* table = table_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
+  const int64_t nloc = em_tensor.size(0);
+  const int64_t nnei_i = em_tensor.size(1);
+  const int64_t nnei_j = em_tensor.size(2);
+  // compute
+  if (device == "GPU") {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_se_t_gpu(descriptor, table, table_info, em_x, em,
+                                       nloc, nnei_i, nnei_j, last_layer_size);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+    } else if (device == "CPU") {
+      deepmd::tabulate_fusion_se_t_cpu(descriptor, table, table_info, em_x, em,
+                                       nloc, nnei_i, nnei_j, last_layer_size);
+    }
+}
+
+template <typename FPTYPE>
+void TabulateFusionSeTGradForward(
+  const torch::Tensor& table_tensor,
+  const torch::Tensor& table_info_tensor,
+  const torch::Tensor& em_x_tensor,
+  const torch::Tensor& em_tensor,
+  const torch::Tensor& dy_tensor,
+  const torch::Tensor& descriptor_tensor,
+  torch::Tensor& dy_dem_x_tensor,
+  torch::Tensor& dy_dem_tensor,
+){
+  // check input shape
+  if (dy_tensor.dim() != 2) {
+    throw std::invalid_argument("Dim of dy_tensor should be 2");
+  }
+  // get the device
+  std::string device;
+  GetTensorDevice(table_tensor, device);
+  // flat the tensors
+  FPTYPE* dy_dem_x = dy_dem_x_tensor.view({-1}).data_ptr<FPTYPE>();
+  FPTYPE* dy_dem = dy_dem_tensor.view({-1}).data_ptr<FPTYPE>();
+
+  const FPTYPE* table = table_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* descriptor = descriptor_tensor.view({-1}).data_ptr<FPTYPE>();
+  const int64_t nloc = em_tensor.size(0);
+  const int64_t nnei_i = em_tensor.size(1);
+  const int64_t nnei_j = em_tensor.size(2);
+  const int64_t last_layer_size = descriptor_tensor.size(1);
+  // compute
+  if (device == "GPU") {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_se_t_grad_gpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, dy, nloc, nnei_i, nnei_j,
+                                            last_layer_size);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+    } else if (device == "CPU") {
+      deepmd::tabulate_fusion_se_t_grad_cpu(dy_dem_x, dy_dem, table, table_info,
+                                            em_x, em, dy, nloc, nnei_i, nnei_j,
+                                            last_layer_size);
+    }
+}
+
+template <typename FPTYPE>
+void TabulateFusionSeTGradGradForward(
+  const torch::Tensor& table_tensor,
+  const torch::Tensor& table_info_tensor,
+  const torch::Tensor& em_x_tensor,
+  const torch::Tensor& em_tensor,
+  const torch::Tensor& dz_dy_dem_x_tensor,
+  const torch::Tensor& dz_dy_dem_tensor,
+  const torch::Tensor& descriptor_tensor,
+  torch::Tensor& dz_dy_tensor
+){
+  // Check input shape
+  if (dz_dy_dem_x_tensor.dim() != 2)
+    throw std::invalid_argument("Dim of dz_dy_dem_x should be 2");
+  if (dz_dy_dem_tensor.dim() != 3)
+    throw std::invalid_argument("Dim of dz_dy_dem should be 3");
+  // get the device
+  std::string device;
+  GetTensorDevice(table_tensor, device);
+  // flat the tensors
+  FPTYPE* dz_dy = dz_dy_tensor.view({-1}).data_ptr<FPTYPE>();
+
+  const FPTYPE* table = table_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* dz_dy_dem_x = dz_dy_dem_x_tensor.view({-1}).data_ptr<FPTYPE>();
+  const FPTYPE* dz_dy_dem = dz_dy_dem_tensor.view({-1}).data_ptr<FPTYPE>();
+  const int64_t nloc = em_tensor.size(0);
+  const int64_t nnei_i = em_tensor.size(1);
+  const int64_t nnei_j = em_tensor.size(2);
+  const int64_t last_layer_size = descriptor_tensor.size(1);
+  // compute
+  if (device == "GPU") {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      deepmd::tabulate_fusion_se_t_grad_grad_gpu(
+          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei_i, nnei_j, last_layer_size);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+      TORCH_CHECK(last_layer_size <= 1024, 
+                "In the process of model compression, the size of the "
+                "last layer of embedding net must be less than 1024!");
+    } else if (device == "CPU") {
+      deepmd::tabulate_fusion_se_t_grad_grad_cpu(
+          dz_dy, table, table_info, em_x, em, dz_dy_dem_x, dz_dy_dem, nloc,
+          nnei_i, nnei_j, last_layer_size);
+    }
+}
 
 class TabulateFusionSeAOp : public torch::autograd::Function<TabulateFusionSeAOp> {
   public:
@@ -213,7 +350,8 @@ class TabulateFusionSeAOp : public torch::autograd::Function<TabulateFusionSeAOp
         {em_tensor.size(0), 4, last_layer_size}, options);
       // compute
       TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
-                               em_tensor, last_layer_size, descriptor_tensor);
+                                      em_tensor, nullptr, last_layer_size,
+                                      descriptor_tensor);
       // save data
       ctx->save_for_backward({
         table_tensor, table_info_tensor, em_x_tensor, 
@@ -261,13 +399,14 @@ class TabulateFusionSeAOp : public torch::autograd::Function<TabulateFusionSeAOp
       torch::Tensor dy_dem_tensor = torch::zeros(
         em_tensor.sizes(), options
       );
-      torch::Tensor dy_dtwo_tensor = torch::zeros(
-        dy_tensor.sizes(), options
-      );
+      // torch::Tensor dy_dtwo_tensor = torch::zeros(
+      //   dy_tensor.sizes(), options
+      // );
       // compute
       TabulateFusionSeAGradForward<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
-                                          em_tensor, dy_tensor, descriptor_tensor,
-                                          dy_dem_x_tensor, dy_dem_tensor, dy_dtwo_tensor);
+                                          em_tensor, nullptr, dy_tensor,
+                                          descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor,
+                                          nullptr);
       
       return {at::Tensor(), at::Tensor(), dy_dem_x_tensor, dy_dem_tensor, at::Tensor()};
     }
@@ -310,12 +449,13 @@ class TabulateFusionSeAGradOp : public torch::autograd::Function<TabulateFusionS
       const torch::Tensor& descriptor_tensor
     ){
       // Allocate output tensors
-      torch::Tensor dy_dem_x_tensor = torch::empty_like(em_x_tensor);
-      torch::Tensor dy_dem_tensor = torch::empty_like(em_tensor);
+      torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
+      torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
       // compute
-      // TabulateFusionSeAGradForward<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
-      //                              em_tensor, dy_tensor, descriptor_tensor,
-      //                              dy_dem_x_tensor, dy_dem_tensor);
+      TabulateFusionSeAGradForward<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
+                                          em_tensor, nullptr, dy_tensor,
+                                          descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor,
+                                          nullptr);
       // save data
       ctx->save_for_backward({
         table_tensor, table_info_tensor, em_x_tensor,
@@ -361,10 +501,12 @@ class TabulateFusionSeAGradOp : public torch::autograd::Function<TabulateFusionS
       torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
       // compute
       TabulateFusionSeAGradGradForward<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
-                                       em_tensor, dz_dy_dem_x_tensor, dz_dy_dem_tensor,
-                                       descriptor_tensor, is_sorted, dz_dy_tensor);
+                                              em_tensor, nullptr, dz_dy_dem_x_tensor,
+                                              dz_dy_dem_tensor, nullptr, descriptor_tensor,
+                                              is_sorted, dz_dy_tensor);
 
-      return torch::autograd::variable_list{at::Tensor(), at::Tensor(), at::Tensor(), at::Tensor(), dz_dy_tensor, at::Tensor()};
+      return torch::autograd::variable_list{at::Tensor(), at::Tensor(), at::Tensor(),
+                                            at::Tensor(), dz_dy_tensor, at::Tensor()};
     }
 
 };
@@ -410,8 +552,9 @@ class TabulateFusionSeAGradGradOp : public torch::autograd::Function<TabulateFus
       torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
       // compute
       TabulateFusionSeAGradGradForward<FPTYPE>(table_tensor, table_info_tensor, em_x_tensor,
-                                       em_tensor, dz_dy_dem_x_tensor, dz_dy_dem_tensor,
-                                       descriptor_tensor, is_sorted, dz_dy_tensor);
+                                              em_tensor, nullptr, dz_dy_dem_x_tensor,
+                                              dz_dy_dem_tensor, nullptr, descriptor_tensor,
+                                              is_sorted, dz_dy_tensor);
       
       return torch::autograd::variable_list{ dz_dy_tensor };
     }
