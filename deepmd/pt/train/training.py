@@ -119,6 +119,7 @@ class Trainer:
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
+        self.finetune_update_stat = False
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
@@ -534,11 +535,10 @@ class Trainer:
                                 _model_key_from
                             ].get_type_map()
                         ):
-                            model_with_new_type_stat = (
-                                self.wrapper.model[model_key]
-                                if finetune_rule_single.get_has_new_type()
-                                else None
-                            )
+                            model_with_new_type_stat = None
+                            if finetune_rule_single.get_has_new_type():
+                                self.finetune_update_stat = True
+                                model_with_new_type_stat = self.wrapper.model[model_key]
                             pretrained_model_wrapper.model[
                                 _model_key_from
                             ].change_type_map(
@@ -640,7 +640,10 @@ class Trainer:
 
         # Multi-task share params
         if shared_links is not None:
-            self.wrapper.share_params(shared_links, resume=resuming or self.rank != 0)
+            self.wrapper.share_params(
+                shared_links,
+                resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
+            )
 
         if dist.is_available() and dist.is_initialized():
             torch.cuda.set_device(LOCAL_RANK)

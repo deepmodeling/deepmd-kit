@@ -3,9 +3,6 @@ import itertools
 from copy import (
     deepcopy,
 )
-from random import (
-    shuffle,
-)
 
 import numpy as np
 
@@ -13,6 +10,9 @@ from deepmd.dpmodel.utils import (
     AtomExcludeMask,
 )
 
+from .....seed import (
+    GLOBAL_SEED,
+)
 from ..cases import (
     TestCaseSingleFrameWithNlist,
 )
@@ -131,22 +131,25 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             "Cl",
             "Ar",
         ]  # 18 elements
+        rng = np.random.default_rng(GLOBAL_SEED)
         for old_tm, new_tm, em in itertools.product(
             [
-                deepcopy(full_type_map_test[:8]),  # 8 elements
+                full_type_map_test[:8],  # 8 elements
                 ["H", "O"],  # slimmed types
             ],  # large_type_map
             [
-                deepcopy(full_type_map_test[:8]),  # 8 elements
+                full_type_map_test[:8],  # 8 elements
                 ["H", "O"],  # slimmed types
             ],  # small_type_map
             [
                 [],
+                [0],
+                [1],
             ],  # exclude_types for original_type_map
         ):
             # use shuffled type_map
-            shuffle(old_tm)
-            shuffle(new_tm)
+            rng.shuffle(old_tm)
+            rng.shuffle(new_tm)
             old_tm_index = np.array(
                 [old_tm.index(i) for i in original_type_map], dtype=np.int32
             )
@@ -161,7 +164,6 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             old_tm_module = self.module_class(**old_tm_input)
             serialize_dict = old_tm_module.serialize()
             # set random bias
-            rng = np.random.default_rng()
             serialize_dict["@variables"]["bias_atom_e"] = rng.random(
                 size=serialize_dict["@variables"]["bias_atom_e"].shape
             )

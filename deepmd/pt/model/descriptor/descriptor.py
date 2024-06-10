@@ -183,8 +183,15 @@ def make_default_type_embedding(
 
 
 def extend_descrpt_stat(des, type_map, des_with_stat=None):
-    """
-    Extend the statistics of a descriptor block with types in type_map.
+    r"""
+    Extend the statistics of a descriptor block with types from newly provided `type_map`.
+
+    After extending, the type related dimension of the extended statistics will have a length of
+    `len(old_type_map) + len(type_map)`, where `old_type_map` represents the type map in `des`.
+    The `get_index_between_two_maps()` function can then be used to correctly select statistics for types
+    from `old_type_map` or `type_map`.
+    Positive indices from 0 to `len(old_type_map) - 1` will select old statistics of types in `old_type_map`,
+    while negative indices from `-len(type_map)` to -1 will select new statistics of types in `type_map`.
 
     Parameters
     ----------
@@ -193,8 +200,9 @@ def extend_descrpt_stat(des, type_map, des_with_stat=None):
     type_map : List[str]
         The name of each type of atoms to be extended.
     des_with_stat : DescriptorBlock, Optional
-        The descriptor block has additional statistics in type_map.
-        If None, the default statistics will be used. Otherwise, the statistics provided in this DescriptorBlock will be used.
+        The descriptor block has additional statistics of types from newly provided `type_map`.
+        If None, the default statistics will be used.
+        Otherwise, the statistics provided in this DescriptorBlock will be used.
 
     """
     if des_with_stat is not None:

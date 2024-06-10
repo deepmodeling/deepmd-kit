@@ -89,10 +89,14 @@ def get_index_between_two_maps(
     Returns
     -------
     index_map: List[int]
-        List contains len(new_map) indices, where index_map[i] is the index of new_map[i] in old_map.
-        If new_map[i] is not in the old_map, the index will be (i - len(new_map)).
+        List contains `len(new_map)` indices, where `index_map[i]` is the index of `new_map[i]` in `old_map`.
+        If `new_map[i]` is not in the `old_map`, the index will be `i - len(new_map)`.
     has_new_type: bool
         Whether there are unseen types in the new type_map.
+        If True, some type related params in the model, such as statistics, need to be extended
+        to have a length of `len(old_map) + len(new_map)` in the type related dimension.
+        Then positive indices from 0 to `len(old_map) - 1` will select old params of types in `old_map`,
+        while negative indices from `-len(new_map)` to -1 will select new params of types in `new_map`.
     """
     missing_type = [i for i in new_map if i not in old_map]
     has_new_type = False

@@ -3,9 +3,6 @@ import itertools
 from copy import (
     deepcopy,
 )
-from random import (
-    shuffle,
-)
 
 import numpy as np
 
@@ -13,6 +10,9 @@ from deepmd.dpmodel.utils import (
     PairExcludeMask,
 )
 
+from .....seed import (
+    GLOBAL_SEED,
+)
 from ..cases import (
     TestCaseSingleFrameWithNlist,
 )
@@ -132,31 +132,30 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
             "Cl",
             "Ar",
         ]  # 18 elements
+        rng = np.random.default_rng(GLOBAL_SEED)
         for old_tm, new_tm, em, econf in itertools.product(
             [
-                deepcopy(full_type_map_test),  # 18 elements
-                deepcopy(
-                    full_type_map_test[:16]
-                ),  # 16 elements, double of tebd default first dim
-                deepcopy(full_type_map_test[:8]),  # 8 elements, tebd default first dim
+                full_type_map_test[:],  # 18 elements
+                full_type_map_test[
+                    :16
+                ],  # 16 elements, double of tebd default first dim
+                full_type_map_test[:8],  # 8 elements, tebd default first dim
                 ["H", "O"],  # slimmed types
             ],  # old_type_map
             [
-                deepcopy(full_type_map_test),  # 18 elements
-                deepcopy(
-                    full_type_map_test[:16]
-                ),  # 16 elements, double of tebd default first dim
-                deepcopy(full_type_map_test[:8]),  # 8 elements, tebd default first dim
+                full_type_map_test[:],  # 18 elements
+                full_type_map_test[
+                    :16
+                ],  # 16 elements, double of tebd default first dim
+                full_type_map_test[:8],  # 8 elements, tebd default first dim
                 ["H", "O"],  # slimmed types
             ],  # new_type_map
             [[], [[0, 1]], [[1, 1]]],  # exclude_types for original_type_map
             [False, True],  # use_econf_tebd
         ):
-            if len(old_tm) >= len(new_tm):
-                continue
             # use shuffled type_map
-            shuffle(old_tm)
-            shuffle(new_tm)
+            rng.shuffle(old_tm)
+            rng.shuffle(new_tm)
             old_tm_index = np.array(
                 [old_tm.index(i) for i in original_type_map], dtype=np.int32
             )
