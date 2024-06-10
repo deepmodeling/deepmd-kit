@@ -156,11 +156,15 @@ def get_tf_requirement(tf_version: str = "") -> dict:
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
                 # https://github.com/tensorflow/tensorflow/issues/61830
                 "tensorflow-cpu!=2.15.*; platform_system=='Windows'",
+                # https://github.com/h5py/h5py/issues/2408
+                "h5py<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
                 *extra_requires,
             ],
             "gpu": [
                 "tensorflow",
                 "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
+                # https://github.com/h5py/h5py/issues/2408
+                "h5py<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
                 *extra_requires,
             ],
             **extra_select,
