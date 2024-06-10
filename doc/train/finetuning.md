@@ -29,8 +29,8 @@ The command above will change the energy bias in the last layer of the fitting n
 according to the training dataset in input.json.
 
 :::{warning}
-Note that in TensorFlow, the `type_map` will be overwritten based on that in the pre-trained model.
-Please ensure you are familiar with the `type_map` configuration in the pre-trained model before starting the fine-tuning process.
+Note that in TensorFlow, model parameters including the `type_map` will be overwritten based on those in the pre-trained model.
+Please ensure you are familiar with the configurations in the pre-trained model, especially `type_map`, before starting the fine-tuning process.
 The elements in the training dataset must be contained in the pre-trained dataset.
 :::
 
