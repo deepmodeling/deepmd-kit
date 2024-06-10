@@ -202,10 +202,6 @@ test-command = [
     "pytest {project}/source/tests/tf/test_lammps.py"
 ]
 test-extras = ["cpu", "test", "lmp", "ipi"]
-# TODO: build(wheel): unpin h5py on aarch64
-# Revert after https://github.com/h5py/h5py/issues/2408 is fixed;
-# or set UV_PREFER_BINARY when https://github.com/astral-sh/uv/issues/1794 is resolved.
-test-requires = ["h5py<3.11;platform_machine=='aarch64'"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated
