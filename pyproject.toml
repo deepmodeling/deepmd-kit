@@ -234,6 +234,8 @@ before-all = [
     "yum install -y mpich-devel",
     # uv is not available in the old manylinux image
     "pipx install uv",
+    # old build doesn't support uv
+    "pipx upgrade build",
 ]
 
 [tool.cibuildwheel.windows]
