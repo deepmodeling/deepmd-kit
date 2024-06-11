@@ -68,7 +68,7 @@ class TestDataSystem(unittest.TestCase):
         ds.add("test", self.test_ndof, atomic=True, must=True)
         ds.add("null", self.test_ndof, atomic=True, must=False)
         self.assertEqual(ds.get_ntypes(), 3)
-        self.assertEqual(ds.get_nbatches(), [2, 4, 3, 2])
+        self.assertEqual(ds.get_nbatches(), [3, 6, 5, 4])
         self.assertEqual(ds.get_nsystems(), self.nsys)
         self.assertEqual(list(ds.get_batch_size()), [batch_size] * 4)
 
@@ -101,13 +101,27 @@ class TestDataSystem(unittest.TestCase):
         data = ds.get_test(sys_idx=sys_idx)
         self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(
-            np.load("sys_0/set.002/coord.npy"),
+            np.concatenate(
+                [
+                    np.load("sys_0/set.000/coord.npy"),
+                    np.load("sys_0/set.001/coord.npy"),
+                    np.load("sys_0/set.002/coord.npy"),
+                ],
+                axis=0,
+            ),
             ds.get_sys(sys_idx).idx_map,
             3,
             data["coord"],
         )
         self._in_array(
-            np.load("sys_0/set.002/test.npy"),
+            np.concatenate(
+                [
+                    np.load("sys_0/set.000/test.npy"),
+                    np.load("sys_0/set.001/test.npy"),
+                    np.load("sys_0/set.002/test.npy"),
+                ],
+                axis=0,
+            ),
             ds.get_sys(sys_idx).idx_map,
             self.test_ndof,
             data["test"],
@@ -115,7 +129,10 @@ class TestDataSystem(unittest.TestCase):
         self.assertAlmostEqual(
             np.linalg.norm(
                 np.zeros(
-                    [self.nframes[sys_idx] + 2, self.natoms[sys_idx] * self.test_ndof]
+                    [
+                        self.nframes[sys_idx] * self.nset + 0 + 1 + 2,
+                        self.natoms[sys_idx] * self.test_ndof,
+                    ]
                 )
                 - data["null"]
             ),
@@ -124,7 +141,10 @@ class TestDataSystem(unittest.TestCase):
         self.assertAlmostEqual(
             np.linalg.norm(
                 np.ones(
-                    [self.nframes[sys_idx] + 2, self.natoms[sys_idx] * self.test_ndof]
+                    [
+                        self.nframes[sys_idx] * self.nset + 0 + 1 + 2,
+                        self.natoms[sys_idx] * self.test_ndof,
+                    ]
                 )
                 - data["ones"]
             ),
@@ -135,13 +155,27 @@ class TestDataSystem(unittest.TestCase):
         data = ds.get_test(sys_idx=sys_idx)
         self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(
-            np.load("sys_2/set.002/coord.npy"),
+            np.concatenate(
+                [
+                    np.load("sys_2/set.000/coord.npy"),
+                    np.load("sys_2/set.001/coord.npy"),
+                    np.load("sys_2/set.002/coord.npy"),
+                ],
+                axis=0,
+            ),
             ds.get_sys(sys_idx).idx_map,
             3,
             data["coord"],
         )
         self._in_array(
-            np.load("sys_2/set.002/test.npy"),
+            np.concatenate(
+                [
+                    np.load("sys_2/set.000/test.npy"),
+                    np.load("sys_2/set.001/test.npy"),
+                    np.load("sys_2/set.002/test.npy"),
+                ],
+                axis=0,
+            ),
             ds.get_sys(sys_idx).idx_map,
             self.test_ndof,
             data["test"],
@@ -149,7 +183,10 @@ class TestDataSystem(unittest.TestCase):
         self.assertAlmostEqual(
             np.linalg.norm(
                 np.zeros(
-                    [self.nframes[sys_idx] + 2, self.natoms[sys_idx] * self.test_ndof]
+                    [
+                        self.nframes[sys_idx] * self.nset + 0 + 1 + 2,
+                        self.natoms[sys_idx] * self.test_ndof,
+                    ]
                 )
                 - data["null"]
             ),
@@ -208,6 +245,27 @@ class TestDataSystem(unittest.TestCase):
         data = ds.get_batch(sys_idx=sys_idx)
         self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(
+            np.load("sys_0/set.002/coord.npy"),
+            ds.get_sys(sys_idx).idx_map,
+            3,
+            data["coord"],
+        )
+        self._in_array(
+            np.load("sys_0/set.002/test.npy"),
+            ds.get_sys(sys_idx).idx_map,
+            self.test_ndof,
+            data["test"],
+        )
+        self.assertAlmostEqual(
+            np.linalg.norm(
+                np.zeros([batch_size, self.natoms[sys_idx] * self.test_ndof])
+                - data["null"]
+            ),
+            0.0,
+        )
+        data = ds.get_batch(sys_idx=sys_idx)
+        self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
+        self._in_array(
             np.load("sys_0/set.000/coord.npy"),
             ds.get_sys(sys_idx).idx_map,
             3,
@@ -293,6 +351,48 @@ class TestDataSystem(unittest.TestCase):
         data = ds.get_batch(sys_idx=sys_idx)
         self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
         self._in_array(
+            np.load("sys_2/set.002/coord.npy"),
+            ds.get_sys(sys_idx).idx_map,
+            3,
+            data["coord"],
+        )
+        self._in_array(
+            np.load("sys_2/set.002/test.npy"),
+            ds.get_sys(sys_idx).idx_map,
+            self.test_ndof,
+            data["test"],
+        )
+        self.assertAlmostEqual(
+            np.linalg.norm(
+                np.zeros([batch_size, self.natoms[sys_idx] * self.test_ndof])
+                - data["null"]
+            ),
+            0.0,
+        )
+        data = ds.get_batch(sys_idx=sys_idx)
+        self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
+        self._in_array(
+            np.load("sys_2/set.002/coord.npy"),
+            ds.get_sys(sys_idx).idx_map,
+            3,
+            data["coord"],
+        )
+        self._in_array(
+            np.load("sys_2/set.002/test.npy"),
+            ds.get_sys(sys_idx).idx_map,
+            self.test_ndof,
+            data["test"],
+        )
+        self.assertAlmostEqual(
+            np.linalg.norm(
+                np.zeros([batch_size, self.natoms[sys_idx] * self.test_ndof])
+                - data["null"]
+            ),
+            0.0,
+        )
+        data = ds.get_batch(sys_idx=sys_idx)
+        self.assertEqual(list(data["type"][0]), list(np.sort(self.atom_type[sys_idx])))
+        self._in_array(
             np.load("sys_2/set.000/coord.npy"),
             ds.get_sys(sys_idx).idx_map,
             3,
@@ -324,16 +424,16 @@ class TestDataSystem(unittest.TestCase):
         self.assertAlmostEqual(np.sum(prob[2:4]), 0.8)
         # number of training set is self.nset-1
         # shift is the total number of set size shift...
-        shift = np.sum(np.arange(self.nset - 1))
+        shift = np.sum(np.arange(self.nset))
         self.assertAlmostEqual(
             prob[1] / prob[0],
-            float(self.nframes[1] * (self.nset - 1) + shift)
-            / float(self.nframes[0] * (self.nset - 1) + shift),
+            float(self.nframes[1] * (self.nset) + shift)
+            / float(self.nframes[0] * (self.nset) + shift),
         )
         self.assertAlmostEqual(
             prob[3] / prob[2],
-            float(self.nframes[3] * (self.nset - 1) + shift)
-            / float(self.nframes[2] * (self.nset - 1) + shift),
+            float(self.nframes[3] * (self.nset) + shift)
+            / float(self.nframes[2] * (self.nset) + shift),
         )
 
     def test_prob_sys_size_2(self):
@@ -348,13 +448,13 @@ class TestDataSystem(unittest.TestCase):
         self.assertAlmostEqual(np.sum(prob[2:4]), 0.8)
         # number of training set is self.nset-1
         # shift is the total number of set size shift...
-        shift = np.sum(np.arange(self.nset - 1))
+        shift = np.sum(np.arange(self.nset))
         self.assertAlmostEqual(prob[0], 0.0)
         self.assertAlmostEqual(prob[1], 0.2)
         self.assertAlmostEqual(
             prob[3] / prob[2],
-            float(self.nframes[3] * (self.nset - 1) + shift)
-            / float(self.nframes[2] * (self.nset - 1) + shift),
+            float(self.nframes[3] * (self.nset) + shift)
+            / float(self.nframes[2] * (self.nset) + shift),
         )
 
     def _idx_map(self, target, idx_map, ndof):

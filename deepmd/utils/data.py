@@ -42,7 +42,7 @@ class DeepmdData:
     modifier
             Data modifier that has the method `modify_data`
     trn_all_set
-            Use all sets as training dataset. Otherwise, if the number of sets is more than 1, the last set is left for test.
+            [DEPRECATED] Deprecated. Now all sets are trained and tested.
     sort_atoms : bool
             Sort atoms by atom types. Required to enable when the data is directly feeded to
             descriptors except mixed types.
@@ -109,15 +109,6 @@ class DeepmdData:
         # make idx map
         self.sort_atoms = sort_atoms
         self.idx_map = self._make_idx_map(self.atom_type)
-        # train dirs
-        self.test_dir = self.dirs[-1]
-        if trn_all_set:
-            self.train_dirs = self.dirs
-        else:
-            if len(self.dirs) == 1:
-                self.train_dirs = self.dirs
-            else:
-                self.train_dirs = self.dirs[:-1]
         self.data_dict = {}
         # add box and coord
         self.add("box", 9, must=self.pbc)
@@ -225,7 +216,7 @@ class DeepmdData:
 
     def check_batch_size(self, batch_size):
         """Check if the system can get a batch of data with `batch_size` frames."""
-        for ii in self.train_dirs:
+        for ii in self.dirs:
             if self.data_dict["coord"]["high_prec"]:
                 tmpe = (
                     (ii / "coord.npy").load_numpy().astype(GLOBAL_ENER_FLOAT_PRECISION)
@@ -240,24 +231,7 @@ class DeepmdData:
 
     def check_test_size(self, test_size):
         """Check if the system can get a test dataset with `test_size` frames."""
-        if self.data_dict["coord"]["high_prec"]:
-            tmpe = (
-                (self.test_dir / "coord.npy")
-                .load_numpy()
-                .astype(GLOBAL_ENER_FLOAT_PRECISION)
-            )
-        else:
-            tmpe = (
-                (self.test_dir / "coord.npy")
-                .load_numpy()
-                .astype(GLOBAL_NP_FLOAT_PRECISION)
-            )
-        if tmpe.ndim == 1:
-            tmpe = tmpe.reshape([1, -1])
-        if tmpe.shape[0] < test_size:
-            return self.test_dir, tmpe.shape[0]
-        else:
-            return None
+        return self.check_batch_size(test_size)
 
     def get_item_torch(self, index: int) -> dict:
         """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
@@ -287,7 +261,7 @@ class DeepmdData:
         else:
             set_size = 0
         if self.iterator + batch_size > set_size:
-            self._load_batch_set(self.train_dirs[self.set_count % self.get_numb_set()])
+            self._load_batch_set(self.dirs[self.set_count % self.get_numb_set()])
             self.set_count += 1
             set_size = self.batch_set["coord"].shape[0]
         iterator_1 = self.iterator + batch_size
@@ -307,7 +281,7 @@ class DeepmdData:
             Size of the test data set. If `ntests` is -1, all test data will be get.
         """
         if not hasattr(self, "test_set"):
-            self._load_test_set(self.test_dir, self.shuffle_test)
+            self._load_test_set(self.shuffle_test)
         if ntests == -1:
             idx = None
         else:
@@ -340,11 +314,11 @@ class DeepmdData:
 
     def get_numb_set(self) -> int:
         """Get number of training sets."""
-        return len(self.train_dirs)
+        return len(self.dirs)
 
     def get_numb_batch(self, batch_size: int, set_idx: int) -> int:
         """Get the number of batches in a set."""
-        data = self._load_set(self.train_dirs[set_idx])
+        data = self._load_set(self.dirs[set_idx])
         ret = data["coord"].shape[0] // batch_size
         if ret == 0:
             ret = 1
@@ -353,7 +327,7 @@ class DeepmdData:
     def get_sys_numb_batch(self, batch_size: int) -> int:
         """Get the number of batches in the data system."""
         ret = 0
-        for ii in range(len(self.train_dirs)):
+        for ii in range(len(self.dirs)):
             ret += self.get_numb_batch(batch_size, ii)
         return ret
 
@@ -388,7 +362,7 @@ class DeepmdData:
         info = self.data_dict[key]
         ndof = info["ndof"]
         eners = []
-        for ii in self.train_dirs:
+        for ii in self.dirs:
             data = self._load_set(ii)
             ei = data[key].reshape([-1, ndof])
             eners.append(ei)
@@ -441,8 +415,21 @@ class DeepmdData:
     def reset_get_batch(self):
         self.iterator = 0
 
-    def _load_test_set(self, set_name: DPPath, shuffle_test):
-        self.test_set = self._load_set(set_name)
+    def _load_test_set(self, shuffle_test: bool):
+        test_sets = []
+        for ii in self.dirs:
+            test_set = self._load_set(ii)
+            test_sets.append(test_set)
+        # merge test sets
+        self.test_set = {}
+        assert len(test_sets) > 0
+        for kk in test_sets[0]:
+            if "find_" in kk:
+                self.test_set[kk] = test_sets[0][kk]
+            else:
+                self.test_set[kk] = np.concatenate(
+                    [test_set[kk] for test_set in test_sets], axis=0
+                )
         if shuffle_test:
             self.test_set, _ = self._shuffle_data(self.test_set)
 
