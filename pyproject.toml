@@ -44,6 +44,7 @@ dependencies = [
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',
+    "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
     'packaging',
 ]
@@ -224,6 +225,12 @@ before-all = [
     """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
     "yum install -y mpich-devel",
+    # uv is not available in the old manylinux image
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
+]
+before-build = [
+    # old build doesn't support uv
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
 ]
 
 [tool.cibuildwheel.windows]
