@@ -152,7 +152,7 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             )
             pp = self.precision_dict[input_prec]
             odef = self.model_output_def()
-            for kk in odef:
+            for kk in odef.keys():
                 if kk not in model_ret:
                     # do not return energy_derv_c if not do_atomic_virial
                     continue

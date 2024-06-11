@@ -18,6 +18,8 @@ DPMultiFittingModel_ = make_multi_fitting_model(DPMultiFittingAtomicModel)
 
 @BaseModel.register("multi_fitting")
 class DPMultiFittingModel(DPModelCommon, DPMultiFittingModel_):
+    model_type = "multi_fitting"
+
     def __init__(
         self,
         *args,
