@@ -120,16 +120,6 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
         ]:
             """Cast the input data to global float type."""
             input_prec = self.reverse_precision_dict[coord.dtype]
-            ###
-            ### type checking would not pass jit, convert to coord prec anyway
-            ###
-            # for vv, kk in zip([fparam, aparam], ["frame", "atomic"]):
-            #     if vv is not None and self.reverse_precision_dict[vv.dtype] != input_prec:
-            #         log.warning(
-            #           f"type of {kk} parameter {self.reverse_precision_dict[vv.dtype]}"
-            #           " does not match"
-            #           f" that of the coordinate {input_prec}"
-            #         )
             _lst: List[Optional[torch.Tensor]] = [
                 vv.to(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
@@ -162,8 +152,8 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             )
             pp = self.precision_dict[input_prec]
             odef = self.model_output_def()
-            for kk in odef.keys():
-                if kk not in model_ret.keys():
+            for kk in odef:
+                if kk not in model_ret:
                     # do not return energy_derv_c if not do_atomic_virial
                     continue
                 if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
@@ -375,11 +365,14 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         @staticmethod
         def make_pairs(nlist, mapping):
-            """
-            return the pairs from nlist and mapping
-            pairs:
+            """Return the pairs from nlist and mapping.
+
+            Returns
+            -------
+            pairs
                 [[i1, j1, 0], [i2, j2, 0], ...],
                 in which i and j are the local indices of the atoms
+
             """
             nframes, nloc, nsel = nlist.shape
             assert nframes == 1

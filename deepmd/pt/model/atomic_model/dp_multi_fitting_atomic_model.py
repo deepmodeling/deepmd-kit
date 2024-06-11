@@ -70,12 +70,12 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
-        l = []
+        var_defs = []
         for name, fitting_net in self.fitting_net_dict.items():
             for vdef in fitting_net.output_def().var_defs.values():
                 vdef.name = name
-                l.append(vdef)
-        return FittingOutputDef(l)
+                var_defs.append(vdef)
+        return FittingOutputDef(var_defs)
 
     @torch.jit.export
     def get_rcut(self) -> float:
@@ -253,12 +253,24 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
     @torch.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
-        return list(self.fitting_net_dict.values())[0].get_dim_fparam()
+        dim_fparam = None
+        for fitting in self.fitting_net_dict.values():
+            if dim_fparam is not None:
+                assert dim_fparam == fitting.get_dim_fparam()
+            else:
+                dim_fparam = fitting.get_dim_fparam()
+        return dim_fparam
 
     @torch.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
-        return list(self.fitting_net_dict.values())[0].get_dim_aparam()
+        dim_aparam = None
+        for fitting in self.fitting_net_dict.values():
+            if dim_aparam is not None:
+                assert dim_aparam == fitting.get_dim_aparam()
+            else:
+                dim_aparam = fitting.get_dim_aparam()
+        return dim_aparam
 
     @torch.jit.export
     def get_sel_type(self) -> List[List[int]]:
