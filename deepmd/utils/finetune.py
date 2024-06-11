@@ -38,7 +38,7 @@ class FinetuneRuleItem:
         self.model_branch = model_branch
         self.random_fitting = random_fitting
         self.resuming = resuming
-        self.update_type = not (self.p_type_map == self.type_map)
+        self.update_type = self.p_type_map != self.type_map
 
     def get_index_mapping(self):
         """Returns the mapping index of newly defined types to those in the pretrained model."""
