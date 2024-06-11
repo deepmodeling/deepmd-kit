@@ -273,8 +273,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         mean: torch.Tensor,
         stddev: torch.Tensor,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.sea.mean = mean
         self.sea.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get mean and stddev for descriptor."""
+        return self.sea.mean, self.sea.stddev
 
     def serialize(self) -> dict:
         obj = self.sea

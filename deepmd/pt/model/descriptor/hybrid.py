@@ -197,6 +197,30 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
 
+    def set_stat_mean_and_stddev(
+        self,
+        mean: List[Union[torch.Tensor, List[torch.Tensor]]],
+        stddev: List[Union[torch.Tensor, List[torch.Tensor]]],
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        for ii, descrpt in enumerate(self.descrpt_list):
+            descrpt.set_stat_mean_and_stddev(mean[ii], stddev[ii])
+
+    def get_stat_mean_and_stddev(
+        self,
+    ) -> Tuple[
+        List[Union[torch.Tensor, List[torch.Tensor]]],
+        List[Union[torch.Tensor, List[torch.Tensor]]],
+    ]:
+        """Get mean and stddev for descriptor."""
+        mean_list = []
+        stddev_list = []
+        for ii, descrpt in enumerate(self.descrpt_list):
+            mean_item, stddev_item = descrpt.get_stat_mean_and_stddev()
+            mean_list.append(mean_item)
+            stddev_list.append(stddev_item)
+        return mean_list, stddev_list
+
     def forward(
         self,
         coord_ext: torch.Tensor,

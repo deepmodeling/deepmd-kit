@@ -9,6 +9,9 @@ import numpy as np
 from deepmd.dpmodel.utils import (
     PairExcludeMask,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+)
 
 from .....seed import (
     GLOBAL_SEED,
@@ -183,6 +186,164 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
                 mapping=mapping_device,
             )
             np.testing.assert_allclose(rd_old_tm, rd_new_tm)
+
+    def test_change_type_map_extend_stat(self):
+        if (
+            not self.module.mixed_types()
+            or getattr(self.module, "sel_no_mixed_types", None) is not None
+        ):
+            # skip if not mixed_types
+            return
+        full_type_map_test = [
+            "H",
+            "He",
+            "Li",
+            "Be",
+            "B",
+            "C",
+            "N",
+            "O",
+            "F",
+            "Ne",
+            "Na",
+            "Mg",
+            "Al",
+            "Si",
+            "P",
+            "S",
+            "Cl",
+            "Ar",
+        ]  # 18 elements
+        rng = np.random.default_rng(GLOBAL_SEED)
+        for small_tm, large_tm in itertools.product(
+            [
+                full_type_map_test[:8],  # 8 elements, tebd default first dim
+                ["H", "O"],  # slimmed types
+            ],  # small_tm
+            [
+                full_type_map_test[:],  # 18 elements
+                full_type_map_test[
+                    :16
+                ],  # 16 elements, double of tebd default first dim
+                full_type_map_test[:8],  # 8 elements, tebd default first dim
+            ],  # large_tm
+        ):
+            # use shuffled type_map
+            rng.shuffle(small_tm)
+            rng.shuffle(large_tm)
+            small_tm_input = update_input_type_map(self.input_dict, small_tm)
+            small_tm_module = self.module_class(**small_tm_input)
+
+            large_tm_input = update_input_type_map(self.input_dict, large_tm)
+            large_tm_module = self.module_class(**large_tm_input)
+
+            # set random stat
+            mean_small_tm, std_small_tm = small_tm_module.get_stat_mean_and_stddev()
+            mean_large_tm, std_large_tm = large_tm_module.get_stat_mean_and_stddev()
+            if "list" not in self.input_dict:
+                mean_rand_small_tm, std_rand_small_tm = self.get_rand_stat(
+                    rng, mean_small_tm, std_small_tm
+                )
+                mean_rand_large_tm, std_rand_large_tm = self.get_rand_stat(
+                    rng, mean_large_tm, std_large_tm
+                )
+            else:
+                # for hybrid
+                mean_rand_small_tm, std_rand_small_tm = [], []
+                mean_rand_large_tm, std_rand_large_tm = [], []
+                for ii in range(len(mean_small_tm)):
+                    mean_rand_item_small_tm, std_rand_item_small_tm = (
+                        self.get_rand_stat(rng, mean_small_tm[ii], std_small_tm[ii])
+                    )
+                    mean_rand_small_tm.append(mean_rand_item_small_tm)
+                    std_rand_small_tm.append(std_rand_item_small_tm)
+                    mean_rand_item_large_tm, std_rand_item_large_tm = (
+                        self.get_rand_stat(rng, mean_large_tm[ii], std_large_tm[ii])
+                    )
+                    mean_rand_large_tm.append(mean_rand_item_large_tm)
+                    std_rand_large_tm.append(std_rand_item_large_tm)
+
+            small_tm_module.set_stat_mean_and_stddev(
+                mean_rand_small_tm, std_rand_small_tm
+            )
+            large_tm_module.set_stat_mean_and_stddev(
+                mean_rand_large_tm, std_rand_large_tm
+            )
+
+            # extend the type map
+            small_tm_module.change_type_map(
+                large_tm, model_with_new_type_stat=large_tm_module
+            )
+
+            # check the stat
+            mean_result, std_result = small_tm_module.get_stat_mean_and_stddev()
+            type_index_map = get_index_between_two_maps(small_tm, large_tm)[0]
+
+            if "list" not in self.input_dict:
+                self.check_expect_stat(
+                    type_index_map, mean_rand_small_tm, mean_rand_large_tm, mean_result
+                )
+                self.check_expect_stat(
+                    type_index_map, std_rand_small_tm, std_rand_large_tm, std_result
+                )
+            else:
+                # for hybrid
+                for ii in range(len(mean_small_tm)):
+                    self.check_expect_stat(
+                        type_index_map,
+                        mean_rand_small_tm[ii],
+                        mean_rand_large_tm[ii],
+                        mean_result[ii],
+                    )
+                    self.check_expect_stat(
+                        type_index_map,
+                        std_rand_small_tm[ii],
+                        std_rand_large_tm[ii],
+                        std_result[ii],
+                    )
+
+    def get_rand_stat(self, rng, mean, std):
+        if not isinstance(mean, list):
+            mean_rand, std_rand = self.get_rand_stat_item(rng, mean, std)
+        else:
+            mean_rand, std_rand = [], []
+            for ii in range(len(mean)):
+                mean_rand_item, std_rand_item = self.get_rand_stat_item(
+                    rng, mean[ii], std[ii]
+                )
+                mean_rand.append(mean_rand_item)
+                std_rand.append(std_rand_item)
+        return mean_rand, std_rand
+
+    def get_rand_stat_item(self, rng, mean, std):
+        mean = self.convert_to_numpy(mean)
+        std = self.convert_to_numpy(std)
+        mean_rand = rng.random(size=mean.shape)
+        std_rand = rng.random(size=std.shape)
+        mean_rand = self.convert_from_numpy(mean_rand)
+        std_rand = self.convert_from_numpy(std_rand)
+        return mean_rand, std_rand
+
+    def check_expect_stat(self, type_index_map, stat_small, stat_large, stat_result):
+        if not isinstance(stat_small, list):
+            self.check_expect_stat_item(
+                type_index_map, stat_small, stat_large, stat_result
+            )
+        else:
+            for ii in range(len(stat_small)):
+                self.check_expect_stat_item(
+                    type_index_map, stat_small[ii], stat_large[ii], stat_result[ii]
+                )
+
+    def check_expect_stat_item(
+        self, type_index_map, stat_small, stat_large, stat_result
+    ):
+        stat_small = self.convert_to_numpy(stat_small)
+        stat_large = self.convert_to_numpy(stat_large)
+        stat_result = self.convert_to_numpy(stat_result)
+        full_stat = np.concatenate([stat_small, stat_large], axis=0)
+        expected_stat = full_stat[type_index_map]
+        np.testing.assert_allclose(expected_stat, stat_result)
 
 
 def update_input_type_map(input_dict, type_map):

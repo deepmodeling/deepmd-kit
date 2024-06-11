@@ -303,8 +303,13 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         mean: torch.Tensor,
         stddev: torch.Tensor,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.seat.mean = mean
         self.seat.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get mean and stddev for descriptor."""
+        return self.seat.mean, self.seat.stddev
 
     def serialize(self) -> dict:
         obj = self.seat

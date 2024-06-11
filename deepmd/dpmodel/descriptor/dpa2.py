@@ -606,6 +606,23 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
+    def set_stat_mean_and_stddev(
+        self,
+        mean: List[np.ndarray],
+        stddev: List[np.ndarray],
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+            descrpt.mean = mean[ii]
+            descrpt.stddev = stddev[ii]
+
+    def get_stat_mean_and_stddev(self) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """Get mean and stddev for descriptor."""
+        return [self.repinit.mean, self.repformers.mean], [
+            self.repinit.stddev,
+            self.repformers.stddev,
+        ]
+
     def call(
         self,
         coord_ext: np.ndarray,

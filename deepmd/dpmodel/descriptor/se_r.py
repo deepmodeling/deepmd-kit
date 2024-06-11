@@ -254,6 +254,19 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
+    def set_stat_mean_and_stddev(
+        self,
+        mean: np.ndarray,
+        stddev: np.ndarray,
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        self.davg = mean
+        self.dstd = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get mean and stddev for descriptor."""
+        return self.davg, self.dstd
+
     def cal_g(
         self,
         ss,

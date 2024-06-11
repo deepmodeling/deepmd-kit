@@ -419,8 +419,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         mean: torch.Tensor,
         stddev: torch.Tensor,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get mean and stddev for descriptor."""
+        return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
         self, type_map: List[str], model_with_new_type_stat=None

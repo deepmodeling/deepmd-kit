@@ -127,6 +127,16 @@ def make_base_descriptor(
             """
             pass
 
+        @abstractmethod
+        def set_stat_mean_and_stddev(self, mean, stddev) -> None:
+            """Update mean and stddev for descriptor."""
+            pass
+
+        @abstractmethod
+        def get_stat_mean_and_stddev(self):
+            """Get mean and stddev for descriptor."""
+            pass
+
         def compute_input_stats(
             self,
             merged: Union[Callable[[], List[dict]], List[dict]],

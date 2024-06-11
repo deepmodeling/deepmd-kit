@@ -429,6 +429,23 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
             descrpt.compute_input_stats(merged, path)
 
+    def set_stat_mean_and_stddev(
+        self,
+        mean: List[torch.Tensor],
+        stddev: List[torch.Tensor],
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+            descrpt.mean = mean[ii]
+            descrpt.stddev = stddev[ii]
+
+    def get_stat_mean_and_stddev(self) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+        """Get mean and stddev for descriptor."""
+        return [self.repinit.mean, self.repformers.mean], [
+            self.repinit.stddev,
+            self.repformers.stddev,
+        ]
+
     def serialize(self) -> dict:
         repinit = self.repinit
         repformers = self.repformers
