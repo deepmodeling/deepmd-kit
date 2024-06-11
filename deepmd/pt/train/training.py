@@ -33,6 +33,7 @@ from deepmd.pt.loss import (
 from deepmd.pt.model.model import (
     EnergyModel,
     get_model,
+    get_multi_fitting_model,
     get_zbl_model,
 )
 from deepmd.pt.optimizer import (
@@ -268,6 +269,8 @@ class Trainer:
         ):
             if "use_srtab" in _model_params:
                 model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
+            elif "fitting_net_dict" in _model_params:
+                model = get_multi_fitting_model(deepcopy(_model_params)).to(DEVICE)
             else:
                 model = get_model(deepcopy(_model_params)).to(DEVICE)
             return model

@@ -243,8 +243,10 @@ def train(FLAGS):
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
 
+    multi_fitting_net = "fitting_net_dict" in config["model"]
+
     # argcheck
-    if not multi_task:
+    if not (multi_task or multi_fitting_net):
         config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
         config = normalize(config)
 

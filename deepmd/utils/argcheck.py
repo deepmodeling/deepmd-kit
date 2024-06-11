@@ -1613,6 +1613,7 @@ def model_args(exclude_hybrid=False):
                     standard_model_args(),
                     frozen_model_args(),
                     pairtab_model_args(),
+                    multi_fitting_model_args(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -1693,6 +1694,28 @@ def pairtab_model_args() -> Argument:
             Argument("sel", [int, List[int], str], optional=False, doc=doc_sel),
         ],
         doc=doc_only_tf_supported + "Pairwise tabulation energy model.",
+    )
+    return ca
+
+
+def multi_fitting_model_args() -> Argument:
+    doc_descrpt = "The descriptor of atomic environment."
+    doc_fitting_dict = "The dict of fitting net of physical properties."
+
+    ca = Argument(
+        "multi_fitting",
+        dict,
+        [
+            Argument(
+                "descriptor", dict, [], [descrpt_variant_type_args()], doc=doc_descrpt
+            ),
+            Argument(
+                "fitting_net_dict",
+                dict,
+                [],
+                doc=doc_fitting_dict,
+            ),
+        ],
     )
     return ca
 

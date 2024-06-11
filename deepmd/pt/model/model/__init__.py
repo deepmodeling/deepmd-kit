@@ -54,6 +54,9 @@ from .make_hessian_model import (
 from .make_model import (
     make_model,
 )
+from .make_multi_fitting_model import (
+    make_multi_fitting_model,
+)
 from .model import (
     BaseModel,
 )
@@ -148,6 +151,49 @@ def get_zbl_model(model_params):
     )
 
 
+def get_multi_fitting_model(model_params):
+    model_params_old = model_params
+    model_params = copy.deepcopy(model_params)
+    ntypes = len(model_params["type_map"])
+    # descriptor
+    model_params["descriptor"]["ntypes"] = ntypes
+    descriptor = BaseDescriptor(**model_params["descriptor"])
+    # fitting_net_dict
+    fitting_dict = {}
+    fitting_net_dict = model_params.get("fitting_net_dict", {})
+    fitting_dict["type"] = fitting_net_dict.pop("type", "pme_ener")
+    for k, fitting_net in fitting_net_dict.items():
+        fitting_net["type"] = fitting_net.get("type", "ener")
+        fitting_net["ntypes"] = descriptor.get_ntypes()
+        fitting_net["mixed_types"] = descriptor.mixed_types()
+        fitting_net["embedding_width"] = descriptor.get_dim_emb()
+        fitting_net["dim_descrpt"] = descriptor.get_dim_out()
+        grad_force = "direct" not in fitting_net["type"]
+        if not grad_force:
+            fitting_net["out_dim"] = descriptor.get_dim_emb()
+            if "ener" in fitting_net["type"]:
+                fitting_net["return_energy"] = True
+        fitting = BaseFitting(**fitting_net)
+        fitting_dict[k] = fitting
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
+
+    if fitting_dict["type"] == "pme_ener":
+        modelcls = None
+    else:
+        raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
+
+    model = modelcls(
+        descriptor=descriptor,
+        fitting_dict=fitting_dict,
+        type_map=model_params["type_map"],
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+    )
+    model.model_def_script = json.dumps(model_params_old)
+    return model
+
+
 def get_standard_model(model_params):
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
@@ -201,6 +247,8 @@ def get_model(model_params):
         return get_spin_model(model_params)
     elif "use_srtab" in model_params:
         return get_zbl_model(model_params)
+    elif "fitting_net_dict" in model_params:
+        return get_multi_fitting_model(model_params)
     else:
         return get_standard_model(model_params)
 
@@ -216,4 +264,5 @@ __all__ = [
     "DPZBLModel",
     "make_model",
     "make_hessian_model",
+    "make_multi_fitting_model",
 ]

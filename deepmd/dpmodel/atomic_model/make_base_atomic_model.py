@@ -7,6 +7,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 from deepmd.dpmodel.output_def import (
@@ -87,7 +88,7 @@ def make_base_atomic_model(
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> Union[List[int], List[List[int]]]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution

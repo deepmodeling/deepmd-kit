@@ -26,6 +26,9 @@ from .dos_atomic_model import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
+from .dp_multi_fitting_atomic_model import (
+    DPMultiFittingAtomicModel,
+)
 from .energy_atomic_model import (
     DPEnergyAtomicModel,
 )
@@ -50,4 +53,5 @@ __all__ = [
     "DPPolarAtomicModel",
     "DPDipoleAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
+    "DPMultiFittingAtomicModel",
 ]
