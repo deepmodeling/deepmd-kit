@@ -7,10 +7,23 @@ from typing import (
     Type,
 )
 
-import torch
+import numpy as np
 
 from deepmd.dpmodel import (
     ModelOutputDef,
+)
+from deepmd.dpmodel.atomic_model.base_atomic_model import (
+    BaseAtomicModel,
+)
+from deepmd.dpmodel.common import (
+    GLOBAL_ENER_FLOAT_PRECISION,
+    GLOBAL_NP_FLOAT_PRECISION,
+    PRECISION_DICT,
+    RESERVED_PRECISON_DICT,
+    NativeOP,
+)
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -18,28 +31,13 @@ from deepmd.dpmodel.output_def import (
     OutputVariableOperation,
     check_operation_applied,
 )
-from deepmd.pt.model.atomic_model.base_atomic_model import (
-    BaseAtomicModel,
-)
-from deepmd.pt.model.model.model import (
-    BaseModel,
-)
-from deepmd.pt.utils.env import (
-    GLOBAL_PT_ENER_FLOAT_PRECISION,
-    GLOBAL_PT_FLOAT_PRECISION,
-    PRECISION_DICT,
-    RESERVED_PRECISON_DICT,
-)
-from deepmd.pt.utils.nlist import (
+from deepmd.dpmodel.utils import (
     nlist_distinguish_types,
-)
-from deepmd.utils.path import (
-    DPPath,
 )
 
 
 def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
-    class CM(BaseModel):
+    class CM(NativeOP, BaseModel):
         def __init__(
             self,
             *args,
@@ -47,108 +45,107 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
         ):
-            super().__init__(*args, **kwargs)
+            BaseModel.__init__(*args, **kwargs)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
             else:
                 self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISON_DICT
-            self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
-            self.global_pt_ener_float_precision = GLOBAL_PT_ENER_FLOAT_PRECISION
+            self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
+            self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
         def model_output_def(self):
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
-        @torch.jit.export
         def model_output_type(self) -> List[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
-            # jit: Comprehension ifs are not supported yet
-            # type hint is critical for JIT
-            vars: List[str] = []
-            for kk, vv in var_defs.items():
-                # .value is critical for JIT
-                if vv.category == OutputVariableCategory.OUT.value:
-                    vars.append(kk)
+            vars = [
+                kk
+                for kk, vv in var_defs.items()
+                if vv.category == OutputVariableCategory.OUT
+            ]
             return vars
 
-        def get_out_bias(self) -> torch.Tensor:
-            return self.atomic_model.get_out_bias()
+        # def get_out_bias(self) -> torch.Tensor:
+        #     return self.atomic_model.get_out_bias()
 
-        def change_out_bias(
-            self,
-            merged,
-            bias_adjust_mode="change-by-statistic",
-        ) -> None:
-            """Change the output bias of atomic model according to the input data and the pretrained model.
+        # def change_out_bias(
+        #     self,
+        #     merged,
+        #     bias_adjust_mode="change-by-statistic",
+        # ) -> None:
+        #     """Change the output bias of atomic model according to the input data and the pretrained model.
 
-            Parameters
-            ----------
-            merged : Union[Callable[[], List[dict]], List[dict]]
-                - List[dict]: A list of data samples from various data systems.
-                    Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                    originating from the `i`-th data system.
-                - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
-                    only when needed. Since the sampling process can be slow and memory-intensive,
-                    the lazy function helps by only sampling once.
-            bias_adjust_mode : str
-                The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
-                'change-by-statistic' : perform predictions on labels of target dataset,
-                        and do least square on the errors to obtain the target shift as bias.
-                'set-by-statistic' : directly use the statistic output bias in the target dataset.
-            """
-            self.atomic_model.change_out_bias(
-                merged,
-                bias_adjust_mode=bias_adjust_mode,
-            )
+        #     Parameters
+        #     ----------
+        #     merged : Union[Callable[[], List[dict]], List[dict]]
+        #         - List[dict]: A list of data samples from various data systems.
+        #             Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+        #             originating from the `i`-th data system.
+        #         - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+        #             only when needed. Since the sampling process can be slow and memory-intensive,
+        #             the lazy function helps by only sampling once.
+        #     bias_adjust_mode : str
+        #         The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+        #         'change-by-statistic' : perform predictions on labels of target dataset,
+        #                 and do least square on the errors to obtain the target shift as bias.
+        #         'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        #     """
+        #     self.atomic_model.change_out_bias(
+        #         merged,
+        #         bias_adjust_mode=bias_adjust_mode,
+        #     )
 
         def input_type_cast(
             self,
-            coord: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            coord: np.ndarray,
+            box: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
         ) -> Tuple[
-            torch.Tensor,
-            Optional[torch.Tensor],
-            Optional[torch.Tensor],
-            Optional[torch.Tensor],
+            np.ndarray,
+            Optional[np.ndarray],
+            Optional[np.ndarray],
+            Optional[np.ndarray],
             str,
         ]:
             """Cast the input data to global float type."""
-            input_prec = self.reverse_precision_dict[coord.dtype]
-            _lst: List[Optional[torch.Tensor]] = [
-                vv.to(coord.dtype) if vv is not None else None
+            input_prec = self.reverse_precision_dict[
+                self.precision_dict[coord.dtype.name]
+            ]
+            _lst: List[Optional[np.ndarray]] = [
+                vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
             box, fparam, aparam = _lst
             if (
                 input_prec
-                == self.reverse_precision_dict[self.global_pt_float_precision]
+                == self.reverse_precision_dict[self.global_np_float_precision]
             ):
                 return coord, box, fparam, aparam, input_prec
             else:
-                pp = self.global_pt_float_precision
+                pp = self.global_np_float_precision
                 return (
-                    coord.to(pp),
-                    box.to(pp) if box is not None else None,
-                    fparam.to(pp) if fparam is not None else None,
-                    aparam.to(pp) if aparam is not None else None,
+                    coord.astype(pp),
+                    box.astype(pp) if box is not None else None,
+                    fparam.astype(pp) if fparam is not None else None,
+                    aparam.astype(pp) if aparam is not None else None,
                     input_prec,
                 )
 
         def output_type_cast(
             self,
-            model_ret: Dict[str, torch.Tensor],
+            model_ret: Dict[str, np.ndarray],
             input_prec: str,
-        ) -> Dict[str, torch.Tensor]:
+        ) -> Dict[str, np.ndarray]:
             """Convert the model output to the input prec."""
             do_cast = (
                 input_prec
-                != self.reverse_precision_dict[self.global_pt_float_precision]
+                != self.reverse_precision_dict[self.global_np_float_precision]
             )
             pp = self.precision_dict[input_prec]
             odef = self.model_output_def()
@@ -158,7 +155,7 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
                     continue
                 if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
                     model_ret[kk] = (
-                        model_ret[kk].to(self.global_pt_ener_float_precision)
+                        model_ret[kk].to(self.global_ener_float_precision)
                         if model_ret[kk] is not None
                         else None
                     )
@@ -170,9 +167,9 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         def format_nlist(
             self,
-            extended_coord: torch.Tensor,
-            extended_atype: torch.Tensor,
-            nlist: torch.Tensor,
+            extended_coord: np.ndarray,
+            extended_atype: np.ndarray,
+            nlist: np.ndarray,
         ):
             """Format the neighbor list.
 
@@ -206,56 +203,49 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             mixed_types = self.mixed_types()
-            nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
+            ret = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
             if not mixed_types:
-                nlist = nlist_distinguish_types(nlist, extended_atype, self.get_sel())
-            return nlist
+                ret = nlist_distinguish_types(ret, extended_atype, self.get_sel())
+            return ret
 
         def _format_nlist(
             self,
-            extended_coord: torch.Tensor,
-            nlist: torch.Tensor,
+            extended_coord: np.ndarray,
+            nlist: np.ndarray,
             nnei: int,
         ):
             n_nf, n_nloc, n_nnei = nlist.shape
-            # nf x nall x 3
-            extended_coord = extended_coord.view([n_nf, -1, 3])
+            extended_coord = extended_coord.reshape([n_nf, -1, 3])
+            nall = extended_coord.shape[1]
             rcut = self.get_rcut()
 
             if n_nnei < nnei:
-                nlist = torch.cat(
+                # make a copy before revise
+                ret = np.concatenate(
                     [
                         nlist,
-                        -1
-                        * torch.ones(
-                            [n_nf, n_nloc, nnei - n_nnei],
-                            dtype=nlist.dtype,
-                            device=nlist.device,
-                        ),
+                        -1 * np.ones([n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype),
                     ],
-                    dim=-1,
+                    axis=-1,
                 )
             elif n_nnei > nnei:
+                # make a copy before revise
                 m_real_nei = nlist >= 0
-                nlist = torch.where(m_real_nei, nlist, 0)
-                # nf x nloc x 3
+                ret = np.where(m_real_nei, nlist, 0)
                 coord0 = extended_coord[:, :n_nloc, :]
-                # nf x (nloc x nnei) x 3
-                index = nlist.view(n_nf, n_nloc * n_nnei, 1).expand(-1, -1, 3)
-                coord1 = torch.gather(extended_coord, 1, index)
-                # nf x nloc x nnei x 3
-                coord1 = coord1.view(n_nf, n_nloc, n_nnei, 3)
-                # nf x nloc x nnei
-                rr = torch.linalg.norm(coord0[:, :, None, :] - coord1, dim=-1)
-                rr = torch.where(m_real_nei, rr, float("inf"))
-                rr, nlist_mapping = torch.sort(rr, dim=-1)
-                nlist = torch.gather(nlist, 2, nlist_mapping)
-                nlist = torch.where(rr > rcut, -1, nlist)
-                nlist = nlist[..., :nnei]
+                index = ret.reshape(n_nf, n_nloc * n_nnei, 1).repeat(3, axis=2)
+                coord1 = np.take_along_axis(extended_coord, index, axis=1)
+                coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
+                rr = np.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                rr = np.where(m_real_nei, rr, float("inf"))
+                rr, ret_mapping = np.sort(rr, axis=-1), np.argsort(rr, axis=-1)
+                ret = np.take_along_axis(ret, ret_mapping, axis=2)
+                ret = np.where(rr > rcut, -1, ret)
+                ret = ret[..., :nnei]
             else:  # n_nnei == nnei:
-                pass  # great!
-            assert nlist.shape[-1] == nnei
-            return nlist
+                ret = nlist
+            assert ret.shape[-1] == nnei
+            return ret
 
         def do_grad_r(
             self,
@@ -282,17 +272,14 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
         def deserialize(cls, data) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        @torch.jit.export
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
             return self.atomic_model.get_dim_fparam()
 
-        @torch.jit.export
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
-        @torch.jit.export
         def get_sel_type(self) -> List[int]:
             """Get the selected atom types of this model.
 
@@ -302,7 +289,6 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.get_sel_type()
 
-        @torch.jit.export
         def is_aparam_nall(self) -> bool:
             """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
@@ -310,37 +296,21 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.is_aparam_nall()
 
-        @torch.jit.export
         def get_rcut(self) -> float:
             """Get the cut-off radius."""
             return self.atomic_model.get_rcut()
 
-        @torch.jit.export
         def get_type_map(self) -> List[str]:
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
-        @torch.jit.export
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nsel()
 
-        @torch.jit.export
         def get_nnei(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
-
-        def atomic_output_def(self) -> FittingOutputDef:
-            """Get the output def of the atomic model."""
-            return self.atomic_model.atomic_output_def()
-
-        def compute_or_load_stat(
-            self,
-            sampled_func,
-            stat_file_path: Optional[DPPath] = None,
-        ):
-            """Compute or load the statistics."""
-            return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
         def get_sel(self) -> List[int]:
             """Returns the number of selected atoms for each type."""
@@ -358,10 +328,17 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.mixed_types()
 
-        @torch.jit.export
         def has_message_passing(self) -> bool:
             """Returns whether the model has message passing."""
             return self.atomic_model.has_message_passing()
+
+        def atomic_output_def(self) -> FittingOutputDef:
+            """Get the output def of the atomic model."""
+            return self.atomic_model.atomic_output_def()
+
+        def get_ntypes(self) -> int:
+            """Get the number of types."""
+            return len(self.get_type_map())
 
         @staticmethod
         def make_pairs(nlist, mapping):
@@ -376,34 +353,32 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             nframes, nloc, nsel = nlist.shape
             assert nframes == 1
-            nlist_reshape = torch.reshape(nlist, [nframes, nloc * nsel, 1])
-            mask = nlist_reshape.ge(0)
+            nlist_reshape = np.reshape(nlist, [nframes, nloc * nsel])
+            # nlist is pad with -1
+            mask = nlist_reshape >= 0
 
-            ii = torch.arange(nloc, dtype=torch.int64, device=nlist.device)
-            ii = torch.tile(ii.reshape(-1, 1), [1, nsel])
-            ii = torch.reshape(ii, [nframes, nloc * nsel, 1])
-            sel_ii = torch.masked_select(ii, mask)
-            sel_ii = torch.reshape(sel_ii, [nframes, -1, 1])
+            ii = np.arange(nloc, dtype=np.int64)
+            ii = np.tile(ii.reshape(-1, 1), [1, nsel])
+            ii = np.reshape(ii, [nframes, nloc * nsel])
+            # nf x (nloc x nsel)
+            sel_ii = ii[mask]
+            # sel_ii = np.reshape(sel_ii, [nframes, -1, 1])
 
             # nf x (nloc x nsel)
-            sel_nlist = torch.masked_select(nlist_reshape, mask)
-            sel_jj = torch.gather(mapping, 1, sel_nlist.reshape(nframes, -1))
-            sel_jj = torch.reshape(sel_jj, [nframes, -1, 1])
+            sel_nlist = nlist_reshape[mask]
+            sel_jj = np.take_along_axis(mapping, sel_nlist, axis=1)
+            sel_jj = np.reshape(sel_jj, [nframes, -1])
 
             # nframes x (nloc x nsel) x 3
-            pairs = torch.zeros(
-                nframes, nloc * nsel, 1, dtype=torch.int64, device=nlist.device
-            )
-            pairs = torch.masked_select(pairs, mask)
-            pairs = torch.reshape(pairs, [nframes, -1, 1])
-
-            pairs = torch.concat([sel_ii, sel_jj, pairs], -1)
+            pairs = np.zeros([nframes, nloc * nsel], dtype=np.int64)
+            pairs = np.stack((sel_ii, sel_jj, pairs[mask]))
 
             # select the pair with jj > ii
+            # nframes x (nloc x nsel)
             mask = pairs[..., 1] > pairs[..., 0]
-            pairs = torch.masked_select(pairs, mask.reshape(nframes, -1, 1))
-            pairs = torch.reshape(pairs, [nframes, -1, 3])
-            # todo: padding pairs for jit
+            pairs = pairs[mask]
+            pairs = np.reshape(pairs, [nframes, -1, 3])
+
             return pairs
 
     return CM
