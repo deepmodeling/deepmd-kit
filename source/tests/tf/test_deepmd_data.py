@@ -143,6 +143,9 @@ class TestData(unittest.TestCase):
         path = os.path.join(self.data_name, "set.bar", "test_frame.npy")
         self.test_frame_bar = rng.random([self.nframes, 5])
         np.save(path, self.test_frame_bar)
+        path = os.path.join(self.data_name, "set.tar", "test_frame.npy")
+        self.test_frame_tar = rng.random([2, 5])
+        np.save(path, self.test_frame_tar)
         # t n
         self.test_null = np.zeros([self.nframes, 2 * self.natoms])
         # tensor shape
@@ -162,8 +165,9 @@ class TestData(unittest.TestCase):
         self.assertEqual(dd.idx_map[0], 1)
         self.assertEqual(dd.idx_map[1], 0)
         self.assertEqual(dd.type_map, ["foo", "bar"])
-        self.assertEqual(dd.test_dir, "test_data/set.tar")
-        self.assertEqual(dd.train_dirs, ["test_data/set.bar", "test_data/set.foo"])
+        self.assertEqual(
+            dd.dirs, ["test_data/set.bar", "test_data/set.foo", "test_data/set.tar"]
+        )
 
     def test_init_type_map(self):
         dd = DeepmdData(self.data_name, type_map=["bar", "foo", "tar"])
@@ -182,7 +186,7 @@ class TestData(unittest.TestCase):
         )
         data = dd._load_set(os.path.join(self.data_name, "set.foo"))
         nframes = data["coord"].shape[0]
-        self.assertEqual(dd.get_numb_set(), 2)
+        self.assertEqual(dd.get_numb_set(), 3)
         self.assertEqual(dd.get_type_map(), ["foo", "bar"])
         self.assertEqual(dd.get_natoms(), 2)
         self.assertEqual(list(dd.get_natoms_vec(3)), [2, 2, 1, 1, 0])
@@ -257,7 +261,10 @@ class TestData(unittest.TestCase):
         dd = DeepmdData(self.data_name).add("test_frame", 5, atomic=False, must=True)
         favg = dd.avg("test_frame")
         fcmp = np.average(
-            np.concatenate((self.test_frame, self.test_frame_bar), axis=0), axis=0
+            np.concatenate(
+                (self.test_frame, self.test_frame_bar, self.test_frame_tar), axis=0
+            ),
+            axis=0,
         )
         np.testing.assert_almost_equal(favg, fcmp, places)
 
@@ -266,13 +273,17 @@ class TestData(unittest.TestCase):
         ret = dd.check_batch_size(10)
         self.assertEqual(ret, (os.path.join(self.data_name, "set.bar"), 5))
         ret = dd.check_batch_size(5)
+        self.assertEqual(ret, (os.path.join(self.data_name, "set.tar"), 2))
+        ret = dd.check_batch_size(1)
         self.assertEqual(ret, None)
 
     def test_check_test_size(self):
         dd = DeepmdData(self.data_name)
         ret = dd.check_test_size(10)
+        self.assertEqual(ret, (os.path.join(self.data_name, "set.bar"), 5))
+        ret = dd.check_test_size(5)
         self.assertEqual(ret, (os.path.join(self.data_name, "set.tar"), 2))
-        ret = dd.check_test_size(2)
+        ret = dd.check_test_size(1)
         self.assertEqual(ret, None)
 
     def test_get_batch(self):
@@ -285,6 +296,10 @@ class TestData(unittest.TestCase):
         self._comp_np_mat2(np.sort(data["coord"], axis=0), np.sort(self.coord, axis=0))
         data = dd.get_batch(5)
         self._comp_np_mat2(
+            np.sort(data["coord"], axis=0), np.sort(self.coord_tar, axis=0)
+        )
+        data = dd.get_batch(5)
+        self._comp_np_mat2(
             np.sort(data["coord"], axis=0), np.sort(self.coord_bar, axis=0)
         )
         data = dd.get_batch(5)
@@ -293,8 +308,11 @@ class TestData(unittest.TestCase):
     def test_get_test(self):
         dd = DeepmdData(self.data_name)
         data = dd.get_test()
+        expected_coord = np.concatenate(
+            (self.coord_bar, self.coord, self.coord_tar), axis=0
+        )
         self._comp_np_mat2(
-            np.sort(data["coord"], axis=0), np.sort(self.coord_tar, axis=0)
+            np.sort(data["coord"], axis=0), np.sort(expected_coord, axis=0)
         )
 
     def test_get_nbatch(self):
@@ -368,8 +386,7 @@ class TestH5Data(unittest.TestCase):
         dd = DeepmdData(self.data_name)
         self.assertEqual(dd.idx_map[0], 0)
         self.assertEqual(dd.type_map, ["X"])
-        self.assertEqual(dd.test_dir, self.data_name + "#/set.000")
-        self.assertEqual(dd.train_dirs, [self.data_name + "#/set.000"])
+        self.assertEqual(dd.dirs[0], self.data_name + "#/set.000")
 
     def test_get_batch(self):
         dd = DeepmdData(self.data_name)
