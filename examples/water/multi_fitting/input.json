@@ -22,7 +22,7 @@
       "seed": 1
     },
     "fitting_net_dict": {
-      "type": "test_multi_fitting",
+      "type": "multi_fitting_test",
       "ener_1": {
         "neuron": [
           240,

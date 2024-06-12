@@ -40,6 +40,9 @@ from .dos_model import (
 from .dp_model import (
     DPModelCommon,
 )
+from .dp_multi_fitting_model import (
+    DPMultiFittingModel,
+)
 from .dp_zbl_model import (
     DPZBLModel,
 )
@@ -61,15 +64,15 @@ from .make_multi_fitting_model import (
 from .model import (
     BaseModel,
 )
+from .multi_fitting_test_model import (
+    MultiFittingTestModel,
+)
 from .polar_model import (
     PolarModel,
 )
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
-)
-from .test_multi_fitting_model import (
-    TestMultiFittingModel,
 )
 
 
@@ -190,8 +193,8 @@ def get_multi_fitting_model(model_params):
         modelcls = getattr(module, model_name)
     else:
         # read internal model
-        if fitting_dict["type"] == "test_multi_fitting":
-            modelcls = TestMultiFittingModel
+        if fitting_dict["type"] == "multi_fitting_test":
+            modelcls = MultiFittingTestModel
         else:
             raise RuntimeError(f"Unknown fitting type: {fitting_dict['type']}")
 
@@ -274,7 +277,8 @@ __all__ = [
     "SpinModel",
     "SpinEnergyModel",
     "DPZBLModel",
-    "TestMultiFittingModel",
+    "DPMultiFittingModel",
+    "MultiFittingTestModel",
     "make_model",
     "make_hessian_model",
     "make_multi_fitting_model",

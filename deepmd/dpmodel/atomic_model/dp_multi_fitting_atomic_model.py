@@ -8,14 +8,14 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-)
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
+)
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -147,6 +147,10 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
 
     def serialize(self) -> dict:
         dd = super().serialize(self)
+        fitting_dict = {}
+        for name, fitting_net in self.fitting_net_dict.items():
+            fitting_dict[name] = fitting_net.serialize()
+        fitting_dict["type"] = self.model_type
         dd.update(
             {
                 "@class": "Model",
@@ -154,11 +158,7 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
                 "type": "multi_fitting",
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
-                "fitting": [
-                    fitting_net.serialize()
-                    for fitting_net in self.fitting_net_dict.values()
-                ],
-                "fitting_name": self.fitting_net_dict.keys(),
+                "fitting_dict": fitting_dict,
             }
         )
         return dd
@@ -172,15 +172,13 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
 
         fitting_dict = {}
-        fitting_names = data["fitting_name"]
-        for name, fitting in zip(fitting_names, data.pop("fitting")):
+        _fitting_dict = data["fitting_dict"]
+        fitting_dict["type"] = _fitting_dict.pop("type")
+        for name, fitting in _fitting_dict.items():
             fitting_obj = BaseFitting.deserialize(fitting)
             fitting_dict[name] = fitting_obj
-        # type_map = data.pop("type_map", None)
-        # obj = cls(descriptor_obj, fitting_dict, type_map=type_map, **data)
         data["descriptor"] = descriptor_obj
-        data["fitting"] = list(fitting_dict.values())
-        data["fitting_name"] = list(fitting_dict.keys())
+        data["fitting_dict"] = fitting_dict
         obj = super().deserialize(data)
         return obj
 

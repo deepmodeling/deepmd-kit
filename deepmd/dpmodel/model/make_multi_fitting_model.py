@@ -216,7 +216,6 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
         ):
             n_nf, n_nloc, n_nnei = nlist.shape
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
-            nall = extended_coord.shape[1]
             rcut = self.get_rcut()
 
             if n_nnei < nnei:

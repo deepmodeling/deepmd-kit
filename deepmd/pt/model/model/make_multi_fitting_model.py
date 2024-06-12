@@ -293,7 +293,7 @@ def make_multi_fitting_model(T_AtomicModel: Type[BaseAtomicModel]):
             return self.atomic_model.get_dim_aparam()
 
         @torch.jit.export
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> List[List[int]]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution

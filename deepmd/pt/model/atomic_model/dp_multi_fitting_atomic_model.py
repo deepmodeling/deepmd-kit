@@ -12,12 +12,16 @@ import torch
 
 from deepmd.dpmodel import (
     FittingOutputDef,
+    OutputVariableDef,
 )
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
+)
+from deepmd.pt.model.task.fitting import (
+    Fitting,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -51,7 +55,7 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
     def __init__(
         self,
         descriptor,
-        fitting_dict,
+        fitting_dict: Dict[str, Fitting],
         type_map: Optional[List[str]],
         **kwargs,
     ):
@@ -66,16 +70,22 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
         self.model_type = fitting_dict.pop("type")
         self.fitting_net_dict = fitting_dict
         self.fitting_net = fitting_dict
-        super().init_out_stat()
-
-    def fitting_output_def(self) -> FittingOutputDef:
-        """Get the output def of the fitting net."""
-        var_defs = []
-        for name, fitting_net in self.fitting_net_dict.items():
+        self.var_defs: List[OutputVariableDef] = []
+        for name, fitting_net in fitting_dict.items():
             for vdef in fitting_net.output_def().var_defs.values():
                 vdef.name = name
-                var_defs.append(vdef)
-        return FittingOutputDef(var_defs)
+                self.var_defs.append(vdef)
+        self.test_fitting = fitting_net
+        self.fittings = torch.nn.ModuleList(
+            fitting for fitting in fitting_dict.values()
+        )
+        self.fitting_names = list(fitting_dict.keys())
+        super().init_out_stat()
+
+    @torch.jit.export
+    def fitting_output_def(self) -> FittingOutputDef:
+        """Get the output def of the fitting net."""
+        return FittingOutputDef(self.var_defs)
 
     @torch.jit.export
     def get_rcut(self) -> float:
@@ -109,6 +119,10 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
 
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
+        fitting_dict = {}
+        for name, fitting_net in self.fitting_net_dict.items():
+            fitting_dict[name] = fitting_net.serialize()
+        fitting_dict["type"] = self.model_type
         dd.update(
             {
                 "@class": "Model",
@@ -116,17 +130,13 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
                 "type": "multi_fitting",
                 "type_map": self.type_map,
                 "descriptor": self.descriptor.serialize(),
-                "fitting": [
-                    fitting_net.serialize()
-                    for fitting_net in self.fitting_net_dict.values()
-                ],
-                "fitting_name": self.fitting_net_dict.keys(),
+                "fitting_dict": fitting_dict,
             }
         )
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "DPMultiFittingAtomicModel":
+    def deserialize(cls, data: dict) -> "DPMultiFittingAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
@@ -134,15 +144,13 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
 
         fitting_dict = {}
-        fitting_names = data["fitting_name"]
-        for name, fitting in zip(fitting_names, data.pop("fitting")):
+        _fitting_dict = data["fitting_dict"]
+        fitting_dict["type"] = _fitting_dict.pop("type")
+        for name, fitting in _fitting_dict.items():
             fitting_obj = BaseFitting.deserialize(fitting)
             fitting_dict[name] = fitting_obj
-        # type_map = data.pop("type_map", None)
-        # obj = cls(descriptor_obj, fitting_dict, type_map=type_map, **data)
         data["descriptor"] = descriptor_obj
-        data["fitting"] = list(fitting_dict.values())
-        data["fitting_name"] = list(fitting_dict.keys())
+        data["fitting_dict"] = fitting_dict
         obj = super().deserialize(data)
         return obj
 
@@ -192,7 +200,7 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
         )
         assert descriptor is not None
         fit_ret_dict = {}
-        for name, fitting_net in self.fitting_net_dict.items():
+        for ii, fitting_net in enumerate(self.fittings):
             fitting = fitting_net(
                 descriptor,
                 atype,
@@ -203,7 +211,7 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
                 aparam=aparam,
             )
             for v in fitting.values():
-                fit_ret_dict[name] = v
+                fit_ret_dict[self.fitting_names[ii]] = v
         return fit_ret_dict
 
     def get_out_bias(self) -> torch.Tensor:
@@ -254,7 +262,7 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         dim_fparam = None
-        for fitting in self.fitting_net_dict.values():
+        for fitting in self.fittings:
             if dim_fparam is not None:
                 assert dim_fparam == fitting.get_dim_fparam()
             else:
@@ -265,7 +273,7 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         dim_aparam = None
-        for fitting in self.fitting_net_dict.values():
+        for fitting in self.fittings:
             if dim_aparam is not None:
                 assert dim_aparam == fitting.get_dim_aparam()
             else:
@@ -280,8 +288,8 @@ class DPMultiFittingAtomicModel(BaseAtomicModel):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        sel_type = []
-        for fitting_net in self.fitting_net_dict.values():
+        sel_type: List[List[int]] = []
+        for fitting_net in self.fittings:
             sel_type.append(fitting_net.get_sel_type())
         return sel_type
 

@@ -26,8 +26,8 @@ from .transform_output import (
 )
 
 
-class TestMultiFittingModel(DPMultiFittingModel):
-    model_type = "test_multi_fitting"
+class MultiFittingTestModel(DPMultiFittingModel):
+    model_type = "multi_fitting_test"
 
     def __init__(
         self,
@@ -273,7 +273,7 @@ class TestMultiFittingModel(DPMultiFittingModel):
         l_fit_ret_derv_r = []
         l_fit_ret_derv_c = []
         l_fit_ret_derv_c_redu = []
-        for kk, vv in fit_ret.items():
+        for kk in fit_ret.keys():
             if kk != "mask":
                 kk_redu = get_reduce_name(kk)
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
