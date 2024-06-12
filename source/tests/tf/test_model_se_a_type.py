@@ -179,3 +179,6 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(e, refe, places)
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
+
+        with self.assertRaises(RuntimeError):
+            descrpt.serialize(suffix="se_a_type")

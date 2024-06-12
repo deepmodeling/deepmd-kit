@@ -122,7 +122,7 @@ class TestEnerShift(unittest.TestCase):
         data = DeepmdDataSystem(["system_0", "system_1"], 5, 10, 1.0)
         data.add("energy", 1, must=True)
         ener_shift0 = data.compute_energy_shift(rcond=1)
-        all_stat = make_stat_input(data, 4, merge_sys=False)
+        all_stat = make_stat_input(data, 6, merge_sys=False)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
         fitting = EnerFitting(
             descrpt.get_ntypes(),
@@ -138,7 +138,7 @@ class TestEnerShift(unittest.TestCase):
         ae0 = dp_random.random()
         data = DeepmdDataSystem(["system_0"], 5, 10, 1.0)
         data.add("energy", 1, must=True)
-        all_stat = make_stat_input(data, 4, merge_sys=False)
+        all_stat = make_stat_input(data, 6, merge_sys=False)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
         fitting = EnerFitting(
             descrpt.get_ntypes(),
