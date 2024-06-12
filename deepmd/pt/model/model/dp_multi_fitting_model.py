@@ -27,3 +27,4 @@ class DPMultiFittingModel(DPModelCommon, DPMultiFittingModel_):
     ):
         DPModelCommon.__init__(self)
         DPMultiFittingModel_.__init__(self, *args, **kwargs)
+        assert self.get_fitting_net() is not None

@@ -68,6 +68,9 @@ from .spin_model import (
     SpinEnergyModel,
     SpinModel,
 )
+from .test_multi_fitting_model import (
+    TestMultiFittingModel,
+)
 
 
 def get_spin_model(model_params):
@@ -187,11 +190,10 @@ def get_multi_fitting_model(model_params):
         modelcls = getattr(module, model_name)
     else:
         # read internal model
-        # if fitting_dict["type"] == "pme_ener":
-        #     modelcls = PMEEnergyModel
-        # else:
-        #     raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
-        raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
+        if fitting_dict["type"] == "test_multi_fitting":
+            modelcls = TestMultiFittingModel
+        else:
+            raise RuntimeError(f"Unknown fitting type: {fitting_dict['type']}")
 
     model = modelcls(
         descriptor=descriptor,
@@ -272,6 +274,7 @@ __all__ = [
     "SpinModel",
     "SpinEnergyModel",
     "DPZBLModel",
+    "TestMultiFittingModel",
     "make_model",
     "make_hessian_model",
     "make_multi_fitting_model",
