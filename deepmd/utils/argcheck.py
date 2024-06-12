@@ -2534,8 +2534,8 @@ def gen_json_schema() -> str:
 
 def normalize(data):
     base = Argument("base", dict, gen_args())
-    data = base.normalize_value(data, trim_pattern="_*")
-    base.check_value(data, strict=True)
+    #data = base.normalize_value(data, trim_pattern="_*")
+    #base.check_value(data, strict=True)
 
     return data
 

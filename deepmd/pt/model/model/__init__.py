@@ -36,6 +36,9 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .property_model import(
+    PropertyModel,
+)
 from .dp_model import (
     DPModelCommon,
 )
@@ -182,6 +185,8 @@ def get_standard_model(model_params):
         modelcls = DOSModel
     elif fitting_net["type"] in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+    elif fitting_net["type"] in ["prop", "property"]:
+        modelcls = PropertyModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
 

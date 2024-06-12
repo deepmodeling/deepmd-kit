@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    PropertyLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -310,7 +311,11 @@ class Trainer:
                 loss_params["label_name"] = label_name
                 loss_params["tensor_name"] = label_name
                 return TensorLoss(**loss_params)
-            else:
+            elif loss_type == "property":
+                task_dim = _model.model_output_def()["property"].output_size
+                loss_params["task_dim"] = task_dim
+                return PropertyLoss(**loss_params)
+            else: 
                 raise NotImplementedError
 
         # Optimizer
