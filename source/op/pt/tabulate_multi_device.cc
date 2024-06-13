@@ -82,10 +82,10 @@ void TabulateFusionSeAGradForward(
     throw std::invalid_argument("Dim of dy_tensor should be 3");
   }
   // check input value
-  print_first_five_elements(dy_tensor, "dy_tensor");
-  print_first_five_elements(descriptor_tensor, "descriptor_tensor");
-  print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
-  print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
+  // print_first_five_elements(dy_tensor, "dy_tensor");
+  // print_first_five_elements(descriptor_tensor, "descriptor_tensor");
+  // print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
+  // print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
   // get the device
   std::string device;
   GetTensorDevice(table_tensor, device);
@@ -116,8 +116,8 @@ void TabulateFusionSeAGradForward(
                                           table_info, em_x, em, two_embed, dy,
                                           nloc, nnei, last_layer_size);
   }
-  print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
-  print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
+  // print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
+  // print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
 
 }
 
@@ -501,7 +501,8 @@ class TabulateFusionSeAOp : public torch::autograd::Function<TabulateFusionSeAOp
       torch::Tensor two_embed_tensor = at::Tensor();
       torch::Tensor descriptor_tensor = saved_variables[4];
 
-      torch::Tensor dy_tensor = grad_output[0];
+      // ensure the gradient output is contiguous
+      torch::Tensor dy_tensor = grad_output[0].contiguous();
       // allocate output tensors
       torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
       torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
@@ -512,9 +513,9 @@ class TabulateFusionSeAOp : public torch::autograd::Function<TabulateFusionSeAOp
                                           descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor,
                                           dy_dtwo_tensor);
       
-      std::cout << "----------------------------------------------" << std::endl;
-      print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
-      print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
+      // std::cout << "----------------------------------------------" << std::endl;
+      // print_first_five_elements(dy_dem_x_tensor, "dy_dem_x_tensor");
+      // print_first_five_elements(dy_dem_tensor, "dy_dem_tensor");
       return {at::Tensor(), at::Tensor(), dy_dem_x_tensor, dy_dem_tensor, at::Tensor()};
     }
 };
@@ -603,8 +604,8 @@ class TabulateFusionSeAGradOp : public torch::autograd::Function<TabulateFusionS
 
       bool is_sorted = true;
 
-      torch::Tensor dz_dy_dem_x_tensor = grad_output[0];
-      torch::Tensor dz_dy_dem_tensor = grad_output[1];
+      torch::Tensor dz_dy_dem_x_tensor = grad_output[0].contiguous();
+      torch::Tensor dz_dy_dem_tensor = grad_output[1].contiguous();
       // allocate output tensors
       torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
       // compute
@@ -750,7 +751,7 @@ class TabulateFusionSeAttenOp : public torch::autograd::Function<TabulateFusionS
       torch::Tensor two_embed_tensor = saved_variables[4];
       torch::Tensor descriptor_tensor = saved_variables[5];
 
-      torch::Tensor dy_tensor = grad_output[0];
+      torch::Tensor dy_tensor = grad_output[0].contiguous();
       // allocate output tensors
       torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
       torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
