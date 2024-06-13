@@ -841,7 +841,7 @@ class TabulateFusionSeTOp : public torch::autograd::Function<TabulateFusionSeTOp
       torch::Tensor em_tensor = saved_variables[3];
       torch::Tensor descriptor_tensor = saved_variables[4];
 
-      torch::Tensor dy_tensor = grad_output[0];
+      torch::Tensor dy_tensor = grad_output[0].contiguous();
       // allocate output tensors
       torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
       torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
@@ -924,7 +924,7 @@ class TabulateFusionSeROp : public torch::autograd::Function<TabulateFusionSeROp
       torch::Tensor em_tensor = saved_variables[2];
       torch::Tensor descriptor_tensor = saved_variables[3];
 
-      torch::Tensor dy_tensor = grad_output[0];
+      torch::Tensor dy_tensor = grad_output[0].contiguous();
       // allocate output tensors
       torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
       // compute
