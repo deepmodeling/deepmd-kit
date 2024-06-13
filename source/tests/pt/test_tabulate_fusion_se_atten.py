@@ -1556,7 +1556,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             self.last_layer_size,
             self.is_sorted,
         )
-        
+
         descriptor_tensor = forward_result[0]
 
         # Check the forward
@@ -1579,8 +1579,13 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(self.em_tensor.grad.shape, self.expected_dy_dem.shape)
 
         # Check the values of the gradients
-        self.assertTrue(torch.allclose(self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5))
-        self.assertTrue(torch.allclose(self.em_tensor.grad, self.expected_dy_dem, atol=1e-5))
+        self.assertTrue(
+            torch.allclose(self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5)
+        )
+        self.assertTrue(
+            torch.allclose(self.em_tensor.grad, self.expected_dy_dem, atol=1e-5)
+        )
+
 
 if __name__ == "__main__":
     deepmd.pt.cxx_op.ENABLE_CUSTOMIZED_OP
