@@ -44,11 +44,11 @@ from deepmd.utils.data import (
 )
 
 from .model.test_permutation import (
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
     model_zbl,
-    model_dos,
 )
 
 energy_data_requirement = [
@@ -131,9 +131,9 @@ class FinetuneTest:
         model.atomic_model.change_out_bias(
             sampled,
             bias_adjust_mode="change-by-statistic",
-        )      
+        )
         energy_bias_after = to_numpy_array(atomic_model["out_bias"])[0]
-        
+
         # get ground-truth energy bias change
         sorter = np.argsort(full_type_map)
         idx_type_map = sorter[
@@ -287,6 +287,7 @@ class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
         self.config["training"]["save_freq"] = 1
         self.mixed_types = False
         self.testkey = None
+
 
 class TestEnergyDOSModelSeA(FinetuneTest, unittest.TestCase):
     def setUp(self):

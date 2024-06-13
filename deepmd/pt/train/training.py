@@ -31,7 +31,6 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    DOSModel,
     get_model,
     get_zbl_model,
 )
@@ -601,7 +600,6 @@ class Trainer:
                         _finetune_rule_single,
                         _sample_func,
                     ):
-                        
                         _model = _model_change_out_bias(
                             _model,
                             _sample_func,
