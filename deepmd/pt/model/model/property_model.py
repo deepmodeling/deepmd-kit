@@ -53,9 +53,10 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         )
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
-        # TODO:
-        natoms = model_predict["atom_property"].shape[1]
-        model_predict["property"] = model_ret["property_redu"] / natoms 
+        model_predict["property"] = model_ret["property_redu"]
+        if self.atomic_model.fitting_net.intensive:
+            natoms = model_predict["atom_property"].shape[1]
+            model_predict["property"] = model_ret["property_redu"] / natoms
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
@@ -85,7 +86,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
         natoms = model_predict["atom_property"].shape[1]
-        model_predict["property"] = model_ret["property_redu"] / natoms
+        model_predict["property"] = model_ret["property_redu"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict

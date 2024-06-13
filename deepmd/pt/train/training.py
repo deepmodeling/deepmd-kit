@@ -314,6 +314,7 @@ class Trainer:
             elif loss_type == "property":
                 task_dim = _model.model_output_def()["property"].output_size
                 loss_params["task_dim"] = task_dim
+                loss_params["intensive"] = _model.atomic_model.fitting_net.intensive
                 return PropertyLoss(**loss_params)
             else: 
                 raise NotImplementedError

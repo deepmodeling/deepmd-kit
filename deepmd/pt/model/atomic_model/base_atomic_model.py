@@ -426,6 +426,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
+                intensive=self.fitting_net.intensive,
             )
             self._store_out_stat(bias_out, std_out)
         else:

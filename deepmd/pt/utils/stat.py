@@ -240,6 +240,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
+    intensive: bool = False,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -355,6 +356,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
+            intensive,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -397,6 +399,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_pred: Optional[Dict[str, np.ndarray]] = None,
+    intensive: bool = False,
 ):
     """This function only handle stat computation from reduced global labels."""
     # get label dict from sample; for each key, only picking the system with global labels.
@@ -464,6 +467,11 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
+            if intensive and kk == "property":
+                task_dim = stats_input[kk].shape[1]
+                assert merged_natoms[kk].shape == (nf[kk] ,ntypes)
+                stats_input[kk] = merged_natoms[kk].sum(axis=1).reshape(-1,1) * stats_input[kk]
+                assert stats_input[kk].shape == (nf[kk], task_dim)
             bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                 stats_input[kk],
                 merged_natoms[kk],
