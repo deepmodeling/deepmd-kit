@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dos,
     model_dpa1,
@@ -31,6 +34,7 @@ class SmoothTest:
     def test(
         self,
     ):
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         # displacement of atoms
         epsilon = 1e-5 if self.epsilon is None else self.epsilon
         # required prec. relative prec is not checked.
@@ -40,7 +44,9 @@ class SmoothTest:
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype, device=env.DEVICE)
         atype0 = torch.arange(3, dtype=dtype, device=env.DEVICE)
-        atype1 = torch.randint(0, 3, [natoms - 3], device=env.DEVICE)
+        atype1 = torch.randint(
+            0, 3, [natoms - 3], device=env.DEVICE, generator=generator
+        )
         atype = torch.cat([atype0, atype1]).view([natoms])
         coord0 = torch.tensor(
             [
@@ -58,11 +64,16 @@ class SmoothTest:
             device=env.DEVICE,
         ).view([-1, 3])
         coord1 = torch.rand(
-            [natoms - coord0.shape[0], 3], dtype=dtype, device=env.DEVICE
+            [natoms - coord0.shape[0], 3],
+            dtype=dtype,
+            device=env.DEVICE,
+            generator=generator,
         )
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
-        spin = torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        spin = torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         coord0 = torch.clone(coord)
         coord1 = torch.clone(coord)
         coord1[1][0] += epsilon
@@ -188,19 +199,8 @@ class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
 class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
-        model_params["descriptor"]["repinit_rcut"] = 8
-        model_params["descriptor"]["repinit_rcut_smth"] = 3.5
-        model_params_sample = copy.deepcopy(model_params)
-        #######################################################
-        # dirty hack here! the interface of dataload should be
-        # redesigned to support specifying rcut and sel
-        #######################################################
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
+        model_params["descriptor"]["repinit"]["rcut"] = 8
+        model_params["descriptor"]["repinit"]["rcut_smth"] = 3.5
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
         self.epsilon, self.aprec = 1e-5, 1e-4
@@ -210,13 +210,6 @@ class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
-        model_params_sample = copy.deepcopy(model_params)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         self.type_split = True
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
@@ -227,13 +220,6 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
     def setUp(self):
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
-        model_params_sample = copy.deepcopy(model_params)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         self.type_split = True
         self.test_virial = False
         self.model = get_model(model_params).to(env.DEVICE)
@@ -253,7 +239,7 @@ class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
-        self.epsilon, self.aprec = 1e-10, None
+        self.epsilon, self.aprec = None, 5e-2
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):

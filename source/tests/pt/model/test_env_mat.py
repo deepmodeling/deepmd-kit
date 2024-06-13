@@ -14,6 +14,10 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
@@ -155,7 +159,7 @@ class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))

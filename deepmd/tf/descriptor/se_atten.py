@@ -78,6 +78,9 @@ from deepmd.tf.utils.type_embed import (
 from deepmd.tf.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -715,6 +718,12 @@ class DescrptSeAtten(DescrptSeA):
                 tf.shape(inputs_i)[0],
                 self.nei_type_vec,  # extra input for atten
             )
+            #  (nframes * nloc * nnei, 1)
+            nei_exclude_mask = tf.slice(
+                tf.reshape(tf.cast(mask, self.filter_precision), [-1, 4]),
+                [0, 0],
+                [-1, 1],
+            )
             if self.smooth:
                 inputs_i = tf.where(
                     tf.cast(mask, tf.bool),
@@ -724,15 +733,18 @@ class DescrptSeAtten(DescrptSeA):
                         tf.reshape(self.avg_looked_up, [-1, 1]), [1, self.ndescrpt]
                     ),
                 )
+                #  (nframes, nloc, nnei)
                 self.recovered_switch *= tf.reshape(
-                    tf.slice(
-                        tf.reshape(tf.cast(mask, self.filter_precision), [-1, 4]),
-                        [0, 0],
-                        [-1, 1],
-                    ),
+                    nei_exclude_mask,
                     [-1, natoms[0], self.sel_all_a[0]],
                 )
             else:
+                #  (nframes * nloc, 1,  nnei)
+                self.nmask *= tf.reshape(
+                    nei_exclude_mask,
+                    [-1, 1, self.sel_all_a[0]],
+                )
+                self.negative_mask = -(2 << 32) * (1.0 - self.nmask)
                 inputs_i *= mask
         if nvnmd_cfg.enable and nvnmd_cfg.quantize_descriptor:
             inputs_i = descrpt2r4(inputs_i, atype)
@@ -1470,18 +1482,36 @@ class DescrptSeAtten(DescrptSeA):
         return True
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+        min_nbor_dist, sel = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
+        )
+        local_jdata_cpy["sel"] = sel[0]
+        return local_jdata_cpy, min_nbor_dist
 
     def serialize_attention_layers(
         self,
@@ -1848,12 +1878,8 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
-        if type(self) not in [DescrptSeAtten, DescrptDPA1Compat]:
-            raise NotImplementedError(
-                f"Not implemented in class {self.__class__.__name__}"
-            )
-        if self.stripped_type_embedding and type(self) is not DescrptDPA1Compat:
-            # only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'
+        if self.stripped_type_embedding and type(self) is DescrptSeAtten:
+            # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
             raise NotImplementedError(
                 "serialization is unsupported by the native model when tebd_input_mode=='strip'"
             )
@@ -1933,8 +1959,8 @@ class DescrptSeAtten(DescrptSeA):
         }
         if self.tebd_input_mode in ["strip"]:
             assert (
-                type(self) is DescrptDPA1Compat
-            ), "only DescrptDPA1Compat can serialize when tebd_input_mode=='strip'"
+                type(self) is not DescrptSeAtten
+            ), "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
                     "embeddings_strip": self.serialize_network_strip(
@@ -2031,6 +2057,11 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to use smooth process in attention weights calculation.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
     spin
             (Only support None to keep consistent with old implementation.)
             The old implementation of deepspin.
@@ -2065,6 +2096,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
         ln_eps: Optional[float] = 1e-3,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
@@ -2113,6 +2146,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             env_protection=env_protection,
         )
         self.tebd_dim = tebd_dim
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2121,6 +2156,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             neuron=[self.tebd_dim],
             padding=True,
             activation_function="Linear",
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
             # precision=precision,
         )
         self.concat_output_tebd = concat_output_tebd
@@ -2303,6 +2340,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
                 "normalize": self.normalize,
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
+                "use_econf_tebd": self.use_econf_tebd,
+                "type_map": self.type_map,
                 "type_embedding": self.type_embedding.serialize(suffix),
             }
         )

@@ -13,6 +13,9 @@ from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .case_single_frame_with_nlist import (
     TestCaseSingleFrameWithNlist,
     TestCaseSingleFrameWithoutNlist,
@@ -50,7 +53,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(ret0["energy_redu"], ret1["energy_redu"])
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -102,7 +105,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         TestCaseSingleFrameWithoutNlist.setUp(self)
 
     def test_prec_consistency(self):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc = self.atype.shape
         ds = DescrptSeA(
             self.rcut,

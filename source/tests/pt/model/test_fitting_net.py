@@ -21,6 +21,10 @@ from deepmd.tf.fit.ener import (
     EnerFitting,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 
 class FakeDescriptor:
     def __init__(self, ntypes, embedding_width):
@@ -84,7 +88,7 @@ class TestFittingNet(unittest.TestCase):
         nloc = 7
         self.embedding_width = 30
         self.natoms = np.array([nloc, nloc, 2, 5], dtype=np.int32)
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         self.embedding = rng.uniform(size=[4, nloc * self.embedding_width])
         self.ntypes = self.natoms.size - 2
         self.n_neuron = [32, 32, 32]
@@ -113,7 +117,7 @@ class TestFittingNet(unittest.TestCase):
         ).to(env.DEVICE)
         for name, param in my_fn.named_parameters():
             matched = re.match(
-                "filter_layers\.networks\.(\d).layers\.(\d)\.([a-z]+)", name
+                r"filter_layers\.networks\.(\d).layers\.(\d)\.([a-z]+)", name
             )
             key = None
             if matched:

@@ -101,6 +101,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        seed: Optional[int] = None,
         old_impl: bool = False,
     ):
         r"""
@@ -180,6 +181,8 @@ class DescrptBlockRepformers(DescriptorBlock):
             Whether to use trainable shift and scale weights in layer normalization.
         ln_eps : float, optional
             The epsilon value for layer normalization.
+        seed : int, optional
+            Random seed for parameter initialization.
         """
         super().__init__()
         self.rcut = rcut
@@ -223,9 +226,10 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
+        self.seed = seed
         self.old_impl = old_impl
 
-        self.g2_embd = MLPLayer(1, self.g2_dim, precision=precision)
+        self.g2_embd = MLPLayer(1, self.g2_dim, precision=precision, seed=seed)
         layers = []
         for ii in range(nlayers):
             if self.old_impl:
@@ -287,6 +291,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                         trainable_ln=self.trainable_ln,
                         ln_eps=self.ln_eps,
                         precision=precision,
+                        seed=seed,
                     )
                 )
         self.layers = torch.nn.ModuleList(layers)
@@ -405,7 +410,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist = nlist * exclude_mask
+        nlist = torch.where(exclude_mask != 0, nlist, -1)
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
@@ -543,3 +548,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                 "The statistics of the descriptor has not been computed."
             )
         return self.stats
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return True

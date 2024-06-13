@@ -8,7 +8,6 @@ from typing import (
 import numpy as np
 
 from deepmd.tf.common import (
-    add_data_requirement,
     cast_precision,
     get_activation_func,
     get_precision,
@@ -42,6 +41,9 @@ from deepmd.tf.utils.graph import (
 from deepmd.tf.utils.network import one_layer as one_layer_deepmd
 from deepmd.tf.utils.network import (
     one_layer_rand_seed_shift,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
@@ -151,18 +153,9 @@ class DOSFitting(Fitting):
 
         self.useBN = False
         self.bias_dos = np.zeros((self.ntypes, self.numb_dos), dtype=np.float64)
-        # data requirement
-        if self.numb_fparam > 0:
-            add_data_requirement(
-                "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
-            )
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
-        if self.numb_aparam > 0:
-            add_data_requirement(
-                "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
-            )
         self.aparam_avg = None
         self.aparam_std = None
         self.aparam_inv_std = None
@@ -738,3 +731,21 @@ class DOSFitting(Fitting):
             },
         }
         return data
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = []
+        if self.numb_fparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
+                )
+            )
+        if self.numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement

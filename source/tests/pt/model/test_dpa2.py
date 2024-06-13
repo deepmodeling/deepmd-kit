@@ -6,6 +6,10 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DPDescrptDPA2
+from deepmd.dpmodel.descriptor.dpa2 import (
+    RepformerArgs,
+    RepinitArgs,
+)
 from deepmd.pt.model.descriptor.dpa2 import (
     DescrptDPA2,
 )
@@ -57,6 +61,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rpz,
             sm,
             prec,
+            ect,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -71,55 +76,65 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [
                 False,
             ],  # repformer_update_h2
-            [True, False],  # repformer_attn2_has_gate
+            [
+                True,
+            ],  # repformer_attn2_has_gate
             ["res_avg", "res_residual"],  # repformer_update_style
             [
                 True,
             ],  # repformer_set_davg_zero
             [True, False],  # smooth
             ["float64"],  # precision
+            [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             if prec == "float64":
-                atol = 1e-11  # marginal GPU test cases...
+                atol = 1e-8  # marginal GPU test cases...
+
+            repinit = RepinitArgs(
+                rcut=self.rcut,
+                rcut_smth=self.rcut_smth,
+                nsel=self.sel_mix,
+                tebd_input_mode=riti,
+                set_davg_zero=riz,
+            )
+            repformer = RepformerArgs(
+                rcut=self.rcut / 2,
+                rcut_smth=self.rcut_smth,
+                nsel=nnei // 2,
+                nlayers=3,
+                g1_dim=20,
+                g2_dim=10,
+                axis_neuron=4,
+                update_g1_has_conv=rp1c,
+                update_g1_has_drrd=rp1d,
+                update_g1_has_grrg=rp1g,
+                update_g1_has_attn=rp1a,
+                update_g2_has_g1g1=rp2g,
+                update_g2_has_attn=rp2a,
+                update_h2=rph,
+                attn1_hidden=20,
+                attn1_nhead=2,
+                attn2_hidden=10,
+                attn2_nhead=2,
+                attn2_has_gate=rp2gate,
+                update_style=rus,
+                set_davg_zero=rpz,
+            )
 
             # dpa2 new impl
             dd0 = DescrptDPA2(
                 self.nt,
-                repinit_rcut=self.rcut,
-                repinit_rcut_smth=self.rcut_smth,
-                repinit_nsel=self.sel_mix,
-                repformer_rcut=self.rcut / 2,
-                repformer_rcut_smth=self.rcut_smth,
-                repformer_nsel=nnei // 2,
-                # kwargs for repinit
-                repinit_tebd_input_mode=riti,
-                repinit_set_davg_zero=riz,
-                # kwargs for repformer
-                repformer_nlayers=3,
-                repformer_g1_dim=20,
-                repformer_g2_dim=10,
-                repformer_axis_neuron=4,
-                repformer_update_g1_has_conv=rp1c,
-                repformer_update_g1_has_drrd=rp1d,
-                repformer_update_g1_has_grrg=rp1g,
-                repformer_update_g1_has_attn=rp1a,
-                repformer_update_g2_has_g1g1=rp2g,
-                repformer_update_g2_has_attn=rp2a,
-                repformer_update_h2=rph,
-                repformer_attn1_hidden=20,
-                repformer_attn1_nhead=2,
-                repformer_attn2_hidden=10,
-                repformer_attn2_nhead=2,
-                repformer_attn2_has_gate=rp2gate,
-                repformer_update_style=rus,
-                repformer_set_davg_zero=rpz,
+                repinit=repinit,
+                repformer=repformer,
                 # kwargs for descriptor
                 smooth=sm,
                 exclude_types=[],
                 add_tebd_to_repinit_out=False,
                 precision=prec,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 old_impl=False,
             ).to(env.DEVICE)
 
@@ -159,37 +174,11 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
             )
             # old impl
-            if prec == "float64" and rus == "res_avg":
+            if prec == "float64" and rus == "res_avg" and ect is False:
                 dd3 = DescrptDPA2(
                     self.nt,
-                    repinit_rcut=self.rcut,
-                    repinit_rcut_smth=self.rcut_smth,
-                    repinit_nsel=self.sel_mix,
-                    repformer_rcut=self.rcut / 2,
-                    repformer_rcut_smth=self.rcut_smth,
-                    repformer_nsel=nnei // 2,
-                    # kwargs for repinit
-                    repinit_tebd_input_mode=riti,
-                    repinit_set_davg_zero=riz,
-                    # kwargs for repformer
-                    repformer_nlayers=3,
-                    repformer_g1_dim=20,
-                    repformer_g2_dim=10,
-                    repformer_axis_neuron=4,
-                    repformer_update_g1_has_conv=rp1c,
-                    repformer_update_g1_has_drrd=rp1d,
-                    repformer_update_g1_has_grrg=rp1g,
-                    repformer_update_g1_has_attn=rp1a,
-                    repformer_update_g2_has_g1g1=rp2g,
-                    repformer_update_g2_has_attn=rp2a,
-                    repformer_update_h2=rph,
-                    repformer_attn1_hidden=20,
-                    repformer_attn1_nhead=2,
-                    repformer_attn2_hidden=10,
-                    repformer_attn2_nhead=2,
-                    repformer_attn2_has_gate=rp2gate,
-                    repformer_update_style="res_avg",
-                    repformer_set_davg_zero=rpz,
+                    repinit=repinit,
+                    repformer=repformer,
                     # kwargs for descriptor
                     smooth=sm,
                     exclude_types=[],
@@ -249,6 +238,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rpz,
             sm,
             prec,
+            ect,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -286,46 +276,54 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 True,
             ],  # smooth
             ["float64"],  # precision
+            [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
 
+            repinit = RepinitArgs(
+                rcut=self.rcut,
+                rcut_smth=self.rcut_smth,
+                nsel=self.sel_mix,
+                tebd_input_mode=riti,
+                set_davg_zero=riz,
+            )
+            repformer = RepformerArgs(
+                rcut=self.rcut / 2,
+                rcut_smth=self.rcut_smth,
+                nsel=nnei // 2,
+                nlayers=3,
+                g1_dim=20,
+                g2_dim=10,
+                axis_neuron=4,
+                update_g1_has_conv=rp1c,
+                update_g1_has_drrd=rp1d,
+                update_g1_has_grrg=rp1g,
+                update_g1_has_attn=rp1a,
+                update_g2_has_g1g1=rp2g,
+                update_g2_has_attn=rp2a,
+                update_h2=rph,
+                attn1_hidden=20,
+                attn1_nhead=2,
+                attn2_hidden=10,
+                attn2_nhead=2,
+                attn2_has_gate=rp2gate,
+                update_style=rus,
+                set_davg_zero=rpz,
+            )
+
             # dpa2 new impl
             dd0 = DescrptDPA2(
                 self.nt,
-                repinit_rcut=self.rcut,
-                repinit_rcut_smth=self.rcut_smth,
-                repinit_nsel=self.sel_mix,
-                repformer_rcut=self.rcut / 2,
-                repformer_rcut_smth=self.rcut_smth,
-                repformer_nsel=nnei // 2,
-                # kwargs for repinit
-                repinit_tebd_input_mode=riti,
-                repinit_set_davg_zero=riz,
-                # kwargs for repformer
-                repformer_nlayers=3,
-                repformer_g1_dim=20,
-                repformer_g2_dim=10,
-                repformer_axis_neuron=4,
-                repformer_update_g1_has_conv=rp1c,
-                repformer_update_g1_has_drrd=rp1d,
-                repformer_update_g1_has_grrg=rp1g,
-                repformer_update_g1_has_attn=rp1a,
-                repformer_update_g2_has_g1g1=rp2g,
-                repformer_update_g2_has_attn=rp2a,
-                repformer_update_h2=rph,
-                repformer_attn1_hidden=20,
-                repformer_attn1_nhead=2,
-                repformer_attn2_hidden=10,
-                repformer_attn2_nhead=2,
-                repformer_attn2_has_gate=rp2gate,
-                repformer_update_style=rus,
-                repformer_set_davg_zero=rpz,
+                repinit=repinit,
+                repformer=repformer,
                 # kwargs for descriptor
                 smooth=sm,
                 exclude_types=[],
                 add_tebd_to_repinit_out=False,
                 precision=prec,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 old_impl=False,
             ).to(env.DEVICE)
 

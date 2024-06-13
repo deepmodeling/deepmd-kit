@@ -1,22 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import numpy as np
-
-from deepmd.dpmodel.utils.network import (
-    LayerNorm,
-    NativeLayer,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
 from typing import (
     Callable,
     List,
@@ -24,6 +6,8 @@ from typing import (
     Tuple,
     Union,
 )
+
+import numpy as np
 
 from deepmd.dpmodel import (
     PRECISION_DICT,
@@ -34,7 +18,15 @@ from deepmd.dpmodel.utils import (
     PairExcludeMask,
 )
 from deepmd.dpmodel.utils.network import (
+    LayerNorm,
+    NativeLayer,
     get_activation_fn,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .descriptor import (
@@ -346,7 +338,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         mapping: Optional[np.ndarray] = None,
     ):
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
-        nlist = nlist * exclude_mask
+        nlist = np.where(exclude_mask, nlist, -1)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
             coord_ext, atype_ext, nlist, self.mean, self.stddev
@@ -394,6 +386,10 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         # (nf x nloc) x ng2 x 3
         rot_mat = np.transpose(h2g2, (0, 1, 3, 2))
         return g1, g2, h2, rot_mat.reshape(-1, nloc, self.dim_emb, 3), sw
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return True
 
 
 # translated by GPT and modified

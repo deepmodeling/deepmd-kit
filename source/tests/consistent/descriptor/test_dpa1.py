@@ -2,6 +2,7 @@
 import unittest
 from typing import (
     Any,
+    Optional,
     Tuple,
 )
 
@@ -54,8 +55,9 @@ from deepmd.utils.argcheck import (
     (None, 1.0),  # temperature
     (1e-5,),  # ln_eps
     (True, False),  # smooth_type_embedding
-    (True, False),  # concat_output_tebd
+    (True,),  # concat_output_tebd
     ("float64",),  # precision
+    (True, False),  # use_econf_tebd
 )
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -78,6 +80,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
         return {
             "sel": [10],
@@ -104,8 +107,19 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             "precision": precision,
             "set_davg_zero": set_davg_zero,
             "smooth_type_embedding": smooth_type_embedding,
+            "use_econf_tebd": use_econf_tebd,
+            "type_map": ["O", "H"] if use_econf_tebd else None,
             "seed": 1145141919810,
         }
+
+    def is_meaningless_zero_attention_layer_tests(
+        self,
+        attn_layer: int,
+        attn_dotr: bool,
+        normalize: bool,
+        temperature: Optional[float],
+    ) -> bool:
+        return attn_layer == 0 and (attn_dotr or normalize or temperature is not None)
 
     @property
     def skip_pt(self) -> bool:
@@ -127,8 +141,14 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
-        return CommonTest.skip_pt
+        return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
+            attn_layer,
+            attn_dotr,
+            normalize,
+            temperature,
+        )
 
     @property
     def skip_dp(self) -> bool:
@@ -150,8 +170,14 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
-        return CommonTest.skip_pt
+        return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
+            attn_layer,
+            attn_dotr,
+            normalize,
+            temperature,
+        )
 
     @property
     def skip_tf(self) -> bool:
@@ -173,15 +199,23 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
-        # TODO (excluded_types != [] and attn_layer > 0) need fix
         return (
-            env_protection != 0.0
-            or smooth_type_embedding
-            or not normalize
-            or temperature != 1.0
-            or (excluded_types != [] and attn_layer > 0)
-            or (type_one_side and tebd_input_mode == "strip")  # not consistent yet
+            CommonTest.skip_tf
+            or (
+                env_protection != 0.0
+                or smooth_type_embedding
+                or not normalize
+                or temperature != 1.0
+                or (type_one_side and tebd_input_mode == "strip")  # not consistent yet
+            )
+            or self.is_meaningless_zero_attention_layer_tests(
+                attn_layer,
+                attn_dotr,
+                normalize,
+                temperature,
+            )
         )
 
     tf_class = DescrptDPA1TF
@@ -240,6 +274,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
@@ -296,6 +331,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -325,6 +361,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             smooth_type_embedding,
             concat_output_tebd,
             precision,
+            use_econf_tebd,
         ) = self.param
         if precision == "float64":
             return 1e-10

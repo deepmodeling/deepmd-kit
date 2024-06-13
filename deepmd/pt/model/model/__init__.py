@@ -107,6 +107,8 @@ def get_zbl_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
+    if model_params["descriptor"].get("use_econf_tebd", False):
+        model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
@@ -152,6 +154,8 @@ def get_standard_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
+    if model_params["descriptor"].get("use_econf_tebd", False):
+        model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)

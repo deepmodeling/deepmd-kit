@@ -1,27 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import numpy as np
-
-from deepmd.dpmodel.utils.update_sel import (
-    UpdateSel,
-)
-from deepmd.utils.path import (
-    DPPath,
-)
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
 import copy
 from typing import (
     Any,
     List,
     Optional,
+    Tuple,
 )
+
+import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
@@ -34,8 +20,20 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
+from deepmd.utils.path import (
+    DPPath,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 from .base_descriptor import (
@@ -77,6 +75,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     spin
             The deepspin object.
+    ntypes : int
+            Number of element types.
+            Not used in this descriptor, only to be compat with input.
 
     Limitations
     -----------
@@ -109,9 +110,11 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
+        del ntypes
         ## seed, uniform_seed, not included.
         if not type_one_side:
             raise NotImplementedError("type_one_side == False not implemented")
@@ -205,6 +208,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns if the descriptor requires a neighbor list that distinguish different
         atomic types or not.
         """
+        return False
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
         return False
 
     def get_env_protection(self) -> float:
@@ -345,15 +352,32 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         return obj
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
+        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
+        )
+        return local_jdata_cpy, min_nbor_dist

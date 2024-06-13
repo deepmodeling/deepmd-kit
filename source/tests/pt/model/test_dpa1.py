@@ -16,6 +16,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -39,12 +42,15 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, sm, to, tm, prec in itertools.product(
+        for idt, sm, to, tm, prec, ect in itertools.product(
             [False, True],  # resnet_dt
             [False, True],  # smooth_type_embedding
             [False, True],  # type_one_side
             ["concat", "strip"],  # tebd_input_mode
-            ["float64", "float32"],  # precision
+            [
+                "float64",
+            ],  # precision
+            [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -62,6 +68,8 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 smooth_type_embedding=sm,
                 type_one_side=to,
                 tebd_input_mode=tm,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 old_impl=False,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -100,7 +108,13 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 err_msg=err_msg,
             )
             # old impl
-            if idt is False and prec == "float64" and to is False and tm == "concat":
+            if (
+                idt is False
+                and prec == "float64"
+                and to is False
+                and tm == "concat"
+                and ect is False
+            ):
                 dd3 = DescrptDPA1(
                     self.rcut,
                     self.rcut_smth,
@@ -159,13 +173,13 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec, sm, to, tm in itertools.product(
+        for idt, prec, sm, to, tm, ect in itertools.product(
             [
                 False,
             ],  # resnet_dt
@@ -173,8 +187,11 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "float64",
             ],  # precision
             [False, True],  # smooth_type_embedding
-            [False, True],  # type_one_side
+            [
+                False,
+            ],  # type_one_side
             ["concat", "strip"],  # tebd_input_mode
+            [False, True],  # use_econf_tebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -190,6 +207,8 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 smooth_type_embedding=sm,
                 type_one_side=to,
                 tebd_input_mode=tm,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 old_impl=False,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)

@@ -301,6 +301,8 @@ class DescrptSeA(DescrptSe):
                 self.stat_descrpt *= tf.reshape(mask, tf.shape(self.stat_descrpt))
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
         self.original_sel = None
+        # Whether type embedding is used
+        self.use_tebd: bool = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -746,6 +748,8 @@ class DescrptSeA(DescrptSe):
     ):
         if input_dict is not None:
             type_embedding = input_dict.get("type_embedding", None)
+            if type_embedding is not None:
+                self.use_tebd = True
         else:
             type_embedding = None
         if self.stripped_type_embedding and type_embedding is None:
@@ -1406,7 +1410,7 @@ class DescrptSeA(DescrptSe):
             raise NotImplementedError(
                 "Serialization is unsupported when tebd_input_mode is set to 'strip'"
             )
-        if (self.original_sel != self.sel_a).any():
+        if self.original_sel is not None and (self.original_sel != self.sel_a).any():
             raise NotImplementedError(
                 "Adjusting sel is unsupported by the native model"
             )
@@ -1416,9 +1420,10 @@ class DescrptSeA(DescrptSe):
             raise NotImplementedError("spin is unsupported")
         assert self.davg is not None
         assert self.dstd is not None
-        # TODO: tf: handle type embedding in DescrptSeA.serialize
-        # not sure how to handle type embedding - type embedding is not a model parameter,
-        # but instead a part of the input data. Maybe the interface should be refactored...
+        if self.use_tebd:
+            raise RuntimeError(
+                "Serialization is unsupported when type_embedding is used."
+            )
 
         return {
             "@class": "Descriptor",

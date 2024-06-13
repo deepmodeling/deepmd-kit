@@ -383,7 +383,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--rand-seed",
         type=int,
         default=None,
-        help="(Supported backend: TensorFlow) The random seed",
+        help="The random seed",
     )
     parser_tst.add_argument(
         "--shuffle-test", action="store_true", default=False, help="Shuffle test data"
@@ -400,13 +400,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--atomic",
         action="store_true",
         default=False,
-        help="(Supported backend: TensorFlow) Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
-    )
-    parser_tst.add_argument(
-        "-i",
-        "--input_script",
-        type=str,
-        help="(Supported backend: PyTorch) The input script of the model",
+        help="Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)",
     )
     parser_tst.add_argument(
         "--head",
@@ -506,7 +500,7 @@ def main_parser() -> argparse.ArgumentParser:
     parsers_doc.add_argument(
         "--out-type",
         default="rst",
-        choices=["rst", "json"],
+        choices=["rst", "json", "json_schema"],
         type=str,
         help="The output type",
     )
@@ -751,6 +745,29 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
+
+    # * show model ******************************************************************
+    parser_show = subparsers.add_parser(
+        "show",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch) Show the information of a model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp --pt show model.pt model-branch type-map descriptor fitting-net
+            dp --pt show frozen_model.pth type-map descriptor fitting-net
+        """
+        ),
+    )
+    parser_show.add_argument(
+        "INPUT", help="The input checkpoint file or frozen model file"
+    )
+    parser_show.add_argument(
+        "ATTRIBUTES",
+        choices=["model-branch", "type-map", "descriptor", "fitting-net"],
+        nargs="+",
+    )
     return parser
 
 
@@ -808,6 +825,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
+        "show",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

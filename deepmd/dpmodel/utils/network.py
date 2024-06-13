@@ -17,19 +17,13 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 
@@ -78,12 +72,13 @@ class NativeLayer(NativeOP):
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
         # only use_timestep when skip connection is established.
         use_timestep = use_timestep and (num_out == num_in or num_out == num_in * 2)
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed)
         self.w = rng.normal(size=(num_in, num_out)).astype(prec)
         self.b = rng.normal(size=(num_out,)).astype(prec) if bias else None
         self.idt = rng.normal(size=(num_out,)).astype(prec) if use_timestep else None
@@ -313,6 +308,7 @@ class LayerNorm(NativeLayer):
         uni_init: bool = True,
         trainable: bool = True,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ) -> None:
         self.eps = eps
         self.uni_init = uni_init
@@ -325,6 +321,7 @@ class LayerNorm(NativeLayer):
             activation_function=None,
             resnet=False,
             precision=precision,
+            seed=seed,
         )
         self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
         if self.uni_init:
@@ -569,6 +566,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
+            seed: Optional[int] = None,
         ):
             layers = []
             i_in = in_dim
@@ -583,6 +581,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         activation_function=activation_function,
                         resnet=True,
                         precision=precision,
+                        seed=seed,
                     ).serialize()
                 )
                 i_in = i_ot
@@ -669,6 +668,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
+            seed: Optional[int] = None,
         ):
             super().__init__(
                 in_dim,
@@ -688,6 +688,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     activation_function=None,
                     resnet=False,
                     precision=precision,
+                    seed=seed,
                 )
             )
             self.out_dim = out_dim

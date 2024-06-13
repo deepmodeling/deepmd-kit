@@ -16,6 +16,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -34,7 +37,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))
@@ -56,7 +59,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 old_impl=False,
-                exclude_mask=em,
+                exclude_types=em,
             ).to(env.DEVICE)
             dd0.sea.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.sea.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
@@ -102,7 +105,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     err_msg=err_msg,
                 )
             # old impl
-            if idt is False and prec == "float64":
+            if idt is False and prec == "float64" and em == []:
                 dd3 = DescrptSeA(
                     self.rcut,
                     self.rcut_smth,
@@ -144,7 +147,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
         dstd = rng.normal(size=(self.nt, nnei, 4))

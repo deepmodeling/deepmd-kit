@@ -5,6 +5,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Tuple,
     Union,
 )
 
@@ -18,6 +19,9 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 )
 from deepmd.dpmodel.utils.nlist import (
     nlist_distinguish_types,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -134,6 +138,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix. All descriptors should be the same."""
         all_protection = [descrpt.get_env_protection() for descrpt in self.descrpt_list]
@@ -222,22 +230,42 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict) -> dict:
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["list"] = [
-            BaseDescriptor.update_sel(global_jdata, sub_jdata)
-            for sub_jdata in local_jdata["list"]
-        ]
-        return local_jdata_cpy
+        new_list = []
+        min_nbor_dist = None
+        for sub_jdata in local_jdata["list"]:
+            new_sub_jdata, min_nbor_dist_ = BaseDescriptor.update_sel(
+                train_data, type_map, sub_jdata
+            )
+            if min_nbor_dist_ is not None:
+                min_nbor_dist = min_nbor_dist_
+            new_list.append(new_sub_jdata)
+        local_jdata_cpy["list"] = new_list
+        return local_jdata_cpy, min_nbor_dist
 
     def serialize(self) -> dict:
         return {

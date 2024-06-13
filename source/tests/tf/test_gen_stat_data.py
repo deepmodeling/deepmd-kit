@@ -21,14 +21,19 @@ from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from ..seed import (
+    GLOBAL_SEED,
+)
+
 
 def gen_sys(nframes, atom_types):
+    rng = np.random.default_rng(GLOBAL_SEED)
     natoms = len(atom_types)
     data = {}
-    data["coords"] = np.random.default_rng().random([nframes, natoms, 3])
-    data["forces"] = np.random.default_rng().random([nframes, natoms, 3])
-    data["cells"] = np.random.default_rng().random([nframes, 9])
-    data["energies"] = np.random.default_rng().random([nframes, 1])
+    data["coords"] = rng.random([nframes, natoms, 3])
+    data["forces"] = rng.random([nframes, natoms, 3])
+    data["cells"] = rng.random([nframes, 9])
+    data["energies"] = rng.random([nframes, 1])
     types = list(set(atom_types))
     types.sort()
     data["atom_names"] = []
@@ -117,7 +122,7 @@ class TestEnerShift(unittest.TestCase):
         data = DeepmdDataSystem(["system_0", "system_1"], 5, 10, 1.0)
         data.add("energy", 1, must=True)
         ener_shift0 = data.compute_energy_shift(rcond=1)
-        all_stat = make_stat_input(data, 4, merge_sys=False)
+        all_stat = make_stat_input(data, 6, merge_sys=False)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
         fitting = EnerFitting(
             descrpt.get_ntypes(),
@@ -133,7 +138,7 @@ class TestEnerShift(unittest.TestCase):
         ae0 = dp_random.random()
         data = DeepmdDataSystem(["system_0"], 5, 10, 1.0)
         data.add("energy", 1, must=True)
-        all_stat = make_stat_input(data, 4, merge_sys=False)
+        all_stat = make_stat_input(data, 6, merge_sys=False)
         descrpt = DescrptSeA(6.0, 5.8, [46, 92], neuron=[25, 50, 100], axis_neuron=16)
         fitting = EnerFitting(
             descrpt.get_ntypes(),

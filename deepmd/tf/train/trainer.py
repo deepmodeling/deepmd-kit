@@ -28,9 +28,7 @@ from deepmd.loggers.training import (
     format_training_message_per_task,
 )
 from deepmd.tf.common import (
-    data_requirement,
     get_precision,
-    j_must_have,
 )
 from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -63,6 +61,9 @@ from deepmd.tf.utils.learning_rate import (
 from deepmd.tf.utils.sess import (
     run_sess,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ class DPTrainer:
 
     def _init_param(self, jdata):
         # model config
-        model_param = j_must_have(jdata, "model")
+        model_param = jdata["model"]
 
         # nvnmd
         self.nvnmd_param = jdata.get("nvnmd", {})
@@ -121,7 +122,7 @@ class DPTrainer:
             return lr, scale_lr_coef
 
         # learning rate
-        lr_param = j_must_have(jdata, "learning_rate")
+        lr_param = jdata["learning_rate"]
         self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
         # loss
         # infer loss type by fitting_type
@@ -270,7 +271,7 @@ class DPTrainer:
                 self.place_holders[kk] = tf.placeholder(
                     GLOBAL_TF_FLOAT_PRECISION, [None], "t_" + kk
                 )
-            self._get_place_holders(data_requirement)
+            self._get_place_holders({rr.key: rr.dict for rr in self.data_requirements})
         else:
             self._get_place_holders(data.get_data_dict())
 
@@ -859,6 +860,10 @@ class DPTrainer:
             full_type_map,
             bias_adjust_mode=bias_adjust_mode,
         )
+
+    @property
+    def data_requirements(self) -> List[DataRequirementItem]:
+        return self.model.input_requirement + self.loss.label_requirement
 
 
 class DatasetLoader:

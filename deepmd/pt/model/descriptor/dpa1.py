@@ -27,6 +27,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -172,6 +175,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    seed: int, Optional
+            Random seed for parameter initialization.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -220,10 +230,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
+        seed: Optional[int] = None,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        seed: Optional[int] = None,
         old_impl: bool = False,
     ):
         super().__init__()
@@ -268,9 +280,19 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
+            seed=seed,
             old_impl=old_impl,
         )
-        self.type_embedding = TypeEmbedNet(ntypes, tebd_dim, precision=precision)
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
+        self.type_embedding = TypeEmbedNet(
+            ntypes,
+            tebd_dim,
+            precision=precision,
+            seed=seed,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
+        )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
@@ -319,6 +341,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
         """
         return self.se_atten.mixed_types()
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return self.se_atten.has_message_passing()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -415,6 +441,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             # make deterministic
             "precision": RESERVED_PRECISON_DICT[obj.prec],
             "embeddings": obj.filter_layers.serialize(),
@@ -528,15 +556,33 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return g1, rot_mat, g2, h2, sw
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+        min_nbor_dist, sel = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
+        )
+        local_jdata_cpy["sel"] = sel[0]
+        return local_jdata_cpy, min_nbor_dist

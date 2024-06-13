@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
     env,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation_denoise import (
     model_dpa2,
 )
@@ -33,7 +36,8 @@ class SmoothDenoiseTest:
 
         natoms = 10
         cell = 8.6 * torch.eye(3, dtype=dtype).to(env.DEVICE)
-        atype = torch.randint(0, 3, [natoms])
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        atype = torch.randint(0, 3, [natoms], generator=generator, device=env.DEVICE)
         coord0 = (
             torch.tensor(
                 [
@@ -52,7 +56,9 @@ class SmoothDenoiseTest:
             .view([-1, 3])
             .to(env.DEVICE)
         )
-        coord1 = torch.rand([natoms - coord0.shape[0], 3], dtype=dtype).to(env.DEVICE)
+        coord1 = torch.rand(
+            [natoms - coord0.shape[0], 3], dtype=dtype, generator=generator
+        ).to(env.DEVICE)
         coord1 = torch.matmul(coord1, cell)
         coord = torch.concat([coord0, coord1], dim=0)
 
@@ -98,13 +104,6 @@ class SmoothDenoiseTest:
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["sel"] = 8
         model_params["descriptor"]["rcut_smth"] = 3.5
@@ -118,13 +117,6 @@ class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         # model_params["descriptor"]["combine_grrg"] = True
         self.type_split = True

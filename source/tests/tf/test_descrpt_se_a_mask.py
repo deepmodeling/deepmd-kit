@@ -3,9 +3,6 @@ import os
 
 import numpy as np
 
-from deepmd.tf.common import (
-    j_must_have,
-)
 from deepmd.tf.descriptor import (
     DescrptSeAMask,
 )
@@ -231,12 +228,12 @@ class TestModel(tf.test.TestCase):
         jdata["training"]["validation_data"]["systems"] = [
             str(tests_path / "data_dp_mask")
         ]
-        systems = j_must_have(jdata["training"]["validation_data"], "systems")
+        systems = jdata["training"]["validation_data"]["systems"]
         set_pfx = "set"
         batch_size = 2
         test_size = 1
         rcut = 20.0  # For DataSystem interface compatibility, not used in this test.
-        sel = j_must_have(jdata["model"]["descriptor"], "sel")
+        sel = jdata["model"]["descriptor"]["sel"]
         ntypes = len(sel)
         total_atom_num = np.cumsum(sel)[-1]
 

@@ -1,6 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
 import numpy as np
 
+from deepmd.dpmodel import (
+    NativeOP,
+)
+from deepmd.dpmodel.utils import (
+    EnvMat,
+    NetworkCollection,
+)
 from deepmd.dpmodel.utils.network import (
     Identity,
     NativeLayer,
@@ -15,30 +29,14 @@ from deepmd.dpmodel.utils.type_embed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
-from typing import (
-    List,
-    Optional,
-    Tuple,
-)
-
-from deepmd.dpmodel import (
-    NativeOP,
-)
-from deepmd.dpmodel.utils import (
-    EnvMat,
-    NetworkCollection,
 )
 
 from .base_descriptor import (
@@ -53,52 +51,266 @@ from .repformers import (
 )
 
 
+class RepinitArgs:
+    def __init__(
+        self,
+        rcut: float,
+        rcut_smth: float,
+        nsel: int,
+        neuron: List[int] = [25, 50, 100],
+        axis_neuron: int = 16,
+        tebd_dim: int = 8,
+        tebd_input_mode: str = "concat",
+        set_davg_zero: bool = True,
+        activation_function="tanh",
+        resnet_dt: bool = False,
+        type_one_side: bool = False,
+    ):
+        r"""The constructor for the RepinitArgs class which defines the parameters of the repinit block in DPA2 descriptor.
+
+        Parameters
+        ----------
+        rcut : float
+            The cut-off radius.
+        rcut_smth : float
+            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
+        nsel : int
+            Maximally possible number of selected neighbors.
+        neuron : list, optional
+            Number of neurons in each hidden layers of the embedding net.
+            When two layers are of the same size or one layer is twice as large as the previous layer,
+            a skip connection is built.
+        axis_neuron : int, optional
+            Size of the submatrix of G (embedding matrix).
+        tebd_dim : int, optional
+            The dimension of atom type embedding.
+        tebd_input_mode : str, optional
+            The input mode of the type embedding. Supported modes are ['concat', 'strip'].
+        set_davg_zero : bool, optional
+            Set the normalization average to zero.
+        activation_function : str, optional
+            The activation function in the embedding net.
+        resnet_dt : bool, optional
+            Whether to use a "Timestep" in the skip connection.
+        type_one_side : bool, optional
+            Whether to use one-side type embedding.
+        """
+        self.rcut = rcut
+        self.rcut_smth = rcut_smth
+        self.nsel = nsel
+        self.neuron = neuron
+        self.axis_neuron = axis_neuron
+        self.tebd_dim = tebd_dim
+        self.tebd_input_mode = tebd_input_mode
+        self.set_davg_zero = set_davg_zero
+        self.activation_function = activation_function
+        self.resnet_dt = resnet_dt
+        self.type_one_side = type_one_side
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            return getattr(self, key)
+        else:
+            raise KeyError(key)
+
+    def serialize(self) -> dict:
+        return {
+            "rcut": self.rcut,
+            "rcut_smth": self.rcut_smth,
+            "nsel": self.nsel,
+            "neuron": self.neuron,
+            "axis_neuron": self.axis_neuron,
+            "tebd_dim": self.tebd_dim,
+            "tebd_input_mode": self.tebd_input_mode,
+            "set_davg_zero": self.set_davg_zero,
+            "activation_function": self.activation_function,
+            "resnet_dt": self.resnet_dt,
+            "type_one_side": self.type_one_side,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "RepinitArgs":
+        return cls(**data)
+
+
+class RepformerArgs:
+    def __init__(
+        self,
+        rcut: float,
+        rcut_smth: float,
+        nsel: int,
+        nlayers: int = 3,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
+        axis_neuron: int = 4,
+        direct_dist: bool = False,
+        update_g1_has_conv: bool = True,
+        update_g1_has_drrd: bool = True,
+        update_g1_has_grrg: bool = True,
+        update_g1_has_attn: bool = True,
+        update_g2_has_g1g1: bool = True,
+        update_g2_has_attn: bool = True,
+        update_h2: bool = False,
+        attn1_hidden: int = 64,
+        attn1_nhead: int = 4,
+        attn2_hidden: int = 16,
+        attn2_nhead: int = 4,
+        attn2_has_gate: bool = False,
+        activation_function: str = "tanh",
+        update_style: str = "res_avg",
+        update_residual: float = 0.001,
+        update_residual_init: str = "norm",
+        set_davg_zero: bool = True,
+        trainable_ln: bool = True,
+        ln_eps: Optional[float] = 1e-5,
+    ):
+        r"""The constructor for the RepformerArgs class which defines the parameters of the repformer block in DPA2 descriptor.
+
+        Parameters
+        ----------
+        rcut : float
+            The cut-off radius.
+        rcut_smth : float
+            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
+        nsel : int
+            Maximally possible number of selected neighbors.
+        nlayers : int, optional
+            Number of repformer layers.
+        g1_dim : int, optional
+            Dimension of the first graph convolution layer.
+        g2_dim : int, optional
+            Dimension of the second graph convolution layer.
+        axis_neuron : int, optional
+            Size of the submatrix of G (embedding matrix).
+        direct_dist : bool, optional
+            Whether to use direct distance information (1/r term) in the repformer block.
+        update_g1_has_conv : bool, optional
+            Whether to update the g1 rep with convolution term.
+        update_g1_has_drrd : bool, optional
+            Whether to update the g1 rep with the drrd term.
+        update_g1_has_grrg : bool, optional
+            Whether to update the g1 rep with the grrg term.
+        update_g1_has_attn : bool, optional
+            Whether to update the g1 rep with the localized self-attention.
+        update_g2_has_g1g1 : bool, optional
+            Whether to update the g2 rep with the g1xg1 term.
+        update_g2_has_attn : bool, optional
+            Whether to update the g2 rep with the gated self-attention.
+        update_h2 : bool, optional
+            Whether to update the h2 rep.
+        attn1_hidden : int, optional
+            The hidden dimension of localized self-attention to update the g1 rep.
+        attn1_nhead : int, optional
+            The number of heads in localized self-attention to update the g1 rep.
+        attn2_hidden : int, optional
+            The hidden dimension of gated self-attention to update the g2 rep.
+        attn2_nhead : int, optional
+            The number of heads in gated self-attention to update the g2 rep.
+        attn2_has_gate : bool, optional
+            Whether to use gate in the gated self-attention to update the g2 rep.
+        activation_function : str, optional
+            The activation function in the embedding net.
+        update_style : str, optional
+            Style to update a representation.
+            Supported options are:
+            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+            and `update_residual_init`.
+        update_residual : float, optional
+            When update using residual mode, the initial std of residual vector weights.
+        update_residual_init : str, optional
+            When update using residual mode, the initialization mode of residual vector weights.
+        set_davg_zero : bool, optional
+            Set the normalization average to zero.
+        trainable_ln : bool, optional
+            Whether to use trainable shift and scale weights in layer normalization.
+        ln_eps : float, optional
+            The epsilon value for layer normalization.
+        """
+        self.rcut = rcut
+        self.rcut_smth = rcut_smth
+        self.nsel = nsel
+        self.nlayers = nlayers
+        self.g1_dim = g1_dim
+        self.g2_dim = g2_dim
+        self.axis_neuron = axis_neuron
+        self.direct_dist = direct_dist
+        self.update_g1_has_conv = update_g1_has_conv
+        self.update_g1_has_drrd = update_g1_has_drrd
+        self.update_g1_has_grrg = update_g1_has_grrg
+        self.update_g1_has_attn = update_g1_has_attn
+        self.update_g2_has_g1g1 = update_g2_has_g1g1
+        self.update_g2_has_attn = update_g2_has_attn
+        self.update_h2 = update_h2
+        self.attn1_hidden = attn1_hidden
+        self.attn1_nhead = attn1_nhead
+        self.attn2_hidden = attn2_hidden
+        self.attn2_nhead = attn2_nhead
+        self.attn2_has_gate = attn2_has_gate
+        self.activation_function = activation_function
+        self.update_style = update_style
+        self.update_residual = update_residual
+        self.update_residual_init = update_residual_init
+        self.set_davg_zero = set_davg_zero
+        self.trainable_ln = trainable_ln
+        #  to keep consistent with default value in this backends
+        if ln_eps is None:
+            ln_eps = 1e-5
+        self.ln_eps = ln_eps
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            return getattr(self, key)
+        else:
+            raise KeyError(key)
+
+    def serialize(self) -> dict:
+        return {
+            "rcut": self.rcut,
+            "rcut_smth": self.rcut_smth,
+            "nsel": self.nsel,
+            "nlayers": self.nlayers,
+            "g1_dim": self.g1_dim,
+            "g2_dim": self.g2_dim,
+            "axis_neuron": self.axis_neuron,
+            "direct_dist": self.direct_dist,
+            "update_g1_has_conv": self.update_g1_has_conv,
+            "update_g1_has_drrd": self.update_g1_has_drrd,
+            "update_g1_has_grrg": self.update_g1_has_grrg,
+            "update_g1_has_attn": self.update_g1_has_attn,
+            "update_g2_has_g1g1": self.update_g2_has_g1g1,
+            "update_g2_has_attn": self.update_g2_has_attn,
+            "update_h2": self.update_h2,
+            "attn1_hidden": self.attn1_hidden,
+            "attn1_nhead": self.attn1_nhead,
+            "attn2_hidden": self.attn2_hidden,
+            "attn2_nhead": self.attn2_nhead,
+            "attn2_has_gate": self.attn2_has_gate,
+            "activation_function": self.activation_function,
+            "update_style": self.update_style,
+            "update_residual": self.update_residual,
+            "update_residual_init": self.update_residual_init,
+            "set_davg_zero": self.set_davg_zero,
+            "trainable_ln": self.trainable_ln,
+            "ln_eps": self.ln_eps,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "RepformerArgs":
+        return cls(**data)
+
+
 @BaseDescriptor.register("dpa2")
 class DescrptDPA2(NativeOP, BaseDescriptor):
     def __init__(
         self,
-        # args for repinit
         ntypes: int,
-        repinit_rcut: float,
-        repinit_rcut_smth: float,
-        repinit_nsel: int,
-        repformer_rcut: float,
-        repformer_rcut_smth: float,
-        repformer_nsel: int,
-        # kwargs for repinit
-        repinit_neuron: List[int] = [25, 50, 100],
-        repinit_axis_neuron: int = 16,
-        repinit_tebd_dim: int = 8,
-        repinit_tebd_input_mode: str = "concat",
-        repinit_set_davg_zero: bool = True,
-        repinit_activation_function="tanh",
-        repinit_resnet_dt: bool = False,
-        repinit_type_one_side: bool = False,
-        # kwargs for repformer
-        repformer_nlayers: int = 3,
-        repformer_g1_dim: int = 128,
-        repformer_g2_dim: int = 16,
-        repformer_axis_neuron: int = 4,
-        repformer_direct_dist: bool = False,
-        repformer_update_g1_has_conv: bool = True,
-        repformer_update_g1_has_drrd: bool = True,
-        repformer_update_g1_has_grrg: bool = True,
-        repformer_update_g1_has_attn: bool = True,
-        repformer_update_g2_has_g1g1: bool = True,
-        repformer_update_g2_has_attn: bool = True,
-        repformer_update_h2: bool = False,
-        repformer_attn1_hidden: int = 64,
-        repformer_attn1_nhead: int = 4,
-        repformer_attn2_hidden: int = 16,
-        repformer_attn2_nhead: int = 4,
-        repformer_attn2_has_gate: bool = False,
-        repformer_activation_function: str = "tanh",
-        repformer_update_style: str = "res_avg",
-        repformer_update_residual: float = 0.001,
-        repformer_update_residual_init: str = "norm",
-        repformer_set_davg_zero: bool = True,
-        repformer_trainable_ln: bool = True,
-        repformer_ln_eps: Optional[float] = 1e-5,
+        # args for repinit
+        repinit: Union[RepinitArgs, dict],
+        # args for repformer
+        repformer: Union[RepformerArgs, dict],
         # kwargs for descriptor
         concat_output_tebd: bool = True,
         precision: str = "float64",
@@ -108,133 +320,17 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         trainable: bool = True,
         seed: Optional[int] = None,
         add_tebd_to_repinit_out: bool = False,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
         Parameters
         ----------
-        repinit_rcut : float
-            (Used in the repinit block.)
-            The cut-off radius.
-        repinit_rcut_smth : float
-            (Used in the repinit block.)
-            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
-        repinit_nsel : int
-            (Used in the repinit block.)
-            Maximally possible number of selected neighbors.
-        repinit_neuron : list, optional
-            (Used in the repinit block.)
-            Number of neurons in each hidden layers of the embedding net.
-            When two layers are of the same size or one layer is twice as large as the previous layer,
-            a skip connection is built.
-        repinit_axis_neuron : int, optional
-            (Used in the repinit block.)
-            Size of the submatrix of G (embedding matrix).
-        repinit_tebd_dim : int, optional
-            (Used in the repinit block.)
-            The dimension of atom type embedding.
-        repinit_tebd_input_mode : str, optional
-            (Used in the repinit block.)
-            The input mode of the type embedding. Supported modes are ['concat', 'strip'].
-        repinit_set_davg_zero : bool, optional
-            (Used in the repinit block.)
-            Set the normalization average to zero.
-        repinit_activation_function : str, optional
-            (Used in the repinit block.)
-            The activation function in the embedding net.
-        repinit_resnet_dt : bool, optional
-            (Used in the repinit block.)
-            Whether to use a "Timestep" in the skip connection.
-        repinit_type_one_side : bool, optional
-            (Used in the repinit block.)
-            Whether to use one-side type embedding.
-        repformer_rcut : float
-            (Used in the repformer block.)
-            The cut-off radius.
-        repformer_rcut_smth : float
-            (Used in the repformer block.)
-            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
-        repformer_nsel : int
-            (Used in the repformer block.)
-            Maximally possible number of selected neighbors.
-        repformer_nlayers : int, optional
-            (Used in the repformer block.)
-            Number of repformer layers.
-        repformer_g1_dim : int, optional
-            (Used in the repformer block.)
-            Dimension of the first graph convolution layer.
-        repformer_g2_dim : int, optional
-            (Used in the repformer block.)
-            Dimension of the second graph convolution layer.
-        repformer_axis_neuron : int, optional
-            (Used in the repformer block.)
-            Size of the submatrix of G (embedding matrix).
-        repformer_direct_dist : bool, optional
-            (Used in the repformer block.)
-            Whether to use direct distance information (1/r term) in the repformer block.
-        repformer_update_g1_has_conv : bool, optional
-            (Used in the repformer block.)
-            Whether to update the g1 rep with convolution term.
-        repformer_update_g1_has_drrd : bool, optional
-            (Used in the repformer block.)
-            Whether to update the g1 rep with the drrd term.
-        repformer_update_g1_has_grrg : bool, optional
-            (Used in the repformer block.)
-            Whether to update the g1 rep with the grrg term.
-        repformer_update_g1_has_attn : bool, optional
-            (Used in the repformer block.)
-            Whether to update the g1 rep with the localized self-attention.
-        repformer_update_g2_has_g1g1 : bool, optional
-            (Used in the repformer block.)
-            Whether to update the g2 rep with the g1xg1 term.
-        repformer_update_g2_has_attn : bool, optional
-            (Used in the repformer block.)
-            Whether to update the g2 rep with the gated self-attention.
-        repformer_update_h2 : bool, optional
-            (Used in the repformer block.)
-            Whether to update the h2 rep.
-        repformer_attn1_hidden : int, optional
-            (Used in the repformer block.)
-            The hidden dimension of localized self-attention to update the g1 rep.
-        repformer_attn1_nhead : int, optional
-            (Used in the repformer block.)
-            The number of heads in localized self-attention to update the g1 rep.
-        repformer_attn2_hidden : int, optional
-            (Used in the repformer block.)
-            The hidden dimension of gated self-attention to update the g2 rep.
-        repformer_attn2_nhead : int, optional
-            (Used in the repformer block.)
-            The number of heads in gated self-attention to update the g2 rep.
-        repformer_attn2_has_gate : bool, optional
-            (Used in the repformer block.)
-            Whether to use gate in the gated self-attention to update the g2 rep.
-        repformer_activation_function : str, optional
-            (Used in the repformer block.)
-            The activation function in the embedding net.
-        repformer_update_style : str, optional
-            (Used in the repformer block.)
-            Style to update a representation.
-            Supported options are:
-            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
-            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
-            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
-            where `r1`, `r2` ... `r3` are residual weights defined by `repformer_update_residual`
-            and `repformer_update_residual_init`.
-        repformer_update_residual : float, optional
-            (Used in the repformer block.)
-            When update using residual mode, the initial std of residual vector weights.
-        repformer_update_residual_init : str, optional
-            (Used in the repformer block.)
-            When update using residual mode, the initialization mode of residual vector weights.
-        repformer_set_davg_zero : bool, optional
-            (Used in the repformer block.)
-            Set the normalization average to zero.
-        repformer_trainable_ln : bool, optional
-            (Used in the repformer block.)
-            Whether to use trainable shift and scale weights in layer normalization.
-        repformer_ln_eps : float, optional
-            (Used in the repformer block.)
-            The epsilon value for layer normalization.
+        repinit : Union[RepinitArgs, dict]
+            The arguments used to initialize the repinit block, see docstr in `RepinitArgs` for details information.
+        repformer : Union[RepformerArgs, dict]
+            The arguments used to initialize the repformer block, see docstr in `RepformerArgs` for details information.
         concat_output_tebd : bool, optional
             Whether to concat type embedding at the output of the descriptor.
         precision : str, optional
@@ -253,6 +349,11 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             (Unused yet) Random seed for parameter initialization.
         add_tebd_to_repinit_out : bool, optional
             Whether to add type embedding to the output representation from repinit before inputting it into repformer.
+        use_econf_tebd : bool, Optional
+            Whether to use electronic configuration type embedding.
+        type_map : List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
 
         Returns
         -------
@@ -269,68 +370,83 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The switch function for decaying inverse distance.
 
         """
-        #  to keep consistent with default value in this backends
-        if repformer_ln_eps is None:
-            repformer_ln_eps = 1e-5
+
+        def init_subclass_params(sub_data, sub_class):
+            if isinstance(sub_data, dict):
+                return sub_class(**sub_data)
+            elif isinstance(sub_data, sub_class):
+                return sub_data
+            else:
+                raise ValueError(
+                    f"Input args must be a {sub_class.__name__} class or a dict!"
+                )
+
+        self.repinit_args = init_subclass_params(repinit, RepinitArgs)
+        self.repformer_args = init_subclass_params(repformer, RepformerArgs)
+
         self.repinit = DescrptBlockSeAtten(
-            repinit_rcut,
-            repinit_rcut_smth,
-            repinit_nsel,
+            self.repinit_args.rcut,
+            self.repinit_args.rcut_smth,
+            self.repinit_args.nsel,
             ntypes,
             attn_layer=0,
-            neuron=repinit_neuron,
-            axis_neuron=repinit_axis_neuron,
-            tebd_dim=repinit_tebd_dim,
-            tebd_input_mode=repinit_tebd_input_mode,
-            set_davg_zero=repinit_set_davg_zero,
+            neuron=self.repinit_args.neuron,
+            axis_neuron=self.repinit_args.axis_neuron,
+            tebd_dim=self.repinit_args.tebd_dim,
+            tebd_input_mode=self.repinit_args.tebd_input_mode,
+            set_davg_zero=self.repinit_args.set_davg_zero,
             exclude_types=exclude_types,
             env_protection=env_protection,
-            activation_function=repinit_activation_function,
+            activation_function=self.repinit_args.activation_function,
             precision=precision,
-            resnet_dt=repinit_resnet_dt,
+            resnet_dt=self.repinit_args.resnet_dt,
             smooth=smooth,
-            type_one_side=repinit_type_one_side,
+            type_one_side=self.repinit_args.type_one_side,
         )
         self.repformers = DescrptBlockRepformers(
-            repformer_rcut,
-            repformer_rcut_smth,
-            repformer_nsel,
+            self.repformer_args.rcut,
+            self.repformer_args.rcut_smth,
+            self.repformer_args.nsel,
             ntypes,
-            nlayers=repformer_nlayers,
-            g1_dim=repformer_g1_dim,
-            g2_dim=repformer_g2_dim,
-            axis_neuron=repformer_axis_neuron,
-            direct_dist=repformer_direct_dist,
-            update_g1_has_conv=repformer_update_g1_has_conv,
-            update_g1_has_drrd=repformer_update_g1_has_drrd,
-            update_g1_has_grrg=repformer_update_g1_has_grrg,
-            update_g1_has_attn=repformer_update_g1_has_attn,
-            update_g2_has_g1g1=repformer_update_g2_has_g1g1,
-            update_g2_has_attn=repformer_update_g2_has_attn,
-            update_h2=repformer_update_h2,
-            attn1_hidden=repformer_attn1_hidden,
-            attn1_nhead=repformer_attn1_nhead,
-            attn2_hidden=repformer_attn2_hidden,
-            attn2_nhead=repformer_attn2_nhead,
-            attn2_has_gate=repformer_attn2_has_gate,
-            activation_function=repformer_activation_function,
-            update_style=repformer_update_style,
-            update_residual=repformer_update_residual,
-            update_residual_init=repformer_update_residual_init,
-            set_davg_zero=repformer_set_davg_zero,
+            nlayers=self.repformer_args.nlayers,
+            g1_dim=self.repformer_args.g1_dim,
+            g2_dim=self.repformer_args.g2_dim,
+            axis_neuron=self.repformer_args.axis_neuron,
+            direct_dist=self.repformer_args.direct_dist,
+            update_g1_has_conv=self.repformer_args.update_g1_has_conv,
+            update_g1_has_drrd=self.repformer_args.update_g1_has_drrd,
+            update_g1_has_grrg=self.repformer_args.update_g1_has_grrg,
+            update_g1_has_attn=self.repformer_args.update_g1_has_attn,
+            update_g2_has_g1g1=self.repformer_args.update_g2_has_g1g1,
+            update_g2_has_attn=self.repformer_args.update_g2_has_attn,
+            update_h2=self.repformer_args.update_h2,
+            attn1_hidden=self.repformer_args.attn1_hidden,
+            attn1_nhead=self.repformer_args.attn1_nhead,
+            attn2_hidden=self.repformer_args.attn2_hidden,
+            attn2_nhead=self.repformer_args.attn2_nhead,
+            attn2_has_gate=self.repformer_args.attn2_has_gate,
+            activation_function=self.repformer_args.activation_function,
+            update_style=self.repformer_args.update_style,
+            update_residual=self.repformer_args.update_residual,
+            update_residual_init=self.repformer_args.update_residual_init,
+            set_davg_zero=self.repformer_args.set_davg_zero,
             smooth=smooth,
             exclude_types=exclude_types,
             env_protection=env_protection,
             precision=precision,
-            trainable_ln=repformer_trainable_ln,
-            ln_eps=repformer_ln_eps,
+            trainable_ln=self.repformer_args.trainable_ln,
+            ln_eps=self.repformer_args.ln_eps,
         )
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes=ntypes,
-            neuron=[repinit_tebd_dim],
+            neuron=[self.repinit_args.tebd_dim],
             padding=True,
             activation_function="Linear",
             precision=precision,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
@@ -352,7 +468,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.tebd_transform = None
         if self.add_tebd_to_repinit_out:
             self.tebd_transform = NativeLayer(
-                repinit_tebd_dim,
+                self.repinit_args.tebd_dim,
                 self.repformers.dim_in,
                 bias=False,
                 precision=precision,
@@ -360,7 +476,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         assert self.repinit.rcut > self.repformers.rcut
         assert self.repinit.sel[0] > self.repformers.sel[0]
 
-        self.tebd_dim = repinit_tebd_dim
+        self.tebd_dim = self.repinit_args.tebd_dim
         self.rcut = self.repinit.get_rcut()
         self.ntypes = ntypes
         self.sel = self.repinit.sel
@@ -407,6 +523,12 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
 
         """
         return True
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return any(
+            [self.repinit.has_message_passing(), self.repformers.has_message_passing()]
+        )
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -524,42 +646,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             "type": "dpa2",
             "@version": 1,
             "ntypes": self.ntypes,
-            "repinit_rcut": repinit.rcut,
-            "repinit_rcut_smth": repinit.rcut_smth,
-            "repinit_nsel": repinit.sel,
-            "repformer_rcut": repformers.rcut,
-            "repformer_rcut_smth": repformers.rcut_smth,
-            "repformer_nsel": repformers.sel,
-            "repinit_neuron": repinit.neuron,
-            "repinit_axis_neuron": repinit.axis_neuron,
-            "repinit_tebd_dim": repinit.tebd_dim,
-            "repinit_tebd_input_mode": repinit.tebd_input_mode,
-            "repinit_set_davg_zero": repinit.set_davg_zero,
-            "repinit_activation_function": repinit.activation_function,
-            "repinit_resnet_dt": repinit.resnet_dt,
-            "repinit_type_one_side": repinit.type_one_side,
-            "repformer_nlayers": repformers.nlayers,
-            "repformer_g1_dim": repformers.g1_dim,
-            "repformer_g2_dim": repformers.g2_dim,
-            "repformer_axis_neuron": repformers.axis_neuron,
-            "repformer_direct_dist": repformers.direct_dist,
-            "repformer_update_g1_has_conv": repformers.update_g1_has_conv,
-            "repformer_update_g1_has_drrd": repformers.update_g1_has_drrd,
-            "repformer_update_g1_has_grrg": repformers.update_g1_has_grrg,
-            "repformer_update_g1_has_attn": repformers.update_g1_has_attn,
-            "repformer_update_g2_has_g1g1": repformers.update_g2_has_g1g1,
-            "repformer_update_g2_has_attn": repformers.update_g2_has_attn,
-            "repformer_update_h2": repformers.update_h2,
-            "repformer_attn1_hidden": repformers.attn1_hidden,
-            "repformer_attn1_nhead": repformers.attn1_nhead,
-            "repformer_attn2_hidden": repformers.attn2_hidden,
-            "repformer_attn2_nhead": repformers.attn2_nhead,
-            "repformer_attn2_has_gate": repformers.attn2_has_gate,
-            "repformer_activation_function": repformers.activation_function,
-            "repformer_update_style": repformers.update_style,
-            "repformer_set_davg_zero": repformers.set_davg_zero,
-            "repformer_trainable_ln": repformers.trainable_ln,
-            "repformer_ln_eps": repformers.ln_eps,
+            "repinit_args": self.repinit_args.serialize(),
+            "repformer_args": self.repformer_args.serialize(),
             "concat_output_tebd": self.concat_output_tebd,
             "precision": self.precision,
             "smooth": self.smooth,
@@ -567,6 +655,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             "env_protection": self.env_protection,
             "trainable": self.trainable,
             "add_tebd_to_repinit_out": self.add_tebd_to_repinit_out,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
             "g1_shape_tranform": self.g1_shape_tranform.serialize(),
         }
@@ -599,8 +689,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         }
         data.update(
             {
-                "repinit": repinit_variable,
-                "repformers": repformers_variable,
+                "repinit_variable": repinit_variable,
+                "repformers_variable": repformers_variable,
             }
         )
         return data
@@ -611,12 +701,14 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class")
         data.pop("type")
-        repinit_variable = data.pop("repinit").copy()
-        repformers_variable = data.pop("repformers").copy()
+        repinit_variable = data.pop("repinit_variable").copy()
+        repformers_variable = data.pop("repformers_variable").copy()
         type_embedding = data.pop("type_embedding")
         g1_shape_tranform = data.pop("g1_shape_tranform")
         tebd_transform = data.pop("tebd_transform", None)
         add_tebd_to_repinit_out = data["add_tebd_to_repinit_out"]
+        data["repinit"] = RepinitArgs(**data.pop("repinit_args"))
+        data["repformer"] = RepformerArgs(**data.pop("repformer_args"))
         obj = cls(**data)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
         if add_tebd_to_repinit_out:
@@ -628,7 +720,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         # deserialize repinit
         statistic_repinit = repinit_variable.pop("@variables")
         env_mat = repinit_variable.pop("env_mat")
-        tebd_input_mode = data["repinit_tebd_input_mode"]
+        tebd_input_mode = data["repinit"].tebd_input_mode
         obj.repinit.embeddings = NetworkCollection.deserialize(
             repinit_variable.pop("embeddings")
         )
@@ -654,30 +746,46 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         return obj
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
         update_sel = UpdateSel()
-        local_jdata_cpy = update_sel.update_one_sel(
-            global_jdata,
-            local_jdata_cpy,
+        min_nbor_dist, repinit_sel = update_sel.update_one_sel(
+            train_data,
+            type_map,
+            local_jdata_cpy["repinit"]["rcut"],
+            local_jdata_cpy["repinit"]["nsel"],
             True,
-            rcut_key="repinit_rcut",
-            sel_key="repinit_nsel",
         )
-        local_jdata_cpy = update_sel.update_one_sel(
-            global_jdata,
-            local_jdata_cpy,
+        local_jdata_cpy["repinit"]["nsel"] = repinit_sel[0]
+        min_nbor_dist, repformer_sel = update_sel.update_one_sel(
+            train_data,
+            type_map,
+            local_jdata_cpy["repformer"]["rcut"],
+            local_jdata_cpy["repformer"]["nsel"],
             True,
-            rcut_key="repformer_rcut",
-            sel_key="repformer_nsel",
         )
-        return local_jdata_cpy
+        local_jdata_cpy["repformer"]["nsel"] = repformer_sel[0]
+        return local_jdata_cpy, min_nbor_dist

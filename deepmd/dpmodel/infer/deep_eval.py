@@ -76,10 +76,10 @@ class DeepEval(DeepEvalBackend):
         self,
         model_file: str,
         output_def: ModelOutputDef,
-        *args: List[Any],
+        *args: Any,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ):
         self.output_def = output_def
         self.model_path = model_file
@@ -161,12 +161,12 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> Dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 

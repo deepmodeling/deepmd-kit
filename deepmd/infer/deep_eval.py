@@ -11,6 +11,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Type,
     Union,
 )
 
@@ -75,6 +76,9 @@ class DeepEvalBackend(ABC):
         "dos_redu": "dos",
         "mask_mag": "mask_mag",
         "mask": "mask",
+        # old models in v1
+        "global_polar": "global_polar",
+        "wfc": "wfc",
     }
 
     @abstractmethod
@@ -82,10 +86,10 @@ class DeepEvalBackend(ABC):
         self,
         model_file: str,
         output_def: ModelOutputDef,
-        *args: List[Any],
+        *args: Any,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> None:
         pass
 
@@ -99,12 +103,12 @@ class DeepEvalBackend(ABC):
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> Dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
@@ -166,13 +170,13 @@ class DeepEvalBackend(ABC):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
+        cells: Optional[np.ndarray],
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
@@ -246,11 +250,11 @@ class DeepEvalBackend(ABC):
             # assume mixed_types if there are virtual types, even when
             # the atom types of all frames are the same
             return False
-        return np.all(np.equal(atom_types, atom_types[0]))
+        return np.all(np.equal(atom_types, atom_types[0])).item()
 
     @property
     @abstractmethod
-    def model_type(self) -> "DeepEval":
+    def model_type(self) -> Type["DeepEval"]:
         """The the evaluator of the model type."""
 
     @abstractmethod
@@ -316,10 +320,10 @@ class DeepEval(ABC):
     def __init__(
         self,
         model_file: str,
-        *args: List[Any],
+        *args: Any,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> None:
         self.deep_eval = DeepEvalBackend(
             model_file,
@@ -387,7 +391,7 @@ class DeepEval(ABC):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 

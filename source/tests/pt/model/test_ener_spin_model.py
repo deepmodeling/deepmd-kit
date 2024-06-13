@@ -20,6 +20,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (
     model_dpa1,
     model_dpa2,
@@ -59,11 +62,12 @@ class SpinTest:
         natoms = 5
         self.ntypes = 3  # ["O", "H", "B"] for test
         self.cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE).unsqueeze(0)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         self.coord = 3.0 * torch.rand(
-            [natoms, 3], dtype=dtype, device=env.DEVICE
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         ).unsqueeze(0)
         self.spin = 0.5 * torch.rand(
-            [natoms, 3], dtype=dtype, device=env.DEVICE
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
         ).unsqueeze(0)
         self.atype = torch.tensor(
             [0, 0, 0, 1, 1], dtype=torch.int64, device=env.DEVICE
@@ -408,8 +412,8 @@ class TestEnergyModelSpinDPA2(unittest.TestCase, SpinTest):
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2["descriptor"])
-        self.rcut = model_params["descriptor"]["repinit_rcut"]
-        self.nsel = model_params["descriptor"]["repinit_nsel"]
+        self.rcut = model_params["descriptor"]["repinit"]["rcut"]
+        self.nsel = model_params["descriptor"]["repinit"]["nsel"]
         self.type_map = model_params["type_map"]
         # not implement serialize and deserialize
         self.serial_test = False

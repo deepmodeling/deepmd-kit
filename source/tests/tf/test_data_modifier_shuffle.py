@@ -4,10 +4,6 @@ import shutil
 
 import numpy as np
 
-from deepmd.tf.common import (
-    data_requirement,
-    j_must_have,
-)
 from deepmd.tf.env import (
     GLOBAL_NP_FLOAT_PRECISION,
     tf,
@@ -26,6 +22,10 @@ from deepmd.tf.train.trainer import (
 )
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
+)
+
+from ..seed import (
+    GLOBAL_SEED,
 )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
@@ -65,14 +65,14 @@ class TestDataModifier(tf.test.TestCase):
         rcut = model.model.get_rcut()
 
         # init data system
-        systems = j_must_have(jdata["training"], "systems")
+        systems = jdata["training"]["systems"]
         set_pfx = "set"
-        batch_size = j_must_have(jdata["training"], "batch_size")
-        test_size = j_must_have(jdata["training"], "numb_test")
+        batch_size = jdata["training"]["batch_size"]
+        test_size = jdata["training"]["numb_test"]
         data = DeepmdDataSystem(
             systems, batch_size, test_size, rcut, set_prefix=set_pfx
         )
-        data.add_dict(data_requirement)
+        data.add_data_requirements(model.data_requirements)
 
         # clear the default graph
         tf.reset_default_graph()
@@ -95,6 +95,7 @@ class TestDataModifier(tf.test.TestCase):
                 f.write(output_graph_def.SerializeToString())
 
     def _setUp_data(self):
+        rng = np.random.default_rng(GLOBAL_SEED)
         jdata = self._setUp_jdata()
         # sys0
         self.atom_types0 = np.array([0, 3, 2, 1, 3, 4, 1, 4], dtype=int)
@@ -105,10 +106,8 @@ class TestDataModifier(tf.test.TestCase):
         self.nsel = 0
         for ii in self.sel_type:
             self.nsel += np.sum(self.atom_types0 == ii)
-        self.coords0 = (
-            np.random.default_rng().random([self.nframes, self.natoms * 3]) * scale
-        )
-        self.dipoles0 = np.random.default_rng().random([self.nframes, self.nsel * 3])
+        self.coords0 = rng.random([self.nframes, self.natoms * 3]) * scale
+        self.dipoles0 = rng.random([self.nframes, self.nsel * 3])
         self.box0 = np.reshape(np.eye(3) * scale, [-1, 9])
         self.box0 = np.tile(self.box0, [self.nframes, 1])
         self._write_sys_data(

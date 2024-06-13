@@ -23,6 +23,12 @@ from deepmd.tf.env import (
 from deepmd.tf.utils import (
     PluginVariant,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.plugin import (
     make_plugin_registry,
 )
@@ -459,19 +465,33 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
 
     @classmethod
     @abstractmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         # call subprocess
         cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
-        return cls.update_sel(global_jdata, local_jdata)
+        return cls.update_sel(train_data, type_map, local_jdata)
 
     @classmethod
     def deserialize(cls, data: dict, suffix: str = "") -> "Descriptor":
@@ -512,3 +532,8 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             Name suffix to identify this descriptor
         """
         raise NotImplementedError(f"Not implemented in class {self.__name__}")
+
+    @property
+    def input_requirement(self) -> List[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        return []

@@ -30,6 +30,9 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.env_mat_stat import (
     StatItem,
 )
@@ -82,8 +85,15 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         old_impl: bool = False,
         type_one_side: bool = True,
-        **kwargs,
+        trainable: bool = True,
+        seed: Optional[int] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
+        # not implemented
+        spin=None,
     ):
+        del ntypes
+        if spin is not None:
+            raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.sea = DescrptBlockSeA(
             rcut,
@@ -99,7 +109,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             old_impl=old_impl,
             type_one_side=type_one_side,
-            **kwargs,
+            trainable=trainable,
+            seed=seed,
         )
 
     def get_rcut(self) -> float:
@@ -135,6 +146,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         atomic types or not.
         """
         return self.sea.mixed_types()
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return self.sea.has_message_passing()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -293,18 +308,35 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return obj
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, False)
+        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
+        )
+        return local_jdata_cpy, min_nbor_dist
 
 
 @DescriptorBlock.register("se_e2_a")
@@ -328,6 +360,7 @@ class DescrptBlockSeA(DescriptorBlock):
         old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
+        seed: Optional[int] = None,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -354,6 +387,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.type_one_side = type_one_side
+        self.seed = seed
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -397,6 +431,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     resnet_dt=self.resnet_dt,
+                    seed=self.seed,
                 )
             self.filter_layers = filter_layers
         self.stats = None
@@ -643,3 +678,7 @@ class DescrptBlockSeA(DescriptorBlock):
             None,
             sw,
         )
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False

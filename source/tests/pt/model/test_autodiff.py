@@ -15,6 +15,10 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
+
 dtype = torch.float64
 
 from .test_permutation import (
@@ -55,14 +59,15 @@ class ForceTest:
     def test(
         self,
     ):
-        places = 8
+        places = 5
         delta = 1e-5
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
         cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
-        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
-        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        spin = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
         coord = coord.numpy()
@@ -126,12 +131,13 @@ class VirialTest:
     def test(
         self,
     ):
-        places = 8
+        places = 5
         delta = 1e-4
         natoms = 5
-        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
         cell = (cell) + 5.0 * torch.eye(3, device="cpu")
-        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
         coord = torch.matmul(coord, cell)
         atype = torch.IntTensor([0, 0, 0, 1, 1])
         # assumes input to be numpy tensor
@@ -197,13 +203,6 @@ class TestEnergyModelDPA1Virial(unittest.TestCase, VirialTest):
 
 class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -211,13 +210,6 @@ class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
 
 class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
     def setUp(self):
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)

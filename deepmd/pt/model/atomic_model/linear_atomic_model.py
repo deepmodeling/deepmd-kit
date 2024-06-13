@@ -104,6 +104,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return True
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return any(model.has_message_passing() for model in self.models)
+
     def get_out_bias(self) -> torch.Tensor:
         return self.out_bias
 
@@ -501,8 +505,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             extended_coord, masked_nlist
         )
         numerator = torch.sum(
-            pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha), dim=-1
-        )  # masked nnei will be zero, no need to handle
+            torch.where(
+                nlist_larger != -1,
+                pairwise_rr * torch.exp(-pairwise_rr / self.smin_alpha),
+                torch.zeros_like(nlist_larger),
+            ),
+            dim=-1,
+        )
         denominator = torch.sum(
             torch.where(
                 nlist_larger != -1,
@@ -522,5 +531,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
+
+        # to handle masked atoms
+        coef = torch.where(sigma != 0, coef, torch.zeros_like(coef))
         self.zbl_weight = coef  # nframes, nloc
         return [1 - coef.unsqueeze(-1), coef.unsqueeze(-1)]  # to match the model order.

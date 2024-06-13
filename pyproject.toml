@@ -39,10 +39,11 @@ dependencies = [
     'numpy',
     'scipy',
     'pyyaml',
-    'dargs >= 0.4.1',
+    'dargs >= 0.4.6',
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',
+    "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
     'packaging',
     'ml_dtypes',
@@ -69,7 +70,9 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
     "dpdata>=0.2.7",
-    "ase",
+    # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
+    # fixed in 3.23.0
+    "ase>=3.23.0",
     "pytest",
     "pytest-cov",
     "pytest-sugar",
@@ -98,7 +101,7 @@ lmp = [
     "lammps~=2023.8.2.3.0",
 ]
 ipi = [
-    "i-PI",
+    "ipi",
 ]
 gui = [
     "dpgui",
@@ -230,6 +233,12 @@ before-all = [
     """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
     "yum install -y mpich-devel",
+    # uv is not available in the old manylinux image
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
+]
+before-build = [
+    # old build doesn't support uv
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
 ]
 
 [tool.cibuildwheel.windows]
@@ -298,6 +307,7 @@ docstring-code-format = true
 [tool.ruff.lint]
 select = [
     "E", # errors
+    "W", # warning
     "F", # pyflakes
     "D", # pydocstyle
     "UP", # pyupgrade
@@ -350,6 +360,7 @@ banned-module-level-imports = [
 "deepmd/pt/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
+"source/tests/universal/pt/**" = ["TID253"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected

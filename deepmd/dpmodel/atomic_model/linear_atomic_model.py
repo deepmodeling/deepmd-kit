@@ -92,6 +92,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return True
 
+    def has_message_passing(self) -> bool:
+        """Returns whether the atomic model has message passing."""
+        return any(model.has_message_passing() for model in self.models)
+
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())

@@ -14,7 +14,13 @@ from dargs import (
     Variant,
     dargs,
 )
+from dargs.json_schema import (
+    generate_json_schema,
+)
 
+from deepmd import (
+    __version__,
+)
 from deepmd.common import (
     VALID_ACTIVATION,
     VALID_PRECISION,
@@ -80,6 +86,7 @@ def type_embedding_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
 
     return [
         Argument("neuron", List[int], optional=True, default=[8], doc=doc_neuron),
@@ -94,6 +101,9 @@ def type_embedding_args():
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        Argument(
+            "use_econf_tebd", bool, optional=True, default=False, doc=doc_use_econf_tebd
+        ),
     ]
 
 
@@ -305,6 +315,8 @@ def descrpt_se_t_args():
     doc_trainable = "If the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
         Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
@@ -326,6 +338,20 @@ def descrpt_se_t_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "exclude_types",
+            List[List[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
         ),
     ]
 
@@ -506,6 +532,7 @@ def descrpt_se_atten_args():
     )
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
@@ -567,6 +594,13 @@ def descrpt_se_atten_args():
             doc=doc_only_pt_supported + doc_tebd_dim,
         ),
         Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
             "tebd_input_mode",
             str,
             optional=True,
@@ -603,14 +637,78 @@ def descrpt_se_atten_args():
     ]
 
 
-@descrpt_args_plugin.register("se_atten_v2", doc=doc_only_tf_supported)
+@descrpt_args_plugin.register("se_atten_v2")
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
+    doc_scaling_factor = (
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
+        "Else, the scaling of attention weights is setting to `temperature`."
+    )
+    doc_normalize = (
+        "Whether to normalize the hidden vectors during attention calculation."
+    )
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
+        ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
+        # pt only
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "scaling_factor",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_scaling_factor,
+        ),
+        Argument(
+            "normalize",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_normalize,
+        ),
+        Argument(
+            "temperature",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_temperature,
+        ),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
         ),
     ]
 
@@ -618,109 +716,9 @@ def descrpt_se_atten_v2_args():
 @descrpt_args_plugin.register("dpa2", doc=doc_only_pt_supported)
 def descrpt_dpa2_args():
     # repinit args
-    doc_repinit = "(Used in the repinit block.) "
-    doc_repinit_rcut = f"{doc_repinit}The cut-off radius."
-    doc_repinit_rcut_smth = f"{doc_repinit}Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
-    doc_repinit_nsel = f"{doc_repinit}Maximally possible number of selected neighbors."
-    doc_repinit_neuron = (
-        f"{doc_repinit}Number of neurons in each hidden layers of the embedding net."
-        f"When two layers are of the same size or one layer is twice as large as the previous layer, "
-        f"a skip connection is built."
-    )
-    doc_repinit_axis_neuron = (
-        f"{doc_repinit}Size of the submatrix of G (embedding matrix)."
-    )
-    doc_repinit_tebd_dim = f"{doc_repinit}The dimension of atom type embedding."
-    doc_repinit_tebd_input_mode = (
-        f"{doc_repinit}The input mode of the type embedding. Supported modes are ['concat', 'strip']."
-        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
-        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
-        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
-        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
-        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
-        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
-    )
-    doc_repinit_set_davg_zero = (
-        f"{doc_repinit}Set the normalization average to zero. "
-        f"This option should be set when `atom_ener` in the energy fitting is used."
-    )
-    doc_repinit_activation_function = f"{doc_repinit}The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
-    doc_repinit_type_one_side = (
-        f"{doc_repinit}"
-        + r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
-    )
-    doc_repinit_resnet_dt = (
-        f'{doc_repinit}Whether to use a "Timestep" in the skip connection.'
-    )
-
+    doc_repinit = "The arguments used to initialize the repinit block."
     # repformer args
-    doc_repformer = "(Used in the repformer block.) "
-    doc_repformer_rcut = f"{doc_repformer}The cut-off radius."
-    doc_repformer_rcut_smth = f"{doc_repformer}Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
-    doc_repformer_nsel = (
-        f"{doc_repformer}Maximally possible number of selected neighbors."
-    )
-    doc_repformer_nlayers = f"{doc_repformer}The number of repformer layers."
-    doc_repformer_g1_dim = (
-        f"{doc_repformer}The dimension of invariant single-atom representation."
-    )
-    doc_repformer_g2_dim = (
-        f"{doc_repformer}The dimension of invariant pair-atom representation."
-    )
-    doc_repformer_axis_neuron = f"{doc_repformer}The number of dimension of submatrix in the symmetrization ops."
-    doc_repformer_direct_dist = f"{doc_repformer}Whether or not use direct distance as input for the embedding net to get g2 instead of smoothed 1/r."
-    doc_repformer_update_g1_has_conv = (
-        f"{doc_repformer}Update the g1 rep with convolution term."
-    )
-    doc_repformer_update_g1_has_drrd = (
-        f"{doc_repformer}Update the g1 rep with the drrd term."
-    )
-    doc_repformer_update_g1_has_grrg = (
-        f"{doc_repformer}Update the g1 rep with the grrg term."
-    )
-    doc_repformer_update_g1_has_attn = (
-        f"{doc_repformer}Update the g1 rep with the localized self-attention."
-    )
-    doc_repformer_update_g2_has_g1g1 = (
-        f"{doc_repformer}Update the g2 rep with the g1xg1 term."
-    )
-    doc_repformer_update_g2_has_attn = (
-        f"{doc_repformer}Update the g2 rep with the gated self-attention."
-    )
-    doc_repformer_update_h2 = f"{doc_repformer}Update the h2 rep."
-    doc_repformer_attn1_hidden = f"{doc_repformer}The hidden dimension of localized self-attention to update the g1 rep."
-    doc_repformer_attn1_nhead = f"{doc_repformer}The number of heads in localized self-attention to update the g1 rep."
-    doc_repformer_attn2_hidden = f"{doc_repformer}The hidden dimension of gated self-attention to update the g2 rep."
-    doc_repformer_attn2_nhead = f"{doc_repformer}The number of heads in gated self-attention to update the g2 rep."
-    doc_repformer_attn2_has_gate = f"{doc_repformer}Whether to use gate in the gated self-attention to update the g2 rep."
-    doc_repformer_activation_function = f"{doc_repformer}The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
-    doc_repformer_update_style = (
-        f"{doc_repformer}Style to update a representation. "
-        f"Supported options are: "
-        "-'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) "
-        "-'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
-        "-'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n) "
-        "where `r1`, `r2` ... `r3` are residual weights defined by `repformer_update_residual` "
-        "and `repformer_update_residual_init`."
-    )
-    doc_repformer_update_residual = (
-        f"{doc_repformer}When update using residual mode, "
-        "the initial std of residual vector weights."
-    )
-    doc_repformer_update_residual_init = (
-        f"{doc_repformer}When update using residual mode, "
-        "the initialization mode of residual vector weights."
-        "Supported modes are: ['norm', 'const']."
-    )
-    doc_repformer_set_davg_zero = (
-        f"{doc_repformer}Set the normalization average to zero. "
-        f"This option should be set when `atom_ener` in the energy fitting is used."
-    )
-    doc_repformer_trainable_ln = (
-        "Whether to use trainable shift and scale weights in layer normalization."
-    )
-    doc_repformer_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
-
+    doc_repformer = "The arguments used to initialize the repformer block."
     # descriptor args
     doc_concat_output_tebd = (
         "Whether to concat type embedding at the output of the descriptor."
@@ -734,239 +732,12 @@ def descrpt_dpa2_args():
     doc_trainable = "If the parameters in the embedding net is trainable."
     doc_seed = "Random seed for parameter initialization."
     doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
     return [
         # repinit args
-        Argument("repinit_rcut", float, doc=doc_repinit_rcut),
-        Argument("repinit_rcut_smth", float, doc=doc_repinit_rcut_smth),
-        Argument("repinit_nsel", int, doc=doc_repinit_nsel),
-        Argument(
-            "repinit_neuron",
-            list,
-            optional=True,
-            default=[25, 50, 100],
-            doc=doc_repinit_neuron,
-        ),
-        Argument(
-            "repinit_axis_neuron",
-            int,
-            optional=True,
-            default=16,
-            doc=doc_repinit_axis_neuron,
-        ),
-        Argument(
-            "repinit_tebd_dim",
-            int,
-            optional=True,
-            default=8,
-            alias=["tebd_dim"],
-            doc=doc_repinit_tebd_dim,
-        ),
-        Argument(
-            "repinit_tebd_input_mode",
-            str,
-            optional=True,
-            default="concat",
-            doc=doc_repinit_tebd_input_mode,
-        ),
-        Argument(
-            "repinit_set_davg_zero",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repinit_set_davg_zero,
-        ),
-        Argument(
-            "repinit_activation_function",
-            str,
-            optional=True,
-            default="tanh",
-            alias=["repinit_activation"],
-            doc=doc_repinit_activation_function,
-        ),
-        Argument(
-            "repinit_type_one_side",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_repinit_type_one_side,
-        ),
-        Argument(
-            "repinit_resnet_dt",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_repinit_resnet_dt,
-        ),
+        Argument("repinit", dict, dpa2_repinit_args(), doc=doc_repinit),
         # repformer args
-        Argument("repformer_rcut", float, doc=doc_repformer_rcut),
-        Argument("repformer_rcut_smth", float, doc=doc_repformer_rcut_smth),
-        Argument("repformer_nsel", int, doc=doc_repformer_nsel),
-        Argument(
-            "repformer_nlayers",
-            int,
-            optional=True,
-            default=3,
-            doc=doc_repformer_nlayers,
-        ),
-        Argument(
-            "repformer_g1_dim",
-            int,
-            optional=True,
-            default=128,
-            doc=doc_repformer_g1_dim,
-        ),
-        Argument(
-            "repformer_g2_dim", int, optional=True, default=16, doc=doc_repformer_g2_dim
-        ),
-        Argument(
-            "repformer_axis_neuron",
-            int,
-            optional=True,
-            default=4,
-            alias=["repformer_axis_dim"],
-            doc=doc_repformer_axis_neuron,
-        ),
-        Argument(
-            "repformer_direct_dist",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_repformer_direct_dist,
-        ),
-        Argument(
-            "repformer_update_g1_has_conv",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_update_g1_has_conv,
-        ),
-        Argument(
-            "repformer_update_g1_has_drrd",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_update_g1_has_drrd,
-        ),
-        Argument(
-            "repformer_update_g1_has_grrg",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_update_g1_has_grrg,
-        ),
-        Argument(
-            "repformer_update_g1_has_attn",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_update_g1_has_attn,
-        ),
-        Argument(
-            "repformer_update_g2_has_g1g1",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_update_g2_has_g1g1,
-        ),
-        Argument(
-            "repformer_update_g2_has_attn",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_update_g2_has_attn,
-        ),
-        Argument(
-            "repformer_update_h2",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_repformer_update_h2,
-        ),
-        Argument(
-            "repformer_attn1_hidden",
-            int,
-            optional=True,
-            default=64,
-            doc=doc_repformer_attn1_hidden,
-        ),
-        Argument(
-            "repformer_attn1_nhead",
-            int,
-            optional=True,
-            default=4,
-            doc=doc_repformer_attn1_nhead,
-        ),
-        Argument(
-            "repformer_attn2_hidden",
-            int,
-            optional=True,
-            default=16,
-            doc=doc_repformer_attn2_hidden,
-        ),
-        Argument(
-            "repformer_attn2_nhead",
-            int,
-            optional=True,
-            default=4,
-            doc=doc_repformer_attn2_nhead,
-        ),
-        Argument(
-            "repformer_attn2_has_gate",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_repformer_attn2_has_gate,
-        ),
-        Argument(
-            "repformer_activation_function",
-            str,
-            optional=True,
-            default="tanh",
-            alias=["repformer_activation"],
-            doc=doc_repformer_activation_function,
-        ),
-        Argument(
-            "repformer_update_style",
-            str,
-            optional=True,
-            default="res_avg",
-            doc=doc_repformer_update_style,
-        ),
-        Argument(
-            "repformer_update_residual",
-            float,
-            optional=True,
-            default=0.001,
-            doc=doc_repformer_update_residual,
-        ),
-        Argument(
-            "repformer_update_residual_init",
-            str,
-            optional=True,
-            default="norm",
-            doc=doc_repformer_update_residual_init,
-        ),
-        Argument(
-            "repformer_set_davg_zero",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_set_davg_zero,
-        ),
-        Argument(
-            "repformer_trainable_ln",
-            bool,
-            optional=True,
-            default=True,
-            doc=doc_repformer_trainable_ln,
-        ),
-        Argument(
-            "repformer_ln_eps",
-            float,
-            optional=True,
-            default=None,
-            doc=doc_repformer_ln_eps,
-        ),
+        Argument("repformer", dict, dpa2_repformer_args(), doc=doc_repformer),
         # descriptor args
         Argument(
             "concat_output_tebd",
@@ -976,7 +747,7 @@ def descrpt_dpa2_args():
             doc=doc_concat_output_tebd,
         ),
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
-        Argument("smooth", bool, optional=True, default=False, doc=doc_smooth),
+        Argument("smooth", bool, optional=True, default=True, doc=doc_smooth),
         Argument(
             "exclude_types",
             List[List[int]],
@@ -1000,6 +771,338 @@ def descrpt_dpa2_args():
             default=False,
             alias=["repformer_add_type_ebd_to_seq"],
             doc=doc_add_tebd_to_repinit_out,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+    ]
+
+
+# repinit for dpa2
+def dpa2_repinit_args():
+    # repinit args
+    doc_rcut = "The cut-off radius."
+    doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_neuron = (
+        "Number of neurons in each hidden layers of the embedding net."
+        "When two layers are of the same size or one layer is twice as large as the previous layer, "
+        "a skip connection is built."
+    )
+    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
+        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+    )
+    doc_set_davg_zero = (
+        "Set the normalization average to zero. "
+        "This option should be set when `atom_ener` in the energy fitting is used."
+    )
+    doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
+
+    return [
+        # repinit args
+        Argument("rcut", float, doc=doc_rcut),
+        Argument("rcut_smth", float, doc=doc_rcut_smth),
+        Argument("nsel", int, doc=doc_nsel),
+        Argument(
+            "neuron",
+            list,
+            optional=True,
+            default=[25, 50, 100],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "axis_neuron",
+            int,
+            optional=True,
+            default=16,
+            doc=doc_axis_neuron,
+        ),
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_tebd_dim,
+        ),
+        Argument(
+            "tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_tebd_input_mode,
+        ),
+        Argument(
+            "set_davg_zero",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_set_davg_zero,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "type_one_side",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_type_one_side,
+        ),
+        Argument(
+            "resnet_dt",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_resnet_dt,
+        ),
+    ]
+
+
+# repformer for dpa2
+def dpa2_repformer_args():
+    # repformer args
+    doc_rcut = "The cut-off radius."
+    doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_nlayers = "The number of repformer layers."
+    doc_g1_dim = "The dimension of invariant single-atom representation."
+    doc_g2_dim = "The dimension of invariant pair-atom representation."
+    doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
+    doc_direct_dist = "Whether or not use direct distance as input for the embedding net to get g2 instead of smoothed 1/r."
+    doc_update_g1_has_conv = "Update the g1 rep with convolution term."
+    doc_update_g1_has_drrd = "Update the g1 rep with the drrd term."
+    doc_update_g1_has_grrg = "Update the g1 rep with the grrg term."
+    doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
+    doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
+    doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
+    doc_update_h2 = "Update the h2 rep."
+    doc_attn1_hidden = (
+        "The hidden dimension of localized self-attention to update the g1 rep."
+    )
+    doc_attn1_nhead = (
+        "The number of heads in localized self-attention to update the g1 rep."
+    )
+    doc_attn2_hidden = (
+        "The hidden dimension of gated self-attention to update the g2 rep."
+    )
+    doc_attn2_nhead = (
+        "The number of heads in gated self-attention to update the g2 rep."
+    )
+    doc_attn2_has_gate = (
+        "Whether to use gate in the gated self-attention to update the g2 rep."
+    )
+    doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_update_style = (
+        "Style to update a representation. "
+        "Supported options are: "
+        "-'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) "
+        "-'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
+        "-'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n) "
+        "where `r1`, `r2` ... `r3` are residual weights defined by `update_residual` "
+        "and `update_residual_init`."
+    )
+    doc_update_residual = (
+        "When update using residual mode, "
+        "the initial std of residual vector weights."
+    )
+    doc_update_residual_init = (
+        "When update using residual mode, "
+        "the initialization mode of residual vector weights."
+        "Supported modes are: ['norm', 'const']."
+    )
+    doc_set_davg_zero = (
+        "Set the normalization average to zero. "
+        "This option should be set when `atom_ener` in the energy fitting is used."
+    )
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+
+    return [
+        # repformer args
+        Argument("rcut", float, doc=doc_rcut),
+        Argument("rcut_smth", float, doc=doc_rcut_smth),
+        Argument("nsel", int, doc=doc_nsel),
+        Argument(
+            "nlayers",
+            int,
+            optional=True,
+            default=3,
+            doc=doc_nlayers,
+        ),
+        Argument(
+            "g1_dim",
+            int,
+            optional=True,
+            default=128,
+            doc=doc_g1_dim,
+        ),
+        Argument("g2_dim", int, optional=True, default=16, doc=doc_g2_dim),
+        Argument(
+            "axis_neuron",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_axis_neuron,
+        ),
+        Argument(
+            "direct_dist",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_direct_dist,
+        ),
+        Argument(
+            "update_g1_has_conv",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_conv,
+        ),
+        Argument(
+            "update_g1_has_drrd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_drrd,
+        ),
+        Argument(
+            "update_g1_has_grrg",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_grrg,
+        ),
+        Argument(
+            "update_g1_has_attn",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_attn,
+        ),
+        Argument(
+            "update_g2_has_g1g1",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g2_has_g1g1,
+        ),
+        Argument(
+            "update_g2_has_attn",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g2_has_attn,
+        ),
+        Argument(
+            "update_h2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_update_h2,
+        ),
+        Argument(
+            "attn1_hidden",
+            int,
+            optional=True,
+            default=64,
+            doc=doc_attn1_hidden,
+        ),
+        Argument(
+            "attn1_nhead",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_attn1_nhead,
+        ),
+        Argument(
+            "attn2_hidden",
+            int,
+            optional=True,
+            default=16,
+            doc=doc_attn2_hidden,
+        ),
+        Argument(
+            "attn2_nhead",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_attn2_nhead,
+        ),
+        Argument(
+            "attn2_has_gate",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_attn2_has_gate,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "update_style",
+            str,
+            optional=True,
+            default="res_avg",
+            doc=doc_update_style,
+        ),
+        Argument(
+            "update_residual",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_update_residual,
+        ),
+        Argument(
+            "update_residual_init",
+            str,
+            optional=True,
+            default="norm",
+            doc=doc_update_residual_init,
+        ),
+        Argument(
+            "set_davg_zero",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_set_davg_zero,
+        ),
+        Argument(
+            "trainable_ln",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_trainable_ln,
+        ),
+        Argument(
+            "ln_eps",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_ln_eps,
         ),
     ]
 
@@ -2067,7 +2170,7 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
-- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor.\n\n\
+- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for Tensorflow backend.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -2415,6 +2518,18 @@ def gen_args(**kwargs) -> List[Argument]:
         training_args(),
         nvnmd_args(),
     ]
+
+
+def gen_json_schema() -> str:
+    """Generate JSON schema.
+
+    Returns
+    -------
+    str
+        JSON schema.
+    """
+    arg = Argument("DeePMD-kit", dict, gen_args(), doc=f"DeePMD-kit {__version__}")
+    return json.dumps(generate_json_schema(arg))
 
 
 def normalize(data):

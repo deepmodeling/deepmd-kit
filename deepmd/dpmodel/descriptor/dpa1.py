@@ -1,6 +1,26 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
 import numpy as np
 
+from deepmd.dpmodel import (
+    DEFAULT_PRECISION,
+    PRECISION_DICT,
+    NativeOP,
+)
+from deepmd.dpmodel.utils import (
+    EmbeddingNet,
+    EnvMat,
+    NetworkCollection,
+    PairExcludeMask,
+)
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
@@ -14,37 +34,14 @@ from deepmd.dpmodel.utils.update_sel import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
-)
-
-try:
-    from deepmd._version import version as __version__
-except ImportError:
-    __version__ = "unknown"
-
-from typing import (
-    Any,
-    Callable,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
-
-from deepmd.dpmodel import (
-    DEFAULT_PRECISION,
-    PRECISION_DICT,
-    NativeOP,
-)
-from deepmd.dpmodel.utils import (
-    EmbeddingNet,
-    EnvMat,
-    NetworkCollection,
-    PairExcludeMask,
 )
 
 from .base_descriptor import (
@@ -193,6 +190,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    use_econf_tebd: bool, Optional
+            Whether to use electronic configuration type embedding.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+            Only used if `use_econf_tebd` is `True` in type embedding net.
+
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -242,6 +245,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         concat_output_tebd: bool = True,
         spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
+        use_econf_tebd: bool = False,
+        type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
     ) -> None:
@@ -287,12 +292,16 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
         )
+        self.use_econf_tebd = use_econf_tebd
+        self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes=ntypes,
             neuron=[tebd_dim],
             padding=True,
             activation_function="Linear",
             precision=precision,
+            use_econf_tebd=use_econf_tebd,
+            type_map=type_map,
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
@@ -339,6 +348,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         """
         return self.se_atten.mixed_types()
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor has message passing."""
+        return self.se_atten.has_message_passing()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -457,6 +470,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "smooth_type_embedding": obj.smooth,
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
+            "use_econf_tebd": self.use_econf_tebd,
+            "type_map": self.type_map,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
             "embeddings": obj.embeddings.serialize(),
@@ -510,18 +525,36 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         return obj
 
     @classmethod
-    def update_sel(cls, global_jdata: dict, local_jdata: dict):
+    def update_sel(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: Optional[List[str]],
+        local_jdata: dict,
+    ) -> Tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
-        global_jdata : dict
-            The global data, containing the training section
+        train_data : DeepmdDataSystem
+            data used to do neighbor statictics
+        type_map : list[str], optional
+            The name of each type of atoms
         local_jdata : dict
             The local data refer to the current class
+
+        Returns
+        -------
+        dict
+            The updated local data
+        float
+            The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        return UpdateSel().update_one_sel(global_jdata, local_jdata_cpy, True)
+        min_nbor_dist, sel = UpdateSel().update_one_sel(
+            train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
+        )
+        local_jdata_cpy["sel"] = sel[0]
+        return local_jdata_cpy, min_nbor_dist
 
 
 @DescriptorBlock.register("se_atten")
@@ -775,7 +808,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         nf, nloc, nnei, _ = dmatrix.shape
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
+        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
+        # nfnl x nnei
         nlist = nlist.reshape(nf * nloc, nnei)
+        nlist = np.where(exclude_mask, nlist, -1)
         # nfnl x nnei x 4
         dmatrix = dmatrix.reshape(nf * nloc, nnei, 4)
         # nfnl x nnei x 1
@@ -795,8 +831,6 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             nf * nloc, nnei, self.tebd_dim
         )
         ng = self.neuron[-1]
-        # nfnl x nnei
-        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
         # nfnl x nnei x 4
         rr = dmatrix.reshape(nf * nloc, nnei, 4)
         rr = rr * exclude_mask[:, :, None]
@@ -831,10 +865,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise NotImplementedError
 
-        input_r = dmatrix.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
-            np.linalg.norm(
-                dmatrix.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True
-            ),
+        input_r = rr.reshape(-1, nnei, 4)[:, :, 1:4] / np.maximum(
+            np.linalg.norm(rr.reshape(-1, nnei, 4)[:, :, 1:4], axis=-1, keepdims=True),
             1e-12,
         )
         gg = self.dpa1_attention(
@@ -857,6 +889,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             gr[..., 1:].reshape(-1, nloc, self.filter_neuron[-1], 3),
             sw,
         )
+
+    def has_message_passing(self) -> bool:
+        """Returns whether the descriptor block has message passing."""
+        return False
 
 
 class NeighborGatedAttention(NativeOP):

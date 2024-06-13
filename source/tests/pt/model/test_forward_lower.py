@@ -17,6 +17,9 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_permutation import (  # model_dpau,
     model_dpa1,
     model_dpa2,
@@ -58,8 +61,13 @@ class ForwardLowerTest:
         prec = self.prec
         natoms = 5
         cell = 4.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
-        coord = 3.0 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
-        spin = 0.5 * torch.rand([natoms, 3], dtype=dtype, device=env.DEVICE)
+        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
+        coord = 3.0 * torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
+        spin = 0.5 * torch.rand(
+            [natoms, 3], dtype=dtype, device=env.DEVICE, generator=generator
+        )
         atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int64, device=env.DEVICE)
         test_spin = getattr(self, "test_spin", False)
         if not test_spin:
@@ -143,13 +151,6 @@ class TestEnergyModelDPA1(unittest.TestCase, ForwardLowerTest):
 class TestEnergyModelDPA2(unittest.TestCase, ForwardLowerTest):
     def setUp(self):
         self.prec = 1e-10
-        model_params_sample = copy.deepcopy(model_dpa2)
-        model_params_sample["descriptor"]["rcut"] = model_params_sample["descriptor"][
-            "repinit_rcut"
-        ]
-        model_params_sample["descriptor"]["sel"] = model_params_sample["descriptor"][
-            "repinit_nsel"
-        ]
         model_params = copy.deepcopy(model_dpa2)
         self.model = get_model(model_params).to(env.DEVICE)
 
@@ -174,6 +175,8 @@ class TestEnergyModelSpinDPA1(unittest.TestCase, ForwardLowerTest):
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa1)["descriptor"]
+        # double sel for virtual atoms to avoid large error
+        model_params["descriptor"]["sel"] *= 2
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
@@ -183,6 +186,9 @@ class TestEnergyModelSpinDPA2(unittest.TestCase, ForwardLowerTest):
         self.prec = 1e-10
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2)["descriptor"]
+        # double sel for virtual atoms to avoid large error
+        model_params["descriptor"]["repinit"]["nsel"] *= 2
+        model_params["descriptor"]["repformer"]["nsel"] *= 2
         self.test_spin = True
         self.model = get_model(model_params).to(env.DEVICE)
 
