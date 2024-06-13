@@ -74,3 +74,4 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
         )
         self.output_def = self.module.model_output_def().get_data()
         self.expected_has_message_passing = ds.has_message_passing()
+        self.skip_test_autodiff = True

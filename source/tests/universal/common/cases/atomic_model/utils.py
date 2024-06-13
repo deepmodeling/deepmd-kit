@@ -188,7 +188,7 @@ class AtomicModelTestCase:
             module(coord_ext_perm, atype_ext_perm, nlist_perm, mapping=mapping_perm)
         )
 
-        for kk in ret[0].keys():
+        for kk in ret[0]:
             if kk in self.expected_model_output_type:
                 atomic = self.output_def[kk].atomic
                 if atomic:
@@ -255,7 +255,7 @@ class AtomicModelTestCase:
             module(coord_ext_trans, atype_ext_trans, nlist_trans, mapping=mapping_trans)
         )
 
-        for kk in ret[0].keys():
+        for kk in ret[0]:
             if kk in self.expected_model_output_type:
                 np.testing.assert_allclose(
                     ret[0][kk],
@@ -315,7 +315,7 @@ class AtomicModelTestCase:
         )
         ret.append(module(coord_ext_rot, atype_ext_rot, nlist_rot, mapping=mapping_rot))
 
-        for kk in ret[0].keys():
+        for kk in ret[0]:
             if kk in self.expected_model_output_type:
                 rot_invariant = self.output_def[kk].rot_invariant
                 if rot_invariant:
@@ -379,7 +379,7 @@ class AtomicModelTestCase:
         )
         ret.append(module(coord_ext_rot, atype_ext_rot, nlist_rot, mapping=mapping_rot))
 
-        for kk in ret[0].keys():
+        for kk in ret[0]:
             if kk in self.expected_model_output_type:
                 rot_invariant = self.output_def[kk].rot_invariant
                 if rot_invariant:
@@ -507,7 +507,7 @@ class AtomicModelTestCase:
         )
         ret.append(module(coord_ext3, atype_ext3, nlist3, mapping=mapping3))
 
-        for kk in ret[0].keys():
+        for kk in ret[0]:
             if kk in self.expected_model_output_type:
                 for ii in range(len(ret) - 1):
                     np.testing.assert_allclose(

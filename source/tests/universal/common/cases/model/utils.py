@@ -136,7 +136,7 @@ class ModelTestCase:
             ret_lower.append(
                 module.forward_lower(coord_ext, atype_ext, nlist, mapping=mapping)
             )
-        for kk in ret[0].keys():
+        for kk in ret[0]:
             subret = []
             for rr in ret:
                 if rr is not None:
@@ -208,8 +208,8 @@ class ModelTestCase:
         # permutation
         ret.append(module(coord_perm, atype_perm, cell))
 
-        for kk in ret[0].keys():
-            if kk in self.output_def.keys():
+        for kk in ret[0]:
+            if kk in self.output_def:
                 if ret[0][kk] is None:
                     assert ret[1][kk] is None
                     continue
@@ -258,8 +258,8 @@ class ModelTestCase:
         # translation
         ret.append(module(coord_s, atype, cell))
 
-        for kk in ret[0].keys():
-            if kk in self.output_def.keys():
+        for kk in ret[0]:
+            if kk in self.output_def:
                 if ret[0][kk] is None:
                     assert ret[1][kk] is None
                     continue
@@ -303,8 +303,8 @@ class ModelTestCase:
         # rotation
         ret.append(module(coord_rot, atype, cell))
 
-        for kk in ret[0].keys():
-            if kk in self.output_def.keys():
+        for kk in ret[0]:
+            if kk in self.output_def:
                 if ret[0][kk] is None:
                     assert ret[1][kk] is None
                     continue
@@ -365,8 +365,8 @@ class ModelTestCase:
         # rotation
         ret.append(module(coord_rot, atype, cell_rot))
 
-        for kk in ret[0].keys():
-            if kk in self.output_def.keys():
+        for kk in ret[0]:
+            if kk in self.output_def:
                 if ret[0][kk] is None:
                     assert ret[1][kk] is None
                     continue
@@ -477,8 +477,8 @@ class ModelTestCase:
         # coord3
         ret.append(module(coord3, atype, cell))
 
-        for kk in ret[0].keys():
-            if kk in self.output_def.keys():
+        for kk in ret[0]:
+            if kk in self.output_def:
                 if ret[0][kk] is None:
                     for ii in range(len(ret) - 1):
                         assert ret[ii + 1][kk] is None
