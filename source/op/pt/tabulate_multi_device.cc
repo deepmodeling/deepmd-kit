@@ -113,7 +113,6 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
           ? nullptr
           : two_embed_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* descriptor = descriptor_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   const int64_t last_layer_size = descriptor_tensor.size(2);
@@ -259,7 +258,6 @@ void TabulateFusionSeTGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* em_x = em_x_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* descriptor = descriptor_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei_i = em_tensor.size(1);
   const int64_t nnei_j = em_tensor.size(2);
@@ -384,7 +382,6 @@ void TabulateFusionSeRGradForward(const torch::Tensor& table_tensor,
   const FPTYPE* table_info = table_info_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* em = em_tensor.view({-1}).data_ptr<FPTYPE>();
   const FPTYPE* dy = dy_tensor.view({-1}).data_ptr<FPTYPE>();
-  const FPTYPE* descriptor = descriptor_tensor.view({-1}).data_ptr<FPTYPE>();
   const int64_t nloc = em_tensor.size(0);
   const int64_t nnei = em_tensor.size(1);
   const int64_t last_layer_size = descriptor_tensor.size(2);
@@ -923,7 +920,7 @@ class TabulateFusionSeROp
   }
 };
 
-std::vector<torch::Tensor> tabluate_fusion_se_a(
+std::vector<torch::Tensor> tabulate_fusion_se_a(
     const torch::Tensor& table_tensor,
     const torch::Tensor& table_info_tensor,
     const torch::Tensor& em_x_tensor,
@@ -933,7 +930,7 @@ std::vector<torch::Tensor> tabluate_fusion_se_a(
                                     em_x_tensor, em_tensor, last_layer_size);
 }
 
-std::vector<torch::Tensor> tabluate_fusion_se_atten(
+std::vector<torch::Tensor> tabulate_fusion_se_atten(
     const torch::Tensor& table_tensor,
     const torch::Tensor& table_info_tensor,
     const torch::Tensor& em_x_tensor,
@@ -946,7 +943,7 @@ std::vector<torch::Tensor> tabluate_fusion_se_atten(
       last_layer_size, is_sorted);
 }
 
-std::vector<torch::Tensor> tabluate_fusion_se_t(
+std::vector<torch::Tensor> tabulate_fusion_se_t(
     const torch::Tensor& table_tensor,
     const torch::Tensor& table_info_tensor,
     const torch::Tensor& em_x_tensor,
@@ -956,7 +953,7 @@ std::vector<torch::Tensor> tabluate_fusion_se_t(
                                     em_x_tensor, em_tensor, last_layer_size);
 }
 
-std::vector<torch::Tensor> tabluate_fusion_se_r(
+std::vector<torch::Tensor> tabulate_fusion_se_r(
     const torch::Tensor& table_tensor,
     const torch::Tensor& table_info_tensor,
     const torch::Tensor& em_tensor,
@@ -966,14 +963,14 @@ std::vector<torch::Tensor> tabluate_fusion_se_r(
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
-  m.def("tabulate_fusion_se_a", tabluate_fusion_se_a);
+  m.def("tabulate_fusion_se_a", tabulate_fusion_se_a);
 }
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
-  m.def("tabulate_fusion_se_atten", tabluate_fusion_se_atten);
+  m.def("tabulate_fusion_se_atten", tabulate_fusion_se_atten);
 }
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
-  m.def("tabulate_fusion_se_t", tabluate_fusion_se_t);
+  m.def("tabulate_fusion_se_t", tabulate_fusion_se_t);
 }
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
-  m.def("tabulate_fusion_se_r", tabluate_fusion_se_r);
+  m.def("tabulate_fusion_se_r", tabulate_fusion_se_r);
 }
