@@ -402,7 +402,7 @@ def compute_output_stats_global(
     # return directly if model predict is empty for global
     if model_pred == {}:
         return {}, {}
-    
+
     # get label dict from sample; for each key, only picking the system with global labels.
     outputs = {
         kk: [
