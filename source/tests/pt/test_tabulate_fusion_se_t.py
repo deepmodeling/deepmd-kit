@@ -12199,5 +12199,4 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    deepmd.pt.cxx_op.ENABLE_CUSTOMIZED_OP
     unittest.main()
