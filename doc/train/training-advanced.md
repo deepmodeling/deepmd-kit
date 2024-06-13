@@ -172,7 +172,7 @@ One can set other environmental variables:
 
 ## Adjust `sel` of a frozen model {{ tensorflow_icon }}
 
-One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of a existing model. Firstly, one needs to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
+One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of an existing model. Firstly, one needs to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
 
 ```json
 "model": {
