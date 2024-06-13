@@ -3,8 +3,6 @@ import unittest
 
 import torch
 
-import deepmd.pt.cxx_op
-
 
 class TestTabulateFusionSeAttenOp(unittest.TestCase):
     def setUp(self):
