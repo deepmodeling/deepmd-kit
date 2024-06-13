@@ -193,8 +193,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         return self.neuron[-1]
 
     def get_dim_emb(self):
-        """Returns the embedding (g2) dimension of this descriptor."""
-        return self.neuron[-1]
+        """Returns the output dimension."""
+        raise NotImplementedError
 
     def get_rcut(self):
         """Returns cutoff radius."""

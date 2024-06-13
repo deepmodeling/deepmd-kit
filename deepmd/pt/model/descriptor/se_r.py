@@ -157,8 +157,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         return self.neuron[-1]
 
     def get_dim_emb(self) -> int:
-        """Returns the embedding (g2) dimension of this descriptor."""
-        return self.neuron[-1]
+        """Returns the output dimension."""
+        raise NotImplementedError
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
