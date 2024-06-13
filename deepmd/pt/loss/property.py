@@ -93,9 +93,7 @@ class PropertyLoss(TaskLoss):
             )
         elif self.loss_func == "mae":
             loss += F.l1_loss(
-                label["property"],
-                model_pred["property"],
-                reduction="sum"
+                label["property"], model_pred["property"], reduction="sum"
             )
         elif self.loss_func == "mse":
             loss += F.mse_loss(
@@ -104,7 +102,7 @@ class PropertyLoss(TaskLoss):
                 reduction="sum",
             )
         elif self.loss_func == "rmse":
-            loss += torch.sqrt( 
+            loss += torch.sqrt(
                 F.mse_loss(
                     label["property"],
                     model_pred["property"],
@@ -113,7 +111,7 @@ class PropertyLoss(TaskLoss):
             )
         else:
             raise RuntimeError(f"Unknown loss function : {self.loss_func}")
-        
+
         # more loss
         if "smooth_mae" in self.metric:
             more_loss["smooth_mae"] = F.smooth_l1_loss(
@@ -144,7 +142,7 @@ class PropertyLoss(TaskLoss):
             ).detach()
 
         return model_pred, loss, more_loss
-    
+
     @property
     def label_requirement(self) -> List[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
@@ -152,7 +150,7 @@ class PropertyLoss(TaskLoss):
         label_requirement.append(
             DataRequirementItem(
                 "property",
-                ndof = self.task_dim,
+                ndof=self.task_dim,
                 atomic=False,
                 must=False,
                 high_prec=True,

@@ -469,8 +469,10 @@ def compute_output_stats_global(
         if kk in stats_input:
             if intensive and kk == "property":
                 task_dim = stats_input[kk].shape[1]
-                assert merged_natoms[kk].shape == (nf[kk] ,ntypes)
-                stats_input[kk] = merged_natoms[kk].sum(axis=1).reshape(-1,1) * stats_input[kk]
+                assert merged_natoms[kk].shape == (nf[kk], ntypes)
+                stats_input[kk] = (
+                    merged_natoms[kk].sum(axis=1).reshape(-1, 1) * stats_input[kk]
+                )
                 assert stats_input[kk].shape == (nf[kk], task_dim)
             bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                 stats_input[kk],

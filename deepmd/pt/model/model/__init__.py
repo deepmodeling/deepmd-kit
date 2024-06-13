@@ -36,9 +36,6 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
-from .property_model import(
-    PropertyModel,
-)
 from .dp_model import (
     DPModelCommon,
 )
@@ -62,6 +59,9 @@ from .model import (
 )
 from .polar_model import (
     PolarModel,
+)
+from .property_model import (
+    PropertyModel,
 )
 from .spin_model import (
     SpinEnergyModel,

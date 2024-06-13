@@ -24,11 +24,11 @@ from .fitting import (
 from .polarizability import (
     PolarFittingNet,
 )
-from .type_predict import (
-    TypePredictNet,
-)
 from .property import (
     PropertyFittingNet,
+)
+from .type_predict import (
+    TypePredictNet,
 )
 
 __all__ = [
