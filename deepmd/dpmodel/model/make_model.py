@@ -408,6 +408,14 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.do_grad_c(var_name)
 
+        def change_type_map(
+            self, type_map: List[str], model_with_new_type_stat=None
+        ) -> None:
+            """Change the type related params to new ones, according to `type_map` and the original one in the model.
+            If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+            """
+            self.atomic_model.change_type_map(type_map=type_map)
+
         def serialize(self) -> dict:
             return self.atomic_model.serialize()
 

@@ -75,6 +75,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     spin
             The deepspin object.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     ntypes : int
             Number of element types.
             Not used in this descriptor, only to be compat with input.
@@ -110,6 +112,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
+        type_map: Optional[List[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
@@ -134,6 +137,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.activation_function = activation_function
         self.precision = precision
         self.spin = spin
+        self.type_map = type_map
         self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
         self.env_protection = env_protection
 
@@ -226,13 +230,42 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """
         raise NotImplementedError
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        raise NotImplementedError(
+            "Descriptor se_e2_r does not support changing for type related params!"
+            "This feature is currently not implemented because it would require additional work to support the non-mixed-types case. "
+            "We may consider adding this support in the future if there is a clear demand for it."
+        )
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
+
+    def set_stat_mean_and_stddev(
+        self,
+        mean: np.ndarray,
+        stddev: np.ndarray,
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        self.davg = mean
+        self.dstd = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get mean and stddev for descriptor."""
+        return self.davg, self.dstd
 
     def cal_g(
         self,
@@ -311,7 +344,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         return {
             "@class": "Descriptor",
             "type": "se_r",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -332,13 +365,14 @@ class DescrptSeR(NativeOP, BaseDescriptor):
                 "davg": self.davg,
                 "dstd": self.dstd,
             },
+            "type_map": self.type_map,
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         """Deserialize from dict."""
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")

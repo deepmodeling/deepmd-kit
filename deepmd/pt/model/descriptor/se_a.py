@@ -88,6 +88,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         trainable: bool = True,
         seed: Optional[int] = None,
         ntypes: Optional[int] = None,  # to be compat with input
+        type_map: Optional[List[str]] = None,
         # not implemented
         spin=None,
     ):
@@ -95,6 +96,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
+        self.type_map = type_map
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -132,6 +134,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.sea.get_ntypes()
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -177,6 +183,18 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.sea.dim_out
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        raise NotImplementedError(
+            "Descriptor se_e2_a does not support changing for type related params!"
+            "This feature is currently not implemented because it would require additional work to support the non-mixed-types case. "
+            "We may consider adding this support in the future if there is a clear demand for it."
+        )
 
     def compute_input_stats(
         self,
@@ -255,15 +273,20 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         mean: torch.Tensor,
         stddev: torch.Tensor,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.sea.mean = mean
         self.sea.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get mean and stddev for descriptor."""
+        return self.sea.mean, self.sea.stddev
 
     def serialize(self) -> dict:
         obj = self.sea
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -282,6 +305,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
             },
+            "type_map": self.type_map,
             ## to be updated when the options are supported.
             "trainable": True,
             "type_one_side": obj.type_one_side,
@@ -291,7 +315,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")

@@ -71,6 +71,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         old_impl: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -86,6 +87,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
+        self.type_map = type_map
         self.seed = seed
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
@@ -145,6 +147,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.ntypes
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -210,6 +216,18 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         # Other shared levels
         else:
             raise NotImplementedError
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        raise NotImplementedError(
+            "Descriptor se_e2_r does not support changing for type related params!"
+            "This feature is currently not implemented because it would require additional work to support the non-mixed-types case. "
+            "We may consider adding this support in the future if there is a clear demand for it."
+        )
 
     def compute_input_stats(
         self,
@@ -371,14 +389,19 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         mean: torch.Tensor,
         stddev: torch.Tensor,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.mean = mean
         self.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get mean and stddev for descriptor."""
+        return self.mean, self.stddev
 
     def serialize(self) -> dict:
         return {
             "@class": "Descriptor",
             "type": "se_r",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -396,6 +419,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 "davg": self["davg"].detach().cpu().numpy(),
                 "dstd": self["dstd"].detach().cpu().numpy(),
             },
+            "type_map": self.type_map,
             ## to be updated when the options are supported.
             "trainable": True,
             "type_one_side": True,
@@ -405,7 +429,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")

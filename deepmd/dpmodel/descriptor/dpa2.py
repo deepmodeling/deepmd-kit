@@ -32,6 +32,10 @@ from deepmd.dpmodel.utils.update_sel import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -41,6 +45,9 @@ from deepmd.utils.version import (
 
 from .base_descriptor import (
     BaseDescriptor,
+)
+from .descriptor import (
+    extend_descrpt_stat,
 )
 from .dpa1 import (
     DescrptBlockSeAtten,
@@ -353,7 +360,6 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             Whether to use electronic configuration type embedding.
         type_map : List[str], Optional
             A list of strings. Give the name to each type of atoms.
-            Only used if `use_econf_tebd` is `True` in type embedding net.
 
         Returns
         -------
@@ -501,6 +507,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
     def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         ret = self.repformers.dim_out
@@ -542,6 +552,47 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """
         raise NotImplementedError
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.type_embedding.change_type_map(type_map=type_map)
+        self.exclude_types = map_pair_exclude_types(self.exclude_types, remap_index)
+        self.ntypes = len(type_map)
+        repinit = self.repinit
+        repformers = self.repformers
+        if has_new_type:
+            # the avg and std of new types need to be updated
+            extend_descrpt_stat(
+                repinit,
+                type_map,
+                des_with_stat=model_with_new_type_stat.repinit
+                if model_with_new_type_stat is not None
+                else None,
+            )
+            extend_descrpt_stat(
+                repformers,
+                type_map,
+                des_with_stat=model_with_new_type_stat.repformers
+                if model_with_new_type_stat is not None
+                else None,
+            )
+        repinit.ntypes = self.ntypes
+        repformers.ntypes = self.ntypes
+        repinit.reinit_exclude(self.exclude_types)
+        repformers.reinit_exclude(self.exclude_types)
+        repinit["davg"] = repinit["davg"][remap_index]
+        repinit["dstd"] = repinit["dstd"][remap_index]
+        repformers["davg"] = repformers["davg"][remap_index]
+        repformers["dstd"] = repformers["dstd"][remap_index]
+
     @property
     def dim_out(self):
         return self.get_dim_out()
@@ -554,6 +605,23 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
+
+    def set_stat_mean_and_stddev(
+        self,
+        mean: List[np.ndarray],
+        stddev: List[np.ndarray],
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+            descrpt.mean = mean[ii]
+            descrpt.stddev = stddev[ii]
+
+    def get_stat_mean_and_stddev(self) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """Get mean and stddev for descriptor."""
+        return [self.repinit.mean, self.repformers.mean], [
+            self.repinit.stddev,
+            self.repformers.stddev,
+        ]
 
     def call(
         self,

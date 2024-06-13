@@ -56,7 +56,6 @@ class Tester:
             state_dict = state_dict_head
 
         self.model_params = deepcopy(model_params)
-        model_params["resuming"] = True
         self.model = get_model(model_params).to(DEVICE)
 
         # Model Wrapper

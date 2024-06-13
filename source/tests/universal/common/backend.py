@@ -21,3 +21,13 @@ class BackendTestCase(ABC):
     @abstractmethod
     def forward_wrapper(self, x):
         pass
+
+    @classmethod
+    @abstractmethod
+    def convert_to_numpy(cls, xx):
+        pass
+
+    @classmethod
+    @abstractmethod
+    def convert_from_numpy(cls, xx):
+        pass

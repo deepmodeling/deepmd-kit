@@ -657,7 +657,10 @@ class StandardModel(Model):
             self.descrpt = descriptor
         else:
             self.descrpt = Descriptor(
-                **descriptor, ntypes=len(self.get_type_map()), spin=self.spin
+                **descriptor,
+                ntypes=len(self.get_type_map()),
+                spin=self.spin,
+                type_map=type_map,
             )
 
         if isinstance(fitting_net, Fitting):
@@ -672,6 +675,7 @@ class StandardModel(Model):
                 ntypes=self.descrpt.get_ntypes(),
                 dim_descrpt=self.descrpt.get_dim_out(),
                 mixed_types=type_embedding is not None or self.descrpt.explicit_ntypes,
+                type_map=type_map,
             )
         self.rcut = self.descrpt.get_rcut()
         self.ntypes = self.descrpt.get_ntypes()
@@ -680,12 +684,11 @@ class StandardModel(Model):
         if type_embedding is not None and isinstance(type_embedding, TypeEmbedNet):
             self.typeebd = type_embedding
         elif type_embedding is not None:
-            if type_embedding.get("use_econf_tebd", False):
-                type_embedding["type_map"] = type_map
             self.typeebd = TypeEmbedNet(
                 ntypes=self.ntypes,
                 **type_embedding,
                 padding=self.descrpt.explicit_ntypes,
+                type_map=type_map,
             )
         elif self.descrpt.explicit_ntypes:
             default_args = type_embedding_args()
@@ -695,6 +698,7 @@ class StandardModel(Model):
                 ntypes=self.ntypes,
                 **default_args_dict,
                 padding=True,
+                type_map=type_map,
             )
         else:
             self.typeebd = None

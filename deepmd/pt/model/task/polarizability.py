@@ -25,6 +25,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -70,6 +73,9 @@ class PolarFittingNet(GeneralFitting):
         The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
+
     """
 
     def __init__(
@@ -90,6 +96,7 @@ class PolarFittingNet(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[Union[List[float], float]] = None,
         shift_diag: bool = True,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -129,6 +136,7 @@ class PolarFittingNet(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            type_map=type_map,
             **kwargs,
         )
         self.old_impl = False  # this only supports the new implementation.
@@ -153,10 +161,40 @@ class PolarFittingNet(GeneralFitting):
         else:
             return super().__getitem__(key)
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        assert self.mixed_types, "Only models in mixed types can perform type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        super().change_type_map(type_map=type_map)
+        if has_new_type:
+            extend_shape = [len(type_map), *list(self.scale.shape[1:])]
+            extend_scale = torch.ones(
+                extend_shape, dtype=self.scale.dtype, device=self.scale.device
+            )
+            self.scale = torch.cat([self.scale, extend_scale], dim=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = torch.zeros(
+                extend_shape,
+                dtype=self.constant_matrix.dtype,
+                device=self.constant_matrix.device,
+            )
+            self.constant_matrix = torch.cat(
+                [self.constant_matrix, extend_constant_matrix], dim=0
+            )
+        self.scale = self.scale[remap_index]
+        self.constant_matrix = self.constant_matrix[remap_index]
+
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 2
+        data["@version"] = 3
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
@@ -168,7 +206,7 @@ class PolarFittingNet(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("var_name", None)
         return super().deserialize(data)
 

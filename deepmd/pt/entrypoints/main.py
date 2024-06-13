@@ -51,7 +51,7 @@ from deepmd.pt.utils.env import (
     DEVICE,
 )
 from deepmd.pt.utils.finetune import (
-    change_finetune_model_params,
+    get_finetune_rules,
 )
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
@@ -79,10 +79,10 @@ def get_trainer(
     init_model=None,
     restart_model=None,
     finetune_model=None,
-    model_branch="",
     force_load=False,
     init_frz_model=None,
     shared_links=None,
+    finetune_links=None,
 ):
     multi_task = "model_dict" in config.get("model", {})
 
@@ -93,23 +93,8 @@ def get_trainer(
         assert dist.is_nccl_available()
         dist.init_process_group(backend="nccl")
 
-    ckpt = init_model if init_model is not None else restart_model
-    finetune_links = None
-    if finetune_model is not None:
-        config["model"], finetune_links = change_finetune_model_params(
-            finetune_model,
-            config["model"],
-            model_branch=model_branch,
-        )
-    config["model"]["resuming"] = (finetune_model is not None) or (ckpt is not None)
-
-    def prepare_trainer_input_single(
-        model_params_single, data_dict_single, loss_dict_single, suffix="", rank=0
-    ):
+    def prepare_trainer_input_single(model_params_single, data_dict_single, rank=0):
         training_dataset_params = data_dict_single["training_data"]
-        type_split = False
-        if model_params_single["descriptor"]["type"] in ["se_e2_a"]:
-            type_split = True
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
@@ -142,18 +127,11 @@ def get_trainer(
             if validation_systems
             else None
         )
-        if ckpt or finetune_model:
-            train_data_single = DpLoaderSet(
-                training_systems,
-                training_dataset_params["batch_size"],
-                model_params_single["type_map"],
-            )
-        else:
-            train_data_single = DpLoaderSet(
-                training_systems,
-                training_dataset_params["batch_size"],
-                model_params_single["type_map"],
-            )
+        train_data_single = DpLoaderSet(
+            training_systems,
+            training_dataset_params["batch_size"],
+            model_params_single["type_map"],
+        )
         return (
             train_data_single,
             validation_data_single,
@@ -169,7 +147,6 @@ def get_trainer(
         ) = prepare_trainer_input_single(
             config["model"],
             config["training"],
-            config["loss"],
             rank=rank,
         )
     else:
@@ -182,8 +159,6 @@ def get_trainer(
             ) = prepare_trainer_input_single(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
-                config["loss_dict"][model_key],
-                suffix=f"_{model_key}",
                 rank=rank,
             )
 
@@ -243,6 +218,16 @@ def train(FLAGS):
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
 
+    # update fine-tuning config
+    finetune_links = None
+    if FLAGS.finetune is not None:
+        config["model"], finetune_links = get_finetune_rules(
+            FLAGS.finetune,
+            config["model"],
+            model_branch=FLAGS.model_branch,
+            change_model_params=FLAGS.use_pretrain_script,
+        )
+
     # argcheck
     if not multi_task:
         config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
@@ -286,10 +271,10 @@ def train(FLAGS):
         FLAGS.init_model,
         FLAGS.restart,
         FLAGS.finetune,
-        FLAGS.model_branch,
         FLAGS.force_load,
         FLAGS.init_frz_model,
         shared_links=shared_links,
+        finetune_links=finetune_links,
     )
     # save min_nbor_dist
     if min_nbor_dist is not None:

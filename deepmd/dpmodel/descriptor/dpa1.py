@@ -37,6 +37,10 @@ from deepmd.env import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_pair_exclude_types,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -49,6 +53,7 @@ from .base_descriptor import (
 )
 from .descriptor import (
     DescriptorBlock,
+    extend_descrpt_stat,
 )
 
 
@@ -194,8 +199,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
-            Only used if `use_econf_tebd` is `True` in type embedding net.
-
     spin
             (Only support None to keep consistent with other backend references.)
             (Not used in this version. Not-none option is not implemented.)
@@ -327,6 +330,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.se_atten.get_ntypes()
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         ret = self.se_atten.get_dim_out()
@@ -382,8 +389,40 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         mean: np.ndarray,
         stddev: np.ndarray,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get mean and stddev for descriptor."""
+        return self.se_atten.mean, self.se_atten.stddev
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        obj = self.se_atten
+        obj.ntypes = len(type_map)
+        self.type_map = type_map
+        self.type_embedding.change_type_map(type_map=type_map)
+        obj.reinit_exclude(map_pair_exclude_types(obj.exclude_types, remap_index))
+        if has_new_type:
+            # the avg and std of new types need to be updated
+            extend_descrpt_stat(
+                obj,
+                type_map,
+                des_with_stat=model_with_new_type_stat.se_atten
+                if model_with_new_type_stat is not None
+                else None,
+            )
+        obj["davg"] = obj["davg"][remap_index]
+        obj["dstd"] = obj["dstd"][remap_index]
 
     def call(
         self,

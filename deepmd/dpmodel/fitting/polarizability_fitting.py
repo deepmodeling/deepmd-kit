@@ -23,6 +23,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
     fitting_check_output,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -82,6 +85,8 @@ class PolarFitting(GeneralFitting):
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
             Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -107,6 +112,7 @@ class PolarFitting(GeneralFitting):
         fit_diag: bool = True,
         scale: Optional[List[float]] = None,
         shift_diag: bool = True,
+        type_map: Optional[List[str]] = None,
         # not used
         seed: Optional[int] = None,
     ):
@@ -159,6 +165,7 @@ class PolarFitting(GeneralFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            type_map=type_map,
         )
         self.old_impl = False
 
@@ -185,7 +192,7 @@ class PolarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 2
+        data["@version"] = 3
         data["embedding_width"] = self.embedding_width
         data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
@@ -197,7 +204,7 @@ class PolarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "polar"
         return super().deserialize(data)
@@ -214,6 +221,32 @@ class PolarFitting(GeneralFitting):
                 ),
             ]
         )
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        assert self.mixed_types, "Only models in mixed types can perform type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        super().change_type_map(type_map=type_map)
+        if has_new_type:
+            extend_shape = [len(type_map), *list(self.scale.shape[1:])]
+            extend_scale = np.ones(extend_shape, dtype=self.scale.dtype)
+            self.scale = np.concatenate([self.scale, extend_scale], axis=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = np.zeros(
+                extend_shape, dtype=self.constant_matrix.dtype
+            )
+            self.constant_matrix = np.concatenate(
+                [self.constant_matrix, extend_constant_matrix], axis=0
+            )
+        self.scale = self.scale[remap_index]
+        self.constant_matrix = self.constant_matrix[remap_index]
 
     def call(
         self,

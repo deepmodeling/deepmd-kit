@@ -85,6 +85,8 @@ def to_torch_tensor(
     if xx is None:
         return None
     assert xx is not None
+    if not isinstance(xx, np.ndarray):
+        return xx
     # Create a reverse mapping of NP_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in NP_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value

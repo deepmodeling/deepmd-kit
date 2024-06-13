@@ -135,6 +135,24 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return ret
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        super().change_type_map(
+            type_map=type_map, model_with_new_type_stat=model_with_new_type_stat
+        )
+        self.type_map = type_map
+        self.descriptor.change_type_map(
+            type_map=type_map,
+            model_with_new_type_stat=model_with_new_type_stat.descriptor
+            if model_with_new_type_stat is not None
+            else None,
+        )
+        self.fitting_net.change_type_map(type_map=type_map)
+
     def serialize(self) -> dict:
         dd = super().serialize()
         dd.update(

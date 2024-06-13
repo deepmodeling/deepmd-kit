@@ -85,6 +85,8 @@ class DescrptSeR(DescrptSe):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     uniform_seed
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -103,6 +105,7 @@ class DescrptSeR(DescrptSe):
         precision: str = "default",
         uniform_seed: bool = False,
         spin: Optional[Spin] = None,
+        type_map: Optional[List[str]] = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -128,6 +131,7 @@ class DescrptSeR(DescrptSe):
         self.orig_exclude_types = exclude_types
         self.exclude_types = set()
         self.env_protection = env_protection
+        self.type_map = type_map
         for tt in exclude_types:
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
@@ -726,7 +730,7 @@ class DescrptSeR(DescrptSe):
         if cls is not DescrptSeR:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
@@ -768,7 +772,7 @@ class DescrptSeR(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_r",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel_r,
@@ -797,5 +801,6 @@ class DescrptSeR(DescrptSe):
                 "davg": self.davg.reshape(self.ntypes, self.nnei_r, 1),
                 "dstd": self.dstd.reshape(self.ntypes, self.nnei_r, 1),
             },
+            "type_map": self.type_map,
             "spin": self.spin,
         }

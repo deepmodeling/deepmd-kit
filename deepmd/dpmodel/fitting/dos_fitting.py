@@ -44,6 +44,7 @@ class DOSFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = False,
         exclude_types: List[int] = [],
+        type_map: Optional[List[str]] = None,
         # not used
         seed: Optional[int] = None,
     ):
@@ -67,12 +68,13 @@ class DOSFittingNet(InvarFitting):
             precision=precision,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            type_map=type_map,
         )
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data["numb_dos"] = data.pop("dim_out")
         data.pop("tot_ener_zero", None)
         data.pop("var_name", None)
