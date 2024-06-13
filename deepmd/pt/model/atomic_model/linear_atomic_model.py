@@ -224,12 +224,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         ener_list = []
 
         for i, model in enumerate(self.models):
-            mapping = self.mapping_list[i]
+            type_map_model = self.mapping_list[i]
             # apply bias to each individual model
             ener_list.append(
                 model.forward_common_atomic(
                     extended_coord,
-                    mapping[extended_atype],
+                    type_map_model[extended_atype],
                     nlists_[i],
                     mapping,
                     fparam,

@@ -157,8 +157,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         return self.neuron[-1]
 
     def get_dim_emb(self) -> int:
-        """Returns the output dimension."""
-        raise NotImplementedError
+        """Returns the embedding (g2) dimension of this descriptor."""
+        return self.neuron[-1]
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
@@ -305,6 +305,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -318,6 +319,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, not required by this descriptor.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------

@@ -219,6 +219,7 @@ class PolarFittingNet(GeneralFitting):
                     reduciable=True,
                     r_differentiable=False,
                     c_differentiable=False,
+                    rot_invariant=False,
                 ),
             ]
         )

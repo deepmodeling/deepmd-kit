@@ -14,52 +14,32 @@ from ....consistent.common import (
 from ...common.cases.fitting.fitting import (
     FittingTest,
 )
+from ...dpmodel.fitting.test_fitting import (
+    FittingParamDipole,
+    FittingParamDos,
+    FittingParamEnergy,
+    FittingParamPolar,
+)
 from ..backend import (
     PTTestCase,
 )
 
 
 @parameterized(
+    (
+        (FittingParamEnergy, EnergyFittingNet),
+        (FittingParamDos, DOSFittingNet),
+        (FittingParamDipole, DipoleFittingNet),
+        (FittingParamPolar, PolarFittingNet),
+    ),  # class_param & class
     (True, False),  # mixed_types
 )
-class TestFittingEnergyPT(unittest.TestCase, FittingTest, PTTestCase):
+class TestFittingPT(unittest.TestCase, FittingTest, PTTestCase):
     def setUp(self):
-        (self.mixed_types,) = self.param
+        ((FittingParam, Fitting), self.mixed_types) = self.param
         FittingTest.setUp(self)
-        self.module_class = EnergyFittingNet
-        self.module = EnergyFittingNet(**self.input_dict)
-
-
-@parameterized(
-    (True, False),  # mixed_types
-)
-class TestFittingDosPT(unittest.TestCase, FittingTest, PTTestCase):
-    def setUp(self):
-        (self.mixed_types,) = self.param
-        FittingTest.setUp(self)
-        self.module_class = DOSFittingNet
-        self.module = DOSFittingNet(**self.input_dict)
-
-
-@parameterized(
-    (True, False),  # mixed_types
-)
-class TestFittingDipolePT(unittest.TestCase, FittingTest, PTTestCase):
-    def setUp(self):
-        (self.mixed_types,) = self.param
-        FittingTest.setUp(self)
-        self.input_dict.update({"embedding_width": self.dim_embed})
-        self.module_class = DipoleFittingNet
-        self.module = DipoleFittingNet(**self.input_dict)
-
-
-@parameterized(
-    (True, False),  # mixed_types
-)
-class TestFittingPolarPT(unittest.TestCase, FittingTest, PTTestCase):
-    def setUp(self):
-        (self.mixed_types,) = self.param
-        FittingTest.setUp(self)
-        self.input_dict.update({"embedding_width": self.dim_embed})
-        self.module_class = PolarFittingNet
-        self.module = PolarFittingNet(**self.input_dict)
+        self.module_class = Fitting
+        self.input_dict = FittingParam(
+            self.nt, self.dim_descrpt, self.mixed_types, self.dim_embed, ["O", "H"]
+        )
+        self.module = Fitting(**self.input_dict)
