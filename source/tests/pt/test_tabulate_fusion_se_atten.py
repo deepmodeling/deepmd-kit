@@ -667,14 +667,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             self.is_sorted
         )
         
-        print('table_tensor', self.table_tensor.requires_grad)
-        print('table_info_tensor', self.table_info_tensor.requires_grad)
-        print('em_x_tensor', self.em_x_tensor.requires_grad)
-        print('em_tensor', self.em_tensor.requires_grad)
-
         descriptor_tensor = forward_result[0]
 
-        print('descriptor_tensor', descriptor_tensor.requires_grad)
         # Check the forward
         self.assertTrue(torch.allclose(descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5))
 
@@ -692,12 +686,6 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(self.em_tensor.grad.shape, self.expected_dy_dem.shape)
 
         # Check the values of the gradients
-        print('-----------------------------------------------')
-        print(self.em_x_tensor.grad[:5])
-        print(self.expected_dy_dem_x[:5])
-        print('-----------------------------------------------')
-        print(self.em_tensor.grad[:5])
-        print(self.expected_dy_dem[:5])
         self.assertTrue(torch.allclose(self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5))
         self.assertTrue(torch.allclose(self.em_tensor.grad, self.expected_dy_dem, atol=1e-5))
 

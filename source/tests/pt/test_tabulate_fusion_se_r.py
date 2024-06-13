@@ -599,7 +599,6 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
         # Check the forward
         self.assertTrue(torch.allclose(descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5))
 
-
         # Create a loss and perform backward
         loss = descriptor_tensor.sum()
         loss.backward()
