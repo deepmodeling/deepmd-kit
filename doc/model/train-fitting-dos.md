@@ -159,7 +159,7 @@ dp --pt test -m frozen_model.pth -s ../data/111/$k -d ${output_prefix} -a -n 100
 
 ::::
 
-if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame is output in the working directory
+if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame are output in the working directory
 
 ```
 ${output_prefix}.ados.out.0   ${output_prefix}.ados.out.1  ${output_prefix}.ados.out.2  ${output_prefix}.ados.out.3
