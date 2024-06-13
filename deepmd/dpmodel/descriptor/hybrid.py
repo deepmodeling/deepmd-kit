@@ -124,6 +124,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the number of element types."""
         return self.descrpt_list[0].get_ntypes()
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.descrpt_list[0].get_type_map()
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list]).item()
@@ -160,10 +164,48 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         raise NotImplementedError
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        for ii, descrpt in enumerate(self.descrpt_list):
+            descrpt.change_type_map(
+                type_map=type_map,
+                model_with_new_type_stat=model_with_new_type_stat.descrpt_list[ii]
+                if model_with_new_type_stat is not None
+                else None,
+            )
+
     def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
+
+    def set_stat_mean_and_stddev(
+        self,
+        mean: List[Union[np.ndarray, List[np.ndarray]]],
+        stddev: List[Union[np.ndarray, List[np.ndarray]]],
+    ) -> None:
+        """Update mean and stddev for descriptor."""
+        for ii, descrpt in enumerate(self.descrpt_list):
+            descrpt.set_stat_mean_and_stddev(mean[ii], stddev[ii])
+
+    def get_stat_mean_and_stddev(
+        self,
+    ) -> Tuple[
+        List[Union[np.ndarray, List[np.ndarray]]],
+        List[Union[np.ndarray, List[np.ndarray]]],
+    ]:
+        """Get mean and stddev for descriptor."""
+        mean_list = []
+        stddev_list = []
+        for ii, descrpt in enumerate(self.descrpt_list):
+            mean_item, stddev_item = descrpt.get_stat_mean_and_stddev()
+            mean_list.append(mean_item)
+            stddev_list.append(stddev_item)
+        return mean_list, stddev_list
 
     def call(
         self,

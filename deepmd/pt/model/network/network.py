@@ -32,12 +32,15 @@ from functools import (
 
 import torch.utils.checkpoint
 
-from deepmd.dpmodel.common import (
-    PRECISION_DICT,
+from deepmd.dpmodel.utils.type_embed import (
+    get_econf_tebd,
 )
 from deepmd.pt.utils.utils import (
     ActivationFn,
     to_torch_tensor,
+)
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
 )
 
 
@@ -619,6 +622,14 @@ class TypeEmbedNet(nn.Module):
         else:
             raise NotImplementedError
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        self.embedding.change_type_map(type_map=type_map)
+
 
 class TypeEmbedNetConsistent(nn.Module):
     r"""Type embedding network that is consistent with other backends.
@@ -645,7 +656,6 @@ class TypeEmbedNetConsistent(nn.Module):
         Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
         A list of strings. Give the name to each type of atoms.
-        Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -678,29 +688,10 @@ class TypeEmbedNetConsistent(nn.Module):
         self.econf_tebd = None
         embed_input_dim = ntypes
         if self.use_econf_tebd:
-            from deepmd.utils.econf_embd import (
-                ECONF_DIM,
-                electronic_configuration_embedding,
+            econf_tebd, embed_input_dim = get_econf_tebd(
+                self.type_map, precision=self.precision
             )
-            from deepmd.utils.econf_embd import type_map as periodic_table
-
-            assert (
-                self.type_map is not None
-            ), "When using electronic configuration type embedding, type_map must be provided!"
-
-            missing_types = [t for t in self.type_map if t not in periodic_table]
-            assert not missing_types, (
-                "When using electronic configuration type embedding, "
-                "all element in type_map should be in periodic table! "
-                f"Found these invalid elements: {missing_types}"
-            )
-            self.econf_tebd = to_torch_tensor(
-                np.array(
-                    [electronic_configuration_embedding[kk] for kk in self.type_map],
-                    dtype=PRECISION_DICT[self.precision],
-                )
-            )
-            embed_input_dim = ECONF_DIM
+            self.econf_tebd = to_torch_tensor(econf_tebd)
         self.embedding_net = EmbeddingNet(
             embed_input_dim,
             self.neuron,
@@ -732,6 +723,68 @@ class TypeEmbedNetConsistent(nn.Module):
                 [embed, torch.zeros(1, embed.shape[1], dtype=self.prec, device=device)]
             )
         return embed
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        if not self.use_econf_tebd:
+            do_resnet = self.neuron[0] in [
+                self.ntypes,
+                self.ntypes * 2,
+                len(type_map),
+                len(type_map) * 2,
+            ]
+            assert (
+                not do_resnet or self.activation_function == "Linear"
+            ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
+            first_layer_matrix = self.embedding_net.layers[0].matrix.data
+            eye_vector = torch.eye(
+                self.ntypes, dtype=self.prec, device=first_layer_matrix.device
+            )
+            # preprocess for resnet connection
+            if self.neuron[0] == self.ntypes:
+                first_layer_matrix += eye_vector
+            elif self.neuron[0] == self.ntypes * 2:
+                first_layer_matrix += torch.concat([eye_vector, eye_vector], dim=-1)
+
+            # randomly initialize params for the unseen types
+            if has_new_type:
+                extend_type_params = torch.rand(
+                    [len(type_map), first_layer_matrix.shape[-1]],
+                    device=first_layer_matrix.device,
+                    dtype=first_layer_matrix.dtype,
+                )
+                first_layer_matrix = torch.cat(
+                    [first_layer_matrix, extend_type_params], dim=0
+                )
+
+            first_layer_matrix = first_layer_matrix[remap_index]
+            new_ntypes = len(type_map)
+            eye_vector = torch.eye(
+                new_ntypes, dtype=self.prec, device=first_layer_matrix.device
+            )
+
+            if self.neuron[0] == new_ntypes:
+                first_layer_matrix -= eye_vector
+            elif self.neuron[0] == new_ntypes * 2:
+                first_layer_matrix -= torch.concat([eye_vector, eye_vector], dim=-1)
+
+            self.embedding_net.layers[0].num_in = new_ntypes
+            self.embedding_net.layers[0].matrix = nn.Parameter(data=first_layer_matrix)
+        else:
+            econf_tebd, embed_input_dim = get_econf_tebd(
+                type_map, precision=self.precision
+            )
+            self.econf_tebd = to_torch_tensor(econf_tebd)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
 
     @classmethod
     def deserialize(cls, data: dict):

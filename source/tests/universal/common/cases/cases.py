@@ -9,6 +9,9 @@ class TestCaseSingleFrameWithNlist:
         self.nloc = 3
         self.nall = 4
         self.nf, self.nt = 2, 2
+        self.dim_descrpt = 100
+        self.dim_embed = 20
+        rng = np.random.default_rng()
         self.coord_ext = np.array(
             [
                 [0, 0, 0],
@@ -32,6 +35,9 @@ class TestCaseSingleFrameWithNlist:
             ],
             dtype=int,
         ).reshape([1, self.nloc, sum(self.sel)])
+        self.mock_descriptor = rng.normal(size=(1, self.nloc, self.dim_descrpt))
+        self.mock_gr = rng.normal(size=(1, self.nloc, self.dim_embed, 3))
+        self.mock_energy_bias = rng.normal(size=(self.nt, 1))
         self.rcut = 2.2
         self.rcut_smth = 0.4
         # permutations
@@ -46,6 +52,13 @@ class TestCaseSingleFrameWithNlist:
         )
         self.mapping = np.concatenate(
             [self.mapping, self.mapping[:, self.perm]], axis=0
+        )
+        self.mock_descriptor = np.concatenate(
+            [self.mock_descriptor, self.mock_descriptor[:, self.perm[: self.nloc], :]],
+            axis=0,
+        )
+        self.mock_gr = np.concatenate(
+            [self.mock_gr, self.mock_gr[:, self.perm[: self.nloc], :, :]], axis=0
         )
 
         # permute the nlist

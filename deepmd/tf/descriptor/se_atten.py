@@ -161,6 +161,8 @@ class DescrptSeAtten(DescrptSeA):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
 
     Raises
     ------
@@ -200,6 +202,7 @@ class DescrptSeAtten(DescrptSeA):
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
         stripped_type_embedding: Optional[bool] = None,
+        type_map: Optional[List[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -246,6 +249,7 @@ class DescrptSeAtten(DescrptSeA):
             activation_function=activation_function,
             precision=precision,
             uniform_seed=uniform_seed,
+            type_map=type_map,
         )
         """
         Constructor
@@ -1953,6 +1957,7 @@ class DescrptSeAtten(DescrptSeA):
                 "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
                 "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
             },
+            "type_map": self.type_map,
             "trainable": self.trainable,
             "type_one_side": self.type_one_side,
             "spin": self.spin,
@@ -2061,7 +2066,6 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
-            Only used if `use_econf_tebd` is `True` in type embedding net.
     spin
             (Only support None to keep consistent with old implementation.)
             The old implementation of deepspin.
@@ -2144,10 +2148,10 @@ class DescrptDPA1Compat(DescrptSeAtten):
             smooth_type_embedding=smooth_type_embedding,
             tebd_input_mode=tebd_input_mode,
             env_protection=env_protection,
+            type_map=type_map,
         )
         self.tebd_dim = tebd_dim
         self.use_econf_tebd = use_econf_tebd
-        self.type_map = type_map
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2341,7 +2345,6 @@ class DescrptDPA1Compat(DescrptSeAtten):
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
                 "use_econf_tebd": self.use_econf_tebd,
-                "type_map": self.type_map,
                 "type_embedding": self.type_embedding.serialize(suffix),
             }
         )

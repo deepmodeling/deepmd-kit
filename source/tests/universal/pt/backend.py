@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import numpy as np
 import torch
 
 from deepmd.pt.utils.utils import (
@@ -31,6 +32,14 @@ class PTTestCase:
 
     def test_jit(self):
         self.script_module
+
+    @classmethod
+    def convert_to_numpy(cls, xx: torch.Tensor) -> np.ndarray:
+        return to_numpy_array(xx)
+
+    @classmethod
+    def convert_from_numpy(cls, xx: np.ndarray) -> torch.Tensor:
+        return to_torch_tensor(xx)
 
     def forward_wrapper(self, module):
         def create_wrapper_method(method):

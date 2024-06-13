@@ -37,6 +37,10 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_atom_exclude_types,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -121,6 +125,8 @@ class GeneralFitting(Fitting):
         Remove vaccum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
         length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
+    type_map: List[str], Optional
+        A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -141,6 +147,7 @@ class GeneralFitting(Fitting):
         exclude_types: List[int] = [],
         trainable: Union[bool, List[bool]] = True,
         remove_vaccum_contribution: Optional[List[bool]] = None,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -157,6 +164,7 @@ class GeneralFitting(Fitting):
         self.prec = PRECISION_DICT[self.precision]
         self.rcond = rcond
         self.seed = seed
+        self.type_map = type_map
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -247,11 +255,35 @@ class GeneralFitting(Fitting):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        assert self.mixed_types, "Only models in mixed types can perform type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
+        self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
+        if has_new_type:
+            extend_shape = [len(type_map), *list(self.bias_atom_e.shape[1:])]
+            extend_bias_atom_e = torch.zeros(
+                extend_shape,
+                dtype=self.bias_atom_e.dtype,
+                device=self.bias_atom_e.device,
+            )
+            self.bias_atom_e = torch.cat([self.bias_atom_e, extend_bias_atom_e], dim=0)
+        self.bias_atom_e = self.bias_atom_e[remap_index]
+
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 1,
+            "@version": 2,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -272,6 +304,7 @@ class GeneralFitting(Fitting):
                 "aparam_avg": to_numpy_array(self.aparam_avg),
                 "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
             },
+            "type_map": self.type_map,
             # "tot_ener_zero": self.tot_ener_zero ,
             # "trainable": self.trainable ,
             # "atom_ener": self.atom_ener ,
@@ -321,6 +354,10 @@ class GeneralFitting(Fitting):
             if ii not in self.exclude_types:
                 sel_type.append(ii)
         return sel_type
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:

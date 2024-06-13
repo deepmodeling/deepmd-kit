@@ -13,6 +13,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -43,7 +46,6 @@ class TypeEmbedNet(NativeOP):
         Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
         A list of strings. Give the name to each type of atoms.
-        Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -72,27 +74,9 @@ class TypeEmbedNet(NativeOP):
         self.type_map = type_map
         embed_input_dim = ntypes
         if self.use_econf_tebd:
-            from deepmd.utils.econf_embd import (
-                ECONF_DIM,
-                electronic_configuration_embedding,
+            self.econf_tebd, embed_input_dim = get_econf_tebd(
+                self.type_map, precision=self.precision
             )
-            from deepmd.utils.econf_embd import type_map as periodic_table
-
-            assert (
-                self.type_map is not None
-            ), "When using electronic configuration type embedding, type_map must be provided!"
-
-            missing_types = [t for t in self.type_map if t not in periodic_table]
-            assert not missing_types, (
-                "When using electronic configuration type embedding, "
-                "all element in type_map should be in periodic table! "
-                f"Found these invalid elements: {missing_types}"
-            )
-            self.econf_tebd = np.array(
-                [electronic_configuration_embedding[kk] for kk in self.type_map],
-                dtype=PRECISION_DICT[self.precision],
-            )
-            embed_input_dim = ECONF_DIM
         self.embedding_net = EmbeddingNet(
             embed_input_dim,
             self.neuron,
@@ -159,3 +143,85 @@ class TypeEmbedNet(NativeOP):
             "type_map": self.type_map,
             "embedding": self.embedding_net.serialize(),
         }
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        if not self.use_econf_tebd:
+            do_resnet = self.neuron[0] in [
+                self.ntypes,
+                self.ntypes * 2,
+                len(type_map),
+                len(type_map) * 2,
+            ]
+            assert (
+                not do_resnet or self.activation_function == "Linear"
+            ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
+            first_layer_matrix = self.embedding_net.layers[0].w
+            eye_vector = np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
+            # preprocess for resnet connection
+            if self.neuron[0] == self.ntypes:
+                first_layer_matrix += eye_vector
+            elif self.neuron[0] == self.ntypes * 2:
+                first_layer_matrix += np.concatenate([eye_vector, eye_vector], axis=-1)
+
+            # randomly initialize params for the unseen types
+            rng = np.random.default_rng()
+            if has_new_type:
+                extend_type_params = rng.random(
+                    [len(type_map), first_layer_matrix.shape[-1]],
+                    dtype=first_layer_matrix.dtype,
+                )
+                first_layer_matrix = np.concatenate(
+                    [first_layer_matrix, extend_type_params], axis=0
+                )
+
+            first_layer_matrix = first_layer_matrix[remap_index]
+            new_ntypes = len(type_map)
+            eye_vector = np.eye(new_ntypes, dtype=PRECISION_DICT[self.precision])
+
+            if self.neuron[0] == new_ntypes:
+                first_layer_matrix -= eye_vector
+            elif self.neuron[0] == new_ntypes * 2:
+                first_layer_matrix -= np.concatenate([eye_vector, eye_vector], axis=-1)
+
+            self.embedding_net.layers[0].num_in = new_ntypes
+            self.embedding_net.layers[0].w = first_layer_matrix
+        else:
+            self.econf_tebd, embed_input_dim = get_econf_tebd(
+                type_map, precision=self.precision
+            )
+        self.type_map = type_map
+        self.ntypes = len(type_map)
+
+
+def get_econf_tebd(type_map, precision: str = "default"):
+    from deepmd.utils.econf_embd import (
+        ECONF_DIM,
+        electronic_configuration_embedding,
+    )
+    from deepmd.utils.econf_embd import type_map as periodic_table
+
+    assert (
+        type_map is not None
+    ), "When using electronic configuration type embedding, type_map must be provided!"
+
+    missing_types = [t for t in type_map if t not in periodic_table]
+    assert not missing_types, (
+        "When using electronic configuration type embedding, "
+        "all element in type_map should be in periodic table! "
+        f"Found these invalid elements: {missing_types}"
+    )
+    econf_tebd = np.array(
+        [electronic_configuration_embedding[kk] for kk in type_map],
+        dtype=PRECISION_DICT[precision],
+    )
+    embed_input_dim = ECONF_DIM
+    return econf_tebd, embed_input_dim

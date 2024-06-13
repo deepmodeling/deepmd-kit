@@ -65,6 +65,8 @@ class DipoleFittingSeA(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -80,6 +82,7 @@ class DipoleFittingSeA(Fitting):
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
+        type_map: Optional[List[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -105,6 +108,7 @@ class DipoleFittingSeA(Fitting):
         self.fitting_net_variables = None
         self.mixed_prec = None
         self.mixed_types = mixed_types
+        self.type_map = type_map
 
     def get_sel_type(self) -> int:
         """Get selected type."""
@@ -361,7 +365,7 @@ class DipoleFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dipole",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
@@ -383,6 +387,7 @@ class DipoleFittingSeA(Fitting):
                 variables=self.fitting_net_variables,
                 suffix=suffix,
             ),
+            "type_map": self.type_map,
         }
         return data
 
@@ -401,7 +406,7 @@ class DipoleFittingSeA(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],

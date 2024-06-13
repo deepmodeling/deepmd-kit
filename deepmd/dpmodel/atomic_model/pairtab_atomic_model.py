@@ -135,6 +135,18 @@ class PairTabAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return False
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert type_map == self.type_map, (
+            "PairTabAtomicModel does not support changing type map now. "
+            "This feature is currently not implemented because it would require additional work to change the tab file. "
+            "We may consider adding this support in the future if there is a clear demand for it."
+        )
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(

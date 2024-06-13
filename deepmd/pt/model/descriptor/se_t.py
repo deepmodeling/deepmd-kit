@@ -101,6 +101,8 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -117,6 +119,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         precision: str = "float64",
         trainable: bool = True,
         seed: Optional[int] = None,
+        type_map: Optional[List[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # not implemented
         spin=None,
@@ -125,6 +128,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
+        self.type_map = type_map
         self.seat = DescrptBlockSeT(
             rcut,
             rcut_smth,
@@ -159,6 +163,10 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return self.seat.get_ntypes()
+
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -204,6 +212,18 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
         return self.seat.dim_out
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        raise NotImplementedError(
+            "Descriptor se_e3 does not support changing for type related params!"
+            "This feature is currently not implemented because it would require additional work to support the non-mixed-types case. "
+            "We may consider adding this support in the future if there is a clear demand for it."
+        )
 
     def compute_input_stats(
         self,
@@ -283,15 +303,20 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         mean: torch.Tensor,
         stddev: torch.Tensor,
     ) -> None:
+        """Update mean and stddev for descriptor."""
         self.seat.mean = mean
         self.seat.stddev = stddev
+
+    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Get mean and stddev for descriptor."""
+        return self.seat.mean, self.seat.stddev
 
     def serialize(self) -> dict:
         obj = self.seat
         return {
             "@class": "Descriptor",
             "type": "se_e3",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -304,6 +329,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             "env_mat": DPEnvMat(obj.rcut, obj.rcut_smth).serialize(),
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
+            "type_map": self.type_map,
             "@variables": {
                 "davg": obj["davg"].detach().cpu().numpy(),
                 "dstd": obj["dstd"].detach().cpu().numpy(),
@@ -314,7 +340,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeT":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")

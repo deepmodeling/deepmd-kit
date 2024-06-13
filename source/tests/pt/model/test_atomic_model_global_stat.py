@@ -5,6 +5,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    List,
     Optional,
 )
 
@@ -78,6 +79,14 @@ class FooFitting(torch.nn.Module, BaseFitting):
         )
 
     def serialize(self) -> dict:
+        raise NotImplementedError
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        raise NotImplementedError
+
+    def get_type_map(self) -> List[str]:
         raise NotImplementedError
 
     def forward(
