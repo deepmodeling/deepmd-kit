@@ -454,8 +454,12 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 preset_bias=self.preset_out_bias,
             )
             self._store_out_stat(delta_bias, out_std, add=True)
-        elif bias_adjust_mode == "set-by-statistic":            
-            intensive=self.fitting_net.intensive if hasattr(self.fitting_net, 'intensive') else False
+        elif bias_adjust_mode == "set-by-statistic":
+            intensive = (
+                self.fitting_net.intensive
+                if hasattr(self.fitting_net, "intensive")
+                else False
+            )
             bias_out, std_out = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
