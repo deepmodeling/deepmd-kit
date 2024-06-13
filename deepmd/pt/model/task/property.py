@@ -4,7 +4,6 @@ import logging
 from typing import (
     List,
     Optional,
-    Union,
 )
 
 import torch
@@ -36,6 +35,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
 
 log = logging.getLogger(__name__)
+
 
 @Fitting.register("property")
 class PropertyFittingNet(InvarFitting):
@@ -74,7 +74,7 @@ class PropertyFittingNet(InvarFitting):
             seed=seed,
             **kwargs,
         )
-    
+
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
@@ -87,7 +87,7 @@ class PropertyFittingNet(InvarFitting):
                 ),
             ]
         )
-    
+
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = copy.deepcopy(data)
@@ -97,7 +97,7 @@ class PropertyFittingNet(InvarFitting):
         obj = super().deserialize(data)
 
         return obj
-    
+
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
         dd = {
@@ -108,7 +108,6 @@ class PropertyFittingNet(InvarFitting):
         dd["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
 
         return dd
-    
+
     # make jit happy with torch 2.0.0
     exclude_types: List[int]
-    

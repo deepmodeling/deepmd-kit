@@ -14,11 +14,11 @@ from .ener_spin import (
 from .loss import (
     TaskLoss,
 )
-from .tensor import (
-    TensorLoss,
-)
 from .property import (
     PropertyLoss,
+)
+from .tensor import (
+    TensorLoss,
 )
 
 __all__ = [

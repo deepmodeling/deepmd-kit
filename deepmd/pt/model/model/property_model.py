@@ -22,6 +22,7 @@ from .make_model import (
 
 DPPropertyModel_ = make_model(DPPropertyAtomicModel)
 
+
 @BaseModel.register("property")
 class PropertyModel(DPModelCommon, DPPropertyModel_):
     model_type = "property"
@@ -29,11 +30,11 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def __init__(
         self,
         *args,
-        **kwargs,        
+        **kwargs,
     ):
         DPModelCommon.__init__(self)
-        DPPropertyModel_.__init__(self, *args, **kwargs)  
-    
+        DPPropertyModel_.__init__(self, *args, **kwargs)
+
     def forward(
         self,
         coord,
@@ -60,7 +61,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
         return model_predict
-    
+
     @torch.jit.export
     def forward_lower(
         self,

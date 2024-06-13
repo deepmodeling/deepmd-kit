@@ -318,7 +318,7 @@ class Trainer:
                 loss_params["task_dim"] = task_dim
                 loss_params["intensive"] = _model.atomic_model.fitting_net.intensive
                 return PropertyLoss(**loss_params)
-            else: 
+            else:
                 raise NotImplementedError
 
         # Optimizer
