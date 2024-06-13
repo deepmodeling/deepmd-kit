@@ -400,7 +400,7 @@ def compute_output_stats_global(
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
-    if model_pred == {}:
+    if not model_pred:
         return {}, {}
 
     # get label dict from sample; for each key, only picking the system with global labels.
