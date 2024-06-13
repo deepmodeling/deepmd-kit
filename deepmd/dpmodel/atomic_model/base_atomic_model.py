@@ -20,6 +20,11 @@ from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_atom_exclude_types,
+    map_pair_exclude_types,
+)
 
 from .make_base_atomic_model import (
     make_base_atomic_model,
@@ -112,6 +117,23 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 )
             ]
         )
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.reinit_atom_exclude(
+            map_atom_exclude_types(self.atom_exclude_types, remap_index)
+        )
+        self.reinit_pair_exclude(
+            map_pair_exclude_types(self.pair_exclude_types, remap_index)
+        )
+        self.out_bias = self.out_bias[:, remap_index, :]
+        self.out_std = self.out_std[:, remap_index, :]
 
     def forward_common_atomic(
         self,

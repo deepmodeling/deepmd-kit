@@ -79,6 +79,11 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
+        def get_type_map(self) -> List[str]:
+            """Get the name to each type of atoms."""
+            pass
+
+        @abstractmethod
         def get_dim_out(self) -> int:
             """Returns the output descriptor dimension."""
             pass
@@ -111,6 +116,25 @@ def make_base_descriptor(
             If not start from checkpoint (resume is False),
             some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
             """
+            pass
+
+        @abstractmethod
+        def change_type_map(
+            self, type_map: List[str], model_with_new_type_stat=None
+        ) -> None:
+            """Change the type related params to new ones, according to `type_map` and the original one in the model.
+            If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+            """
+            pass
+
+        @abstractmethod
+        def set_stat_mean_and_stddev(self, mean, stddev) -> None:
+            """Update mean and stddev for descriptor."""
+            pass
+
+        @abstractmethod
+        def get_stat_mean_and_stddev(self):
+            """Get mean and stddev for descriptor."""
             pass
 
         def compute_input_stats(

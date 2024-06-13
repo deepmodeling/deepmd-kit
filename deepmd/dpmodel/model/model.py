@@ -25,7 +25,9 @@ def get_standard_model(data: dict) -> EnergyModel:
         The data to construct the model.
     """
     descriptor_type = data["descriptor"].pop("type")
+    data["descriptor"]["type_map"] = data["type_map"]
     fitting_type = data["fitting_net"].pop("type")
+    data["fitting_net"]["type_map"] = data["type_map"]
     if descriptor_type == "se_e2_a":
         descriptor = DescrptSeA(
             **data["descriptor"],

@@ -56,6 +56,7 @@ class EnergyFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         seed: Optional[int] = None,
+        type_map: Optional[List[str]] = None,
         **kwargs,
     ):
         super().__init__(
@@ -72,13 +73,14 @@ class EnergyFittingNet(InvarFitting):
             precision=precision,
             mixed_types=mixed_types,
             seed=seed,
+            type_map=type_map,
             **kwargs,
         )
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)
@@ -179,6 +181,14 @@ class EnergyFittingNetDirect(Fitting):
         raise NotImplementedError
 
     def deserialize(cls) -> "EnergyFittingNetDirect":
+        raise NotImplementedError
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        raise NotImplementedError
+
+    def get_type_map(self) -> List[str]:
         raise NotImplementedError
 
     def forward(

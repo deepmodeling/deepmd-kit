@@ -21,6 +21,10 @@ from deepmd.dpmodel.utils import (
     FittingNet,
     NetworkCollection,
 )
+from deepmd.utils.finetune import (
+    get_index_between_two_maps,
+    map_atom_exclude_types,
+)
 
 from .base_fitting import (
     BaseFitting,
@@ -76,6 +80,8 @@ class GeneralFitting(NativeOP, BaseFitting):
         Remove vaccum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
         length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -99,6 +105,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         mixed_types: bool = True,
         exclude_types: List[int] = [],
         remove_vaccum_contribution: Optional[List[bool]] = None,
+        type_map: Optional[List[str]] = None,
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -110,6 +117,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
+        self.type_map = type_map
         if self.trainable is None:
             self.trainable = [True for ii in range(len(self.neuron) + 1)]
         if isinstance(self.trainable, bool):
@@ -185,6 +193,32 @@ class GeneralFitting(NativeOP, BaseFitting):
         """
         return [ii for ii in range(self.ntypes) if ii not in self.exclude_types]
 
+    def get_type_map(self) -> List[str]:
+        """Get the name to each type of atoms."""
+        return self.type_map
+
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        assert (
+            self.type_map is not None
+        ), "'type_map' must be defined when performing type changing!"
+        assert self.mixed_types, "Only models in mixed types can perform type changing!"
+        remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
+        self.type_map = type_map
+        self.ntypes = len(type_map)
+        self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
+        if has_new_type:
+            extend_shape = [len(type_map), *list(self.bias_atom_e.shape[1:])]
+            extend_bias_atom_e = np.zeros(extend_shape, dtype=self.bias_atom_e.dtype)
+            self.bias_atom_e = np.concatenate(
+                [self.bias_atom_e, extend_bias_atom_e], axis=0
+            )
+        self.bias_atom_e = self.bias_atom_e[remap_index]
+
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
             self.bias_atom_e = value
@@ -228,7 +262,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 1,
+            "@version": 2,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -249,6 +283,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
             },
+            "type_map": self.type_map,
             # not supported
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,

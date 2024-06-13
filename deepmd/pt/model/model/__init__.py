@@ -110,13 +110,13 @@ def get_zbl_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    if model_params["descriptor"].get("use_econf_tebd", False):
-        model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", None)
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
+    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
     fitting_net["mixed_types"] = descriptor.mixed_types()
     fitting_net["embedding_width"] = descriptor.get_dim_out()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
@@ -157,13 +157,13 @@ def get_standard_model(model_params):
     ntypes = len(model_params["type_map"])
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
-    if model_params["descriptor"].get("use_econf_tebd", False):
-        model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
-    fitting_net = model_params.get("fitting_net", None)
+    fitting_net = model_params.get("fitting_net", {})
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
+    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
     fitting_net["mixed_types"] = descriptor.mixed_types()
     if fitting_net["type"] in ["dipole", "polar"]:
         fitting_net["embedding_width"] = descriptor.get_dim_emb()

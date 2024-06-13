@@ -90,6 +90,8 @@ class DescrptSeT(DescrptSe):
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
     """
 
     def __init__(
@@ -106,6 +108,7 @@ class DescrptSeT(DescrptSe):
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
+        type_map: Optional[List[str]] = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -133,6 +136,7 @@ class DescrptSeT(DescrptSe):
         self.env_protection = env_protection
         self.orig_exclude_types = exclude_types
         self.exclude_types = set()
+        self.type_map = type_map
         for tt in exclude_types:
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
@@ -879,7 +883,7 @@ class DescrptSeT(DescrptSe):
         if cls is not DescrptSeT:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -922,7 +926,7 @@ class DescrptSeT(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_e3",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,
@@ -949,5 +953,6 @@ class DescrptSeT(DescrptSe):
                 "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
                 "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
             },
+            "type_map": self.type_map,
             "trainable": self.trainable,
         }

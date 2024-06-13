@@ -6,13 +6,11 @@ from typing import (
     Union,
 )
 
-import numpy as np
-
-from deepmd.dpmodel.common import (
-    PRECISION_DICT,
-)
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
+)
+from deepmd.dpmodel.utils.type_embed import (
+    get_econf_tebd,
 )
 from deepmd.tf.common import (
     get_activation_func,
@@ -104,7 +102,6 @@ class TypeEmbedNet:
             Whether to use electronic configuration type embedding.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
-            Only used if `use_econf_tebd` is `True` in type embedding net.
     """
 
     def __init__(
@@ -138,25 +135,7 @@ class TypeEmbedNet:
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
         if self.use_econf_tebd:
-            from deepmd.utils.econf_embd import (
-                electronic_configuration_embedding,
-            )
-            from deepmd.utils.econf_embd import type_map as periodic_table
-
-            assert (
-                self.type_map is not None
-            ), "When using electronic configuration type embedding, type_map must be provided!"
-
-            missing_types = [t for t in self.type_map if t not in periodic_table]
-            assert not missing_types, (
-                "When using electronic configuration type embedding, "
-                "all element in type_map should be in periodic table! "
-                f"Found these invalid elements: {missing_types}"
-            )
-            self.econf_tebd = np.array(
-                [electronic_configuration_embedding[kk] for kk in self.type_map],
-                dtype=PRECISION_DICT[precision],
-            )
+            self.econf_tebd, _ = get_econf_tebd(self.type_map, precision=precision)
         self.model_type = None
 
     def build(

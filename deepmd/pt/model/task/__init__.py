@@ -11,6 +11,9 @@ from .denoise import (
 from .dipole import (
     DipoleFittingNet,
 )
+from .dos import (
+    DOSFittingNet,
+)
 from .ener import (
     EnergyFittingNet,
     EnergyFittingNetDirect,
@@ -38,5 +41,6 @@ __all__ = [
     "BaseFitting",
     "TypePredictNet",
     "PolarFittingNet",
+    "DOSFittingNet",
     "PropertyFittingNet",
 ]

@@ -119,6 +119,23 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the type map."""
         return self.type_map
 
+    def change_type_map(
+        self, type_map: List[str], model_with_new_type_stat=None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        super().change_type_map(
+            type_map=type_map, model_with_new_type_stat=model_with_new_type_stat
+        )
+        for ii, model in enumerate(self.models):
+            model.change_type_map(
+                type_map=type_map,
+                model_with_new_type_stat=model_with_new_type_stat.models[ii]
+                if model_with_new_type_stat is not None
+                else None,
+            )
+
     def get_model_rcuts(self) -> List[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]

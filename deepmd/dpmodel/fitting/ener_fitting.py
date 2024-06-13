@@ -44,6 +44,7 @@ class EnergyFittingNet(InvarFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: List[int] = [],
+        type_map: Optional[List[str]] = None,
         # not used
         seed: Optional[int] = None,
     ):
@@ -67,12 +68,13 @@ class EnergyFittingNet(InvarFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            type_map=type_map,
         )
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)

@@ -154,6 +154,8 @@ class DescrptSeA(DescrptSe):
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
 
     References
     ----------
@@ -181,6 +183,7 @@ class DescrptSeA(DescrptSe):
         uniform_seed: bool = False,
         spin: Optional[Spin] = None,
         tebd_input_mode: str = "concat",
+        type_map: Optional[List[str]] = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -211,6 +214,7 @@ class DescrptSeA(DescrptSe):
         self.orig_exclude_types = exclude_types
         self.exclude_types = set()
         self.env_protection = env_protection
+        self.type_map = type_map
         for tt in exclude_types:
             assert len(tt) == 2
             self.exclude_types.add((tt[0], tt[1]))
@@ -1371,7 +1375,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1428,7 +1432,7 @@ class DescrptSeA(DescrptSe):
         return {
             "@class": "Descriptor",
             "type": "se_e2_a",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,
@@ -1458,5 +1462,6 @@ class DescrptSeA(DescrptSe):
                 "davg": self.davg.reshape(self.ntypes, self.nnei_a, 4),
                 "dstd": self.dstd.reshape(self.ntypes, self.nnei_a, 4),
             },
+            "type_map": self.type_map,
             "spin": self.spin,
         }
