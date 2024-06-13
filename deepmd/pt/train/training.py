@@ -601,15 +601,14 @@ class Trainer:
                         _finetune_rule_single,
                         _sample_func,
                     ):
-                        # need fix for DOSModel
-                        if not isinstance(_model, DOSModel):
-                            _model = _model_change_out_bias(
-                                _model,
-                                _sample_func,
-                                _bias_adjust_mode="change-by-statistic"
-                                if not _finetune_rule_single.get_random_fitting()
-                                else "set-by-statistic",
-                            )
+                        
+                        _model = _model_change_out_bias(
+                            _model,
+                            _sample_func,
+                            _bias_adjust_mode="change-by-statistic"
+                            if not _finetune_rule_single.get_random_fitting()
+                            else "set-by-statistic",
+                        )
                         return _model
 
                     if not self.multi_task:
