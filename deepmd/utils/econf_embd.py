@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import dpdata
 import numpy as np
 from mendeleev import (
     element,
@@ -169,7 +168,7 @@ maxn = 7
 maxl = maxn
 maxm = 2 * maxl + 1
 
-type_map = dpdata.periodic_table.ELEMENTS
+type_map = list(electronic_configuration_embedding.keys())
 ECONF_DIM = electronic_configuration_embedding[type_map[0]].shape[0]
 
 
