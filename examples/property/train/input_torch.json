@@ -46,7 +46,7 @@
     "fitting_net": {
       "type": "property",
       "intensive": true,
-      "task_dim" : 3,
+      "task_dim": 3,
       "neuron": [
         240,
         240,
