@@ -49,6 +49,7 @@ input_files = (
     p_examples / "water" / "se_e2_a" / "input_torch.json",
     p_examples / "water" / "se_atten" / "input_torch.json",
     p_examples / "water" / "dpa2" / "input_torch.json",
+    p_examples / "property" / "train" / "input_torch.json",
 )
 
 

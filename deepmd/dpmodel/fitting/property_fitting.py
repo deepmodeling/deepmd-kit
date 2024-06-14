@@ -1,43 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import logging
+import torch
 from typing import (
+    Union,
     List,
     Optional,
 )
 
-import torch
-
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
-from deepmd.pt.model.task.ener import (
-    InvarFitting,
-)
-from deepmd.pt.model.task.fitting import (
-    Fitting,
-)
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.env import (
+from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.dpmodel.fitting.invar_fitting import (
+    InvarFitting,
+)
+
 from deepmd.utils.version import (
     check_version_compatibility,
 )
 
-dtype = env.GLOBAL_PT_FLOAT_PRECISION
-device = env.DEVICE
-
-log = logging.getLogger(__name__)
-
-
-@Fitting.register("property")
+@InvarFitting.register("property")
 class PropertyFittingNet(InvarFitting):
     def __init__(
         self,
@@ -46,6 +30,8 @@ class PropertyFittingNet(InvarFitting):
         task_dim: int = 1,
         neuron: List[int] = [128, 128, 128],
         bias_atom_p: Optional[torch.Tensor] = None,
+        rcond: Optional[float] = None,
+        trainable: Union[bool, List[bool]] = True,
         intensive: bool = False,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -53,8 +39,10 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
+        exclude_types: List[int] = [],
+        type_map: Optional[List[str]] = None,
+        # not used
         seed: Optional[int] = None,
-        **kwargs,
     ):
         self.task_dim = task_dim
         self.intensive = intensive
@@ -64,28 +52,17 @@ class PropertyFittingNet(InvarFitting):
             dim_descrpt=dim_descrpt,
             dim_out=task_dim,
             neuron=neuron,
-            bias_atom_e=bias_atom_p,
+            bias_atom=bias_atom_p,
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            rcond=rcond,
+            trainable=trainable,
             activation_function=activation_function,
             precision=precision,
             mixed_types=mixed_types,
-            seed=seed,
-            **kwargs,
-        )
-
-    def output_def(self) -> FittingOutputDef:
-        return FittingOutputDef(
-            [
-                OutputVariableDef(
-                    self.var_name,
-                    [self.dim_out],
-                    reduciable=True,
-                    r_differentiable=False,
-                    c_differentiable=False,
-                ),
-            ]
+            exclude_types=exclude_types,
+            type_map=type_map,
         )
 
     @classmethod
@@ -94,6 +71,11 @@ class PropertyFittingNet(InvarFitting):
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("dim_out")
         data.pop("var_name")
+        data.pop("tot_ener_zero")
+        data.pop("layer_name")
+        data.pop("use_aparam_as_mask", None)
+        data.pop("spin", None)
+        data.pop("atom_ener", None)
         obj = super().deserialize(data)
 
         return obj
@@ -105,9 +87,6 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
         }
-        dd["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
+        dd["@variables"]["bias_atom_e"] = self.bias_atom_e
 
         return dd
-
-    # make jit happy with torch 2.0.0
-    exclude_types: List[int]
