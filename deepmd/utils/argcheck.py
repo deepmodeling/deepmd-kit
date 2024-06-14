@@ -1321,6 +1321,39 @@ def fitting_dos():
     ]
 
 
+@fitting_args_plugin.register("property", doc=doc_only_pt_supported)
+def fitting_property():
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built"
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_task_dim = "The dimension of outputs of fitting net"
+    doc_intensive = "Whether the fitting property is intensive"
+    return [
+        Argument(
+            "neuron",
+            List[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
+        Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
+    ]
+
+
 @fitting_args_plugin.register("polar")
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
@@ -2116,6 +2149,36 @@ def loss_dos():
     ]
 
 
+@loss_args_plugin.register("property")
+def loss_property():
+    doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
+    doc_metric = "The metric such as 'mae','smooth_mae' for display."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
+        ),
+        Argument(
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
+        ),
+    ]
+
+
 # YWolfeee: Modified to support tensor type of loss args.
 @loss_args_plugin.register("tensor", doc=doc_only_tf_supported)
 def loss_tensor():
@@ -2534,8 +2597,8 @@ def gen_json_schema() -> str:
 
 def normalize(data):
     base = Argument("base", dict, gen_args())
-    # data = base.normalize_value(data, trim_pattern="_*")
-    # base.check_value(data, strict=True)
+    data = base.normalize_value(data, trim_pattern="_*")
+    base.check_value(data, strict=True)
 
     return data
 
