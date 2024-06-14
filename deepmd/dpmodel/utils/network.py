@@ -61,6 +61,10 @@ class NativeLayer(NativeOP):
         The activation function of the layer.
     resnet : bool, optional
         Whether the layer is a residual layer.
+    precision : str, optional
+        The precision of the layer.
+    seed : int, optional
+        Random seed.
     """
 
     def __init__(
@@ -299,6 +303,12 @@ class LayerNorm(NativeLayer):
         A small value added to prevent division by zero in calculations.
     uni_init : bool, optional
         If initialize the weights to be zeros and ones.
+    trainable : bool, optional
+        If the weights are trainable.
+    precision : str, optional
+        The precision of the layer.
+    seed : int, optional
+        Random seed.
     """
 
     def __init__(
@@ -556,7 +566,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             Use time step at the resnet architecture.
         precision
             Floating point precision for the model paramters.
-
+        seed : int, optional
+            Random seed.
         """
 
         def __init__(
@@ -581,7 +592,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         activation_function=activation_function,
                         resnet=True,
                         precision=precision,
-                        seed=seed,
+                        seed=seed + idx,
                     ).serialize()
                 )
                 i_in = i_ot
@@ -656,7 +667,8 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             Floating point precision for the model paramters.
         bias_out
             The last linear layer has bias.
-
+        seed : int, optional
+            Random seed.
         """
 
         def __init__(
@@ -688,7 +700,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     activation_function=None,
                     resnet=False,
                     precision=precision,
-                    seed=seed,
+                    seed=seed + len(self.layers),
                 )
             )
             self.out_dim = out_dim
