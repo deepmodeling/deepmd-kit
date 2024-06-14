@@ -2202,7 +2202,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
     ) -> tf.Tensor:
         type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)
         if (not self.uniform_seed) and (self.seed is not None):
-            self.seed += embedding_net_rand_seed_shift(1)
+            self.seed += embedding_net_rand_seed_shift([self.tebd_dim])
         input_dict["type_embedding"] = type_embedding
 
         # nf x nloc x out_dim
