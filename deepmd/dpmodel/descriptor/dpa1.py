@@ -294,6 +294,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
+            seed=seed,
         )
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
@@ -625,6 +626,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
         smooth: bool = True,
+        seed: Optional[int] = None,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -674,6 +676,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.activation_function,
             self.resnet_dt,
             self.precision,
+            seed=seed,
         )
         if self.tebd_input_mode in ["strip"]:
             self.embeddings_strip = NetworkCollection(
@@ -687,6 +690,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
+                seed=seed,
             )
         else:
             self.embeddings_strip = None

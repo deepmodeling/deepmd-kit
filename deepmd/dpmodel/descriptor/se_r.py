@@ -156,6 +156,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
+                seed=seed,
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)

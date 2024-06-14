@@ -83,6 +83,7 @@ class TypeEmbedNet(NativeOP):
             self.activation_function,
             self.resnet_dt,
             self.precision,
+            seed=self.seed,
         )
 
     def call(self) -> np.ndarray:
