@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import numpy as np
-
-
 import dpdata
+import numpy as np
 from mendeleev import (
     element,
 )
