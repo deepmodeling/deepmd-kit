@@ -457,7 +457,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         elif bias_adjust_mode == "set-by-statistic":
             intensive = (
                 self.fitting_net.intensive
-                if (hasattr(self, "fitting_net") and hasattr(self.fitting_net, "intensive"))
+                if (
+                    hasattr(self, "fitting_net")
+                    and hasattr(self.fitting_net, "intensive")
+                )
                 else False
             )
             bias_out, std_out = compute_output_stats(
