@@ -690,7 +690,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
-                seed=seed,
+                seed=seed + 1 if seed is not None else None,
             )
         else:
             self.embeddings_strip = None
