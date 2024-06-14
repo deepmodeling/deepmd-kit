@@ -581,7 +581,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         activation_function=activation_function,
                         resnet=True,
                         precision=precision,
-                        seed=seed,
+                        seed=seed + idx,
                     ).serialize()
                 )
                 i_in = i_ot
@@ -688,7 +688,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     activation_function=None,
                     resnet=False,
                     precision=precision,
-                    seed=seed,
+                    seed=seed + len(self.layers),
                 )
             )
             self.out_dim = out_dim
