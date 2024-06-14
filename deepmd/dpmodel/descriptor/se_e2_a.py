@@ -189,8 +189,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
-        for embedding_idx in itertools.product(
-            range(self.ntypes), repeat=self.embeddings.ndim
+        for ii, embedding_idx in enumerate(
+            itertools.product(range(self.ntypes), repeat=self.embeddings.ndim)
         ):
             self.embeddings[embedding_idx] = EmbeddingNet(
                 in_dim,
@@ -198,7 +198,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
-                seed=seed,
+                seed=seed + len(self.neuron) * ii if seed is not None else None,
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)
