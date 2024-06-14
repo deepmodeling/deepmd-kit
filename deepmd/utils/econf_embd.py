@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 
-try:
-    import dpdata
-    from mendeleev import (
-        element,
-    )
-except ImportError:
-    pass
+
+import dpdata
+from mendeleev import (
+    element,
+)
 
 ###
 # made by command
