@@ -59,7 +59,7 @@ One can also use a subcommand to calculate the deviation of predicted forces or 
 dp model-devi -m graph.000.pb graph.001.pb graph.002.pb graph.003.pb -s ./data -o model_devi.out
 ```
 
-where `-m` specifies graph files to be calculated, `-s` gives the data to be evaluated, `-o` the file to which model deviation results is dumped. Here is more information on this sub-command:
+where `-m` specifies model files to be calculated, `-s` gives the data to be evaluated, `-o` the file to which model deviation results are dumped. Here is more information on this sub-command:
 
 ```bash
 usage: dp model-devi [-h] [-v {DEBUG,3,INFO,2,WARNING,1,ERROR,0}]

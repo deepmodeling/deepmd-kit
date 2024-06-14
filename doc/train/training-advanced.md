@@ -170,9 +170,9 @@ One can set other environmental variables:
 | DP_AUTO_PARALLELIZATION | 0, 1          | 0             | Enable auto parallelization for CPU operators.                                                                      |
 | DP_JIT                  | 0, 1          | 0             | Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow supports JIT. |
 
-## Adjust `sel` of a frozen model
+## Adjust `sel` of a frozen model {{ tensorflow_icon }}
 
-One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of a existing model. Firstly, one needs to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
+One can use `--init-frz-model` features to adjust (increase or decrease) [`sel`](../model/sel.md) of an existing model. Firstly, one needs to adjust [`sel`](./train-input.rst) in `input.json`. For example, adjust from `[46, 92]` to `[23, 46]`.
 
 ```json
 "model": {

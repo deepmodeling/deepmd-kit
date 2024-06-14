@@ -1,7 +1,7 @@
-# Fit electronic density of states (DOS) {{ tensorflow_icon }}
+# Fit electronic density of states (DOS) {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
@@ -82,9 +82,25 @@ To prepare the data, we recommend shifting the DOS data by the Fermi level.
 
 The training command is the same as `ener` mode, i.e.
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
-dp train input.json
+dp --tf train input.json
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+dp --pt train input.json
+```
+
+:::
+
+::::
 
 The detailed loss can be found in `lcurve.out`:
 
@@ -117,14 +133,33 @@ The detailed loss can be found in `lcurve.out`:
 
 In this earlier version, we can use `dp test` to infer the electronic density of state for given frames.
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
 
-$DP freeze -o frozen_model.pb
+dp --tf freeze -o frozen_model.pb
 
-$DP test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
+dp --tf test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
 
-if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame is output in the working directory
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+
+dp --pt freeze -o frozen_model.pth
+
+dp --pt test -m frozen_model.pth -s ../data/111/$k -d ${output_prefix} -a -n 100
+```
+
+:::
+
+::::
+
+if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame are output in the working directory
 
 ```
 ${output_prefix}.ados.out.0   ${output_prefix}.ados.out.1  ${output_prefix}.ados.out.2  ${output_prefix}.ados.out.3
