@@ -7,14 +7,15 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.fitting.property_fitting import PropertyFittingNet as PropertyFittingDP
+from deepmd.dpmodel.fitting.property_fitting import (
+    PropertyFittingNet as PropertyFittingDP,
+)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 
 from ..common import (
     INSTALLED_PT,
-    INSTALLED_TF,
     CommonTest,
     parameterized,
 )
@@ -33,6 +34,7 @@ PropertyFittingTF = object
 from deepmd.utils.argcheck import (
     fitting_property,
 )
+
 
 @parameterized(
     (True, False),  # resnet_dt
@@ -62,7 +64,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "task_dim": task_dim,
             "intensive": intensive,
         }
-    
+
     @property
     def skip_pt(self) -> bool:
         (
@@ -71,14 +73,14 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive,            
+            intensive,
         ) = self.param
         return CommonTest.skip_pt
-    
+
     @property
     def skip_tf(self) -> bool:
         return True
-    
+
     tf_class = PropertyFittingTF
     dp_class = PropertyFittingDP
     pt_class = PropertyFittingPT
@@ -103,7 +105,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive, 
+            intensive,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -118,7 +120,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive, 
+            intensive,
         ) = self.param
         return self.build_tf_fitting(
             obj,
@@ -136,7 +138,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive, 
+            intensive,
         ) = self.param
         return (
             pt_obj(
@@ -158,7 +160,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive, 
+            intensive,
         ) = self.param
         return dp_obj(
             self.inputs,
@@ -181,7 +183,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive, 
+            intensive,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -199,7 +201,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             numb_fparam,
             task_dim,
-            intensive, 
+            intensive,
         ) = self.param
         if precision == "float64":
             return 1e-10

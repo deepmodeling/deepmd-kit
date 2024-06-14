@@ -1,25 +1,23 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-import torch
 from typing import (
-    Union,
     List,
     Optional,
+    Union,
 )
+
+import torch
 
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
 )
-
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
 
 @InvarFitting.register("property")
 class PropertyFittingNet(InvarFitting):
