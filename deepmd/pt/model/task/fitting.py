@@ -238,7 +238,7 @@ class GeneralFitting(Fitting):
                         self.resnet_dt,
                         self.precision,
                         bias_out=True,
-                        seed=seed,
+                        seed=seed + ii if seed is not None else None,
                     )
                     for ii in range(self.ntypes if not self.mixed_types else 1)
                 ],

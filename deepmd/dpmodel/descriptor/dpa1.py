@@ -306,6 +306,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             precision=precision,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
+            seed=seed + len(neuron) * 2 + attn_layer * 3 if seed is not None else None,
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
@@ -690,7 +691,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
-                seed=seed + 1 if seed is not None else None,
+                seed=seed + len(self.neuron) if seed is not None else None,
             )
         else:
             self.embeddings_strip = None
@@ -707,6 +708,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             ln_eps=self.ln_eps,
             smooth=self.smooth,
             precision=self.precision,
+            seed=seed + len(self.neuron) * 2 if seed is not None else None,
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -954,6 +956,7 @@ class NeighborGatedAttention(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -986,8 +989,9 @@ class NeighborGatedAttention(NativeOP):
                 ln_eps=ln_eps,
                 smooth=smooth,
                 precision=precision,
+                seed=seed + ii * 3 if seed is not None else None,
             )
-            for _ in range(layer_num)
+            for ii in range(layer_num)
         ]
 
     def call(
@@ -1080,6 +1084,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -1105,9 +1110,14 @@ class NeighborGatedAttentionLayer(NativeOP):
             temperature=temperature,
             smooth=smooth,
             precision=precision,
+            seed=seed,
         )
         self.attn_layer_norm = LayerNorm(
-            self.embed_dim, eps=ln_eps, trainable=self.trainable_ln, precision=precision
+            self.embed_dim,
+            eps=ln_eps,
+            trainable=self.trainable_ln,
+            precision=precision,
+            seed=seed + 2 if seed is not None else None,
         )
 
     def call(
@@ -1180,6 +1190,7 @@ class GatedAttentionLayer(NativeOP):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
+        seed: Optional[int] = None,
     ):
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -1208,6 +1219,7 @@ class GatedAttentionLayer(NativeOP):
             bias=bias,
             use_timestep=False,
             precision=precision,
+            seed=seed,
         )
         self.out_proj = NativeLayer(
             hidden_dim,
@@ -1215,6 +1227,7 @@ class GatedAttentionLayer(NativeOP):
             bias=bias,
             use_timestep=False,
             precision=precision,
+            seed=seed + 1 if seed is not None else None,
         )
 
     def call(self, query, nei_mask, input_r=None, sw=None, attnw_shift=20.0):

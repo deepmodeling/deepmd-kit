@@ -204,7 +204,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             precision=precision,
             trainable_ln=self.repformer_args.trainable_ln,
             ln_eps=self.repformer_args.ln_eps,
-            seed=seed,
+            seed=seed + len(self.repinit_args.neuron) * 2 if seed is not None else None,
             old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
@@ -213,7 +213,12 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ntypes,
             self.repinit_args.tebd_dim,
             precision=precision,
-            seed=seed,
+            seed=seed
+            + len(self.repinit_args.neuron) * 2
+            + 1
+            + self.repformer_args.nlayers * 14
+            if seed is not None
+            else None,
             use_econf_tebd=self.use_econf_tebd,
             type_map=type_map,
         )

@@ -295,7 +295,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             ntypes,
             tebd_dim,
             precision=precision,
-            seed=seed,
+            seed=seed + len(neuron) * 2 + attn_layer * 3 if seed is not None else None,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
         )

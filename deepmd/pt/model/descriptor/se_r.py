@@ -120,7 +120,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
-                seed=self.seed,
+                seed=self.seed + ii if self.seed is not None else None,
             )
         self.filter_layers = filter_layers
         self.stats = None

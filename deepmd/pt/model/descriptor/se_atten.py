@@ -271,7 +271,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
-                seed=self.seed,
+                seed=self.seed + self.attn_layer * 3 if self.seed is not None else None,
             )
             self.filter_layers = filter_layers
             if self.tebd_input_mode in ["strip"]:
@@ -284,7 +284,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     resnet_dt=self.resnet_dt,
-                    seed=self.seed,
+                    seed=self.seed + self.attn_layer * 3 + len(self.filter_neuron)
+                    if self.seed is not None
+                    else None,
                 )
                 self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -640,7 +642,7 @@ class NeighborGatedAttention(nn.Module):
                     ln_eps=ln_eps,
                     smooth=smooth,
                     precision=precision,
-                    seed=seed,
+                    seed=seed + i * 3 if seed is not None else None,
                 )
             )
         self.attention_layers = nn.ModuleList(attention_layers)
@@ -782,7 +784,7 @@ class NeighborGatedAttentionLayer(nn.Module):
             eps=ln_eps,
             trainable=trainable_ln,
             precision=precision,
-            seed=seed,
+            seed=seed + 2 if seed is not None else None,
         )
 
     def forward(
@@ -897,7 +899,7 @@ class GatedAttentionLayer(nn.Module):
             bavg=0.0,
             stddev=1.0,
             precision=precision,
-            seed=seed,
+            seed=seed + 1 if seed is not None else None,
         )
 
     def forward(

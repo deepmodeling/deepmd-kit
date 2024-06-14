@@ -408,6 +408,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             resnet_dt=self.repinit_args.resnet_dt,
             smooth=smooth,
             type_one_side=self.repinit_args.type_one_side,
+            seed=seed,
         )
         self.repformers = DescrptBlockRepformers(
             self.repformer_args.rcut,
@@ -442,6 +443,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             precision=precision,
             trainable_ln=self.repformer_args.trainable_ln,
             ln_eps=self.repformer_args.ln_eps,
+            seed=seed + len(self.repinit_args.neuron) * 2 if seed is not None else None,
         )
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
@@ -453,6 +455,12 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             precision=precision,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
+            seed=seed
+            + len(self.repinit_args.neuron) * 2
+            + 1
+            + self.repformer_args.nlayers * 14
+            if seed is not None
+            else None,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision

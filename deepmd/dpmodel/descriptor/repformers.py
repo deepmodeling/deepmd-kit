@@ -40,6 +40,87 @@ from .dpa1 import (
 @DescriptorBlock.register("se_repformer")
 @DescriptorBlock.register("se_uni")
 class DescrptBlockRepformers(NativeOP, DescriptorBlock):
+    r"""
+    The repformer descriptor block.
+
+    Parameters
+    ----------
+    rcut : float
+        The cut-off radius.
+    rcut_smth : float
+        Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
+    sel : int
+        Maximally possible number of selected neighbors.
+    ntypes : int
+        Number of element types
+    nlayers : int, optional
+        Number of repformer layers.
+    g1_dim : int, optional
+        Dimension of the first graph convolution layer.
+    g2_dim : int, optional
+        Dimension of the second graph convolution layer.
+    axis_neuron : int, optional
+        Size of the submatrix of G (embedding matrix).
+    direct_dist : bool, optional
+        Whether to use direct distance information (1/r term) in the repformer block.
+    update_g1_has_conv : bool, optional
+        Whether to update the g1 rep with convolution term.
+    update_g1_has_drrd : bool, optional
+        Whether to update the g1 rep with the drrd term.
+    update_g1_has_grrg : bool, optional
+        Whether to update the g1 rep with the grrg term.
+    update_g1_has_attn : bool, optional
+        Whether to update the g1 rep with the localized self-attention.
+    update_g2_has_g1g1 : bool, optional
+        Whether to update the g2 rep with the g1xg1 term.
+    update_g2_has_attn : bool, optional
+        Whether to update the g2 rep with the gated self-attention.
+    update_h2 : bool, optional
+        Whether to update the h2 rep.
+    attn1_hidden : int, optional
+        The hidden dimension of localized self-attention to update the g1 rep.
+    attn1_nhead : int, optional
+        The number of heads in localized self-attention to update the g1 rep.
+    attn2_hidden : int, optional
+        The hidden dimension of gated self-attention to update the g2 rep.
+    attn2_nhead : int, optional
+        The number of heads in gated self-attention to update the g2 rep.
+    attn2_has_gate : bool, optional
+        Whether to use gate in the gated self-attention to update the g2 rep.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    update_style : str, optional
+        Style to update a representation.
+        Supported options are:
+        -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
+        -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
+        -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
+        where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
+        and `update_residual_init`.
+    update_residual : float, optional
+        When update using residual mode, the initial std of residual vector weights.
+    update_residual_init : str, optional
+        When update using residual mode, the initialization mode of residual vector weights.
+    set_davg_zero : bool, optional
+        Set the normalization average to zero.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    smooth : bool, optional
+        Whether to use smoothness in processes such as attention weights calculation.
+    exclude_types : List[List[int]], optional
+        The excluded pairs of types which have no interaction with each other.
+        For example, `[[0, 1]]` means no interaction between type 0 and type 1.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero errors during environment matrix calculations.
+        For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
+    trainable_ln : bool, optional
+        Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps : float, optional
+        The epsilon value for layer normalization.
+    seed : int, optional
+        The random seed for initialization.
+    """
+
     def __init__(
         self,
         rcut,
@@ -74,85 +155,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        seed: Optional[int] = None,
     ):
-        r"""
-        The repformer descriptor block.
-
-        Parameters
-        ----------
-        rcut : float
-            The cut-off radius.
-        rcut_smth : float
-            Where to start smoothing. For example the 1/r term is smoothed from rcut to rcut_smth.
-        sel : int
-            Maximally possible number of selected neighbors.
-        ntypes : int
-            Number of element types
-        nlayers : int, optional
-            Number of repformer layers.
-        g1_dim : int, optional
-            Dimension of the first graph convolution layer.
-        g2_dim : int, optional
-            Dimension of the second graph convolution layer.
-        axis_neuron : int, optional
-            Size of the submatrix of G (embedding matrix).
-        direct_dist : bool, optional
-            Whether to use direct distance information (1/r term) in the repformer block.
-        update_g1_has_conv : bool, optional
-            Whether to update the g1 rep with convolution term.
-        update_g1_has_drrd : bool, optional
-            Whether to update the g1 rep with the drrd term.
-        update_g1_has_grrg : bool, optional
-            Whether to update the g1 rep with the grrg term.
-        update_g1_has_attn : bool, optional
-            Whether to update the g1 rep with the localized self-attention.
-        update_g2_has_g1g1 : bool, optional
-            Whether to update the g2 rep with the g1xg1 term.
-        update_g2_has_attn : bool, optional
-            Whether to update the g2 rep with the gated self-attention.
-        update_h2 : bool, optional
-            Whether to update the h2 rep.
-        attn1_hidden : int, optional
-            The hidden dimension of localized self-attention to update the g1 rep.
-        attn1_nhead : int, optional
-            The number of heads in localized self-attention to update the g1 rep.
-        attn2_hidden : int, optional
-            The hidden dimension of gated self-attention to update the g2 rep.
-        attn2_nhead : int, optional
-            The number of heads in gated self-attention to update the g2 rep.
-        attn2_has_gate : bool, optional
-            Whether to use gate in the gated self-attention to update the g2 rep.
-        activation_function : str, optional
-            The activation function in the embedding net.
-        update_style : str, optional
-            Style to update a representation.
-            Supported options are:
-            -'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n)
-            -'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)
-            -'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n)
-            where `r1`, `r2` ... `r3` are residual weights defined by `update_residual`
-            and `update_residual_init`.
-        update_residual : float, optional
-            When update using residual mode, the initial std of residual vector weights.
-        update_residual_init : str, optional
-            When update using residual mode, the initialization mode of residual vector weights.
-        set_davg_zero : bool, optional
-            Set the normalization average to zero.
-        precision : str, optional
-            The precision of the embedding net parameters.
-        smooth : bool, optional
-            Whether to use smoothness in processes such as attention weights calculation.
-        exclude_types : List[List[int]], optional
-            The excluded pairs of types which have no interaction with each other.
-            For example, `[[0, 1]]` means no interaction between type 0 and type 1.
-        env_protection : float, optional
-            Protection parameter to prevent division by zero errors during environment matrix calculations.
-            For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
-        trainable_ln : bool, optional
-            Whether to use trainable shift and scale weights in layer normalization.
-        ln_eps : float, optional
-            The epsilon value for layer normalization.
-        """
         super().__init__()
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -196,7 +200,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
 
-        self.g2_embd = NativeLayer(1, self.g2_dim, precision=precision)
+        self.g2_embd = NativeLayer(1, self.g2_dim, precision=precision, seed=seed)
         layers = []
         for ii in range(nlayers):
             layers.append(
@@ -229,6 +233,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
                     trainable_ln=self.trainable_ln,
                     ln_eps=self.ln_eps,
                     precision=precision,
+                    seed=seed + 1 + ii * 14 if seed is not None else None,
                 )
             )
         self.layers = layers
@@ -399,6 +404,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
+    seed: Optional[int] = None,
 ) -> np.ndarray:
     """
     Get residual tensor for one update vector.
@@ -419,7 +425,7 @@ def get_residual(
         The precision of the residual tensor.
     """
     residual = np.zeros(_dim, dtype=PRECISION_DICT[precision])
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=seed)
     if trainable:
         if _mode == "norm":
             residual = rng.normal(scale=_scale, size=_dim).astype(
@@ -634,6 +640,7 @@ class Atten2Map(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
+        seed: Optional[int] = None,
     ):
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -641,7 +648,11 @@ class Atten2Map(NativeOP):
         self.hidden_dim = hidden_dim
         self.head_num = head_num
         self.mapqk = NativeLayer(
-            input_dim, hidden_dim * 2 * head_num, bias=False, precision=precision
+            input_dim,
+            hidden_dim * 2 * head_num,
+            bias=False,
+            precision=precision,
+            seed=seed,
         )
         self.has_gate = has_gate
         self.smooth = smooth
@@ -894,22 +905,31 @@ class LocalAtten(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
+        seed: Optional[int] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.head_num = head_num
         self.mapq = NativeLayer(
-            input_dim, hidden_dim * 1 * head_num, bias=False, precision=precision
+            input_dim,
+            hidden_dim * 1 * head_num,
+            bias=False,
+            precision=precision,
+            seed=seed,
         )
         self.mapkv = NativeLayer(
             input_dim,
             (hidden_dim + input_dim) * head_num,
             bias=False,
             precision=precision,
+            seed=seed + 1 if seed is not None else None,
         )
         self.head_map = NativeLayer(
-            input_dim * head_num, input_dim, precision=precision
+            input_dim * head_num,
+            input_dim,
+            precision=precision,
+            seed=seed + 2 if seed is not None else None,
         )
         self.smooth = smooth
         self.attnw_shift = attnw_shift
@@ -1044,6 +1064,7 @@ class RepformerLayer(NativeOP):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        seed: Optional[int] = None,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1099,11 +1120,17 @@ class RepformerLayer(NativeOP):
                     self.update_residual,
                     self.update_residual_init,
                     precision=precision,
+                    seed=seed,
                 )
             )
 
         g1_in_dim = self.cal_1_dim(g1_dim, g2_dim, self.axis_neuron)
-        self.linear1 = NativeLayer(g1_in_dim, g1_dim, precision=precision)
+        self.linear1 = NativeLayer(
+            g1_in_dim,
+            g1_dim,
+            precision=precision,
+            seed=seed + 1 if seed is not None else None,
+        )
         self.linear2 = None
         self.proj_g1g2 = None
         self.proj_g1g1g2 = None
@@ -1114,7 +1141,12 @@ class RepformerLayer(NativeOP):
         self.loc_attn = None
 
         if self.update_chnnl_2:
-            self.linear2 = NativeLayer(g2_dim, g2_dim, precision=precision)
+            self.linear2 = NativeLayer(
+                g2_dim,
+                g2_dim,
+                precision=precision,
+                seed=seed + 2 if seed is not None else None,
+            )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
                     get_residual(
@@ -1122,15 +1154,24 @@ class RepformerLayer(NativeOP):
                         self.update_residual,
                         self.update_residual_init,
                         precision=precision,
+                        seed=seed + 3 if seed is not None else None,
                     )
                 )
         if self.update_g1_has_conv:
             self.proj_g1g2 = NativeLayer(
-                g1_dim, g2_dim, bias=False, precision=precision
+                g1_dim,
+                g2_dim,
+                bias=False,
+                precision=precision,
+                seed=seed + 4 if seed is not None else None,
             )
         if self.update_g2_has_g1g1:
             self.proj_g1g1g2 = NativeLayer(
-                g1_dim, g2_dim, bias=False, precision=precision
+                g1_dim,
+                g2_dim,
+                bias=False,
+                precision=precision,
+                seed=seed + 5 if seed is not None else None,
             )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
@@ -1139,6 +1180,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual,
                         self.update_residual_init,
                         precision=precision,
+                        seed=seed + 6 if seed is not None else None,
                     )
                 )
         if self.update_g2_has_attn or self.update_h2:
@@ -1149,13 +1191,18 @@ class RepformerLayer(NativeOP):
                 attn2_has_gate,
                 self.smooth,
                 precision=precision,
+                seed=seed + 7 if seed is not None else None,
             )
             if self.update_g2_has_attn:
                 self.attn2_mh_apply = Atten2MultiHeadApply(
                     g2_dim, attn2_nhead, precision=precision
                 )
                 self.attn2_lm = LayerNorm(
-                    g2_dim, eps=ln_eps, trainable=trainable_ln, precision=precision
+                    g2_dim,
+                    eps=ln_eps,
+                    trainable=trainable_ln,
+                    precision=precision,
+                    seed=seed + 8 if seed is not None else None,
                 )
                 if self.update_style == "res_residual":
                     self.g2_residual.append(
@@ -1178,11 +1225,17 @@ class RepformerLayer(NativeOP):
                             self.update_residual,
                             self.update_residual_init,
                             precision=precision,
+                            seed=seed + 9 if seed is not None else None,
                         )
                     )
         if self.update_g1_has_attn:
             self.loc_attn = LocalAtten(
-                g1_dim, attn1_hidden, attn1_nhead, self.smooth, precision=precision
+                g1_dim,
+                attn1_hidden,
+                attn1_nhead,
+                self.smooth,
+                precision=precision,
+                seed=seed + 10 if seed is not None else None,
             )
             if self.update_style == "res_residual":
                 self.g1_residual.append(
@@ -1191,6 +1244,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual,
                         self.update_residual_init,
                         precision=precision,
+                        seed=seed + 13 if seed is not None else None,
                     )
                 )
 

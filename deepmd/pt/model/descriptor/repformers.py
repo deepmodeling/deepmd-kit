@@ -291,7 +291,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                         trainable_ln=self.trainable_ln,
                         ln_eps=self.ln_eps,
                         precision=precision,
-                        seed=seed,
+                        seed=seed + 1 + ii * 14 if seed is not None else None,
                     )
                 )
         self.layers = torch.nn.ModuleList(layers)
