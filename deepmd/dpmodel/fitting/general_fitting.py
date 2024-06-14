@@ -169,7 +169,9 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self.resnet_dt,
                     self.precision,
                     bias_out=True,
-                    seed=seed,
+                    seed=seed + ii * (len(self.neuron) + 1)
+                    if seed is not None
+                    else None,
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
