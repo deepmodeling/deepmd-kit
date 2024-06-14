@@ -6,15 +6,7 @@ from deepmd.utils.econf_embd import (
     make_econf_embedding,
 )
 
-try:
-    import mendeleev  # noqa: F401
 
-    has_mendeleev = True
-except ImportError:
-    has_mendeleev = False
-
-
-@unittest.skipIf(not has_mendeleev, "does not have mendeleev installed, skip the UTs.")
 class TestEConfEmbd(unittest.TestCase):
     def test_fe(self):
         res = make_econf_embedding(["Fe"], flatten=False)["Fe"]

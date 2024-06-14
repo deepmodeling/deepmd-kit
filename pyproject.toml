@@ -79,7 +79,6 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
-    "mendeleev",
 ]
 docs = [
     "sphinx>=3.1.1",
