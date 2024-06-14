@@ -26,45 +26,28 @@ jobs:
     - name: Make sudo and git work
       run: apt-get update && apt-get install -y sudo git
     - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: mamba-org/setup-micromamba@v1
       with:
-        python-version: '3.11'
-        # cache: 'pip'
-    - name: Setup MPI
-      uses: mpi4py/setup-mpi@v1
-      with:
-        mpi: mpich
-    - name: Install wget and unzip
-      run: apt-get update && apt-get install -y wget unzip
-    - uses: lukka/get-cmake@latest
-      with:
-        useLocalCache: true
-        useCloudCache: false
-    - run: |
-         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
-         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
-         && sudo apt-get update \
-         && sudo apt-get -y install cuda-12-3 libcudnn8=8.9.5.*-1+cuda12.3
-      if: false  # skip as we use nvidia image
-    - run: python -m pip install -U uv
-    - run: python -m uv pip install --system "tensorflow>=2.15.0rc0" "torch>=2.2.0"
+        micromamba-version: '1.5.8-0'
+        environment-file: source/install/cuda_env.yml
     - run: |
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+        export PYTORCH_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("torch").origin).parent)')
         python -m uv pip install --system -v -e .[gpu,test,lmp,cu12,torch] mpi4py
       env:
         DP_VARIANT: cuda
         DP_ENABLE_NATIVE_OPTIMIZATION: 1
+        DP_ENABLE_PYTORCH: 1
+      shell: micromamba-shell {0}
     - run: dp --version
     - run: python -m pytest source/tests --durations=0
+      shell: micromamba-shell {0}
       env:
         NUM_WORKERS: 0
-    - name: Download libtorch
-      run: |
-         wget https://download.pytorch.org/libtorch/cu121/libtorch-cxx11-abi-shared-with-deps-2.2.1%2Bcu121.zip -O libtorch.zip
-         unzip libtorch.zip
     - run: |
-        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+        export CMAKE_PREFIX_PATH=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("torch").origin).parent)')
         source/install/test_cc_local.sh
+      shell: micromamba-shell {0}
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -78,6 +61,7 @@ jobs:
         export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
         python -m pytest -s source/lmp/tests || (cat log.lammps && exit 1)
         python -m pytest source/ipi/tests
+      shell: micromamba-shell {0}
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1

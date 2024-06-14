@@ -1,0 +1,14 @@
+name: cuda
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - uv
+  - tensorflow=2.16=cuda*
+  - pytorch=2.3=cuda*
+  - openmpi
+  - mpi4py
+  - cmake
+  - ninja
+  - wget
+  - unzip
