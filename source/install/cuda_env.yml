@@ -15,3 +15,11 @@ dependencies:
   - gcc=12.*
   - gxx=12.*
   - cuda-nvcc=12.*
+  - cuda-cudart-dev
+  - cuda-version=12.4
+  # require by pytorch
+  - libcublas-dev
+  - libcurand-dev
+  - libcufft-dev
+  - cuda-nvrtc-dev 
+  - cuda-nvtx-dev
