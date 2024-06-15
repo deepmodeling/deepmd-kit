@@ -12,3 +12,6 @@ dependencies:
   - ninja
   - wget
   - unzip
+  - gcc=12.*
+  - gxx=12.*
+  - cuda-nvcc=12.*
