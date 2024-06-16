@@ -5,6 +5,10 @@ import torch
 
 import deepmd.pt.cxx_op
 
+from deepmd.pt.utils import (
+    env,
+)
+
 
 class TestTabulateFusionSeAttenOp(unittest.TestCase):
     def setUp(self):
@@ -1066,9 +1070,10 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 7.122599345182346051e-05,
                 -1.664931178025436733e-05,
                 -4.312450972708557703e-06,
-            ]
+            ],
+            device=env.DEVICE
         ).reshape(8, 132)
-        self.table_info_tensor = torch.tensor([0, 0.2, 0.4, 0.01, 0.1, -1])
+        self.table_info_tensor = torch.tensor([0, 0.2, 0.4, 0.01, 0.1, -1], device=env.DEVICE)
         self.em_x_tensor = torch.tensor(
             [
                 0.0343909,
@@ -1087,7 +1092,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 0.15650861,
                 0.17527857,
                 0.04249097,
-            ]
+            ],
+            device=env.DEVICE
         ).reshape(4, 4)
         self.em_tensor = torch.tensor(
             [
@@ -1155,7 +1161,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 0.17082205,
                 0.18275348,
                 0.02921504,
-            ]
+            ],
+            device=env.DEVICE
         ).reshape(4, 4, 4)
         self.two_embed_tensor = torch.tensor(
             [
@@ -1287,7 +1294,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 0.44489583733770977,
                 0.5194672674960213,
                 0.04635102497306032,
-            ]
+            ],
+            device=env.DEVICE
         ).reshape(8, 16)
         self.table_info_tensor.requires_grad = False
         self.table_tensor.requires_grad = False
@@ -1429,7 +1437,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 -0.915656,
                 -0.162872,
                 -0.723229,
-            ]
+            ],
+            device=env.DEVICE
         ).reshape(4, 4, 8)
         # backward test
         self.expected_dy_dem_x = torch.tensor(
@@ -1518,7 +1527,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 -3.90654,
                 -3.90654,
                 -3.90654,
-            ]
+            ],
+            device=env.DEVICE
         ).reshape(4, 4, 4)
 
     def test_forward(self):
@@ -1539,10 +1549,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(descriptor_tensor.shape, self.expected_descriptor_tensor.shape)
 
         # Check the values
-        self.assertTrue(
-            torch.allclose(
-                descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5
-            )
+        torch.testing.assert_close(
+            descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5, rtol=1e-5
         )
 
     def test_backward(self):
@@ -1560,10 +1568,8 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         descriptor_tensor = forward_result[0]
 
         # Check the forward
-        self.assertTrue(
-            torch.allclose(
-                descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5
-            )
+        torch.testing.assert_close(
+            descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5, rtol=1e-5
         )
 
         # Create a loss and perform backward
@@ -1579,13 +1585,11 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(self.em_tensor.grad.shape, self.expected_dy_dem.shape)
 
         # Check the values of the gradients
-        self.assertTrue(
-            torch.allclose(self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5)
-        )
-        self.assertTrue(
-            torch.allclose(self.em_tensor.grad, self.expected_dy_dem, atol=1e-5)
-        )
+        torch.testing.assert_close(self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5, rtol=1e-5)
+
+        torch.testing.assert_close(self.em_tensor.grad, self.expected_dy_dem, atol=1e-5, rtol=1e-5)
 
 
 if __name__ == "__main__":
+    env.DEVICE = 'cpu'
     unittest.main()
