@@ -3,8 +3,6 @@ import unittest
 
 import torch
 
-import deepmd.pt.cxx_op
-
 from deepmd.pt.utils import (
     env,
 )
