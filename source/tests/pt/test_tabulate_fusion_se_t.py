@@ -4,7 +4,7 @@ import unittest
 import torch
 
 from deepmd.pt.utils import (
-    env,
+    env
 )
 
 
