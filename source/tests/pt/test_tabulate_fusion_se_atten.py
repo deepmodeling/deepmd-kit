@@ -4,7 +4,7 @@ import unittest
 import torch
 
 from deepmd.pt.utils import (
-    env
+    env,
 )
 
 
@@ -1069,9 +1069,11 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 -1.664931178025436733e-05,
                 -4.312450972708557703e-06,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(8, 132)
-        self.table_info_tensor = torch.tensor([0, 0.2, 0.4, 0.01, 0.1, -1], device=env.DEVICE)
+        self.table_info_tensor = torch.tensor(
+            [0, 0.2, 0.4, 0.01, 0.1, -1], device=env.DEVICE
+        )
         self.em_x_tensor = torch.tensor(
             [
                 0.0343909,
@@ -1091,7 +1093,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 0.17527857,
                 0.04249097,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(4, 4)
         self.em_tensor = torch.tensor(
             [
@@ -1160,7 +1162,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 0.18275348,
                 0.02921504,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(4, 4, 4)
         self.two_embed_tensor = torch.tensor(
             [
@@ -1293,7 +1295,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 0.5194672674960213,
                 0.04635102497306032,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(8, 16)
         self.table_info_tensor.requires_grad = False
         self.table_tensor.requires_grad = False
@@ -1436,7 +1438,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 -0.162872,
                 -0.723229,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(4, 4, 8)
         # backward test
         self.expected_dy_dem_x = torch.tensor(
@@ -1526,7 +1528,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 -3.90654,
                 -3.90654,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(4, 4, 4)
 
     def test_forward(self):
@@ -1583,11 +1585,15 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(self.em_tensor.grad.shape, self.expected_dy_dem.shape)
 
         # Check the values of the gradients
-        torch.testing.assert_close(self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(
+            self.em_x_tensor.grad, self.expected_dy_dem_x, atol=1e-5, rtol=1e-5
+        )
 
-        torch.testing.assert_close(self.em_tensor.grad, self.expected_dy_dem, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(
+            self.em_tensor.grad, self.expected_dy_dem, atol=1e-5, rtol=1e-5
+        )
 
 
 if __name__ == "__main__":
-    env.DEVICE = 'cpu'
+    env.DEVICE = "cpu"
     unittest.main()

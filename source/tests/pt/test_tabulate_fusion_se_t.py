@@ -4,7 +4,7 @@ import unittest
 import torch
 
 from deepmd.pt.utils import (
-    env
+    env,
 )
 
 
@@ -1405,7 +1405,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 1.1623761628208563e01,
                 7.8927378661620728e-01,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(8, 174)
         self.table_info_tensor = torch.tensor(
             [
@@ -1416,7 +1416,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 1.0000000000000000e01,
                 -1.0000000000000000e00,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         )
         self.em_x_tensor = torch.tensor(
             [
@@ -4493,7 +4493,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 -9.1370205009458638e-03,
                 5.2699958100439070e-01,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(192, 4, 4)  # 3072
         self.dy = torch.tensor(
             [
@@ -5266,7 +5266,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 -5.8240597405691328e-04,
                 -3.9217722061436343e-04,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         )
         self.em_tensor = self.em_x_tensor
         self.table_info_tensor.requires_grad = False
@@ -6049,7 +6049,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 5.0356864383992928e02,
                 5.2869887670804815e02,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(8, 174)
         self.expected_dy_dem_x = torch.tensor(
             [
@@ -9126,7 +9126,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 1.0549891235828525e-05,
                 -5.8598966626073352e-04,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         )
         self.expected_dy_dem = torch.tensor(
             [
@@ -12203,7 +12203,7 @@ class TestTabulateFusionSeTOp(unittest.TestCase):
                 4.7088258363160609e-04,
                 -1.4457178691538466e-04,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         )
 
 

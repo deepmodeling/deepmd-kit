@@ -21,29 +21,33 @@ void GetTensorDevice(const torch::Tensor& t, std::string& str) {
 #include <cuda_runtime.h>
 
 void checkPointerLocation(const void* ptr, const std::string& name) {
-    cudaPointerAttributes attributes;
-    cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
+  cudaPointerAttributes attributes;
+  cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
 
-    if (err != cudaSuccess) {
-        std::cerr << "Error checking pointer " << name << ": " << cudaGetErrorString(err) << std::endl;
-        return;
-    }
+  if (err != cudaSuccess) {
+    std::cerr << "Error checking pointer " << name << ": "
+              << cudaGetErrorString(err) << std::endl;
+    return;
+  }
 
-    if (attributes.type == cudaMemoryTypeDevice) {
-        std::cout << "Pointer " << name << " is located in device memory." << std::endl;
-    } else if (attributes.type == cudaMemoryTypeHost) {
-        std::cout << "Pointer " << name << " is located in host memory." << std::endl;
-    } else {
-        std::cout << "Pointer " << name << " is of unknown memory type." << std::endl;
-    }
+  if (attributes.type == cudaMemoryTypeDevice) {
+    std::cout << "Pointer " << name << " is located in device memory."
+              << std::endl;
+  } else if (attributes.type == cudaMemoryTypeHost) {
+    std::cout << "Pointer " << name << " is located in host memory."
+              << std::endl;
+  } else {
+    std::cout << "Pointer " << name << " is of unknown memory type."
+              << std::endl;
+  }
 }
 
 void check_contiguity(const torch::Tensor& tensor, const std::string& name) {
-    if (tensor.is_contiguous()) {
-        std::cout << name << " is contiguous" << std::endl;
-    } else {
-        std::cout << name << " is not contiguous" << std::endl;
-    }
+  if (tensor.is_contiguous()) {
+    std::cout << name << " is contiguous" << std::endl;
+  } else {
+    std::cout << name << " is not contiguous" << std::endl;
+  }
 }
 
 template <typename FPTYPE>
@@ -71,11 +75,15 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   std::string device;
   GetTensorDevice(table_tensor, device);
   // debug
-  std::cout << "table_tensor device: " << table_tensor.device().type() << std::endl;
-  std::cout << "table_info_tensor device: " << table_info_tensor.device().type() << std::endl;
-  std::cout << "em_x_tensor device: " << em_x_tensor.device().type() << std::endl;
+  std::cout << "table_tensor device: " << table_tensor.device().type()
+            << std::endl;
+  std::cout << "table_info_tensor device: " << table_info_tensor.device().type()
+            << std::endl;
+  std::cout << "em_x_tensor device: " << em_x_tensor.device().type()
+            << std::endl;
   std::cout << "em_tensor device: " << em_tensor.device().type() << std::endl;
-  std::cout << "descriptor_tensor device before computation: " << descriptor_tensor.device().type() << std::endl;
+  std::cout << "descriptor_tensor device before computation: "
+            << descriptor_tensor.device().type() << std::endl;
 
   check_contiguity(table_tensor, "table_tensor");
   check_contiguity(table_info_tensor, "table_info_tensor");
@@ -503,12 +511,13 @@ class TabulateFusionSeAOp
     torch::Tensor descriptor_tensor =
         torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
     // test device
-    // std::cout << "table_tensor device: " << table_tensor.device().type() << std::endl;
-    // std::cout << "table_info_tensor device: " << table_info_tensor.device().type() << std::endl;
-    // std::cout << "em_x_tensor device: " << em_x_tensor.device().type() << std::endl;
-    // std::cout << "em_tensor device: " << em_tensor.device().type() << std::endl;
-    // std::cout << "descriptor_tensor device: " << descriptor_tensor.device().type() << std::endl;
-    // compute
+    // std::cout << "table_tensor device: " << table_tensor.device().type() <<
+    // std::endl; std::cout << "table_info_tensor device: " <<
+    // table_info_tensor.device().type() << std::endl; std::cout << "em_x_tensor
+    // device: " << em_x_tensor.device().type() << std::endl; std::cout <<
+    // "em_tensor device: " << em_tensor.device().type() << std::endl; std::cout
+    // << "descriptor_tensor device: " << descriptor_tensor.device().type() <<
+    // std::endl; compute
     TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor,
                                      em_x_tensor, em_tensor, at::Tensor(),
                                      last_layer_size, descriptor_tensor);
