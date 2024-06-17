@@ -1072,7 +1072,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             device=env.DEVICE,
         ).reshape(8, 132)
         self.table_info_tensor = torch.tensor(
-            [0, 0.2, 0.4, 0.01, 0.1, -1], device='cpu'
+            [0, 0.2, 0.4, 0.01, 0.1, -1], device="cpu"
         )
         self.em_x_tensor = torch.tensor(
             [
@@ -1460,7 +1460,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 -0.0360863,
                 -0.0532634,
             ],
-            device=env.DEVICE
+            device=env.DEVICE,
         ).reshape(4, 4)
         self.expected_dy_dem = torch.tensor(
             [
