@@ -3,6 +3,9 @@ import unittest
 
 import torch
 
+from deepmd.pt.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -13,6 +16,7 @@ from ..consistent.common import (
 
 
 @parameterized((torch.float64, torch.float32))
+@unittest.skipIf(not ENABLE_CUSTOMIZED_OP, "PyTorch customized OPs are not built")
 class TestTabulateFusionSeAttenOp(unittest.TestCase):
     def setUp(self):
         (dtype,) = self.param
