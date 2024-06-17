@@ -7,9 +7,15 @@ from deepmd.pt.utils import (
     env,
 )
 
+dtype = torch.float64
+
 
 class TestTabulateFusionSeAOp(unittest.TestCase):
     def setUp(self):
+        if dtype == torch.float64:
+            self.prec = 1e-10
+        elif dtype == torch.float32:
+            self.prec = 1e-5
         self.table_tensor = torch.tensor(
             [
                 6.348551343037398542e-01,
@@ -1069,10 +1075,11 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
                 -1.664931178025436733e-05,
                 -4.312450972708557703e-06,
             ],
+            dtype=dtype,
             device=env.DEVICE,
         ).reshape(8, 132)
         self.table_info_tensor = torch.tensor(
-            [0, 0.2, 0.4, 0.01, 0.1, -1], device="cpu"
+            [0, 0.2, 0.4, 0.01, 0.1, -1], dtype=dtype, device="cpu"
         )
         self.em_tensor = torch.tensor(
             [
@@ -1093,6 +1100,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
                 0.17527857,
                 0.04249097,
             ],
+            dtype=dtype,
             device=env.DEVICE,
         ).reshape(4, 4)
         self.table_info_tensor.requires_grad = True
@@ -1233,6 +1241,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
                 -0.281368,
                 -1.471135,
             ],
+            dtype=dtype,
             device=env.DEVICE,
         ).reshape(4, 4, 8)
         # backward test
@@ -1255,6 +1264,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
                 -0.095974,
                 -0.105310,
             ],
+            dtype=dtype,
             device=env.DEVICE,
         ).reshape(4, 4)
 
@@ -1274,7 +1284,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
 
         # Check the values
         torch.testing.assert_close(
-            descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5, rtol=1e-5
+            descriptor_tensor, self.expected_descriptor_tensor, atol=self.prec, rtol=self.prec
         )
 
     def test_backward(self):
@@ -1290,7 +1300,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
 
         # Check the forward
         torch.testing.assert_close(
-            descriptor_tensor, self.expected_descriptor_tensor, atol=1e-5, rtol=1e-5
+            descriptor_tensor, self.expected_descriptor_tensor, atol=self.prec, rtol=self.prec
         )
 
         # Create a loss and perform backward
@@ -1305,7 +1315,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
 
         # Check the values of the gradients
         torch.testing.assert_close(
-            self.em_tensor.grad, self.expected_dy_dem, atol=1e-5, rtol=1e-5
+            self.em_tensor.grad, self.expected_dy_dem, atol=self.prec, rtol=self.prec
         )
 
 
