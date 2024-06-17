@@ -240,7 +240,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    intensive: bool = False,
+    intensive: Optional[bool] = False,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -270,6 +270,9 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
+    intensive :  bool, optional
+        This parameter is only useful when fitting properties.
+        It indicates whether the fitting property is intensive or extensive.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)

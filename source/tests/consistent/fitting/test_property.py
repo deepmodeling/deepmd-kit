@@ -7,6 +7,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.utils.argcheck import (
+    fitting_property,
+)
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet as PropertyFittingDP,
 )
@@ -31,9 +34,6 @@ if INSTALLED_PT:
 else:
     PropertyFittingPT = object
 PropertyFittingTF = object
-from deepmd.utils.argcheck import (
-    fitting_property,
-)
 
 
 @parameterized(
