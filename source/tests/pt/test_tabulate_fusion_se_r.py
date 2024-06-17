@@ -7,11 +7,15 @@ from deepmd.pt.utils import (
     env,
 )
 
-dtype = torch.float64
+from ..consistent.common import (
+    parameterized,
+)
 
 
+@parameterized((torch.float64, torch.float32))
 class TestTabulateFusionSeAOp(unittest.TestCase):
     def setUp(self):
+        (dtype,) = self.param
         if dtype == torch.float64:
             self.prec = 1e-10
         elif dtype == torch.float32:
