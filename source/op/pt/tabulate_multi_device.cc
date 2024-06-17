@@ -26,8 +26,6 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
                               const torch::Tensor& two_embed_tensor,
                               int64_t last_layer_size,
                               torch::Tensor& descriptor_tensor) {
-  std::cout << "FPTYPE is: " << typeid(FPTYPE).name() << std::endl;
-  std::cout << "table_tensor type is: " << table_tensor.dtype() << std::endl;
   // check input shape
   if (table_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of table should be 2");
