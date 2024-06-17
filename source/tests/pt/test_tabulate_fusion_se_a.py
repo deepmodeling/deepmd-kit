@@ -1399,10 +1399,6 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
         ).reshape(4, 4, 4)
 
     def test_forward(self):
-        print("table_tensor device:", self.table_tensor.device)
-        print("table_info_tensor device:", self.table_info_tensor.device)
-        print("em_x_tensor device:", self.em_x_tensor.device)
-        print("em_tensor device:", self.em_tensor.device)
         # Call the forward function
         forward_result = torch.ops.deepmd.tabulate_fusion_se_a(
             self.table_tensor,
@@ -1423,10 +1419,6 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
         )
 
     def test_backward(self):
-        print("table_tensor device:", self.table_tensor.device)
-        print("table_info_tensor device:", self.table_info_tensor.device)
-        print("em_x_tensor device:", self.em_x_tensor.device)
-        print("em_tensor device:", self.em_tensor.device)
         # Call the forward function
         forward_result = torch.ops.deepmd.tabulate_fusion_se_a(
             self.table_tensor,
