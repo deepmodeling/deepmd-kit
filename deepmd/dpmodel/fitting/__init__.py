@@ -28,5 +28,5 @@ __all__ = [
     "EnergyFittingNet",
     "PolarFitting",
     "DOSFittingNet",
-    "PropertyfittingNet",
+    "PropertyFittingNet",
 ]
