@@ -1072,7 +1072,7 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
             device=env.DEVICE,
         ).reshape(8, 132)
         self.table_info_tensor = torch.tensor(
-            [0, 0.2, 0.4, 0.01, 0.1, -1], device=env.DEVICE
+            [0, 0.2, 0.4, 0.01, 0.1, -1], device='cpu'
         )
         self.em_tensor = torch.tensor(
             [
@@ -1310,5 +1310,4 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    env.DEVICE = "cuda:0"
     unittest.main()
