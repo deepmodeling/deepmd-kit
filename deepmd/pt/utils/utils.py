@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    List,
     Optional,
+    Union,
     overload,
 )
 
@@ -113,8 +115,13 @@ def dict_to_device(sample_dict):
                 sample_dict[key] = sample_dict[key].to(DEVICE)
 
 
-def get_generator(seed: Optional[int] = None) -> Optional[torch.Generator]:
+def get_generator(
+    seed: Optional[Union[int, List[int]]] = None,
+) -> Optional[torch.Generator]:
     if seed is not None:
+        if isinstance(seed, list):
+            # suggested by GitHub Copilot
+            seed = hash(tuple(seed))
         generator = torch.Generator(device=DEVICE)
         generator.manual_seed(seed)
         return generator

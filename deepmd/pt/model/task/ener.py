@@ -5,6 +5,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -55,7 +56,7 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         type_map: Optional[List[str]] = None,
         **kwargs,
     ):

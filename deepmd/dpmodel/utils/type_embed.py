@@ -2,6 +2,7 @@
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -57,7 +58,7 @@ class TypeEmbedNet(NativeOP):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,

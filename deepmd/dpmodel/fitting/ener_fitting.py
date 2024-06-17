@@ -5,6 +5,7 @@ from typing import (
     Any,
     List,
     Optional,
+    Union,
 )
 
 from deepmd.dpmodel.common import (
@@ -46,7 +47,7 @@ class EnergyFittingNet(InvarFitting):
         exclude_types: List[int] = [],
         type_map: Optional[List[str]] = None,
         # not used
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__(
             var_name="energy",

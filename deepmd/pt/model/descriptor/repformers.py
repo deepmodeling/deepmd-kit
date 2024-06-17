@@ -10,6 +10,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -101,7 +104,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         old_impl: bool = False,
     ):
         r"""
@@ -229,7 +232,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.seed = seed
         self.old_impl = old_impl
 
-        self.g2_embd = MLPLayer(1, self.g2_dim, precision=precision, seed=seed)
+        self.g2_embd = MLPLayer(
+            1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
+        )
         layers = []
         for ii in range(nlayers):
             if self.old_impl:
@@ -291,7 +296,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                         trainable_ln=self.trainable_ln,
                         ln_eps=self.ln_eps,
                         precision=precision,
-                        seed=seed + 1 + ii * 14 if seed is not None else None,
+                        seed=child_seed(child_seed(seed, 1), ii),
                     )
                 )
         self.layers = torch.nn.ModuleList(layers)

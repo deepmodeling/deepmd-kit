@@ -13,6 +13,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
     prod_env_mat,
@@ -86,7 +89,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         type_map: Optional[List[str]] = None,
         # not implemented
@@ -384,7 +387,7 @@ class DescrptBlockSeA(DescriptorBlock):
         old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -457,7 +460,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     resnet_dt=self.resnet_dt,
-                    seed=self.seed + ii if self.seed is not None else None,
+                    seed=child_seed(self.seed, ii),
                 )
             self.filter_layers = filter_layers
         self.stats = None

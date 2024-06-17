@@ -5,6 +5,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -19,6 +20,9 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
     PairExcludeMask,
+)
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -98,7 +102,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         exclude_types: List[Tuple[int, int]] = [],
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         type_map: Optional[List[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
     ) -> None:
@@ -136,7 +140,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
-                seed=seed + len(self.neuron) * ii if seed is not None else None,
+                seed=child_seed(self.seed, ii),
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)

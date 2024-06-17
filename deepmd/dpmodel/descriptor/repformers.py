@@ -22,6 +22,9 @@ from deepmd.dpmodel.utils.network import (
     NativeLayer,
     get_activation_fn,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -155,7 +158,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
         self.rcut = rcut
@@ -200,7 +203,9 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
 
-        self.g2_embd = NativeLayer(1, self.g2_dim, precision=precision, seed=seed)
+        self.g2_embd = NativeLayer(
+            1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
+        )
         layers = []
         for ii in range(nlayers):
             layers.append(
@@ -233,7 +238,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
                     trainable_ln=self.trainable_ln,
                     ln_eps=self.ln_eps,
                     precision=precision,
-                    seed=seed + 1 + ii * 14 if seed is not None else None,
+                    seed=child_seed(child_seed(seed, 1), ii),
                 )
             )
         self.layers = layers
@@ -404,7 +409,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[int] = None,
+    seed: Optional[Union[int, List[int]]] = None,
 ) -> np.ndarray:
     """
     Get residual tensor for one update vector.
@@ -640,7 +645,7 @@ class Atten2Map(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -758,15 +763,23 @@ class Atten2MultiHeadApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
         self.mapv = NativeLayer(
-            input_dim, input_dim * head_num, bias=False, precision=precision
+            input_dim,
+            input_dim * head_num,
+            bias=False,
+            precision=precision,
+            seed=child_seed(seed, 0),
         )
         self.head_map = NativeLayer(
-            input_dim * head_num, input_dim, precision=precision
+            input_dim * head_num,
+            input_dim,
+            precision=precision,
+            seed=child_seed(seed, 1),
         )
         self.precision = precision
 
@@ -835,11 +848,14 @@ class Atten2EquiVarApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
-        self.head_map = NativeLayer(head_num, 1, bias=False, precision=precision)
+        self.head_map = NativeLayer(
+            head_num, 1, bias=False, precision=precision, seed=seed
+        )
         self.precision = precision
 
     def call(
@@ -905,7 +921,7 @@ class LocalAtten(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -916,20 +932,20 @@ class LocalAtten(NativeOP):
             hidden_dim * 1 * head_num,
             bias=False,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.mapkv = NativeLayer(
             input_dim,
             (hidden_dim + input_dim) * head_num,
             bias=False,
             precision=precision,
-            seed=seed + 1 if seed is not None else None,
+            seed=child_seed(seed, 1),
         )
         self.head_map = NativeLayer(
             input_dim * head_num,
             input_dim,
             precision=precision,
-            seed=seed + 2 if seed is not None else None,
+            seed=child_seed(seed, 2),
         )
         self.smooth = smooth
         self.attnw_shift = attnw_shift
@@ -1064,7 +1080,7 @@ class RepformerLayer(NativeOP):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1120,7 +1136,7 @@ class RepformerLayer(NativeOP):
                     self.update_residual,
                     self.update_residual_init,
                     precision=precision,
-                    seed=seed,
+                    seed=child_seed(seed, 0),
                 )
             )
 
@@ -1129,7 +1145,7 @@ class RepformerLayer(NativeOP):
             g1_in_dim,
             g1_dim,
             precision=precision,
-            seed=seed + 1 if seed is not None else None,
+            seed=child_seed(seed, 1),
         )
         self.linear2 = None
         self.proj_g1g2 = None
@@ -1145,7 +1161,7 @@ class RepformerLayer(NativeOP):
                 g2_dim,
                 g2_dim,
                 precision=precision,
-                seed=seed + 2 if seed is not None else None,
+                seed=child_seed(seed, 2),
             )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
@@ -1154,7 +1170,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual,
                         self.update_residual_init,
                         precision=precision,
-                        seed=seed + 3 if seed is not None else None,
+                        seed=child_seed(seed, 3),
                     )
                 )
         if self.update_g1_has_conv:
@@ -1163,7 +1179,7 @@ class RepformerLayer(NativeOP):
                 g2_dim,
                 bias=False,
                 precision=precision,
-                seed=seed + 4 if seed is not None else None,
+                seed=child_seed(seed, 4),
             )
         if self.update_g2_has_g1g1:
             self.proj_g1g1g2 = NativeLayer(
@@ -1171,7 +1187,7 @@ class RepformerLayer(NativeOP):
                 g2_dim,
                 bias=False,
                 precision=precision,
-                seed=seed + 5 if seed is not None else None,
+                seed=child_seed(seed, 5),
             )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
@@ -1180,7 +1196,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual,
                         self.update_residual_init,
                         precision=precision,
-                        seed=seed + 6 if seed is not None else None,
+                        seed=child_seed(seed, 6),
                     )
                 )
         if self.update_g2_has_attn or self.update_h2:
@@ -1191,18 +1207,18 @@ class RepformerLayer(NativeOP):
                 attn2_has_gate,
                 self.smooth,
                 precision=precision,
-                seed=seed + 7 if seed is not None else None,
+                seed=child_seed(seed, 7),
             )
             if self.update_g2_has_attn:
                 self.attn2_mh_apply = Atten2MultiHeadApply(
-                    g2_dim, attn2_nhead, precision=precision
+                    g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 8)
                 )
                 self.attn2_lm = LayerNorm(
                     g2_dim,
                     eps=ln_eps,
                     trainable=trainable_ln,
                     precision=precision,
-                    seed=seed + 8 if seed is not None else None,
+                    seed=child_seed(seed, 9),
                 )
                 if self.update_style == "res_residual":
                     self.g2_residual.append(
@@ -1211,12 +1227,13 @@ class RepformerLayer(NativeOP):
                             self.update_residual,
                             self.update_residual_init,
                             precision=precision,
+                            seed=child_seed(seed, 10),
                         )
                     )
 
             if self.update_h2:
                 self.attn2_ev_apply = Atten2EquiVarApply(
-                    g2_dim, attn2_nhead, precision=precision
+                    g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 11)
                 )
                 if self.update_style == "res_residual":
                     self.h2_residual.append(
@@ -1225,7 +1242,7 @@ class RepformerLayer(NativeOP):
                             self.update_residual,
                             self.update_residual_init,
                             precision=precision,
-                            seed=seed + 9 if seed is not None else None,
+                            seed=child_seed(seed, 12),
                         )
                     )
         if self.update_g1_has_attn:
@@ -1235,7 +1252,7 @@ class RepformerLayer(NativeOP):
                 attn1_nhead,
                 self.smooth,
                 precision=precision,
-                seed=seed + 10 if seed is not None else None,
+                seed=child_seed(seed, 13),
             )
             if self.update_style == "res_residual":
                 self.g1_residual.append(
@@ -1244,7 +1261,7 @@ class RepformerLayer(NativeOP):
                         self.update_residual,
                         self.update_residual_init,
                         precision=precision,
-                        seed=seed + 13 if seed is not None else None,
+                        seed=child_seed(seed, 14),
                     )
                 )
 

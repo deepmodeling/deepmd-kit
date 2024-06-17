@@ -8,6 +8,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -20,6 +21,9 @@ from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     FittingNet,
     NetworkCollection,
+)
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
@@ -82,7 +86,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
-    seed: Optional[int]
+    seed: Optional[Union[int, List[int]]]
         Random seed for initializing the network parameters.
     """
 
@@ -108,7 +112,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_types: List[int] = [],
         remove_vaccum_contribution: Optional[List[bool]] = None,
         type_map: Optional[List[str]] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -169,9 +173,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self.resnet_dt,
                     self.precision,
                     bias_out=True,
-                    seed=seed + ii * (len(self.neuron) + 1)
-                    if seed is not None
-                    else None,
+                    seed=child_seed(seed, ii),
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],

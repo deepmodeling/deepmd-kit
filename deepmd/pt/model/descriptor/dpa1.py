@@ -11,6 +11,9 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.network.mlp import (
     NetworkCollection,
 )
@@ -236,7 +239,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
         # not implemented
@@ -286,7 +289,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             env_protection=env_protection,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
-            seed=seed,
+            seed=child_seed(seed, 1),
             old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
@@ -295,7 +298,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             ntypes,
             tebd_dim,
             precision=precision,
-            seed=seed + len(neuron) * 2 + attn_layer * 3 if seed is not None else None,
+            seed=child_seed(seed, 2),
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
         )

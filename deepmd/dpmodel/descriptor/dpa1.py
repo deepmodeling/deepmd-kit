@@ -25,6 +25,9 @@ from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
 )
@@ -251,7 +254,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ) -> None:
         ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -294,7 +297,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
@@ -306,7 +309,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             precision=precision,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
-            seed=seed + len(neuron) * 2 + attn_layer * 3 if seed is not None else None,
+            seed=child_seed(seed, 1),
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
@@ -627,7 +630,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
         smooth: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -677,7 +680,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.activation_function,
             self.resnet_dt,
             self.precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         if self.tebd_input_mode in ["strip"]:
             self.embeddings_strip = NetworkCollection(
@@ -691,7 +694,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
-                seed=seed + len(self.neuron) if seed is not None else None,
+                seed=child_seed(seed, 1),
             )
         else:
             self.embeddings_strip = None
@@ -708,7 +711,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             ln_eps=self.ln_eps,
             smooth=self.smooth,
             precision=self.precision,
-            seed=seed + len(self.neuron) * 2 if seed is not None else None,
+            seed=child_seed(seed, 2),
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -956,7 +959,7 @@ class NeighborGatedAttention(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -989,7 +992,7 @@ class NeighborGatedAttention(NativeOP):
                 ln_eps=ln_eps,
                 smooth=smooth,
                 precision=precision,
-                seed=seed + ii * 3 if seed is not None else None,
+                seed=child_seed(seed, ii),
             )
             for ii in range(layer_num)
         ]
@@ -1084,7 +1087,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -1110,14 +1113,14 @@ class NeighborGatedAttentionLayer(NativeOP):
             temperature=temperature,
             smooth=smooth,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.attn_layer_norm = LayerNorm(
             self.embed_dim,
             eps=ln_eps,
             trainable=self.trainable_ln,
             precision=precision,
-            seed=seed + 2 if seed is not None else None,
+            seed=child_seed(seed, 1),
         )
 
     def call(
@@ -1190,7 +1193,7 @@ class GatedAttentionLayer(NativeOP):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -1219,7 +1222,7 @@ class GatedAttentionLayer(NativeOP):
             bias=bias,
             use_timestep=False,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.out_proj = NativeLayer(
             hidden_dim,
@@ -1227,7 +1230,7 @@ class GatedAttentionLayer(NativeOP):
             bias=bias,
             use_timestep=False,
             precision=precision,
-            seed=seed + 1 if seed is not None else None,
+            seed=child_seed(seed, 1),
         )
 
     def call(self, query, nei_mask, input_r=None, sw=None, attnw_shift=20.0):
