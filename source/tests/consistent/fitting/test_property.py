@@ -7,14 +7,14 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.argcheck import (
-    fitting_property,
-)
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet as PropertyFittingDP,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils.argcheck import (
+    fitting_property,
 )
 
 from ..common import (

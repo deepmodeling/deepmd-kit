@@ -270,7 +270,7 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    intensive :  bool, optional
+    intensive : bool, optional
         This parameter is only useful when fitting properties.
         It indicates whether the fitting property is intensive or extensive.
     """
