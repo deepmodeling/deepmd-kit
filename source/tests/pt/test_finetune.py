@@ -44,6 +44,7 @@ from deepmd.utils.data import (
 )
 
 from .model.test_permutation import (
+    model_dos,
     model_dpa1,
     model_dpa2,
     model_se_e2_a,
@@ -73,6 +74,13 @@ energy_data_requirement = [
         high_prec=False,
     ),
     DataRequirementItem(
+        "dos",
+        ndof=250,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
         "atom_ener",
         ndof=1,
         atomic=True,
@@ -92,6 +100,7 @@ energy_data_requirement = [
 
 class FinetuneTest:
     def test_finetune_change_out_bias(self):
+        self.testkey = "energy" if self.testkey is None else self.testkey
         # get data
         data = DpLoaderSet(
             self.data_file,
@@ -108,7 +117,7 @@ class FinetuneTest:
         model = get_model(self.config["model"]).to(env.DEVICE)
         atomic_model = model.atomic_model
         atomic_model["out_bias"] = torch.rand_like(atomic_model["out_bias"])
-        energy_bias_before = to_numpy_array(atomic_model["out_bias"])[0].ravel()
+        energy_bias_before = to_numpy_array(atomic_model["out_bias"])[0]
 
         # prepare original model for test
         dp = torch.jit.script(model)
@@ -123,7 +132,7 @@ class FinetuneTest:
             sampled,
             bias_adjust_mode="change-by-statistic",
         )
-        energy_bias_after = to_numpy_array(atomic_model["out_bias"])[0].ravel()
+        energy_bias_after = to_numpy_array(atomic_model["out_bias"])[0]
 
         # get ground-truth energy bias change
         sorter = np.argsort(full_type_map)
@@ -140,10 +149,10 @@ class FinetuneTest:
             to_numpy_array(sampled[0]["box"][:ntest]),
             to_numpy_array(sampled[0]["atype"][0]),
         )[0]
-        energy_diff = to_numpy_array(sampled[0]["energy"][:ntest]) - energy
+        energy_diff = to_numpy_array(sampled[0][self.testkey][:ntest]) - energy
         finetune_shift = (
             energy_bias_after[idx_type_map] - energy_bias_before[idx_type_map]
-        )
+        ).ravel()
         ground_truth_shift = np.linalg.lstsq(atom_nums, energy_diff, rcond=None)[
             0
         ].reshape(-1)
@@ -262,6 +271,7 @@ class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.mixed_types = False
+        self.testkey = None
 
 
 class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
@@ -276,6 +286,22 @@ class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.mixed_types = False
+        self.testkey = None
+
+
+class TestEnergyDOSModelSeA(FinetuneTest, unittest.TestCase):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "dos/input.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.data_file = [str(Path(__file__).parent / "dos/data/global_system")]
+        self.config["training"]["training_data"]["systems"] = self.data_file
+        self.config["training"]["validation_data"]["systems"] = self.data_file
+        self.config["model"] = deepcopy(model_dos)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.mixed_types = False
+        self.testkey = "dos"
 
 
 class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
@@ -290,6 +316,7 @@ class TestEnergyModelDPA1(FinetuneTest, unittest.TestCase):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.mixed_types = True
+        self.testkey = None
 
 
 class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
@@ -306,6 +333,7 @@ class TestEnergyModelDPA2(FinetuneTest, unittest.TestCase):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.mixed_types = True
+        self.testkey = None
 
 
 if __name__ == "__main__":
