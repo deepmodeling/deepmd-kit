@@ -23,6 +23,7 @@ from .deep_eval import (
 
 class DeepProperty(DeepEval):
     """Properties of structures.
+
     Parameters
     ----------
     model_file : Path
@@ -72,6 +73,7 @@ class DeepProperty(DeepEval):
         **kwargs: Dict[str, Any],
     ) -> Tuple[np.ndarray, ...]:
         """Evaluate properties. If atomic is True, also return atomic property.
+
         Parameters
         ----------
         coords : np.ndarray
@@ -92,6 +94,7 @@ class DeepProperty(DeepEval):
             Whether the atom_types is mixed type, by default False.
         **kwargs : Dict[str, Any]
             Keyword arguments.
+
         Returns
         -------
         property
@@ -115,7 +118,9 @@ class DeepProperty(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        atomic_property = results["property"].reshape(nframes, natoms, self.get_task_dim())
+        atomic_property = results["property"].reshape(
+            nframes, natoms, self.get_task_dim()
+        )
         property = results["property_redu"].reshape(nframes, self.get_task_dim())
 
         if atomic:
