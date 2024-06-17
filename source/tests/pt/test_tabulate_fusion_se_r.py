@@ -1284,7 +1284,10 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
 
         # Check the values
         torch.testing.assert_close(
-            descriptor_tensor, self.expected_descriptor_tensor, atol=self.prec, rtol=self.prec
+            descriptor_tensor,
+            self.expected_descriptor_tensor,
+            atol=self.prec,
+            rtol=self.prec,
         )
 
     def test_backward(self):
@@ -1300,7 +1303,10 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
 
         # Check the forward
         torch.testing.assert_close(
-            descriptor_tensor, self.expected_descriptor_tensor, atol=self.prec, rtol=self.prec
+            descriptor_tensor,
+            self.expected_descriptor_tensor,
+            atol=self.prec,
+            rtol=self.prec,
         )
 
         # Create a loss and perform backward

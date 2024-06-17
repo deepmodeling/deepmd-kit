@@ -1564,7 +1564,10 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
 
         # Check the values
         torch.testing.assert_close(
-            descriptor_tensor, self.expected_descriptor_tensor, atol=self.prec, rtol=self.prec
+            descriptor_tensor,
+            self.expected_descriptor_tensor,
+            atol=self.prec,
+            rtol=self.prec,
         )
 
     def test_backward(self):
@@ -1583,7 +1586,10 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
 
         # Check the forward
         torch.testing.assert_close(
-            descriptor_tensor, self.expected_descriptor_tensor, atol=self.prec, rtol=self.prec
+            descriptor_tensor,
+            self.expected_descriptor_tensor,
+            atol=self.prec,
+            rtol=self.prec,
         )
 
         # Create a loss and perform backward
@@ -1600,7 +1606,10 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
 
         # Check the values of the gradients
         torch.testing.assert_close(
-            self.em_x_tensor.grad, self.expected_dy_dem_x, atol=self.prec, rtol=self.prec
+            self.em_x_tensor.grad,
+            self.expected_dy_dem_x,
+            atol=self.prec,
+            rtol=self.prec,
         )
 
         torch.testing.assert_close(
