@@ -41,7 +41,7 @@ class PropertyLoss(TaskLoss):
         metric : list
             The metric such as mae, rmse which will be printed.
         beta:
-            TODO
+            The 'beta' parameter in 'smooth_mae' loss.
         """
         super().__init__()
         self.task_dim = task_dim
