@@ -1474,9 +1474,9 @@ class TestTabulateFusionSeAOp(unittest.TestCase):
         )
 
         torch.testing.assert_close(
-            self.em_tensor.grad, 
-            self.expected_dy_dem, 
-            atol=self.prec, 
+            self.em_tensor.grad,
+            self.expected_dy_dem,
+            atol=self.prec,
             rtol=self.prec,
         )
 
