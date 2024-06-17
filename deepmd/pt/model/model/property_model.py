@@ -63,6 +63,11 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         return model_predict
 
     @torch.jit.export
+    def get_task_dim(self) -> int:
+        """Get the output dimension of PropertyFittingNet."""
+        return self.get_fitting_net().dim_out
+
+    @torch.jit.export
     def forward_lower(
         self,
         extended_coord,
