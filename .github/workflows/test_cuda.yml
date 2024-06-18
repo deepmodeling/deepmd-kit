@@ -16,7 +16,7 @@ name: Test CUDA
 jobs:
   test_cuda:
     name: Test Python and C++ on CUDA
-    runs-on: nvidia
+    runs-on: [nvidia, t4]
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     container:
       image: nvidia/cuda:12.3.1-devel-ubuntu22.04
