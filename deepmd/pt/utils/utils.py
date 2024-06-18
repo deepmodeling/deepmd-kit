@@ -115,13 +115,48 @@ def dict_to_device(sample_dict):
                 sample_dict[key] = sample_dict[key].to(DEVICE)
 
 
+# https://github.com/numpy/numpy/blob/a4cddb60489f821a1a4dffc16cd5c69755d43bdb/numpy/random/bit_generator.pyx#L58-L63
+INIT_A = 0x43B0D7E5
+MULT_A = 0x931E8875
+MIX_MULT_L = 0xCA01F9DD
+MIX_MULT_R = 0x4973F715
+XSHIFT = 16
+
+
+def hashmix(value: int, hash_const: List[int]):
+    value ^= INIT_A
+    hash_const[0] *= MULT_A
+    value *= INIT_A
+    # prevent overflow
+    hash_const[0] &= 0xFFFF_FFFF_FFFF_FFFF
+    value &= 0xFFFF_FFFF_FFFF_FFFF
+    value ^= value >> XSHIFT
+    return value
+
+
+def mix(x: int, y: int):
+    result = MIX_MULT_L * x - MIX_MULT_R * y
+    # prevent overflow
+    result &= 0xFFFF_FFFF_FFFF_FFFF
+    result ^= result >> XSHIFT
+    return result
+
+
+def mix_entropy(entropy_array: List[int]) -> int:
+    # https://github.com/numpy/numpy/blob/a4cddb60489f821a1a4dffc16cd5c69755d43bdb/numpy/random/bit_generator.pyx#L341-L374
+    hash_const = [INIT_A]
+    mixer = hashmix(entropy_array[0], hash_const)
+    for i_src in range(1, len(entropy_array)):
+        mixer = mix(mixer, hashmix(entropy_array[i_src], hash_const))
+    return mixer
+
+
 def get_generator(
     seed: Optional[Union[int, List[int]]] = None,
 ) -> Optional[torch.Generator]:
     if seed is not None:
         if isinstance(seed, list):
-            # suggested by GitHub Copilot
-            seed = hash(tuple(seed))
+            seed = mix_entropy(seed)
         generator = torch.Generator(device=DEVICE)
         generator.manual_seed(seed)
         return generator
