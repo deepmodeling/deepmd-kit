@@ -243,7 +243,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 OutputVariableDef(
                     name="energy",
                     shape=[1],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 )

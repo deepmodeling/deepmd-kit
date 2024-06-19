@@ -215,7 +215,7 @@ class PolarFitting(GeneralFitting):
                 OutputVariableDef(
                     "polarizability",
                     [3, 3],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
