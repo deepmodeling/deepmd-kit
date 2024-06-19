@@ -66,7 +66,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ) -> None:
         DescrptDPA1.__init__(
             self,

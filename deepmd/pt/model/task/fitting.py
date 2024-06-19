@@ -13,6 +13,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
@@ -143,7 +146,7 @@ class GeneralFitting(Fitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         exclude_types: List[int] = [],
         trainable: Union[bool, List[bool]] = True,
         remove_vaccum_contribution: Optional[List[bool]] = None,
@@ -238,7 +241,7 @@ class GeneralFitting(Fitting):
                         self.resnet_dt,
                         self.precision,
                         bias_out=True,
-                        seed=seed,
+                        seed=child_seed(self.seed, ii),
                     )
                     for ii in range(self.ntypes if not self.mixed_types else 1)
                 ],

@@ -2,7 +2,9 @@
 from typing import (
     ClassVar,
     Dict,
+    List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -81,7 +83,7 @@ class MLPLayer(nn.Module):
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         init: str = "default",
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
         # only use_timestep when skip connection is established.

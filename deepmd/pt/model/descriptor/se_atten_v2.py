@@ -66,7 +66,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         ln_eps: Optional[float] = 1e-5,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
         # not implemented
