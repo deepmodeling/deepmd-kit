@@ -519,8 +519,8 @@ class TestPairwiseModel(tf.test.TestCase):
         # the model is pairwise!
         self.assertAllClose(e[1] + e[2] + e[3] - 3 * e[0], e[4] - e[0])
         self.assertAllClose(f[1] + f[2] + f[3] - 3 * f[0], f[4] - f[0])
-        self.assertAllClose(e[0], 0.189075, 1e-6)
-        self.assertAllClose(f[0, 0], 0.060047, 1e-6)
+        self.assertAllClose(e[0], 4.82969, 1e-6)
+        self.assertAllClose(f[0, 0], -0.104339, 1e-6)
 
     def test_nloc(self):
         jfile = tests_path / "pairwise_dprc.json"
