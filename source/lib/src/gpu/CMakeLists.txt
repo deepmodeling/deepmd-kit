@@ -76,7 +76,6 @@ elseif(USE_ROCM_TOOLKIT)
 
   file(GLOB SOURCE_FILES "*.cu")
 
-  add_library(${GPU_LIB_NAME} SHARED ${SOURCE_FILES})
   set_source_files_properties(${SOURCE_FILES} PROPERTIES LANGUAGE HIP)
   # -fpic
   set_property(TARGET ${GPU_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
