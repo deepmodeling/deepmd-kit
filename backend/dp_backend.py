@@ -7,9 +7,6 @@ from typing import (
 
 from scikit_build_core import build as _orig
 
-from .find_pytorch import (
-    find_pytorch,
-)
 from .find_tensorflow import (
     find_tensorflow,
 )
@@ -43,18 +40,10 @@ build_editable = _orig.build_editable
 def get_requires_for_build_wheel(
     config_settings: dict,
 ) -> List[str]:
-    return (
-        _orig.get_requires_for_build_wheel(config_settings)
-        + find_tensorflow()[1]
-        + find_pytorch()[1]
-    )
+    return _orig.get_requires_for_build_wheel(config_settings) + find_tensorflow()[1]
 
 
 def get_requires_for_build_editable(
     config_settings: dict,
 ) -> List[str]:
-    return (
-        _orig.get_requires_for_build_editable(config_settings)
-        + find_tensorflow()[1]
-        + find_pytorch()[1]
-    )
+    return _orig.get_requires_for_build_editable(config_settings) + find_tensorflow()[1]

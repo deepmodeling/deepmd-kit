@@ -126,6 +126,9 @@ cu12 = [
     "nvidia-cudnn-cu12<9",
     "nvidia-cuda-nvcc-cu12",
 ]
+torch = [
+    "torch>=2a",
+]
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
