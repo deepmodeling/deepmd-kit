@@ -17,12 +17,14 @@ from sysconfig import (
     get_path,
 )
 from typing import (
+    List,
     Optional,
+    Tuple,
 )
 
 
 @lru_cache
-def find_pytorch() -> Optional[str]:
+def find_pytorch() -> Tuple[Optional[str], List[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:
@@ -39,9 +41,12 @@ def find_pytorch() -> Optional[str]:
     -------
     str, optional
         PyTorch library path if found.
+    list of str
+        TensorFlow requirement if not found. Empty if found.
     """
     if os.environ.get("DP_ENABLE_PYTORCH", "1") == "0":
-        return None
+        return None, []
+    requires = []
     pt_spec = None
 
     if (pt_spec is None or not pt_spec) and os.environ.get("PYTORCH_ROOT") is not None:
@@ -73,4 +78,33 @@ def find_pytorch() -> Optional[str]:
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
         pt_install_dir = None
-    return pt_install_dir
+        requires.extend(get_pt_requirement()["torch"])
+    return pt_install_dir, requires
+
+
+@lru_cache
+def get_pt_requirement(pt_version: str = "") -> dict:
+    """Get PyTorch requirement when PT is not installed.
+
+    If pt_version is not given and the environment variable `PYTORCH_VERSION` is set, use it as the requirement.
+
+    Parameters
+    ----------
+    pt_version : str, optional
+        PT version
+
+    Returns
+    -------
+    dict
+        PyTorch requirement.
+    """
+    if pt_version is None:
+        return {"torch": []}
+    if pt_version == "":
+        pt_version = os.environ.get("PYTORCH_VERSION", "")
+
+    return {
+        "torch": [
+            f"torch=={pt_version}" if pt_version != "" else "torch>=2a",
+        ],
+    }
