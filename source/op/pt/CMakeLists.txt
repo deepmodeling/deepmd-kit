@@ -2,7 +2,16 @@ file(GLOB OP_SRC print_summary.cc comm.cc)
 
 add_library(deepmd_op_pt MODULE ${OP_SRC})
 # link: libdeepmd libtorch
-target_link_libraries(deepmd_op_pt PRIVATE ${TORCH_LIBRARIES} ${LIB_DEEPMD})
+target_link_libraries(deepmd_op_pt PRIVATE ${TORCH_LIBRARIES})
+if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
+  target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD})
+else()
+  target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD}_compat_cxxabi)
+endif()
+remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+target_compile_definitions(
+  deepmd_op_pt
+  PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI_PT}>")
 if(APPLE)
   set_target_properties(deepmd_op_pt PROPERTIES INSTALL_RPATH "@loader_path")
 else()
