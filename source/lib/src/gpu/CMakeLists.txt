@@ -87,7 +87,6 @@ function(create_gpu_lib _suffix)
     target_link_libraries(${GPU_LIB_NAME_SUFFIX} PRIVATE deepmd_dyn_cudart)
 
   elseif(USE_ROCM_TOOLKIT)
-    add_library(${GPU_LIB_NAME_SUFFIX} SHARED ${SOURCE_FILES})
     # -fpic
     set_property(TARGET ${GPU_LIB_NAME_SUFFIX}
                  PROPERTY POSITION_INDEPENDENT_CODE ON)
