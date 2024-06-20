@@ -2,6 +2,7 @@
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -570,7 +571,7 @@ class TypeEmbedNet(nn.Module):
         bavg=0.0,
         stddev=1.0,
         precision="default",
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         use_econf_tebd=False,
         type_map=None,
     ):
@@ -667,7 +668,7 @@ class TypeEmbedNetConsistent(nn.Module):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,

@@ -5,6 +5,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -108,7 +109,7 @@ class DipoleFitting(GeneralFitting):
         type_map: Optional[List[str]] = None,
         old_impl=False,
         # not used
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         # seed, uniform_seed are not included
         if tot_ener_zero:

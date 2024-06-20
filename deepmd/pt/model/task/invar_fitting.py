@@ -4,6 +4,7 @@ import logging
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import torch
@@ -95,7 +96,7 @@ class InvarFitting(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         exclude_types: List[int] = [],
         atom_ener: Optional[List[Optional[torch.Tensor]]] = None,
         type_map: Optional[List[str]] = None,

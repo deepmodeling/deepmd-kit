@@ -12,6 +12,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
 
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -83,7 +86,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         env_protection: float = 0.0,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         type: Optional[str] = None,
         old_impl: bool = False,
     ):
@@ -227,7 +230,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ln_eps=self.ln_eps,
                 smooth=self.smooth,
                 precision=self.precision,
-                seed=self.seed,
+                seed=child_seed(self.seed, 0),
             )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -271,7 +274,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
-                seed=self.seed,
+                seed=child_seed(self.seed, 1),
             )
             self.filter_layers = filter_layers
             if self.tebd_input_mode in ["strip"]:
@@ -284,7 +287,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     activation_function=self.activation_function,
                     precision=self.precision,
                     resnet_dt=self.resnet_dt,
-                    seed=self.seed,
+                    seed=child_seed(self.seed, 2),
                 )
                 self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -605,7 +608,7 @@ class NeighborGatedAttention(nn.Module):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -640,7 +643,7 @@ class NeighborGatedAttention(nn.Module):
                     ln_eps=ln_eps,
                     smooth=smooth,
                     precision=precision,
-                    seed=seed,
+                    seed=child_seed(seed, i),
                 )
             )
         self.attention_layers = nn.ModuleList(attention_layers)
@@ -748,7 +751,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -775,14 +778,14 @@ class NeighborGatedAttentionLayer(nn.Module):
             temperature=temperature,
             smooth=smooth,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.attn_layer_norm = LayerNorm(
             self.embed_dim,
             eps=ln_eps,
             trainable=trainable_ln,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 1),
         )
 
     def forward(
@@ -855,7 +858,7 @@ class GatedAttentionLayer(nn.Module):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -887,7 +890,7 @@ class GatedAttentionLayer(nn.Module):
             bavg=0.0,
             stddev=1.0,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.out_proj = MLPLayer(
             hidden_dim,
@@ -897,7 +900,7 @@ class GatedAttentionLayer(nn.Module):
             bavg=0.0,
             stddev=1.0,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 1),
         )
 
     def forward(
