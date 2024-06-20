@@ -120,6 +120,7 @@ Note that TensorFlow may have specific requirements for the compiler version to 
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
+You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
 Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
 
 :::
