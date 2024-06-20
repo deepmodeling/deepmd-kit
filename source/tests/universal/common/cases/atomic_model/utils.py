@@ -12,6 +12,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    check_deriv,
+)
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -38,6 +41,8 @@ class AtomicModelTestCase:
     """Expected shape of atomic parameters."""
     expected_model_output_type: List[str]
     """Expected output type for the model."""
+    model_output_equivariant: List[str]
+    """Outputs that are equivariant to the input rotation."""
     expected_sel: List[int]
     """Expected number of neighbors."""
     expected_has_message_passing: bool
@@ -102,6 +107,7 @@ class AtomicModelTestCase:
     def test_forward(self):
         """Test forward."""
         nf = 1
+        rng = np.random.default_rng(GLOBAL_SEED)
         coord = np.array(
             [
                 [0, 0, 0],
@@ -121,10 +127,24 @@ class AtomicModelTestCase:
             box=cell,
         )
         ret_lower = []
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, 3, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
         for module in self.modules_to_test:
             module = self.forward_wrapper(module)
-
-            ret_lower.append(module(coord_ext, atype_ext, nlist, mapping=mapping))
+            ret_lower.append(
+                module(
+                    coord_ext,
+                    atype_ext,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                )
+            )
         for kk in ret_lower[0].keys():
             subret = []
             for rr in ret_lower:
@@ -142,7 +162,7 @@ class AtomicModelTestCase:
     def test_permutation(self):
         """Test permutation."""
         if getattr(self, "skip_test_permutation", False):
-            return
+            self.skipTest("Skip test permutation.")
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         nf = 1
@@ -161,6 +181,14 @@ class AtomicModelTestCase:
         atype = atype.reshape([nf, -1])
         atype_perm = atype_perm.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
+        aparam = None
+        fparam = None
+        aparam_perm = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+            aparam_perm = aparam[:, idx_perm, :]
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
 
         ret = []
         module = self.forward_wrapper(self.module)
@@ -172,7 +200,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext, atype_ext, nlist, mapping=mapping))
+        ret.append(
+            module(
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # permutation
         coord_ext_perm, atype_ext_perm, mapping_perm, nlist_perm = (
             extend_input_and_build_neighbor_list(
@@ -185,7 +222,14 @@ class AtomicModelTestCase:
             )
         )
         ret.append(
-            module(coord_ext_perm, atype_ext_perm, nlist_perm, mapping=mapping_perm)
+            module(
+                coord_ext_perm,
+                atype_ext_perm,
+                nlist_perm,
+                mapping=mapping_perm,
+                fparam=fparam,
+                aparam=aparam_perm,
+            )
         )
 
         for kk in ret[0]:
@@ -209,7 +253,7 @@ class AtomicModelTestCase:
     def test_trans(self):
         """Test translation."""
         if getattr(self, "skip_test_trans", False):
-            return
+            self.skipTest("Skip test translation.")
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         nf = 1
@@ -229,6 +273,13 @@ class AtomicModelTestCase:
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
         coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
@@ -239,7 +290,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext, atype_ext, nlist, mapping=mapping))
+        ret.append(
+            module(
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # translation
         coord_ext_trans, atype_ext_trans, mapping_trans, nlist_trans = (
             extend_input_and_build_neighbor_list(
@@ -252,7 +312,14 @@ class AtomicModelTestCase:
             )
         )
         ret.append(
-            module(coord_ext_trans, atype_ext_trans, nlist_trans, mapping=mapping_trans)
+            module(
+                coord_ext_trans,
+                atype_ext_trans,
+                nlist_trans,
+                mapping=mapping_trans,
+                fparam=fparam,
+                aparam=aparam,
+            )
         )
 
         for kk in ret[0]:
@@ -268,7 +335,7 @@ class AtomicModelTestCase:
     def test_rot(self):
         """Test rotation."""
         if getattr(self, "skip_test_rot", False):
-            return
+            self.skipTest("Skip test rotation.")
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         nf = 1
@@ -291,6 +358,13 @@ class AtomicModelTestCase:
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
         coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
@@ -301,7 +375,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext, atype_ext, nlist, mapping=mapping))
+        ret.append(
+            module(
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # rotation
         coord_ext_rot, atype_ext_rot, mapping_rot, nlist_rot = (
             extend_input_and_build_neighbor_list(
@@ -313,12 +396,24 @@ class AtomicModelTestCase:
                 box=cell,
             )
         )
-        ret.append(module(coord_ext_rot, atype_ext_rot, nlist_rot, mapping=mapping_rot))
+        ret.append(
+            module(
+                coord_ext_rot,
+                atype_ext_rot,
+                nlist_rot,
+                mapping=mapping_rot,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
 
         for kk in ret[0]:
             if kk in self.expected_model_output_type:
-                rot_invariant = self.output_def[kk].rot_invariant
-                if rot_invariant:
+                rot_equivariant = (
+                    check_deriv(self.output_def[kk])
+                    or kk in self.model_output_equivariant
+                )
+                if not rot_equivariant:
                     np.testing.assert_allclose(
                         ret[0][kk],
                         ret[1][kk],
@@ -365,7 +460,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext, atype_ext, nlist, mapping=mapping))
+        ret.append(
+            module(
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # rotation
         coord_ext_rot, atype_ext_rot, mapping_rot, nlist_rot = (
             extend_input_and_build_neighbor_list(
@@ -377,12 +481,24 @@ class AtomicModelTestCase:
                 box=cell_rot,
             )
         )
-        ret.append(module(coord_ext_rot, atype_ext_rot, nlist_rot, mapping=mapping_rot))
+        ret.append(
+            module(
+                coord_ext_rot,
+                atype_ext_rot,
+                nlist_rot,
+                mapping=mapping_rot,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
 
         for kk in ret[0]:
             if kk in self.expected_model_output_type:
-                rot_invariant = self.output_def[kk].rot_invariant
-                if rot_invariant:
+                rot_equivariant = (
+                    check_deriv(self.output_def[kk])
+                    or kk in self.model_output_equivariant
+                )
+                if not rot_equivariant:
                     np.testing.assert_allclose(
                         ret[0][kk],
                         ret[1][kk],
@@ -406,7 +522,7 @@ class AtomicModelTestCase:
     def test_smooth(self):
         """Test smooth."""
         if getattr(self, "skip_test_smooth", False):
-            return
+            self.skipTest("Skip test smooth.")
         rng = np.random.default_rng(GLOBAL_SEED)
         epsilon = (
             1e-5
@@ -464,6 +580,13 @@ class AtomicModelTestCase:
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
         # coord0
@@ -475,7 +598,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext0, atype_ext0, nlist0, mapping=mapping0))
+        ret.append(
+            module(
+                coord_ext0,
+                atype_ext0,
+                nlist0,
+                mapping=mapping0,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # coord1
         coord_ext1, atype_ext1, mapping1, nlist1 = extend_input_and_build_neighbor_list(
             coord1,
@@ -485,7 +617,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext1, atype_ext1, nlist1, mapping=mapping1))
+        ret.append(
+            module(
+                coord_ext1,
+                atype_ext1,
+                nlist1,
+                mapping=mapping1,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # coord2
         coord_ext2, atype_ext2, mapping2, nlist2 = extend_input_and_build_neighbor_list(
             coord2,
@@ -495,7 +636,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext2, atype_ext2, nlist2, mapping=mapping2))
+        ret.append(
+            module(
+                coord_ext2,
+                atype_ext2,
+                nlist2,
+                mapping=mapping2,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
         # coord3
         coord_ext3, atype_ext3, mapping3, nlist3 = extend_input_and_build_neighbor_list(
             coord3,
@@ -505,7 +655,16 @@ class AtomicModelTestCase:
             mixed_types=self.module.mixed_types(),
             box=cell,
         )
-        ret.append(module(coord_ext3, atype_ext3, nlist3, mapping=mapping3))
+        ret.append(
+            module(
+                coord_ext3,
+                atype_ext3,
+                nlist3,
+                mapping=mapping3,
+                fparam=fparam,
+                aparam=aparam,
+            )
+        )
 
         for kk in ret[0]:
             if kk in self.expected_model_output_type:

@@ -19,12 +19,16 @@ from deepmd.pt.model.model import (
     DPZBLModel,
     EnergyModel,
     PolarModel,
+    SpinEnergyModel,
 )
 from deepmd.pt.model.task import (
     DipoleFittingNet,
     DOSFittingNet,
     EnergyFittingNet,
     PolarFittingNet,
+)
+from deepmd.utils.spin import (
+    Spin,
 )
 
 from ....consistent.common import (
@@ -35,32 +39,45 @@ from ...common.cases.model.model import (
     DosModelTest,
     EnerModelTest,
     PolarModelTest,
+    SpinEnerModelTest,
     ZBLModelTest,
+)
+from ...dpmodel.descriptor.test_descriptor import (
+    DescriptorParamDPA1List,
+    DescriptorParamDPA2List,
+    DescriptorParamHybrid,
+    DescriptorParamHybridMixed,
+    DescriptorParamSeAList,
+    DescriptorParamSeRList,
+    DescriptorParamSeTList,
+)
+from ...dpmodel.fitting.test_fitting import (
+    FittingParamDipoleList,
+    FittingParamDosList,
+    FittingParamEnergyList,
+    FittingParamPolarList,
+)
+from ...dpmodel.model.test_model import (
+    skip_model_tests,
 )
 from ..backend import (
     PTTestCase,
-)
-from ..descriptor.test_descriptor import (
-    DescriptorParamDPA1,
-    DescriptorParamDPA2,
-    DescriptorParamHybrid,
-    DescriptorParamHybridMixed,
-    DescriptorParamSeA,
-    DescriptorParamSeR,
-    DescriptorParamSeT,
 )
 
 
 @parameterized(
     (
-        (DescriptorParamSeA, DescrptSeA),
-        (DescriptorParamSeR, DescrptSeR),
-        (DescriptorParamSeT, DescrptSeT),
-        (DescriptorParamDPA1, DescrptDPA1),
-        (DescriptorParamDPA2, DescrptDPA2),
+        *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
+        *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
+        *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+        *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+        *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
-    )  # class_param & class
+    ),  # descrpt_class_param & class
+    (
+        *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
+    ),  # fitting_class_param & class
 )
 class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
     # @property
@@ -75,6 +92,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
     def setUp(self):
         EnerModelTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
+        (FittingParam, Fitting) = self.param[1]
         # set special precision
         if Descrpt in [DescrptDPA2]:
             self.epsilon_dict["test_smooth"] = 1e-8
@@ -85,11 +103,21 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             self.expected_sel,
             self.expected_type_map,
         )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(self)
+        if skiptest:
+            raise self.skipTest(skip_reason)
+
         ds = Descrpt(**self.input_dict_ds)
-        ft = EnergyFittingNet(
-            **self.input_dict_ft,
+        self.input_dict_ft = FittingParam(
+            ntypes=len(self.expected_type_map),
             dim_descrpt=ds.get_dim_out(),
             mixed_types=ds.mixed_types(),
+            type_map=self.expected_type_map,
+        )
+        ft = Fitting(
+            **self.input_dict_ft,
         )
         self.module = EnergyModel(
             ds,
@@ -98,18 +126,24 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
         )
         self.output_def = self.module.translated_output_def()
         self.expected_has_message_passing = ds.has_message_passing()
+        self.expected_sel_type = ft.get_sel_type()
+        self.expected_dim_fparam = ft.get_dim_fparam()
+        self.expected_dim_aparam = ft.get_dim_aparam()
 
 
 @parameterized(
     (
-        (DescriptorParamSeA, DescrptSeA),
-        (DescriptorParamSeR, DescrptSeR),
-        (DescriptorParamSeT, DescrptSeT),
-        (DescriptorParamDPA1, DescrptDPA1),
-        (DescriptorParamDPA2, DescrptDPA2),
+        *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
+        *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
+        *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+        *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+        *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
-    )  # class_param & class
+    ),  # descrpt_class_param & class
+    (
+        *[(param_func, DOSFittingNet) for param_func in FittingParamDosList],
+    ),  # fitting_class_param & class
 )
 class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
     # @property
@@ -124,6 +158,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
     def setUp(self):
         DosModelTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
+        (FittingParam, Fitting) = self.param[1]
         # set special precision
         self.aprec_dict["test_smooth"] = 1e-4
         if Descrpt in [DescrptDPA2]:
@@ -135,11 +170,21 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
             self.expected_sel,
             self.expected_type_map,
         )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(self)
+        if skiptest:
+            raise self.skipTest(skip_reason)
+
         ds = Descrpt(**self.input_dict_ds)
-        ft = DOSFittingNet(
-            **self.input_dict_ft,
+        self.input_dict_ft = FittingParam(
+            ntypes=len(self.expected_type_map),
             dim_descrpt=ds.get_dim_out(),
             mixed_types=ds.mixed_types(),
+            type_map=self.expected_type_map,
+        )
+        ft = Fitting(
+            **self.input_dict_ft,
         )
         self.module = DOSModel(
             ds,
@@ -148,16 +193,22 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
         )
         self.output_def = self.module.translated_output_def()
         self.expected_has_message_passing = ds.has_message_passing()
+        self.expected_sel_type = ft.get_sel_type()
+        self.expected_dim_fparam = ft.get_dim_fparam()
+        self.expected_dim_aparam = ft.get_dim_aparam()
 
 
 @parameterized(
     (
-        (DescriptorParamSeA, DescrptSeA),
-        (DescriptorParamDPA1, DescrptDPA1),
-        (DescriptorParamDPA2, DescrptDPA2),
+        *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
+        *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+        *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
-    )  # class_param & class
+    ),  # descrpt_class_param & class
+    (
+        *[(param_func, DipoleFittingNet) for param_func in FittingParamDipoleList],
+    ),  # fitting_class_param & class
 )
 class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
     # @property
@@ -172,9 +223,13 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
     def setUp(self):
         DipoleModelTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
+        (FittingParam, Fitting) = self.param[1]
         # set special precision
         if Descrpt in [DescrptDPA2]:
             self.epsilon_dict["test_smooth"] = 1e-8
+        self.aprec_dict["test_rot"] = 1e-10  # for dipole force when near zero
+        self.aprec_dict["test_trans"] = 1e-10  # for dipole force when near zero
+        self.aprec_dict["test_permutation"] = 1e-10  # for dipole force when near zero
         self.input_dict_ds = DescriptorParam(
             len(self.expected_type_map),
             self.expected_rcut,
@@ -182,12 +237,22 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
             self.expected_sel,
             self.expected_type_map,
         )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(self)
+        if skiptest:
+            raise self.skipTest(skip_reason)
+
         ds = Descrpt(**self.input_dict_ds)
-        ft = DipoleFittingNet(
-            **self.input_dict_ft,
-            embedding_width=ds.get_dim_emb(),
+        self.input_dict_ft = FittingParam(
+            ntypes=len(self.expected_type_map),
             dim_descrpt=ds.get_dim_out(),
             mixed_types=ds.mixed_types(),
+            type_map=self.expected_type_map,
+            embedding_width=ds.get_dim_emb(),
+        )
+        ft = Fitting(
+            **self.input_dict_ft,
         )
         self.module = DipoleModel(
             ds,
@@ -196,16 +261,22 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
         )
         self.output_def = self.module.translated_output_def()
         self.expected_has_message_passing = ds.has_message_passing()
+        self.expected_sel_type = ft.get_sel_type()
+        self.expected_dim_fparam = ft.get_dim_fparam()
+        self.expected_dim_aparam = ft.get_dim_aparam()
 
 
 @parameterized(
     (
-        (DescriptorParamSeA, DescrptSeA),
-        (DescriptorParamDPA1, DescrptDPA1),
-        (DescriptorParamDPA2, DescrptDPA2),
+        *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
+        *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+        *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
-    )  # class_param & class
+    ),  # descrpt_class_param & class
+    (
+        *[(param_func, PolarFittingNet) for param_func in FittingParamPolarList],
+    ),  # fitting_class_param & class
 )
 class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
     # @property
@@ -220,6 +291,7 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
     def setUp(self):
         PolarModelTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
+        (FittingParam, Fitting) = self.param[1]
         # set special precision
         if Descrpt in [DescrptDPA2]:
             self.epsilon_dict["test_smooth"] = 1e-8
@@ -230,12 +302,22 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
             self.expected_sel,
             self.expected_type_map,
         )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(self)
+        if skiptest:
+            raise self.skipTest(skip_reason)
+
         ds = Descrpt(**self.input_dict_ds)
-        ft = PolarFittingNet(
-            **self.input_dict_ft,
-            embedding_width=ds.get_dim_emb(),
+        self.input_dict_ft = FittingParam(
+            ntypes=len(self.expected_type_map),
             dim_descrpt=ds.get_dim_out(),
             mixed_types=ds.mixed_types(),
+            type_map=self.expected_type_map,
+            embedding_width=ds.get_dim_emb(),
+        )
+        ft = Fitting(
+            **self.input_dict_ft,
         )
         self.module = PolarModel(
             ds,
@@ -244,19 +326,26 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
         )
         self.output_def = self.module.translated_output_def()
         self.expected_has_message_passing = ds.has_message_passing()
+        self.expected_sel_type = ft.get_sel_type()
+        self.expected_dim_fparam = ft.get_dim_fparam()
+        self.expected_dim_aparam = ft.get_dim_aparam()
 
 
 @parameterized(
     (
-        (DescriptorParamDPA1, DescrptDPA1),
-        (DescriptorParamDPA2, DescrptDPA2),
+        *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+        *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
         (DescriptorParamHybridMixed, DescrptHybrid),
-    )  # class_param & class
+    ),  # descrpt_class_param & class
+    (
+        *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
+    ),  # fitting_class_param & class
 )
 class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
     def setUp(self):
         ZBLModelTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
+        (FittingParam, Fitting) = self.param[1]
         # set special precision
         # zbl weights not so smooth
         self.aprec_dict["test_smooth"] = 5e-2
@@ -267,11 +356,21 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
             self.expected_sel,
             self.expected_type_map,
         )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(self)
+        if skiptest:
+            raise self.skipTest(skip_reason)
+
         ds = Descrpt(**self.input_dict_ds)
-        ft = EnergyFittingNet(
-            **self.input_dict_ft,
+        self.input_dict_ft = FittingParam(
+            ntypes=len(self.expected_type_map),
             dim_descrpt=ds.get_dim_out(),
             mixed_types=ds.mixed_types(),
+            type_map=self.expected_type_map,
+        )
+        ft = Fitting(
+            **self.input_dict_ft,
         )
         dp_model = DPAtomicModel(
             ds,
@@ -294,3 +393,82 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
         )
         self.output_def = self.module.translated_output_def()
         self.expected_has_message_passing = ds.has_message_passing()
+        self.expected_dim_fparam = ft.get_dim_fparam()
+        self.expected_dim_aparam = ft.get_dim_aparam()
+
+
+@parameterized(
+    (
+        *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
+        *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
+        *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+        *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+        *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+        # (DescriptorParamHybrid, DescrptHybrid),
+        # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
+        (DescriptorParamHybridMixed, DescrptHybrid),
+    ),  # descrpt_class_param & class
+    (
+        *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
+    ),  # fitting_class_param & class
+)
+class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
+    def setUp(self):
+        SpinEnerModelTest.setUp(self)
+        (DescriptorParam, Descrpt) = self.param[0]
+        (FittingParam, Fitting) = self.param[1]
+        # set special precision
+        if Descrpt in [DescrptDPA2]:
+            self.epsilon_dict["test_smooth"] = 1e-8
+
+        spin = Spin(
+            use_spin=self.spin_dict["use_spin"],
+            virtual_scale=self.spin_dict["virtual_scale"],
+        )
+        spin_type_map = self.expected_type_map + [
+            item + "_spin" for item in self.expected_type_map
+        ]
+        if Descrpt in [DescrptSeA, DescrptSeR, DescrptSeT]:
+            spin_sel = self.expected_sel + self.expected_sel
+        else:
+            spin_sel = self.expected_sel
+        pair_exclude_types = spin.get_pair_exclude_types()
+        atom_exclude_types = spin.get_atom_exclude_types()
+        self.input_dict_ds = DescriptorParam(
+            len(spin_type_map),
+            self.expected_rcut,
+            self.expected_rcut / 2,
+            spin_sel,
+            spin_type_map,
+            env_protection=1e-6,
+            exclude_types=pair_exclude_types,
+        )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(self)
+        if skiptest:
+            raise self.skipTest(skip_reason)
+
+        ds = Descrpt(**self.input_dict_ds)
+        self.input_dict_ft = FittingParam(
+            ntypes=len(spin_type_map),
+            dim_descrpt=ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            type_map=spin_type_map,
+        )
+        ft = Fitting(
+            **self.input_dict_ft,
+        )
+        backbone_model = EnergyModel(
+            ds,
+            ft,
+            type_map=spin_type_map,
+            atom_exclude_types=atom_exclude_types,
+            pair_exclude_types=pair_exclude_types,
+        )
+        self.module = SpinEnergyModel(backbone_model=backbone_model, spin=spin)
+        self.output_def = self.module.translated_output_def()
+        self.expected_has_message_passing = ds.has_message_passing()
+        self.expected_sel_type = ft.get_sel_type()
+        self.expected_dim_fparam = ft.get_dim_fparam()
+        self.expected_dim_aparam = ft.get_dim_aparam()

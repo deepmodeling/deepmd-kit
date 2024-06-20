@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from copy import (
+    deepcopy,
+)
 from typing import (
     Dict,
     List,
@@ -8,6 +11,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel import (
+    ModelOutputDef,
+)
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
 )
@@ -43,7 +49,9 @@ class SpinModel(torch.nn.Module):
 
     def process_spin_input(self, coord, atype, spin):
         """Generate virtual coordinates and types, concat into the input."""
-        nframes, nloc = coord.shape[:-1]
+        nframes, nloc = atype.shape
+        coord = coord.reshape(nframes, nloc, 3)
+        spin = spin.reshape(nframes, nloc, 3)
         atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
         virtual_coord = coord + spin * self.virtual_scale_mask[atype].reshape(
             [nframes, nloc, 1]
@@ -251,6 +259,11 @@ class SpinModel(torch.nn.Module):
         return tmap[:ntypes]
 
     @torch.jit.export
+    def get_ntypes(self):
+        """Returns the number of element types."""
+        return len(self.get_type_map())
+
+    @torch.jit.export
     def get_rcut(self):
         """Get the cut-off radius."""
         return self.backbone_model.get_rcut()
@@ -317,6 +330,16 @@ class SpinModel(torch.nn.Module):
     def has_spin(self) -> bool:
         """Returns whether it has spin input and output."""
         return True
+
+    def model_output_def(self):
+        """Get the output def for the model."""
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
+        backbone_model_atomic_output_def = self.backbone_model.atomic_output_def()
+        backbone_model_atomic_output_def[var_name].magnetic = True
+        return ModelOutputDef(backbone_model_atomic_output_def)
 
     def __getattr__(self, name):
         """Get attribute from the wrapped model."""
@@ -385,7 +408,7 @@ class SpinModel(torch.nn.Module):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        nframes, nloc = coord.shape[:2]
+        nframes, nloc = atype.shape
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
         model_ret = self.backbone_model.forward_common(
             coord_updated,
@@ -509,6 +532,20 @@ class SpinEnergyModel(SpinModel):
     ):
         super().__init__(backbone_model, spin)
 
+    def translated_output_def(self):
+        out_def_data = self.model_output_def().get_data()
+        output_def = {
+            "atom_energy": deepcopy(out_def_data["energy"]),
+            "energy": deepcopy(out_def_data["energy_redu"]),
+            "mask_mag": deepcopy(out_def_data["mask_mag"]),
+        }
+        if self.do_grad_r("energy"):
+            output_def["force"] = deepcopy(out_def_data["energy_derv_r"])
+            output_def["force"].squeeze(-2)
+            output_def["force_mag"] = deepcopy(out_def_data["energy_derv_r_mag"])
+            output_def["force_mag"].squeeze(-2)
+        return output_def
+
     def forward(
         self,
         coord,
@@ -520,7 +557,7 @@ class SpinEnergyModel(SpinModel):
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
         if aparam is not None:
-            aparam = self.expand_aparam(aparam, coord.shape[1])
+            aparam = self.expand_aparam(aparam, atype.shape[1])
         model_ret = self.forward_common(
             coord,
             atype,
@@ -565,7 +602,7 @@ class SpinEnergyModel(SpinModel):
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
-        model_predict["mask_mag"] = model_ret["mask_mag"]
+        model_predict["extended_mask_mag"] = model_ret["mask_mag"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["extended_force_mag"] = model_ret[

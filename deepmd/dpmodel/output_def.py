@@ -186,8 +186,6 @@ class OutputVariableDef:
           If hessian is requred
     magnetic : bool
           If the derivatives of variable have magnetic parts.
-    rot_invariant : bool
-          If the variable is rotationally invariant.
     """
 
     def __init__(
@@ -201,7 +199,6 @@ class OutputVariableDef:
         category: int = OutputVariableCategory.OUT.value,
         r_hessian: bool = False,
         magnetic: bool = False,
-        rot_invariant: bool = True,
     ):
         self.name = name
         self.shape = list(shape)
@@ -221,7 +218,6 @@ class OutputVariableDef:
         self.category = category
         self.r_hessian = r_hessian
         self.magnetic = magnetic
-        self.rot_invariant = rot_invariant
         if self.r_hessian:
             if not self.reduciable:
                 raise ValueError("only reduciable variable can calculate hessian")
@@ -410,6 +406,16 @@ def check_operation_applied(
     return var_def.category & op.value == op.value
 
 
+def check_deriv(var_def: OutputVariableDef) -> bool:
+    """Check if a variable is obtained by derivative."""
+    deriv = (
+        check_operation_applied(var_def, OutputVariableOperation.DERV_R)
+        or check_operation_applied(var_def, OutputVariableOperation._SEC_DERV_R)
+        or check_operation_applied(var_def, OutputVariableOperation.DERV_C)
+    )
+    return deriv
+
+
 def do_reduce(
     def_outp_data: Dict[str, OutputVariableDef],
 ) -> Dict[str, OutputVariableDef]:
@@ -425,7 +431,6 @@ def do_reduce(
                 c_differentiable=False,
                 atomic=False,
                 category=apply_operation(vv, OutputVariableOperation.REDU),
-                rot_invariant=vv.rot_invariant,
             )
     return def_redu
 
@@ -474,7 +479,6 @@ def do_derivative(
                 c_differentiable=False,
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_R),
-                rot_invariant=False,
             )
             if vv.magnetic:
                 def_derv_r[rkrm] = OutputVariableDef(
@@ -488,7 +492,6 @@ def do_derivative(
                     atomic=True,
                     category=apply_operation(vv, OutputVariableOperation.DERV_R),
                     magnetic=True,
-                    rot_invariant=False,
                 )
 
         if vv.c_differentiable:
@@ -501,7 +504,6 @@ def do_derivative(
                 c_differentiable=False,
                 atomic=True,
                 category=apply_operation(vv, OutputVariableOperation.DERV_C),
-                rot_invariant=False,
             )
             if vv.magnetic:
                 def_derv_r[rkcm] = OutputVariableDef(
@@ -513,6 +515,5 @@ def do_derivative(
                     atomic=True,
                     category=apply_operation(vv, OutputVariableOperation.DERV_C),
                     magnetic=True,
-                    rot_invariant=False,
                 )
     return def_derv_r, def_derv_c

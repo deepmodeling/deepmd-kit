@@ -145,7 +145,6 @@ class DipoleFittingNet(GeneralFitting):
                     reduciable=True,
                     r_differentiable=self.r_differentiable,
                     c_differentiable=self.c_differentiable,
-                    rot_invariant=False,
                 ),
             ]
         )

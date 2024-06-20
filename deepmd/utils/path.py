@@ -320,7 +320,7 @@ class DPH5Path(DPPath):
         # this method has cache to avoid duplicated
         # loading from different DPH5Path
         # However the file will be never closed?
-        return h5py.File(path, mode)
+        return h5py.File(path, mode, locking=False)
 
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.

@@ -12,6 +12,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    check_deriv,
+)
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -38,6 +41,8 @@ class ModelTestCase:
     """Expected shape of atomic parameters."""
     expected_model_output_type: List[str]
     """Expected output type for the model."""
+    model_output_equivariant: List[str]
+    """Outputs that are equivariant to the input rotation."""
     expected_sel: List[int]
     """Expected number of neighbors."""
     expected_has_message_passing: bool
@@ -108,34 +113,60 @@ class ModelTestCase:
 
     def test_forward(self):
         """Test forward and forward_lower."""
+        test_spin = getattr(self, "test_spin", False)
         nf = 1
-        coord = np.array(
-            [
-                [0, 0, 0],
-                [0, 1, 0],
-                [0, 0, 1],
-            ],
-            dtype=np.float64,
-        ).reshape([nf, -1])
-        atype = np.array([0, 0, 1], dtype=int).reshape([nf, -1])
+        natoms = 5
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coord = 4.0 * rng.random([natoms, 3]).reshape([nf, -1])
+        atype = np.array([0, 0, 0, 1, 1], dtype=int).reshape([nf, -1])
+        spin = 0.5 * rng.random([natoms, 3]).reshape([nf, -1])
         cell = 6.0 * np.eye(3).reshape([nf, 9])
         coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
             coord,
             atype,
-            self.expected_rcut,
+            self.expected_rcut + 1.0 if test_spin else self.expected_rcut,
             self.expected_sel,
-            mixed_types=True,
+            mixed_types=self.module.mixed_types(),
             box=cell,
         )
+        spin_ext = np.take_along_axis(
+            spin.reshape(nf, -1, 3),
+            np.repeat(np.expand_dims(mapping, axis=-1), 3, axis=-1),
+            axis=1,
+        )
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
         ret = []
         ret_lower = []
         for module in self.modules_to_test:
             module = self.forward_wrapper(module)
-            ret.append(module(coord, atype, cell))
+            input_dict = {
+                "coord": coord,
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict["spin"] = spin
+            ret.append(module(**input_dict))
 
-            ret_lower.append(
-                module.forward_lower(coord_ext, atype_ext, nlist, mapping=mapping)
-            )
+            input_dict_lower = {
+                "extended_coord": coord_ext,
+                "extended_atype": atype_ext,
+                "nlist": nlist,
+                "mapping": mapping,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict_lower["extended_spin"] = spin_ext
+
+            ret_lower.append(module.forward_lower(**input_dict_lower))
         for kk in ret[0]:
             subret = []
             for rr in ret:
@@ -182,31 +213,64 @@ class ModelTestCase:
     def test_permutation(self):
         """Test permutation."""
         if getattr(self, "skip_test_permutation", False):
-            return
+            self.skipTest("Skip test permutation.")
+        test_spin = getattr(self, "test_spin", False)
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         nf = 1
+        aprec = (
+            0
+            if self.aprec_dict.get("test_permutation", None) is None
+            else self.aprec_dict["test_permutation"]
+        )
+        idx = [0, 1, 2, 3, 4]
         idx_perm = [1, 0, 4, 3, 2]
         cell = rng.random([3, 3])
         cell = (cell + cell.T) + 5.0 * np.eye(3)
         coord = rng.random([natoms, 3])
         coord = np.matmul(coord, cell)
+        spin = 0.1 * rng.random([natoms, 3])
         atype = np.array([0, 0, 0, 1, 1])
         coord_perm = coord[idx_perm]
+        spin_perm = spin[idx_perm]
         atype_perm = atype[idx_perm]
 
         # reshape for input
         coord = coord.reshape([nf, -1])
         coord_perm = coord_perm.reshape([nf, -1])
+        spin_perm = spin_perm.reshape([nf, -1])
         atype = atype.reshape([nf, -1])
         atype_perm = atype_perm.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        aparam_perm = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+            aparam_perm = aparam[:, idx_perm, :]
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
-        ret.append(module(coord, atype, cell))
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": cell,
+            "aparam": aparam,
+            "fparam": fparam,
+        }
+        if test_spin:
+            input_dict["spin"] = spin
+        ret.append(module(**input_dict))
         # permutation
-        ret.append(module(coord_perm, atype_perm, cell))
+        input_dict["coord"] = coord_perm
+        input_dict["atype"] = atype_perm
+        input_dict["aparam"] = aparam_perm
+        if test_spin:
+            input_dict["spin"] = spin_perm
+        ret.append(module(**input_dict))
 
         for kk in ret[0]:
             if kk in self.output_def:
@@ -217,14 +281,16 @@ class ModelTestCase:
                 if atomic:
                     np.testing.assert_allclose(
                         ret[0][kk][:, idx_perm],
-                        ret[1][kk],
+                        ret[1][kk][:, idx],  # for extended output
                         err_msg=f"compare {kk} before and after transform",
+                        atol=aprec,
                     )
                 else:
                     np.testing.assert_allclose(
                         ret[0][kk],
                         ret[1][kk],
                         err_msg=f"compare {kk} before and after transform",
+                        atol=aprec,
                     )
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
@@ -232,14 +298,21 @@ class ModelTestCase:
     def test_trans(self):
         """Test translation."""
         if getattr(self, "skip_test_trans", False):
-            return
+            self.skipTest("Skip test translation.")
+        test_spin = getattr(self, "test_spin", False)
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         nf = 1
+        aprec = (
+            0
+            if self.aprec_dict.get("test_rot", None) is None
+            else self.aprec_dict["test_rot"]
+        )
         cell = rng.random([3, 3])
         cell = (cell + cell.T) + 5.0 * np.eye(3)
         coord = rng.random([natoms, 3])
         coord = np.matmul(coord, cell)
+        spin = 0.1 * rng.random([natoms, 3])
         atype = np.array([0, 0, 0, 1, 1])
         shift = (rng.random([3]) - 0.5) * 2.0
         coord_s = np.matmul(
@@ -248,15 +321,33 @@ class ModelTestCase:
 
         # reshape for input
         coord = coord.reshape([nf, -1])
+        spin = spin.reshape([nf, -1])
         coord_s = coord_s.reshape([nf, -1])
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
-        ret.append(module(coord, atype, cell))
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": cell,
+            "aparam": aparam,
+            "fparam": fparam,
+        }
+        if test_spin:
+            input_dict["spin"] = spin
+        ret.append(module(**input_dict))
         # translation
-        ret.append(module(coord_s, atype, cell))
+        input_dict["coord"] = coord_s
+        ret.append(module(**input_dict))
 
         for kk in ret[0]:
             if kk in self.output_def:
@@ -267,6 +358,7 @@ class ModelTestCase:
                     ret[0][kk],
                     ret[1][kk],
                     err_msg=f"compare {kk} before and after transform",
+                    atol=aprec,
                 )
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
@@ -274,14 +366,20 @@ class ModelTestCase:
     def test_rot(self):
         """Test rotation."""
         if getattr(self, "skip_test_rot", False):
-            return
+            self.skipTest("Skip test rotation.")
+        test_spin = getattr(self, "test_spin", False)
         rng = np.random.default_rng(GLOBAL_SEED)
         natoms = 5
         nf = 1
-
+        aprec = (
+            0
+            if self.aprec_dict.get("test_rot", None) is None
+            else self.aprec_dict["test_rot"]
+        )
         # rotate only coord and shift to the center of cell
         cell = 10.0 * np.eye(3)
         coord = 2.0 * rng.random([natoms, 3])
+        spin = 0.1 * rng.random([natoms, 3])
         atype = np.array([0, 0, 0, 1, 1])
         shift = np.array([4.0, 4.0, 4.0])
         from scipy.stats import (
@@ -290,30 +388,56 @@ class ModelTestCase:
 
         rmat = special_ortho_group.rvs(3)
         coord_rot = np.matmul(coord, rmat)
+        spin_rot = np.matmul(spin, rmat)
 
         # reshape for input
         coord = (coord + shift).reshape([nf, -1])
+        spin = spin.reshape([nf, -1])
         coord_rot = (coord_rot + shift).reshape([nf, -1])
+        spin_rot = spin_rot.reshape([nf, -1])
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
-        ret.append(module(coord, atype, cell))
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": cell,
+            "aparam": aparam,
+            "fparam": fparam,
+        }
+        if test_spin:
+            input_dict["spin"] = spin
+        ret.append(module(**input_dict))
         # rotation
-        ret.append(module(coord_rot, atype, cell))
+        input_dict["coord"] = coord_rot
+        if test_spin:
+            input_dict["spin"] = spin_rot
+        ret.append(module(**input_dict))
 
         for kk in ret[0]:
             if kk in self.output_def:
                 if ret[0][kk] is None:
                     assert ret[1][kk] is None
                     continue
-                rot_invariant = self.output_def[kk].rot_invariant
-                if rot_invariant:
+                rot_equivariant = (
+                    check_deriv(self.output_def[kk])
+                    or kk in self.model_output_equivariant
+                )
+                if not rot_equivariant:
                     np.testing.assert_allclose(
                         ret[0][kk],
                         ret[1][kk],
                         err_msg=f"compare {kk} before and after transform",
+                        atol=aprec,
                     )
                 else:
                     v_size = self.output_def[kk].size
@@ -339,6 +463,7 @@ class ModelTestCase:
                         rotated_ret_0,
                         ret_1,
                         err_msg=f"compare {kk} before and after transform",
+                        atol=aprec,
                     )
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
@@ -348,34 +473,55 @@ class ModelTestCase:
         cell = (cell + cell.T) + 5.0 * np.eye(3)
         coord = rng.random([natoms, 3])
         coord = np.matmul(coord, cell)
+        spin = 0.1 * rng.random([natoms, 3])
         atype = np.array([0, 0, 0, 1, 1])
         coord_rot = np.matmul(coord, rmat)
         cell_rot = np.matmul(cell, rmat)
+        spin_rot = np.matmul(spin, rmat)
 
         # reshape for input
         coord = coord.reshape([nf, -1])
+        spin = spin.reshape([nf, -1])
         coord_rot = coord_rot.reshape([nf, -1])
+        spin_rot = spin_rot.reshape([nf, -1])
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
         cell_rot = cell_rot.reshape([nf, 9])
 
         ret = []
         module = self.forward_wrapper(self.module)
-        ret.append(module(coord, atype, cell))
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": cell,
+            "aparam": aparam,
+            "fparam": fparam,
+        }
+        if test_spin:
+            input_dict["spin"] = spin
+        ret.append(module(**input_dict))
         # rotation
-        ret.append(module(coord_rot, atype, cell_rot))
+        input_dict["coord"] = coord_rot
+        input_dict["box"] = cell_rot
+        if test_spin:
+            input_dict["spin"] = spin_rot
+        ret.append(module(**input_dict))
 
         for kk in ret[0]:
             if kk in self.output_def:
                 if ret[0][kk] is None:
                     assert ret[1][kk] is None
                     continue
-                rot_invariant = self.output_def[kk].rot_invariant
-                if rot_invariant:
+                rot_equivariant = (
+                    check_deriv(self.output_def[kk])
+                    or kk in self.model_output_equivariant
+                )
+                if not rot_equivariant:
                     np.testing.assert_allclose(
                         ret[0][kk],
                         ret[1][kk],
                         err_msg=f"compare {kk} before and after transform",
+                        atol=aprec,
                     )
                 else:
                     v_size = self.output_def[kk].size
@@ -401,6 +547,7 @@ class ModelTestCase:
                         rotated_ret_0,
                         ret_1,
                         err_msg=f"compare {kk} before and after transform",
+                        atol=aprec,
                     )
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
@@ -408,7 +555,8 @@ class ModelTestCase:
     def test_smooth(self):
         """Test smooth."""
         if getattr(self, "skip_test_smooth", False):
-            return
+            self.skipTest("Skip test smooth.")
+        test_spin = getattr(self, "test_spin", False)
         rng = np.random.default_rng(GLOBAL_SEED)
         epsilon = (
             1e-5
@@ -432,6 +580,7 @@ class ModelTestCase:
         atype0 = np.arange(2)
         atype1 = rng.integers(0, 2, size=natoms - 2)
         atype = np.concatenate([atype0, atype1]).reshape(natoms)
+        spin = 0.1 * rng.random([natoms, 3])
         coord0 = np.array(
             [
                 0.0,
@@ -463,19 +612,34 @@ class ModelTestCase:
         coord1 = coord1.reshape([nf, -1])
         coord2 = coord2.reshape([nf, -1])
         coord3 = coord3.reshape([nf, -1])
+        spin = spin.reshape([nf, -1])
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
 
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         ret = []
         module = self.forward_wrapper(self.module)
+        input_dict = {"atype": atype, "box": cell, "aparam": aparam, "fparam": fparam}
+        if test_spin:
+            input_dict["spin"] = spin
         # coord0
-        ret.append(module(coord0, atype, cell))
+        input_dict["coord"] = coord0
+        ret.append(module(**input_dict))
         # coord1
-        ret.append(module(coord1, atype, cell))
+        input_dict["coord"] = coord1
+        ret.append(module(**input_dict))
         # coord2
-        ret.append(module(coord2, atype, cell))
+        input_dict["coord"] = coord2
+        ret.append(module(**input_dict))
         # coord3
-        ret.append(module(coord3, atype, cell))
+        input_dict["coord"] = coord3
+        ret.append(module(**input_dict))
 
         for kk in ret[0]:
             if kk in self.output_def:
@@ -497,7 +661,8 @@ class ModelTestCase:
     def test_autodiff(self):
         """Test autodiff."""
         if getattr(self, "skip_test_autodiff", False):
-            return
+            self.skipTest("Skip test autodiff.")
+        test_spin = getattr(self, "test_spin", False)
 
         places = 4
         delta = 1e-5
@@ -529,38 +694,105 @@ class ModelTestCase:
         cell = (cell + cell.T) + 5.0 * np.eye(3)
         coord = rng.random([natoms, 3])
         coord = np.matmul(coord, cell)
+        spin = 0.1 * rng.random([natoms, 3])
         atype = np.array([0, 0, 0, 1, 1])
 
         # reshape for input
         coord = coord.reshape([nf, -1])
+        spin = spin.reshape([nf, -1])
         atype = atype.reshape([nf, -1])
         cell = cell.reshape([nf, 9])
+
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+
         module = self.forward_wrapper(self.module)
 
         # only test force and virial for energy model
         def ff_coord(_coord):
-            return module(_coord, atype, cell)["energy"]
+            input_dict = {
+                "coord": _coord,
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict["spin"] = spin
+            return module(**input_dict)["energy"]
+
+        def ff_spin(_spin):
+            input_dict = {
+                "coord": coord,
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict["spin"] = _spin
+            return module(**input_dict)["energy"]
 
         fdf = -finite_difference(ff_coord, coord, delta=delta).squeeze()
-        rff = module(coord, atype, cell)["force"]
+        input_dict = {
+            "coord": coord,
+            "atype": atype,
+            "box": cell,
+            "aparam": aparam,
+            "fparam": fparam,
+        }
+        if test_spin:
+            input_dict["spin"] = spin
+        rff = module(**input_dict)["force"]
         np.testing.assert_almost_equal(
             fdf.reshape(-1, 3), rff.reshape(-1, 3), decimal=places
         )
 
-        def ff_cell(bb):
-            return module(stretch_box(coord, cell, bb), atype, bb)["energy"]
-
-        fdv = (
-            -(
-                finite_difference(ff_cell, cell, delta=delta)
-                .reshape(-1, 3, 3)
-                .transpose(0, 2, 1)
-                @ cell.reshape(-1, 3, 3)
+        if test_spin:
+            # magnetic force
+            fdf = -finite_difference(ff_spin, spin, delta=delta).squeeze()
+            rff = module(**input_dict)["force_mag"]
+            np.testing.assert_almost_equal(
+                fdf.reshape(-1, 3), rff.reshape(-1, 3), decimal=places
             )
-            .squeeze()
-            .reshape(9)
-        )
-        rfv = module(stretch_box(coord, cell, cell), atype, cell)["virial"]
-        np.testing.assert_almost_equal(
-            fdv.reshape(-1, 9), rfv.reshape(-1, 9), decimal=places
-        )
+
+        if not test_spin:
+
+            def ff_cell(bb):
+                input_dict = {
+                    "coord": stretch_box(coord, cell, bb),
+                    "atype": atype,
+                    "box": bb,
+                    "aparam": aparam,
+                    "fparam": fparam,
+                }
+                return module(**input_dict)["energy"]
+
+            fdv = (
+                -(
+                    finite_difference(ff_cell, cell, delta=delta)
+                    .reshape(-1, 3, 3)
+                    .transpose(0, 2, 1)
+                    @ cell.reshape(-1, 3, 3)
+                )
+                .squeeze()
+                .reshape(9)
+            )
+            input_dict = {
+                "coord": stretch_box(coord, cell, cell),
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            rfv = module(**input_dict)["virial"]
+            np.testing.assert_almost_equal(
+                fdv.reshape(-1, 9), rfv.reshape(-1, 9), decimal=places
+            )
+        else:
+            # not support virial by far
+            pass

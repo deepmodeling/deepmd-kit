@@ -40,6 +40,10 @@ class TestFittingPT(unittest.TestCase, FittingTest, PTTestCase):
         FittingTest.setUp(self)
         self.module_class = Fitting
         self.input_dict = FittingParam(
-            self.nt, self.dim_descrpt, self.mixed_types, self.dim_embed, ["O", "H"]
+            self.nt,
+            self.dim_descrpt,
+            self.mixed_types,
+            ["O", "H"],
+            embedding_width=self.dim_embed,
         )
         self.module = Fitting(**self.input_dict)

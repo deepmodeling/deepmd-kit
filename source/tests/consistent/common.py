@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 import itertools
 import os
 import sys
 from abc import (
     ABC,
     abstractmethod,
+)
+from collections import (
+    OrderedDict,
 )
 from enum import (
     Enum,
@@ -413,3 +417,48 @@ def parameterized(*attrs: tuple) -> Callable:
         return object
 
     return decorator
+
+
+def parameterize_func(
+    func: Callable,
+    param_dict_list: OrderedDict[str, Tuple],
+):
+    """Parameterize functions with different default values.
+
+    Parameters
+    ----------
+    func : Callable
+        The base function.
+    param_dict_list : OrderedDict[str, Tuple]
+        Dictionary of parameters with default values to be changed in base function, each of which is a tuple of choices.
+
+    Returns
+    -------
+    list_func
+        List of parameterized functions with changed default values.
+
+    """
+
+    def create_wrapper(_func, _new_sig, _pp):
+        def wrapper(*args, **kwargs):
+            bound_args = _new_sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            return _func(*bound_args.args, **bound_args.kwargs)
+
+        wrapper.__name__ = f"{_func.__name__}_{'_'.join(str(x) for x in _pp)}"
+        wrapper.__qualname__ = wrapper.__name__
+        return wrapper
+
+    list_func = []
+    param_keys = list(param_dict_list.keys())
+    for pp in itertools.product(*[param_dict_list[kk] for kk in param_keys]):
+        sig = inspect.signature(func)
+        new_params = dict(sig.parameters)
+        for ii, val in enumerate(pp):
+            val_name = param_keys[ii]
+            # only change the default value of func
+            new_params[val_name] = sig.parameters[val_name].replace(default=val)
+        new_sig = sig.replace(parameters=list(new_params.values()))
+        list_func.append(create_wrapper(func, new_sig, pp))
+
+    return list_func
