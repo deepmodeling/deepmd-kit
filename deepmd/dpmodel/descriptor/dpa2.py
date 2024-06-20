@@ -23,6 +23,9 @@ from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
 )
@@ -325,7 +328,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
@@ -408,6 +411,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             resnet_dt=self.repinit_args.resnet_dt,
             smooth=smooth,
             type_one_side=self.repinit_args.type_one_side,
+            seed=child_seed(seed, 0),
         )
         self.repformers = DescrptBlockRepformers(
             self.repformer_args.rcut,
@@ -442,6 +446,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             precision=precision,
             trainable_ln=self.repformer_args.trainable_ln,
             ln_eps=self.repformer_args.ln_eps,
+            seed=child_seed(seed, 1),
         )
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
@@ -453,6 +458,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             precision=precision,
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
+            seed=child_seed(seed, 2),
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision

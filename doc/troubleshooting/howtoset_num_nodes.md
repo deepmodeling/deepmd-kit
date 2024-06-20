@@ -72,12 +72,31 @@ There is no one general parallel configuration that works for all situations, so
 Here are some empirical examples.
 If you wish to use 3 cores of 2 CPUs on one node, you may set the environmental variables and run DeePMD-kit as follows:
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
 export OMP_NUM_THREADS=3
 export DP_INTRA_OP_PARALLELISM_THREADS=3
 export DP_INTER_OP_PARALLELISM_THREADS=2
-dp train input.json
+dp --tf train input.json
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+export OMP_NUM_THREADS=3
+export DP_INTRA_OP_PARALLELISM_THREADS=3
+export DP_INTER_OP_PARALLELISM_THREADS=2
+dp --pt train input.json
+```
+
+:::
+
+::::
 
 For a node with 128 cores, it is recommended to start with the following variables:
 

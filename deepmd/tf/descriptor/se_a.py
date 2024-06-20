@@ -1036,6 +1036,8 @@ class DescrptSeA(DescrptSe):
                             mixed_prec=self.mixed_prec,
                         )
                         net_output = tf.nn.embedding_lookup(net_output, idx)
+                    if (not self.uniform_seed) and (self.seed is not None):
+                        self.seed += self.seed_shift
                     net_output = tf.reshape(net_output, [-1, self.filter_neuron[-1]])
             else:
                 xyz_scatter = self._concat_type_embedding(
@@ -1047,7 +1049,7 @@ class DescrptSeA(DescrptSe):
                     )
         # natom x 4 x outputs_size
         if nvnmd_cfg.enable:
-            return filter_lower_R42GR(
+            oo = filter_lower_R42GR(
                 type_i,
                 type_input,
                 inputs_i,
@@ -1065,6 +1067,9 @@ class DescrptSeA(DescrptSe):
                 self.filter_resnet_dt,
                 self.embedding_net_variables,
             )
+            if (not self.uniform_seed) and (self.seed is not None):
+                self.seed += self.seed_shift
+            return oo
         if self.compress and (not is_exclude):
             if self.stripped_type_embedding:
                 net_output = tf.nn.embedding_lookup(

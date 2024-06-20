@@ -22,6 +22,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -61,6 +64,10 @@ class NativeLayer(NativeOP):
         The activation function of the layer.
     resnet : bool, optional
         Whether the layer is a residual layer.
+    precision : str, optional
+        The precision of the layer.
+    seed : int, optional
+        Random seed.
     """
 
     def __init__(
@@ -72,7 +79,7 @@ class NativeLayer(NativeOP):
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
@@ -299,6 +306,12 @@ class LayerNorm(NativeLayer):
         A small value added to prevent division by zero in calculations.
     uni_init : bool, optional
         If initialize the weights to be zeros and ones.
+    trainable : bool, optional
+        If the weights are trainable.
+    precision : str, optional
+        The precision of the layer.
+    seed : int, optional
+        Random seed.
     """
 
     def __init__(
@@ -308,7 +321,7 @@ class LayerNorm(NativeLayer):
         uni_init: bool = True,
         trainable: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ) -> None:
         self.eps = eps
         self.uni_init = uni_init
@@ -556,7 +569,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             Use time step at the resnet architecture.
         precision
             Floating point precision for the model paramters.
-
+        seed : int, optional
+            Random seed.
         """
 
         def __init__(
@@ -566,7 +580,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
-            seed: Optional[int] = None,
+            seed: Optional[Union[int, List[int]]] = None,
         ):
             layers = []
             i_in = in_dim
@@ -581,7 +595,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                         activation_function=activation_function,
                         resnet=True,
                         precision=precision,
-                        seed=seed,
+                        seed=child_seed(seed, idx),
                     ).serialize()
                 )
                 i_in = i_ot
@@ -656,7 +670,8 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             Floating point precision for the model paramters.
         bias_out
             The last linear layer has bias.
-
+        seed : int, optional
+            Random seed.
         """
 
         def __init__(
@@ -668,7 +683,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
-            seed: Optional[int] = None,
+            seed: Optional[Union[int, List[int]]] = None,
         ):
             super().__init__(
                 in_dim,
@@ -688,7 +703,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                     activation_function=None,
                     resnet=False,
                     precision=precision,
-                    seed=seed,
+                    seed=child_seed(seed, len(neuron)),
                 )
             )
             self.out_dim = out_dim

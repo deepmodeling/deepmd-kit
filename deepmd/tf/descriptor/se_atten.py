@@ -63,6 +63,7 @@ from deepmd.tf.utils.graph import (
 )
 from deepmd.tf.utils.network import (
     embedding_net,
+    embedding_net_rand_seed_shift,
     layernorm,
     one_layer,
 )
@@ -997,6 +998,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 K_c = one_layer(
                     input_xyz,
                     self.att_n,
@@ -1010,6 +1013,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 V_c = one_layer(
                     input_xyz,
                     self.att_n,
@@ -1023,6 +1028,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 # # natom x nei_type_i x out_size
                 # xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, outputs_size[-1]))
                 # natom x nei_type_i x att_n
@@ -1055,6 +1062,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 input_xyz = layernorm(
                     input_xyz,
                     outputs_size[-1],
@@ -1068,6 +1077,8 @@ class DescrptSeAtten(DescrptSeA):
                     eps=self.ln_eps,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
         return input_xyz
 
     def _filter_lower(
@@ -1125,6 +1136,8 @@ class DescrptSeAtten(DescrptSeA):
                         initial_variables=self.embedding_net_variables,
                         mixed_prec=self.mixed_prec,
                     )
+                    if (not self.uniform_seed) and (self.seed is not None):
+                        self.seed += self.seed_shift
                 else:
                     if self.attn_layer == 0:
                         log.info(
@@ -1164,6 +1177,8 @@ class DescrptSeAtten(DescrptSeA):
                             initial_variables=self.embedding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
+                        if (not self.uniform_seed) and (self.seed is not None):
+                            self.seed += self.seed_shift
                     else:
                         net = "filter_net"
                         info = [
@@ -1221,6 +1236,8 @@ class DescrptSeAtten(DescrptSeA):
                             initial_variables=self.two_side_embeeding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
+                        if (not self.uniform_seed) and (self.seed is not None):
+                            self.seed += self.seed_shift
                         two_embd = tf.nn.embedding_lookup(
                             embedding_of_two_side_type_embedding, index_of_two_side
                         )
@@ -1239,8 +1256,6 @@ class DescrptSeAtten(DescrptSeA):
                             is_sorted=len(self.exclude_types) == 0,
                         )
 
-                if (not self.uniform_seed) and (self.seed is not None):
-                    self.seed += self.seed_shift
             input_r = tf.slice(
                 tf.reshape(inputs_i, (-1, shape_i[1] // 4, 4)), [0, 0, 1], [-1, -1, 3]
             )
@@ -2163,6 +2178,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
             # precision=precision,
+            seed=seed,
         )
         self.concat_output_tebd = concat_output_tebd
         if self.tebd_input_mode in ["concat"]:
@@ -2185,6 +2201,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
         suffix: str = "",
     ) -> tf.Tensor:
         type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)
+        if (not self.uniform_seed) and (self.seed is not None):
+            self.seed += embedding_net_rand_seed_shift([self.tebd_dim])
         input_dict["type_embedding"] = type_embedding
 
         # nf x nloc x out_dim
