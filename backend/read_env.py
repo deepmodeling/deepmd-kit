@@ -104,8 +104,6 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
 
     if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
         pt_install_dir, _ = find_pytorch()
-        if pt_install_dir is None:
-            raise RuntimeError("Cannot find installed PyTorch.")
         cmake_args.extend(
             [
                 "-DENABLE_PYTORCH=ON",
