@@ -421,7 +421,7 @@ def parameterized(*attrs: tuple) -> Callable:
 
 def parameterize_func(
     func: Callable,
-    param_dict_list: OrderedDict[str, Tuple],
+    param_dict_list: OrderedDict,
 ):
     """Parameterize functions with different default values.
 
