@@ -7,9 +7,6 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from collections import (
-    OrderedDict,
-)
 from enum import (
     Enum,
 )
@@ -17,6 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -421,7 +419,7 @@ def parameterized(*attrs: tuple) -> Callable:
 
 def parameterize_func(
     func: Callable,
-    param_dict_list: OrderedDict,
+    param_dict_list: Dict[str, Tuple],
 ):
     """Parameterize functions with different default values.
 
@@ -429,7 +427,7 @@ def parameterize_func(
     ----------
     func : Callable
         The base function.
-    param_dict_list : OrderedDict[str, Tuple]
+    param_dict_list : Dict[str, Tuple]
         Dictionary of parameters with default values to be changed in base function, each of which is a tuple of choices.
 
     Returns
