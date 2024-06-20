@@ -2,9 +2,6 @@
 
 import os
 
-from .....seed import (
-    GLOBAL_SEED,
-)
 from .utils import (
     ModelTestCase,
 )
@@ -28,11 +25,6 @@ class EnerModelTest(ModelTestCase):
         self.aprec_dict = {}
         self.rprec_dict = {}
         self.epsilon_dict = {}
-        self.input_dict_ft = {
-            "ntypes": len(self.expected_type_map),
-            "type_map": self.expected_type_map,
-            "seed": GLOBAL_SEED,
-        }
 
 
 class DipoleModelTest(ModelTestCase):
@@ -51,11 +43,6 @@ class DipoleModelTest(ModelTestCase):
         self.aprec_dict = {}
         self.rprec_dict = {}
         self.epsilon_dict = {}
-        self.input_dict_ft = {
-            "ntypes": len(self.expected_type_map),
-            "type_map": self.expected_type_map,
-            "seed": GLOBAL_SEED,
-        }
         self.skip_test_autodiff = True
 
 
@@ -75,11 +62,6 @@ class PolarModelTest(ModelTestCase):
         self.aprec_dict = {}
         self.rprec_dict = {}
         self.epsilon_dict = {}
-        self.input_dict_ft = {
-            "ntypes": len(self.expected_type_map),
-            "type_map": self.expected_type_map,
-            "seed": GLOBAL_SEED,
-        }
         self.skip_test_autodiff = True
 
 
@@ -99,11 +81,6 @@ class DosModelTest(ModelTestCase):
         self.aprec_dict = {}
         self.rprec_dict = {}
         self.epsilon_dict = {}
-        self.input_dict_ft = {
-            "ntypes": len(self.expected_type_map),
-            "type_map": self.expected_type_map,
-            "seed": GLOBAL_SEED,
-        }
         self.skip_test_autodiff = True
 
 
@@ -123,11 +100,6 @@ class ZBLModelTest(ModelTestCase):
         self.aprec_dict = {}
         self.rprec_dict = {}
         self.epsilon_dict = {}
-        self.input_dict_ft = {
-            "ntypes": len(self.expected_type_map),
-            "type_map": self.expected_type_map,
-            "seed": GLOBAL_SEED,
-        }
         self.tab_file = {
             "use_srtab": f"{CUR_DIR}/../data/zbl_tab_potential/H2O_tab_potential.txt",
             "smin_alpha": 0.1,
@@ -155,10 +127,5 @@ class SpinEnerModelTest(ModelTestCase):
         self.spin_dict = {
             "use_spin": [True, False],
             "virtual_scale": [0.3140],
-        }
-        self.input_dict_ft = {
-            "ntypes": len(self.expected_type_map),
-            "type_map": self.expected_type_map,
-            "seed": GLOBAL_SEED,
         }
         self.test_spin = True
