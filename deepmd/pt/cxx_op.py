@@ -33,7 +33,7 @@ def load_library(module_name: str) -> bool:
     if module_file.is_file():
         torch.ops.load_library(module_file)
         return True
-    raise RuntimeError("The PyTorch backend is not enabled.")
+    return False
 
 
 ENABLE_CUSTOMIZED_OP = load_library("deepmd_op_pt")
