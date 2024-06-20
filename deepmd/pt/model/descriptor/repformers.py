@@ -46,26 +46,6 @@ from .repformer_layer import (
 )
 from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
-if not hasattr(torch.ops.deepmd, "border_op"):
-
-    def border_op(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
-        argument4,
-        argument5,
-        argument6,
-        argument7,
-        argument8,
-    ) -> torch.Tensor:
-        raise NotImplementedError(
-            "border_op is not available since customized PyTorch OP library is not built when freezing the model."
-        )
-
-    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
-    torch.ops.deepmd.border_op = border_op
-
 
 @DescriptorBlock.register("se_repformer")
 @DescriptorBlock.register("se_uni")

@@ -40,7 +40,7 @@ def find_pytorch() -> Optional[str]:
     str, optional
         PyTorch library path if found.
     """
-    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "0":
+    if os.environ.get("DP_ENABLE_PYTORCH", "1") == "0":
         return None
     pt_spec = None
 
