@@ -229,7 +229,7 @@ class SpinModel(torch.nn.Module):
     @staticmethod
     def expand_aparam(aparam, nloc: int):
         """Expand the atom parameters for virtual atoms if necessary."""
-        nframes, natom, numb_aparam = aparam.shape[1:]
+        nframes, natom, numb_aparam = aparam.shape
         if natom == nloc:  # good
             pass
         elif natom < nloc:  # for spin with virtual atoms
@@ -410,6 +410,8 @@ class SpinModel(torch.nn.Module):
     ) -> Dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, nloc * 2)
         model_ret = self.backbone_model.forward_common(
             coord_updated,
             atype_updated,
@@ -464,6 +466,8 @@ class SpinModel(torch.nn.Module):
         ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, nloc * 2)
         model_ret = self.backbone_model.forward_common_lower(
             extended_coord_updated,
             extended_atype_updated,
@@ -556,8 +560,6 @@ class SpinEnergyModel(SpinModel):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        if aparam is not None:
-            aparam = self.expand_aparam(aparam, atype.shape[1])
         model_ret = self.forward_common(
             coord,
             atype,

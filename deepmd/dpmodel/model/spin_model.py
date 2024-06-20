@@ -198,6 +198,30 @@ class SpinModel(NativeOP):
         extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
         return extended_tensor_updated.reshape(out_shape)
 
+    @staticmethod
+    def expand_aparam(aparam, nloc: int):
+        """Expand the atom parameters for virtual atoms if necessary."""
+        nframes, natom, numb_aparam = aparam.shape
+        if natom == nloc:  # good
+            pass
+        elif natom < nloc:  # for spin with virtual atoms
+            aparam = np.concatenate(
+                [
+                    aparam,
+                    np.zeros(
+                        [nframes, nloc - natom, numb_aparam],
+                        dtype=aparam.dtype,
+                    ),
+                ],
+                axis=1,
+            )
+        else:
+            raise ValueError(
+                f"get an input aparam with {aparam.shape[1]} inputs, ",
+                f"which is larger than {nloc} atoms.",
+            )
+        return aparam
+
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
@@ -342,6 +366,8 @@ class SpinModel(NativeOP):
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, nloc * 2)
         model_predict = self.backbone_model.call(
             coord_updated,
             atype_updated,
@@ -410,6 +436,8 @@ class SpinModel(NativeOP):
         ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, nloc * 2)
         model_predict = self.backbone_model.call_lower(
             extended_coord_updated,
             extended_atype_updated,
