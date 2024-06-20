@@ -199,8 +199,9 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     endif()
   endif()
-  # get torch directory
-  set(PyTorch_LIBRARY_PATH ${TORCH_INCLUDE_DIRS}/../lib)
+  # get torch directory get the directory of the target "torch"
+  get_target_property(_TORCH_LOCATION torch LOCATION)
+  get_filename_component(PyTorch_LIBRARY_PATH ${_TORCH_LOCATION} DIRECTORY)
   list(APPEND BACKEND_LIBRARY_PATH ${PyTorch_LIBRARY_PATH})
   list(APPEND BACKEND_INCLUDE_DIRS ${TORCH_INCLUDE_DIRS})
 endif()
