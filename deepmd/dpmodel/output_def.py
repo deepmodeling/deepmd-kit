@@ -230,7 +230,7 @@ class OutputVariableDef:
 
     def squeeze(self, dim):
         # squeeze the shape on given dimension
-        if -len(self.shape) <= dim < len(self.shape) != 1 and self.shape[dim] == 1:
+        if -len(self.shape) <= dim < len(self.shape) and self.shape[dim] == 1:
             self.shape.pop(dim)
 
 

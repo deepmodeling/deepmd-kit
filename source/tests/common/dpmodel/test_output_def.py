@@ -761,9 +761,12 @@ class TestDef(unittest.TestCase):
         check_var(np.zeros([2, 2, 8]), var_def)
 
     def test_squeeze(self):
+        out_var = OutputVariableDef("foo", [])
+        out_var.squeeze(0)
+        self.assertEqual(out_var.shape, [])
         out_var = OutputVariableDef("foo", [1])
         out_var.squeeze(0)
-        self.assertEqual(out_var.shape, [1])
+        self.assertEqual(out_var.shape, [])
         out_var = OutputVariableDef("foo", [1, 1])
         out_var.squeeze(0)
         self.assertEqual(out_var.shape, [1])
