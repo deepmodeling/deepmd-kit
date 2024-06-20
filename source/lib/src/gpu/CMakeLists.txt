@@ -77,10 +77,6 @@ elseif(USE_ROCM_TOOLKIT)
   file(GLOB SOURCE_FILES "*.cu")
 
   set_source_files_properties(${SOURCE_FILES} PROPERTIES LANGUAGE HIP)
-  # -fpic
-  set_property(TARGET ${GPU_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
-  target_link_libraries(${GPU_LIB_NAME} PRIVATE hip::hipcub)
-  set_source_files_properties(${SOURCE_FILES} PROPERTIES LANGUAGE HIP)
 endif()
 
 function(create_gpu_lib _suffix)
