@@ -164,14 +164,14 @@ class EnergyFittingNetDirect(Fitting):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
                 OutputVariableDef(
                     "dforce",
                     [3],
-                    reduciable=False,
+                    reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),

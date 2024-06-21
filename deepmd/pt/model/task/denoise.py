@@ -77,14 +77,14 @@ class DenoiseNet(Fitting):
                 OutputVariableDef(
                     "updated_coord",
                     [3],
-                    reduciable=False,
+                    reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
                 OutputVariableDef(
                     "logits",
                     [-1],
-                    reduciable=False,
+                    reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
