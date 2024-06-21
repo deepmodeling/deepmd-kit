@@ -21,7 +21,7 @@ jobs:
         mpi: mpich
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
-    - run: python -m uv pip install --system tensorflow
+    - run: source/install/uv_with_retry.sh pip install --system tensorflow
     # https://github.com/actions/runner-images/issues/9491
     - name: Fix kernel mmap rnd bits
       run: sudo sysctl vm.mmap_rnd_bits=28
@@ -37,7 +37,7 @@ jobs:
     # test lammps
     - run: |
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-        python -m uv pip install --system -e .[cpu,test,lmp] mpi4py
+        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp] mpi4py
       env:
         DP_BUILD_TESTING: 1
       if: ${{ !matrix.check_memleak }}

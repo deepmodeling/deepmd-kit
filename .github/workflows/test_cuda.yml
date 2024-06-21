@@ -34,8 +34,8 @@ jobs:
          && sudo apt-get -y install cuda-12-2 libcudnn8=8.9.5.*-1+cuda12.2
       if: false  # skip as we use nvidia image
     - run: python -m pip install -U uv
-    - run: python -m uv pip install --system "tensorflow>=2.15.0rc0"
-    - run: python -m uv pip install --system -v -e .[gpu,test,lmp,cu12]
+    - run: source/install/uv_with_retry.sh pip install --system "tensorflow>=2.15.0rc0"
+    - run: source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12]
       env:
         DP_BUILD_TESTING: 1
         DP_VARIANT: cuda

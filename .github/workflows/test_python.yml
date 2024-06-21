@@ -26,7 +26,7 @@ jobs:
       with:
         mpi: openmpi
     - run: python -m pip install -U uv
-    - run: uv pip install --system -e .[cpu,test]
+    - run: source/install/uv_with_retry.sh pip install --system -e .[cpu,test]
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
@@ -34,7 +34,7 @@ jobs:
         # changes, setting `TENSORFLOW_ROOT`.
         TENSORFLOW_VERSION: ${{ matrix.tf }}
         DP_BUILD_TESTING: 1
-    - run: uv pip install --system --no-build-isolation horovod mpi4py
+    - run: source/install/uv_with_retry.sh pip install --system --no-build-isolation horovod mpi4py
       if: ${{ matrix.tf == '' }}
       env:
         HOROVOD_WITH_TENSORFLOW: 1
