@@ -148,7 +148,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         (FittingParam, Fitting) = self.param[1]
         self.epsilon_dict["test_smooth"] = 1e-6
         # set special precision
-        if Descrpt in [DescrptDPA2]:
+        if Descrpt in [DescrptDPA2, DescrptHybrid]:
             self.epsilon_dict["test_smooth"] = 1e-8
 
         spin = Spin(

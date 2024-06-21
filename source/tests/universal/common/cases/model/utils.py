@@ -116,6 +116,11 @@ class ModelTestCase:
         test_spin = getattr(self, "test_spin", False)
         nf = 1
         natoms = 5
+        aprec = (
+            0
+            if self.aprec_dict.get("test_forward", None) is None
+            else self.aprec_dict["test_forward"]
+        )
         rng = np.random.default_rng(GLOBAL_SEED)
         coord = 4.0 * rng.random([natoms, 3]).reshape([nf, -1])
         atype = np.array([0, 0, 0, 1, 1], dtype=int).reshape([nf, -1])
@@ -208,7 +213,7 @@ class ModelTestCase:
                     break
             else:
                 continue
-            np.testing.assert_allclose(rr1, rr2)
+            np.testing.assert_allclose(rr1, rr2, atol=aprec)
 
     def test_permutation(self):
         """Test permutation."""

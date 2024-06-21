@@ -227,6 +227,7 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2]:
             self.epsilon_dict["test_smooth"] = 1e-8
+        self.aprec_dict["test_forward"] = 1e-10  # for dipole force when near zero
         self.aprec_dict["test_rot"] = 1e-10  # for dipole force when near zero
         self.aprec_dict["test_trans"] = 1e-10  # for dipole force when near zero
         self.aprec_dict["test_permutation"] = 1e-10  # for dipole force when near zero
@@ -417,8 +418,9 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         SpinEnerModelTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
         (FittingParam, Fitting) = self.param[1]
+        self.epsilon_dict["test_smooth"] = 1e-6
         # set special precision
-        if Descrpt in [DescrptDPA2]:
+        if Descrpt in [DescrptDPA2, DescrptHybrid]:
             self.epsilon_dict["test_smooth"] = 1e-8
 
         spin = Spin(
