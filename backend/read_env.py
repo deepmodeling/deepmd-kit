@@ -15,6 +15,7 @@ from packaging.version import (
 
 from .find_pytorch import (
     find_pytorch,
+    get_pt_version,
 )
 from .find_tensorflow import (
     find_tensorflow,
@@ -23,7 +24,7 @@ from .find_tensorflow import (
 
 
 @lru_cache
-def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
+def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
     """Get the arguments from environment variables.
 
     The environment variables are assumed to be not changed during the build.
@@ -40,6 +41,8 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         The extra scripts to be installed.
     str
         The TensorFlow version.
+    str
+        The PyTorch version.
     """
     cmake_args = []
     extra_scripts = {}
@@ -104,6 +107,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
 
     if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
         pt_install_dir, _ = find_pytorch()
+        pt_version = get_pt_version(pt_install_dir)
         cmake_args.extend(
             [
                 "-DENABLE_PYTORCH=ON",
@@ -112,6 +116,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         )
     else:
         cmake_args.append("-DENABLE_PYTORCH=OFF")
+        pt_version = None
 
     cmake_args = [
         "-DBUILD_PY_IF:BOOL=TRUE",
@@ -123,6 +128,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         find_libpython_requires,
         extra_scripts,
         tf_version,
+        pt_version,
     )
 
 

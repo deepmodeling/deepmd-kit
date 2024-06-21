@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import os
 import site
 from functools import (
@@ -20,6 +21,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 
@@ -108,3 +110,26 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             f"torch=={pt_version}" if pt_version != "" else "torch>=2a",
         ],
     }
+
+
+@lru_cache
+def get_pt_version(pt_path: Union[str, Path]) -> str:
+    """Get TF version from a TF Python library path.
+
+    Parameters
+    ----------
+    pt_path : str or Path
+        PT Python library path
+
+    Returns
+    -------
+    str
+        version
+    """
+    if pt_path is None or pt_path == "":
+        return ""
+    version_file = Path(pt_path) / "version.py"
+    spec = importlib.util.spec_from_file_location("torch.version", version_file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.__version__
