@@ -248,6 +248,10 @@ DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 MPI_HOME = "/usr/lib64/mpich"
 PATH = "/usr/lib64/mpich/bin:$PATH"
+# use CPU version of torch for building, which should also work for GPU
+# note: uv has different behavior from pip on extra index url
+# https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#packages-that-exist-on-multiple-indexes
+UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 
 [tool.cibuildwheel.windows]
 test-extras = ["cpu"]
