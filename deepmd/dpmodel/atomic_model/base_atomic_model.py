@@ -111,7 +111,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 OutputVariableDef(
                     name="mask",
                     shape=[1],
-                    reduciable=False,
+                    reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
                 )

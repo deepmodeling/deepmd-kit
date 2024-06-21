@@ -201,7 +201,7 @@ class InvarFitting(GeneralFitting):
                 OutputVariableDef(
                     self.var_name,
                     [self.dim_out],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 ),
