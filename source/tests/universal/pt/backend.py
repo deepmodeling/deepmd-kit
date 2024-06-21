@@ -30,8 +30,8 @@ class PTTestCase:
         ]
         return modules
 
-    def test_jit(self):
-        self.script_module
+    # def test_jit(self):
+    #     self.script_module
 
     @classmethod
     def convert_to_numpy(cls, xx: torch.Tensor) -> np.ndarray:

@@ -365,7 +365,7 @@ class CommonTest(ABC):
             clear_session()
 
 
-def parameterized(*attrs: tuple) -> Callable:
+def parameterized(*attrs: tuple, **kwargs: Dict[str, tuple]) -> Callable:
     """Parameterized test.
 
     Orginal class will not be actually generated. Avoid inherbiting from it.
@@ -376,6 +376,8 @@ def parameterized(*attrs: tuple) -> Callable:
     ----------
     *attrs : tuple
         The attributes to be parameterized.
+    **kwargs : Dict[str, tuple]
+        The sub-blocked attributes to be parameterized separately.
 
     Returns
     -------
@@ -400,10 +402,15 @@ def parameterized(*attrs: tuple) -> Callable:
     ...             "param2": param2,
     ...         }
     """
+    global_combine = list(itertools.product(*attrs)) if len(attrs) else []
+    block_combine = []
+    for kk in kwargs:
+        block_combine += list(itertools.product(*kwargs[kk])) if len(kwargs[kk]) else []
+    full_parameterized = global_combine + block_combine
 
     def decorator(base_class: type):
         class_module = sys.modules[base_class.__module__].__dict__
-        for pp in itertools.product(*attrs):
+        for pp in full_parameterized:
 
             class TestClass(base_class):
                 param: ClassVar = pp
