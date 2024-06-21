@@ -209,7 +209,7 @@ manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
 before-all = [
-    """brew install mpich""",
+    '''pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
 ]
 repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
 
@@ -241,7 +241,7 @@ before-all = [
     # https://almalinux.org/blog/2023-12-20-almalinux-8-key-update/
     """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
-    "yum install -y mpich-devel",
+    '''/opt/python/cp311-cp311/bin/python -m pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
     # uv is not available in the old manylinux image
     """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
 ]
@@ -260,6 +260,8 @@ PATH = "/usr/lib64/mpich/bin:$PATH"
 # note: uv has different behavior from pip on extra index url
 # https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#packages-that-exist-on-multiple-indexes
 UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+# trick to find the correction version of mpich
+CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
 test-extras = ["cpu"]
