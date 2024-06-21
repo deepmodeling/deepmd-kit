@@ -48,7 +48,7 @@ class DeepDOS(DeepEval):
                     OutputVariableDef(
                         "dos",
                         shape=[-1],
-                        reduciable=True,
+                        reducible=True,
                         atomic=True,
                     ),
                 ]

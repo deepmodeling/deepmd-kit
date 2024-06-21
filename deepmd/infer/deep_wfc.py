@@ -35,14 +35,14 @@ class DeepWFC(OldDeepTensor):
     @property
     def output_def(self) -> ModelOutputDef:
         """Get the output definition of this model."""
-        # no reduciable or differentiable output is defined
+        # no reducible or differentiable output is defined
         return ModelOutputDef(
             FittingOutputDef(
                 [
                     OutputVariableDef(
                         self.output_tensor_name,
                         shape=[-1],
-                        reduciable=False,
+                        reducible=False,
                         r_differentiable=False,
                         c_differentiable=False,
                         atomic=True,

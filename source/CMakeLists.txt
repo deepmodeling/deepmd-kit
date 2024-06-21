@@ -186,21 +186,43 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)" CXXABI_PT_MATCH
                "${TORCH_CXX_FLAGS}")
   if(CXXABI_PT_MATCH)
+    set(OP_CXX_ABI_PT ${CMAKE_MATCH_1})
     message(STATUS "PyTorch CXX11 ABI: ${CMAKE_MATCH_1}")
     if(DEFINED OP_CXX_ABI)
       if(NOT ${CMAKE_MATCH_1} EQUAL ${OP_CXX_ABI})
-        message(
-          FATAL_ERROR
-            "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}"
-        )
+        if(NOT BUILD_PY_IF)
+          message(
+            FATAL_ERROR
+              "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}"
+          )
+        else()
+          if(NOT BUILD_CPP_IF)
+            message(
+              STATUS
+                "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}. "
+                "Try to build libraries with both ABIs.")
+          else()
+            message(
+              WARNING
+                "PyTorch CXX11 ABI mismatch TensorFlow: ${CMAKE_MATCH_1} != ${OP_CXX_ABI}. "
+                "PyTorch C++ OP will be built but PyTorch support for C++ libraries will be disabled. "
+                "Note that we don't officially support building C++ libraries in the Python package, "
+                "except for the wheels we officially release.")
+          endif()
+          set(DEEPMD_BUILD_COMPAT_CXXABI ON)
+          set(OP_CXX_ABI_COMPAT ${OP_CXX_ABI_PT})
+        endif()
+      else()
+        set(DEEPMD_BUILD_COMPAT_CXXABI OFF)
       endif()
     else()
       set(OP_CXX_ABI ${CMAKE_MATCH_1})
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     endif()
   endif()
-  # get torch directory
-  set(PyTorch_LIBRARY_PATH ${TORCH_INCLUDE_DIRS}/../lib)
+  # get torch directory get the directory of the target "torch"
+  get_target_property(_TORCH_LOCATION torch LOCATION)
+  get_filename_component(PyTorch_LIBRARY_PATH ${_TORCH_LOCATION} DIRECTORY)
   list(APPEND BACKEND_LIBRARY_PATH ${PyTorch_LIBRARY_PATH})
   list(APPEND BACKEND_INCLUDE_DIRS ${TORCH_INCLUDE_DIRS})
 endif()
