@@ -10,10 +10,6 @@ if(USE_CUDA_TOOLKIT)
   endif()
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 11)
-  if(DEFINED OP_CXX_ABI)
-    add_compile_definitions(
-      "$<$<COMPILE_LANGUAGE:CUDA>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>")
-  endif()
 
   find_package(CUDAToolkit REQUIRED)
 
@@ -55,9 +51,6 @@ if(USE_CUDA_TOOLKIT)
 
   file(GLOB SOURCE_FILES "*.cu")
 
-  add_library(${GPU_LIB_NAME} SHARED ${SOURCE_FILES})
-  target_link_libraries(${GPU_LIB_NAME} PRIVATE deepmd_dyn_cudart)
-
 elseif(USE_ROCM_TOOLKIT)
 
   # required cmake version
@@ -83,31 +76,60 @@ elseif(USE_ROCM_TOOLKIT)
 
   file(GLOB SOURCE_FILES "*.cu")
 
-  add_library(${GPU_LIB_NAME} SHARED ${SOURCE_FILES})
   set_source_files_properties(${SOURCE_FILES} PROPERTIES LANGUAGE HIP)
-  # -fpic
-  set_property(TARGET ${GPU_LIB_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
-  target_link_libraries(${GPU_LIB_NAME} PRIVATE hip::hipcub)
-
 endif()
 
-target_include_directories(
+function(create_gpu_lib _suffix)
+  set(GPU_LIB_NAME_SUFFIX ${GPU_LIB_NAME}${_suffix})
+  add_library(${GPU_LIB_NAME_SUFFIX} SHARED ${SOURCE_FILES})
+
+  if(USE_CUDA_TOOLKIT)
+    target_link_libraries(${GPU_LIB_NAME_SUFFIX} PRIVATE deepmd_dyn_cudart)
+
+  elseif(USE_ROCM_TOOLKIT)
+    # -fpic
+    set_property(TARGET ${GPU_LIB_NAME_SUFFIX}
+                 PROPERTY POSITION_INDEPENDENT_CODE ON)
+    target_link_libraries(${GPU_LIB_NAME_SUFFIX} PRIVATE hip::hipcub)
+  endif()
+
+  target_include_directories(
+    ${GPU_LIB_NAME_SUFFIX}
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
+           $<INSTALL_INTERFACE:include>)
+  target_precompile_headers(${GPU_LIB_NAME_SUFFIX} PUBLIC [["device.h"]])
+  if(APPLE)
+    set_target_properties(${GPU_LIB_NAME_SUFFIX} PROPERTIES INSTALL_RPATH
+                                                            @loader_path)
+  else()
+    set_target_properties(${GPU_LIB_NAME_SUFFIX} PROPERTIES INSTALL_RPATH
+                                                            "$ORIGIN")
+  endif()
+
+  if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
+    install(
+      TARGETS ${GPU_LIB_NAME_SUFFIX}
+      EXPORT ${CMAKE_PROJECT_NAME}Targets
+      DESTINATION lib/)
+  endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)
+  if(BUILD_PY_IF)
+    install(TARGETS ${GPU_LIB_NAME_SUFFIX} DESTINATION deepmd/lib/)
+  endif(BUILD_PY_IF)
+endfunction()
+
+remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
+create_gpu_lib("")
+target_compile_definitions(
   ${GPU_LIB_NAME}
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include/>
-         $<INSTALL_INTERFACE:include>)
-target_precompile_headers(${GPU_LIB_NAME} PUBLIC [["device.h"]])
-if(APPLE)
-  set_target_properties(${GPU_LIB_NAME} PROPERTIES INSTALL_RPATH @loader_path)
-else()
-  set_target_properties(${GPU_LIB_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN")
+  PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>"
+         "$<$<COMPILE_LANGUAGE:CUDA>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>"
+         "$<$<COMPILE_LANGUAGE:HIP>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI}>")
+if(DEEPMD_BUILD_COMPAT_CXXABI)
+  create_gpu_lib("_compat_cxxabi")
+  target_compile_definitions(
+    ${GPU_LIB_NAME}_compat_cxxabi
+    PUBLIC
+      "$<$<COMPILE_LANGUAGE:CXX>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI_COMPAT}>"
+      "$<$<COMPILE_LANGUAGE:CUDA>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI_COMPAT}>"
+      "$<$<COMPILE_LANGUAGE:HIP>:_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI_COMPAT}>")
 endif()
-
-if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
-  install(
-    TARGETS ${GPU_LIB_NAME}
-    EXPORT ${CMAKE_PROJECT_NAME}Targets
-    DESTINATION lib/)
-endif(BUILD_CPP_IF AND NOT BUILD_PY_IF)
-if(BUILD_PY_IF)
-  install(TARGETS ${GPU_LIB_NAME} DESTINATION deepmd/lib/)
-endif(BUILD_PY_IF)
