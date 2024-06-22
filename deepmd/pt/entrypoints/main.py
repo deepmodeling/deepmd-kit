@@ -23,6 +23,9 @@ from torch.distributed.elastic.multiprocessing.errors import (
 from deepmd import (
     __version__,
 )
+from deepmd.env import (
+    GLOBAL_CONFIG,
+)
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
@@ -199,10 +202,19 @@ class SummaryPrinter(BaseSummaryPrinter):
 
     def get_backend_info(self) -> dict:
         """Get backend information."""
+        if ENABLE_CUSTOMIZED_OP:
+            op_info = {
+                "build with PT ver": GLOBAL_CONFIG["pt_version"],
+                "build with PT inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
+                "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+            }
+        else:
+            op_info = None
         return {
             "Backend": "PyTorch",
             "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
             "Enable custom OP": ENABLE_CUSTOMIZED_OP,
+            **op_info,
         }
 
 
