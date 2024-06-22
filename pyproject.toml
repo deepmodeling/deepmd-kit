@@ -195,11 +195,12 @@ replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 [tool.cibuildwheel]
 test-command = [
     "python -m deepmd -h",
+    """python -c "import deepmd.tf;import deepmd.pt" """,
     "dp -h",
     "dp_ipi",
     "pytest {project}/source/tests/tf/test_lammps.py"
 ]
-test-extras = ["cpu", "test", "lmp", "ipi"]
+test-extras = ["cpu", "test", "lmp", "ipi", "torch"]
 build = ["cp310-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated
