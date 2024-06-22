@@ -218,8 +218,6 @@ PIP_PREFER_BINARY = "1"
 DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
-# for unclear reason, when enabling PyTorch, OpenMP is found accidentally
-CMAKE_ARGS = "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=1"
 
 [[tool.cibuildwheel.overrides]]
 # error: 'value' is unavailable: introduced in macOS 10.13
