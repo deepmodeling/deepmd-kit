@@ -111,7 +111,11 @@ def get_pt_requirement(pt_version: str = "") -> dict:
 
     return {
         "torch": [
-            f"torch=={Version(pt_version).base_version}"
+            # uv has different local version behaviors, i.e. `==2.3.1` cannot match `==2.3.1+cpu`
+            # https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#local-version-identifiers
+            # luckily, .* (prefix matching) defined in PEP 440 can match any local version
+            # https://peps.python.org/pep-0440/#version-matching
+            f"torch=={Version(pt_version).base_version}.*"
             if pt_version != ""
             else "torch>=2a",
         ],
