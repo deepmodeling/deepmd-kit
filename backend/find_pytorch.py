@@ -108,11 +108,12 @@ def get_pt_requirement(pt_version: str = "") -> dict:
         return {"torch": []}
     if pt_version == "":
         pt_version = os.environ.get("PYTORCH_VERSION", "")
-    base_version = Version(pt_version).base_version
 
     return {
         "torch": [
-            f"torch=={base_version}" if pt_version != "" else "torch>=2a",
+            f"torch=={Version(pt_version).base_version}"
+            if pt_version != ""
+            else "torch>=2a",
         ],
     }
 
