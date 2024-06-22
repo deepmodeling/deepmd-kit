@@ -221,7 +221,10 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
     endif()
   else()
     # Maybe in macos/windows
-    set(OP_CXX_ABI_PT ${OP_CXX_ABI})
+    if(NOT DEFINED OP_CXX_ABI)
+      set(OP_CXX_ABI 0)
+    endif()
+    set(OP_CXX_ABI_PT "${OP_CXX_ABI}")
   endif()
   # get torch directory get the directory of the target "torch"
   get_target_property(_TORCH_LOCATION torch LOCATION)
