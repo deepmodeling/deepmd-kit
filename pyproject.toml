@@ -208,22 +208,11 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
+environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update3", DP_ENABLE_IPI="1" }
 before-all = [
-    '''pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
+    """brew install mpich""",
 ]
 repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
-
-[tool.cibuildwheel.macos.environment]
-PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
-DP_ENABLE_IPI = "1"
-DP_ENABLE_PYTORCH = "1"
-
-[[tool.cibuildwheel.overrides]]
-# error: 'value' is unavailable: introduced in macOS 10.13
-select = "*-macosx_x86_64"
-inherit.environment = "append"
-environment.MACOSX_DEPLOYMENT_TARGET = "10.13"
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 --exclude libc10.so --exclude libtorch.so --exclude libtorch_cpu.so -w {dest_dir} {wheel}"
@@ -262,14 +251,12 @@ UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
+environment = { PIP_PREFER_BINARY="1" }
 test-extras = ["cpu"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
 ]
-[tool.cibuildwheel.windows.environment]
-PIP_PREFER_BINARY = "1"
-DP_ENABLE_PYTORCH = "1"
 
 # One can run `tox` or `tox -e gpu`
 # to run pytest in an isolated environment
