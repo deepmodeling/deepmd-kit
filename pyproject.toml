@@ -265,7 +265,7 @@ UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
-test-extras = ["cpu"]
+test-extras = ["cpu", "torch"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
