@@ -6,9 +6,6 @@ import platform
 from importlib import (
     import_module,
 )
-from importlib.util import (
-    find_spec,
-)
 from pathlib import (
     Path,
 )
@@ -80,11 +77,6 @@ else:
 
 tf_dir = tf.sysconfig.get_lib()
 op_dir = str(SHARED_LIB_DIR)
-pt_spec = find_spec("torch")
-if pt_spec is not None:
-    pt_dir = pt_spec.submodule_search_locations[0]
-else:
-    pt_dir = None
 
 
 cuda_library_paths = []
@@ -114,7 +106,6 @@ os.environ[lib_env] = get_env(
     [
         os.environ.get(lib_env),
         tf_dir,
-        pt_dir,
         os.path.join(tf_dir, "python"),
         op_dir,
     ]
