@@ -134,6 +134,10 @@ pip install deepmd-kit[gpu,cu12,torch,lmp,ipi]
 
 MPICH is required for parallel running.
 
+:::{Warning}
+When installing from pip, only the TensorFlow {{ tensorflow_icon }} backend is supported with LAMMPS and i-PI.
+:::
+
 It is suggested to install the package into an isolated environment.
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 A specific version of TensorFlow and PyTorch which is compatible with DeePMD-kit will be also installed.
