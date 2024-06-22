@@ -80,7 +80,7 @@ else:
 
 tf_dir = tf.sysconfig.get_lib()
 op_dir = str(SHARED_LIB_DIR)
-pt_spec = find_spec("torch.lib")
+pt_spec = find_spec("torch")
 if pt_spec is not None:
     pt_dir = pt_spec.submodule_search_locations[0]
 else:
