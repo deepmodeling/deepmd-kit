@@ -123,7 +123,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
 
 
 @lru_cache
-def get_pt_version(pt_path: Union[str, Path]) -> str:
+def get_pt_version(pt_path: Optional[Union[str, Path]]) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters
