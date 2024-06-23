@@ -1069,6 +1069,9 @@ class Trainer:
             prof.stop()
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
+                log.info(
+                    f"The profiling trace have been saved to: {self.profiling_file}"
+                )
 
     def save_model(self, save_path, lr=0.0, step=0):
         module = (
