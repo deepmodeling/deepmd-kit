@@ -2405,14 +2405,14 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             bool,
             optional=True,
             default=False,
-            doc=doc_only_tf_supported + doc_profiling,
+            doc=doc_profiling,
         ),
         Argument(
             "profiling_file",
             str,
             optional=True,
             default="timeline.json",
-            doc=doc_only_tf_supported + doc_profiling_file,
+            doc=doc_profiling_file,
         ),
         Argument(
             "enable_profiler",
