@@ -204,7 +204,7 @@ def get_tf_requirement(tf_version: str = "") -> dict:
 
 
 @lru_cache
-def get_tf_version(tf_path: Union[str, Path]) -> str:
+def get_tf_version(tf_path: Optional[Union[str, Path]]) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters
