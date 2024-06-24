@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
+import torch
+
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
     PairTabAtomicModel,
@@ -73,6 +75,22 @@ from ..backend import (
     PTTestCase,
 )
 
+defalut_des_param = [
+    DescriptorParamSeA,
+    DescriptorParamSeR,
+    DescriptorParamSeT,
+    DescriptorParamDPA1,
+    DescriptorParamDPA2,
+    DescriptorParamHybrid,
+    DescriptorParamHybridMixed,
+]
+defalut_fit_param = [
+    FittingParamEnergy,
+    FittingParamDos,
+    FittingParamDipole,
+    FittingParamPolar,
+]
+
 
 @parameterized(
     des_parameterized=(
@@ -101,14 +119,18 @@ from ..backend import (
     ),
 )
 class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
-    # @property
-    # def modules_to_test(self):
-    #     # for Model, we can test script module API
-    #     modules = [
-    #         *PTTestCase.modules_to_test.fget(self),
-    #         self.script_module,
-    #     ]
-    #     return modules
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
 
     @classmethod
     def setUpClass(cls):
@@ -118,6 +140,10 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2]:
             cls.epsilon_dict["test_smooth"] = 1e-8
+        if Descrpt in [DescrptSeT]:
+            # computational expensive
+            cls.expected_sel = [i // 4 for i in cls.expected_sel]
+            cls.expected_rcut = cls.expected_rcut / 2
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -146,6 +172,14 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             ft,
             type_map=cls.expected_type_map,
         )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -180,14 +214,18 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
     ),
 )
 class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
-    # @property
-    # def modules_to_test(cls):
-    #     # for Model, we can test script module API
-    #     modules = [
-    #         *PTTestCase.modules_to_test.fget(cls),
-    #         cls.script_module,
-    #     ]
-    #     return modules
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
 
     @classmethod
     def setUpClass(cls):
@@ -198,6 +236,10 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
         cls.aprec_dict["test_smooth"] = 1e-4
         if Descrpt in [DescrptDPA2]:
             cls.epsilon_dict["test_smooth"] = 1e-8
+        if Descrpt in [DescrptSeT]:
+            # computational expensive
+            cls.expected_sel = [i // 4 for i in cls.expected_sel]
+            cls.expected_rcut = cls.expected_rcut / 2
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -226,6 +268,14 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
             ft,
             type_map=cls.expected_type_map,
         )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -256,14 +306,18 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
     ),
 )
 class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
-    # @property
-    # def modules_to_test(cls):
-    #     # for Model, we can test script module API
-    #     modules = [
-    #         *PTTestCase.modules_to_test.fget(cls),
-    #         cls.script_module,
-    #     ]
-    #     return modules
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
 
     @classmethod
     def setUpClass(cls):
@@ -306,6 +360,14 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
             ft,
             type_map=cls.expected_type_map,
         )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -336,14 +398,18 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
     ),
 )
 class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
-    # @property
-    # def modules_to_test(cls):
-    #     # for Model, we can test script module API
-    #     modules = [
-    #         *PTTestCase.modules_to_test.fget(cls),
-    #         cls.script_module,
-    #     ]
-    #     return modules
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
 
     @classmethod
     def setUpClass(cls):
@@ -382,6 +448,14 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
             ft,
             type_map=cls.expected_type_map,
         )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -409,14 +483,18 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
     ),
 )
 class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
-    # @property
-    # def modules_to_test(cls):
-    #     # for Model, we can test script module API
-    #     modules = [
-    #         *PTTestCase.modules_to_test.fget(cls),
-    #         cls.script_module,
-    #     ]
-    #     return modules
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
 
     @classmethod
     def setUpClass(cls):
@@ -468,6 +546,14 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
             smin_alpha=cls.tab_file["smin_alpha"],
             type_map=cls.expected_type_map,
         )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_dim_fparam = ft.get_dim_fparam()
@@ -502,14 +588,18 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
     ),
 )
 class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
-    # @property
-    # def modules_to_test(cls):
-    #     # for Model, we can test script module API
-    #     modules = [
-    #         *PTTestCase.modules_to_test.fget(cls),
-    #         cls.script_module,
-    #     ]
-    #     return modules
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
 
     @classmethod
     def setUpClass(cls):
@@ -520,6 +610,10 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
+        if Descrpt in [DescrptSeT]:
+            # computational expensive
+            cls.expected_sel = [i // 4 for i in cls.expected_sel]
+            cls.expected_rcut = cls.expected_rcut / 2
 
         spin = Spin(
             use_spin=cls.spin_dict["use_spin"],
@@ -567,6 +661,14 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
             pair_exclude_types=pair_exclude_types,
         )
         cls.module = SpinEnergyModel(backbone_model=backbone_model, spin=spin)
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()

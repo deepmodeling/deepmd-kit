@@ -108,6 +108,12 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2]:
             cls.epsilon_dict["test_smooth"] = 1e-8
+        if Descrpt in [DescrptDPA1]:
+            cls.epsilon_dict["test_smooth"] = 1e-6
+        if Descrpt in [DescrptSeT]:
+            # computational expensive
+            cls.expected_sel = [i // 4 for i in cls.expected_sel]
+            cls.expected_rcut = cls.expected_rcut / 2
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -182,6 +188,10 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
+        if Descrpt in [DescrptSeT]:
+            # computational expensive
+            cls.expected_sel = [i // 4 for i in cls.expected_sel]
+            cls.expected_rcut = cls.expected_rcut / 2
 
         spin = Spin(
             use_spin=cls.spin_dict["use_spin"],

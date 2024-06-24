@@ -64,7 +64,7 @@ DescriptorParamSeAList = parameterize_func(
     DescriptorParamSeA,
     OrderedDict(
         {
-            "resnet_dt": (True, False),
+            "resnet_dt": (False, True),
             "type_one_side": (True, False),
             "exclude_types": ([], [[0, 1]]),
             "env_protection": (0.0, 1e-8, 1e-2),
@@ -72,6 +72,8 @@ DescriptorParamSeAList = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+DescriptorParamSeA = DescriptorParamSeAList[0]
 
 
 def DescriptorParamSeR(
@@ -106,7 +108,7 @@ DescriptorParamSeRList = parameterize_func(
     DescriptorParamSeR,
     OrderedDict(
         {
-            "resnet_dt": (True, False),
+            "resnet_dt": (False, True),
             "type_one_side": (True,),  # type_one_side == False not implemented
             "exclude_types": ([], [[0, 1]]),
             "env_protection": (0.0, 1e-8),
@@ -114,6 +116,8 @@ DescriptorParamSeRList = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+DescriptorParamSeR = DescriptorParamSeRList[0]
 
 
 def DescriptorParamSeT(
@@ -146,13 +150,15 @@ DescriptorParamSeTList = parameterize_func(
     DescriptorParamSeT,
     OrderedDict(
         {
-            "resnet_dt": (True, False),
+            "resnet_dt": (False, True),
             "exclude_types": ([], [[0, 1]]),
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
         }
     ),
 )
+# to get name for the default function
+DescriptorParamSeT = DescriptorParamSeTList[0]
 
 
 def DescriptorParamDPA1(
@@ -230,11 +236,13 @@ DescriptorParamDPA1List = parameterize_func(
             "ln_eps": (1e-5,),
             "smooth_type_embedding": (True, False),
             "concat_output_tebd": (True,),
-            "use_econf_tebd": (True, False),
+            "use_econf_tebd": (False, True),
             "precision": ("float64",),
         }
     ),
 )
+# to get name for the default function
+DescriptorParamDPA1 = DescriptorParamDPA1List[0]
 
 
 def DescriptorParamDPA2(
@@ -360,6 +368,8 @@ DescriptorParamDPA2List = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+DescriptorParamDPA2 = DescriptorParamDPA2List[0]
 
 
 def DescriptorParamHybrid(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):

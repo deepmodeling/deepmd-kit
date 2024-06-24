@@ -60,6 +60,8 @@ FittingParamEnergyList = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+FittingParamEnergy = FittingParamEnergyList[0]
 
 
 def FittingParamDos(
@@ -96,6 +98,8 @@ FittingParamDosList = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+FittingParamDos = FittingParamDosList[0]
 
 
 def FittingParamDipole(
@@ -136,6 +140,8 @@ FittingParamDipoleList = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+FittingParamDipole = FittingParamDipoleList[0]
 
 
 def FittingParamPolar(
@@ -174,6 +180,8 @@ FittingParamPolarList = parameterize_func(
         }
     ),
 )
+# to get name for the default function
+FittingParamPolar = FittingParamPolarList[0]
 
 
 @parameterized(

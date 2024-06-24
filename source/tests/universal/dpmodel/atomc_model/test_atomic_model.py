@@ -95,9 +95,6 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
         EnerAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
-        # set special precision
-        if Descrpt in [DescrptDPA2]:
-            cls.epsilon_dict["test_smooth"] = 1e-8
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -163,10 +160,6 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
         DosAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
-        # set special precision
-        cls.aprec_dict["test_smooth"] = 1e-4
-        if Descrpt in [DescrptDPA2]:
-            cls.epsilon_dict["test_smooth"] = 1e-8
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -228,9 +221,6 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
         DipoleAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
-        # set special precision
-        if Descrpt in [DescrptDPA2]:
-            cls.epsilon_dict["test_smooth"] = 1e-8
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -293,9 +283,6 @@ class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase
         PolarAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
-        # set special precision
-        if Descrpt in [DescrptDPA2]:
-            cls.epsilon_dict["test_smooth"] = 1e-8
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
@@ -355,9 +342,6 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
         ZBLAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
-        # set special precision
-        # zbl weights not so smooth
-        cls.aprec_dict["test_smooth"] = 5e-2
         cls.input_dict_ds = DescriptorParam(
             len(cls.expected_type_map),
             cls.expected_rcut,
