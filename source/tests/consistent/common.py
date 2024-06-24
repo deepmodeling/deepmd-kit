@@ -365,7 +365,7 @@ class CommonTest(ABC):
             clear_session()
 
 
-def parameterized(*attrs: tuple, **kwargs: Dict[str, tuple]) -> Callable:
+def parameterized(*attrs: tuple, **subblock_attrs: tuple) -> Callable:
     """Parameterized test.
 
     Orginal class will not be actually generated. Avoid inherbiting from it.
@@ -376,7 +376,7 @@ def parameterized(*attrs: tuple, **kwargs: Dict[str, tuple]) -> Callable:
     ----------
     *attrs : tuple
         The attributes to be parameterized.
-    **kwargs : Dict[str, tuple]
+    **subblock_attrs : tuple
         The sub-blocked attributes to be parameterized separately.
 
     Returns
@@ -404,8 +404,12 @@ def parameterized(*attrs: tuple, **kwargs: Dict[str, tuple]) -> Callable:
     """
     global_combine = list(itertools.product(*attrs)) if len(attrs) else []
     block_combine = []
-    for kk in kwargs:
-        block_combine += list(itertools.product(*kwargs[kk])) if len(kwargs[kk]) else []
+    for kk in subblock_attrs:
+        block_combine += (
+            list(itertools.product(*subblock_attrs[kk]))
+            if len(subblock_attrs[kk])
+            else []
+        )
     full_parameterized = global_combine + block_combine
 
     def decorator(base_class: type):
