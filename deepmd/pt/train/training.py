@@ -699,8 +699,8 @@ class Trainer:
         self.tensorboard_log_dir = training_params.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = training_params.get("tensorboard_freq", 1)
         self.enable_profiler = training_params.get("enable_profiler", False)
-        self.profiling = training_params["profiling"]
-        self.profiling_file = training_params["profiling_file"]
+        self.profiling = training_params.get("profiling", False)
+        self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
         fout = (
