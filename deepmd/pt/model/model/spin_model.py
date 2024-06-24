@@ -331,6 +331,11 @@ class SpinModel(torch.nn.Module):
         """Returns whether it has spin input and output."""
         return True
 
+    @torch.jit.export
+    def has_message_passing(self) -> bool:
+        """Returns whether the model has message passing."""
+        return self.backbone_model.has_message_passing()
+
     def model_output_def(self):
         """Get the output def for the model."""
         model_output_type = self.backbone_model.model_output_type()
