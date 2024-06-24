@@ -299,9 +299,7 @@ def descrpt_se_a_args():
     ]
 
 
-@descrpt_args_plugin.register(
-    "se_e3", alias=["se_at", "se_a_3be", "se_t"], doc=doc_only_tf_supported
-)
+@descrpt_args_plugin.register("se_e3", alias=["se_at", "se_a_3be", "se_t"])
 def descrpt_se_t_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -460,9 +458,7 @@ def descrpt_se_atten_common_args():
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = (
-        doc_only_tf_supported + "If the parameters in the embedding net is trainable"
-    )
+    doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
@@ -1274,7 +1270,7 @@ def fitting_ener():
     ]
 
 
-@fitting_args_plugin.register("dos", doc=doc_only_tf_supported)
+@fitting_args_plugin.register("dos")
 def fitting_dos():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -1544,20 +1540,16 @@ def model_args(exclude_hybrid=False):
                 "use_srtab",
                 str,
                 optional=True,
-                doc=doc_only_tf_supported + doc_use_srtab,
+                doc=doc_use_srtab,
             ),
             Argument(
                 "smin_alpha",
                 float,
                 optional=True,
-                doc=doc_only_tf_supported + doc_smin_alpha,
+                doc=doc_smin_alpha,
             ),
-            Argument(
-                "sw_rmin", float, optional=True, doc=doc_only_tf_supported + doc_sw_rmin
-            ),
-            Argument(
-                "sw_rmax", float, optional=True, doc=doc_only_tf_supported + doc_sw_rmax
-            ),
+            Argument("sw_rmin", float, optional=True, doc=doc_sw_rmin),
+            Argument("sw_rmax", float, optional=True, doc=doc_sw_rmax),
             Argument(
                 "pair_exclude_types",
                 list,
@@ -2042,7 +2034,7 @@ def loss_ener_spin():
     ]
 
 
-@loss_args_plugin.register("dos", doc=doc_only_tf_supported)
+@loss_args_plugin.register("dos")
 def loss_dos():
     doc_start_pref_dos = start_pref("Density of State (DOS)")
     doc_limit_pref_dos = limit_pref("Density of State (DOS)")
@@ -2117,7 +2109,7 @@ def loss_dos():
 
 
 # YWolfeee: Modified to support tensor type of loss args.
-@loss_args_plugin.register("tensor", doc=doc_only_tf_supported)
+@loss_args_plugin.register("tensor")
 def loss_tensor():
     # doc_global_weight = "The prefactor of the weight of global loss. It should be larger than or equal to 0. If only `pref` is provided or both are not provided, training will be global mode, i.e. the shape of 'polarizability.npy` or `dipole.npy` should be #frams x [9 or 3]."
     # doc_local_weight =  "The prefactor of the weight of atomic loss. It should be larger than or equal to 0. If only `pref_atomic` is provided, training will be atomic mode, i.e. the shape of `polarizability.npy` or `dipole.npy` should be #frames x ([9 or 3] x #selected atoms). If both `pref` and `pref_atomic` are provided, training will be combined mode, and atomic label should be provided as well."
