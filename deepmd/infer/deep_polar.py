@@ -112,7 +112,7 @@ class DeepGlobalPolar(OldDeepTensor):
                     OutputVariableDef(
                         self.output_tensor_name,
                         shape=[-1],
-                        reduciable=False,
+                        reducible=False,
                         r_differentiable=False,
                         c_differentiable=False,
                         atomic=False,

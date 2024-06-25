@@ -15,6 +15,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
     RepinitArgs,
 )
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.network.mlp import (
     Identity,
     MLPLayer,
@@ -84,7 +87,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         exclude_types: List[Tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
@@ -169,7 +172,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             resnet_dt=self.repinit_args.resnet_dt,
             smooth=smooth,
             type_one_side=self.repinit_args.type_one_side,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.repformers = DescrptBlockRepformers(
             self.repformer_args.rcut,
@@ -204,7 +207,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             precision=precision,
             trainable_ln=self.repformer_args.trainable_ln,
             ln_eps=self.repformer_args.ln_eps,
-            seed=seed,
+            seed=child_seed(seed, 1),
             old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
@@ -213,7 +216,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             ntypes,
             self.repinit_args.tebd_dim,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 2),
             use_econf_tebd=self.use_econf_tebd,
             type_map=type_map,
         )
@@ -234,7 +237,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 bias=False,
                 precision=precision,
                 init="glorot",
-                seed=seed,
+                seed=child_seed(seed, 3),
             )
         self.tebd_transform = None
         if self.add_tebd_to_repinit_out:
@@ -243,7 +246,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 self.repformers.dim_in,
                 bias=False,
                 precision=precision,
-                seed=seed,
+                seed=child_seed(seed, 4),
             )
         assert self.repinit.rcut > self.repformers.rcut
         assert self.repinit.sel[0] > self.repformers.sel[0]

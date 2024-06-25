@@ -52,7 +52,7 @@ class DOSFittingNet(InvarFitting):
         rcond: Optional[float] = None,
         bias_dos: Optional[torch.Tensor] = None,
         trainable: Union[bool, List[bool]] = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         exclude_types: List[int] = [],
@@ -91,7 +91,7 @@ class DOSFittingNet(InvarFitting):
                 OutputVariableDef(
                     self.var_name,
                     [self.dim_out],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),

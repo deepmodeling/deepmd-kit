@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import importlib
 import os
 import site
 from functools import (
@@ -17,12 +18,19 @@ from sysconfig import (
     get_path,
 )
 from typing import (
+    List,
     Optional,
+    Tuple,
+    Union,
+)
+
+from packaging.version import (
+    Version,
 )
 
 
 @lru_cache
-def find_pytorch() -> Optional[str]:
+def find_pytorch() -> Tuple[Optional[str], List[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:
@@ -39,9 +47,12 @@ def find_pytorch() -> Optional[str]:
     -------
     str, optional
         PyTorch library path if found.
+    list of str
+        TensorFlow requirement if not found. Empty if found.
     """
     if os.environ.get("DP_ENABLE_PYTORCH", "0") == "0":
-        return None
+        return None, []
+    requires = []
     pt_spec = None
 
     if (pt_spec is None or not pt_spec) and os.environ.get("PYTORCH_ROOT") is not None:
@@ -73,4 +84,62 @@ def find_pytorch() -> Optional[str]:
         # IndexError if submodule_search_locations is an empty list
     except (AttributeError, TypeError, IndexError):
         pt_install_dir = None
-    return pt_install_dir
+        requires.extend(get_pt_requirement()["torch"])
+    return pt_install_dir, requires
+
+
+@lru_cache
+def get_pt_requirement(pt_version: str = "") -> dict:
+    """Get PyTorch requirement when PT is not installed.
+
+    If pt_version is not given and the environment variable `PYTORCH_VERSION` is set, use it as the requirement.
+
+    Parameters
+    ----------
+    pt_version : str, optional
+        PT version
+
+    Returns
+    -------
+    dict
+        PyTorch requirement.
+    """
+    if pt_version is None:
+        return {"torch": []}
+    if pt_version == "":
+        pt_version = os.environ.get("PYTORCH_VERSION", "")
+
+    return {
+        "torch": [
+            # uv has different local version behaviors, i.e. `==2.3.1` cannot match `==2.3.1+cpu`
+            # https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#local-version-identifiers
+            # luckily, .* (prefix matching) defined in PEP 440 can match any local version
+            # https://peps.python.org/pep-0440/#version-matching
+            f"torch=={Version(pt_version).base_version}.*"
+            if pt_version != ""
+            else "torch>=2a",
+        ],
+    }
+
+
+@lru_cache
+def get_pt_version(pt_path: Optional[Union[str, Path]]) -> str:
+    """Get TF version from a TF Python library path.
+
+    Parameters
+    ----------
+    pt_path : str or Path
+        PT Python library path
+
+    Returns
+    -------
+    str
+        version
+    """
+    if pt_path is None or pt_path == "":
+        return ""
+    version_file = Path(pt_path) / "version.py"
+    spec = importlib.util.spec_from_file_location("torch.version", version_file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.__version__

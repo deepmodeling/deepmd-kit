@@ -91,7 +91,7 @@ class PolarFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         exclude_types: List[int] = [],
         fit_diag: bool = True,
         scale: Optional[Union[List[float], float]] = None,
@@ -216,7 +216,7 @@ class PolarFittingNet(GeneralFitting):
                 OutputVariableDef(
                     "polarizability",
                     [3, 3],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),

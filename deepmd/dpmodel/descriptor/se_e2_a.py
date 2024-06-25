@@ -6,6 +6,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -20,6 +21,9 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
     PairExcludeMask,
+)
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -158,7 +162,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         type_map: Optional[List[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ) -> None:
         del ntypes
         ## seed, uniform_seed, not included.
@@ -189,8 +193,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
-        for embedding_idx in itertools.product(
-            range(self.ntypes), repeat=self.embeddings.ndim
+        for ii, embedding_idx in enumerate(
+            itertools.product(range(self.ntypes), repeat=self.embeddings.ndim)
         ):
             self.embeddings[embedding_idx] = EmbeddingNet(
                 in_dim,
@@ -198,6 +202,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 self.activation_function,
                 self.resnet_dt,
                 self.precision,
+                seed=child_seed(seed, ii),
             )
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
         self.nnei = np.sum(self.sel)
