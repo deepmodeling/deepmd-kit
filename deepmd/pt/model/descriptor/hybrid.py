@@ -43,6 +43,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         The descriptor can be either an object or a dictionary.
     """
 
+    nlist_cut_idx: List[torch.Tensor]
+
     def __init__(
         self,
         list: List[Union[BaseDescriptor, Dict[str, Any]]],
