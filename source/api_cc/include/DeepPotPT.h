@@ -329,6 +329,12 @@ class DeepPotPT : public DeepPotBase {
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
+  /**
+   * @brief A function to run a function with try-catch block.
+   * @param[in] f The function to run.
+   * @example trycatch([&](){...});
+   */
+  void trycatch(std::function<void()> f);
 };
 
 }  // namespace deepmd
