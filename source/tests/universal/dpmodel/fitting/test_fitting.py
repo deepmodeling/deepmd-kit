@@ -21,6 +21,9 @@ from ....seed import (
 from ...common.cases.fitting.fitting import (
     FittingTest,
 )
+from ...pt.utils.utils import (
+    TEST_DEVICE,
+)
 from ..backend import (
     DPTestCase,
 )
@@ -193,6 +196,7 @@ FittingParamPolar = FittingParamPolarList[0]
     ),  # class_param & class
     (True, False),  # mixed_types
 )
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestFittingDP(unittest.TestCase, FittingTest, DPTestCase):
     def setUp(self):
         ((FittingParam, Fitting), self.mixed_types) = self.param

@@ -179,7 +179,8 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
         ):
             cls.skip_test_jit = True
         else:
-            cls._script_module = torch.jit.script(cls.module)
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -275,7 +276,8 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
         ):
             cls.skip_test_jit = True
         else:
-            cls._script_module = torch.jit.script(cls.module)
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -367,7 +369,8 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
         ):
             cls.skip_test_jit = True
         else:
-            cls._script_module = torch.jit.script(cls.module)
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -455,7 +458,8 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
         ):
             cls.skip_test_jit = True
         else:
-            cls._script_module = torch.jit.script(cls.module)
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
@@ -553,7 +557,8 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
         ):
             cls.skip_test_jit = True
         else:
-            cls._script_module = torch.jit.script(cls.module)
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_dim_fparam = ft.get_dim_fparam()
@@ -669,7 +674,8 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         ):
             cls.skip_test_jit = True
         else:
-            cls._script_module = torch.jit.script(cls.module)
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
         cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()

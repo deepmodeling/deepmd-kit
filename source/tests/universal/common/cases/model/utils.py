@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import unittest
 from copy import (
     deepcopy,
 )
@@ -21,6 +22,9 @@ from deepmd.dpmodel.utils.nlist import (
 
 from .....seed import (
     GLOBAL_SEED,
+)
+from ....pt.utils.utils import (
+    TEST_DEVICE,
 )
 
 
@@ -48,7 +52,9 @@ class ModelTestCase:
     expected_has_message_passing: bool
     """Expected whether having message passing."""
     forward_wrapper: Callable[[Any], Any]
-    """Calss wrapper for forward method."""
+    """Class wrapper for forward method."""
+    forward_wrapper_cpu_ref: Callable[[Any], Any]
+    """Convert model to CPU method."""
     aprec_dict: Dict[str, Optional[float]]
     """Dictionary of absolute precision in each test."""
     rprec_dict: Dict[str, Optional[float]]
@@ -215,6 +221,7 @@ class ModelTestCase:
                 continue
             np.testing.assert_allclose(rr1, rr2, atol=aprec)
 
+    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
     def test_permutation(self):
         """Test permutation."""
         if getattr(self, "skip_test_permutation", False):
@@ -300,6 +307,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
+    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
     def test_trans(self):
         """Test translation."""
         if getattr(self, "skip_test_trans", False):
@@ -368,6 +376,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
+    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
     def test_rot(self):
         """Test rotation."""
         if getattr(self, "skip_test_rot", False):
@@ -557,6 +566,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
+    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
     def test_smooth(self):
         """Test smooth."""
         if getattr(self, "skip_test_smooth", False):
@@ -663,6 +673,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
+    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
     def test_autodiff(self):
         """Test autodiff."""
         if getattr(self, "skip_test_autodiff", False):
@@ -801,3 +812,49 @@ class ModelTestCase:
         else:
             # not support virial by far
             pass
+
+    @unittest.skipIf(TEST_DEVICE == "cpu", "Skip test on CPU.")
+    def test_device_consistence(self):
+        """Test forward consistency between devices."""
+        test_spin = getattr(self, "test_spin", False)
+        nf = 1
+        natoms = 5
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coord = 4.0 * rng.random([natoms, 3]).reshape([nf, -1])
+        atype = np.array([0, 0, 0, 1, 1], dtype=int).reshape([nf, -1])
+        spin = 0.5 * rng.random([natoms, 3]).reshape([nf, -1])
+        cell = 6.0 * np.eye(3).reshape([nf, 9])
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+        ret = []
+        device_module = self.forward_wrapper(self.module)
+        ref_module = self.forward_wrapper_cpu_ref(deepcopy(self.module))
+
+        for module in [device_module, ref_module]:
+            input_dict = {
+                "coord": coord,
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict["spin"] = spin
+            ret.append(module(**input_dict))
+        for kk in ret[0]:
+            subret = []
+            for rr in ret:
+                if rr is not None:
+                    subret.append(rr[kk])
+            if len(subret):
+                for ii, rr in enumerate(subret[1:]):
+                    if subret[0] is None:
+                        assert rr is None
+                    else:
+                        np.testing.assert_allclose(
+                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                        )

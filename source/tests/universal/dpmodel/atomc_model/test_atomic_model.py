@@ -48,6 +48,9 @@ from ...dpmodel.descriptor.test_descriptor import (
 from ...dpmodel.model.test_model import (
     skip_model_tests,
 )
+from ...pt.utils.utils import (
+    TEST_DEVICE,
+)
 from ..backend import (
     DPTestCase,
 )
@@ -89,6 +92,7 @@ from ..fitting.test_fitting import (
         ),  # fitting_class_param & class
     ),
 )
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -154,6 +158,7 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
         ),  # fitting_class_param & class
     ),
 )
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -215,6 +220,7 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
         ),  # fitting_class_param & class
     ),
 )
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -277,6 +283,7 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
         ),  # fitting_class_param & class
     ),
 )
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -336,6 +343,7 @@ class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase
         ),  # fitting_class_param & class
     ),
 )
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
