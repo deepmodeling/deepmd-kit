@@ -34,6 +34,7 @@ class DPTrainTest:
         # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
+        state_dict_trained = trainer.wrapper.model.state_dict()
 
         # test fine-tuning using same input
         finetune_model = self.config["training"].get("save_ckpt", "model.ckpt") + ".pt"
@@ -46,7 +47,6 @@ class DPTrainTest:
             finetune_model=finetune_model,
             finetune_links=finetune_links,
         )
-        trainer_finetune.run()
 
         # test fine-tuning using empty input
         self.config_empty = deepcopy(self.config)
@@ -64,7 +64,41 @@ class DPTrainTest:
             finetune_model=finetune_model,
             finetune_links=finetune_links,
         )
+
+        # test fine-tuning using random fitting
+        self.config["model"], finetune_links = get_finetune_rules(
+            finetune_model, self.config["model"], model_branch="RANDOM"
+        )
+        trainer_finetune_random = get_trainer(
+            deepcopy(self.config_empty),
+            finetune_model=finetune_model,
+            finetune_links=finetune_links,
+        )
+
+        # check parameters
+        state_dict_finetuned = trainer_finetune.wrapper.model.state_dict()
+        state_dict_finetuned_empty = trainer_finetune_empty.wrapper.model.state_dict()
+        state_dict_finetuned_random = trainer_finetune_random.wrapper.model.state_dict()
+        for state_key in state_dict_finetuned:
+            if "out_bias" not in state_key and "out_std" not in state_key:
+                torch.testing.assert_close(
+                    state_dict_trained[state_key],
+                    state_dict_finetuned[state_key],
+                )
+                torch.testing.assert_close(
+                    state_dict_trained[state_key],
+                    state_dict_finetuned_empty[state_key],
+                )
+                if "fitting_net" not in state_key:
+                    torch.testing.assert_close(
+                        state_dict_trained[state_key],
+                        state_dict_finetuned_random[state_key],
+                    )
+
+        # check running
+        trainer_finetune.run()
         trainer_finetune_empty.run()
+        trainer_finetune_random.run()
 
         self.tearDown()
 
