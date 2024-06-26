@@ -53,9 +53,9 @@ class SpinModel(torch.nn.Module):
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
         atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
-        virtual_coord = coord + spin * self.virtual_scale_mask[atype].reshape(
-            [nframes, nloc, 1]
-        )
+        virtual_coord = coord + spin * (self.virtual_scale_mask.to(atype.device))[
+            atype
+        ].reshape([nframes, nloc, 1])
         coord_spin = torch.concat([coord, virtual_coord], dim=-2)
         return coord_spin, atype_spin
 
@@ -77,11 +77,9 @@ class SpinModel(torch.nn.Module):
         """
         nframes, nall = extended_coord.shape[:2]
         nloc = nlist.shape[1]
-        virtual_extended_coord = (
-            extended_coord
-            + extended_spin
-            * self.virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
-        )
+        virtual_extended_coord = extended_coord + extended_spin * (
+            self.virtual_scale_mask.to(extended_atype.device)
+        )[extended_atype].reshape([nframes, nall, 1])
         virtual_extended_atype = extended_atype + self.ntypes_real
         extended_coord_updated = self.concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
@@ -116,9 +114,9 @@ class SpinModel(torch.nn.Module):
         nframes, nloc_double = out_tensor.shape[:2]
         nloc = nloc_double // 2
         if virtual_scale:
-            virtual_scale_mask = self.virtual_scale_mask
+            virtual_scale_mask = self.virtual_scale_mask.to(atype.device)
         else:
-            virtual_scale_mask = self.spin_mask
+            virtual_scale_mask = self.spin_mask.to(atype.device)
         atomic_mask = virtual_scale_mask[atype].reshape([nframes, nloc, 1])
         out_real, out_mag = torch.split(out_tensor, [nloc, nloc], dim=1)
         if add_mag:
@@ -144,9 +142,9 @@ class SpinModel(torch.nn.Module):
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2
         if virtual_scale:
-            virtual_scale_mask = self.virtual_scale_mask
+            virtual_scale_mask = self.virtual_scale_mask.to(extended_atype.device)
         else:
-            virtual_scale_mask = self.spin_mask
+            virtual_scale_mask = self.spin_mask.to(extended_atype.device)
         atomic_mask = virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
         extended_out_real = torch.cat(
             [
