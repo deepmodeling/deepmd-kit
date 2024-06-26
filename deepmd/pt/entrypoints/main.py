@@ -209,7 +209,7 @@ class SummaryPrinter(BaseSummaryPrinter):
                 "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
             }
         else:
-            op_info = None
+            op_info = {}
         return {
             "Backend": "PyTorch",
             "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
