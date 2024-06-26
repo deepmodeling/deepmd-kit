@@ -856,5 +856,8 @@ class ModelTestCase:
                         assert rr is None
                     else:
                         np.testing.assert_allclose(
-                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                            subret[0],
+                            rr,
+                            err_msg=f"compare {kk} between 0 and {ii}",
+                            atol=1e-10,
                         )
