@@ -108,6 +108,8 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2]:
             cls.epsilon_dict["test_smooth"] = 1e-8
+            cls.rprec_dict["test_smooth"] = 5e-5
+            cls.aprec_dict["test_smooth"] = 5e-5
         if Descrpt in [DescrptDPA1]:
             cls.epsilon_dict["test_smooth"] = 1e-6
         if Descrpt in [DescrptSeT]:
@@ -186,6 +188,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         (FittingParam, Fitting) = cls.param[1]
         cls.epsilon_dict["test_smooth"] = 1e-6
         cls.aprec_dict["test_smooth"] = 5e-5
+        cls.rprec_dict["test_smooth"] = 5e-5
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
