@@ -2,6 +2,8 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
+#include <torch/csrc/jit/runtime/jit_exception.h>
+
 #include <cstdint>
 
 #include "common.h"
