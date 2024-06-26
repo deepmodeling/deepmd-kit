@@ -81,7 +81,7 @@ class PropertyFittingNet(InvarFitting):
                 OutputVariableDef(
                     self.var_name,
                     [self.dim_out],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
