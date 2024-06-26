@@ -66,8 +66,6 @@ class DPTrainTest:
         )
         trainer_finetune_empty.run()
 
-        self.tearDown()
-
     def test_trainable(self):
         fix_params = deepcopy(self.config)
         fix_params["model"]["descriptor"]["trainable"] = False
@@ -95,8 +93,6 @@ class DPTrainTest:
             torch.testing.assert_close(
                 model_dict_before_training[key], model_dict_after_training[key]
             )
-
-        self.tearDown()
 
     def tearDown(self):
         for f in os.listdir("."):
