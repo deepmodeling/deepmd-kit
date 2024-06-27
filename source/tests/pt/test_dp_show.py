@@ -149,7 +149,10 @@ class TestMultiTaskModel(unittest.TestCase):
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
         results = f.getvalue().split("\n")[:-1]
         assert "This is a multitask model" in results[-8]
-        assert "Available model branches are ['model_1', 'model_2']" in results[-7]
+        assert (
+            "Available model branches are ['model_1', 'model_2', 'RANDOM']"
+            in results[-7]
+        )
         assert "The type_map of branch model_1 is ['O', 'H', 'B']" in results[-6]
         assert "The type_map of branch model_2 is ['O', 'H', 'B']" in results[-5]
         assert (

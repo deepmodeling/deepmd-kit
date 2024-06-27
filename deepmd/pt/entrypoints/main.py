@@ -229,6 +229,10 @@ def train(FLAGS):
     shared_links = None
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
+        # handle the special key
+        assert (
+            "RANDOM" not in config["model"]["model_dict"]
+        ), "Model name can not be 'RANDOM' in multi-task mode!"
 
     # update fine-tuning config
     finetune_links = None
@@ -337,6 +341,7 @@ def show(FLAGS):
                 " The provided model does not meet this criterion."
             )
         model_branches = list(model_params["model_dict"].keys())
+        model_branches += ["RANDOM"]
         log.info(f"Available model branches are {model_branches}")
     if "type-map" in FLAGS.ATTRIBUTES:
         if model_is_multi_task:
