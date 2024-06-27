@@ -12,7 +12,7 @@
 
 using namespace deepmd;
 
-void DeepPotPT::trycatch(std::function<void()> f) {
+void DeepPotPT::translate_error(std::function<void()> f) {
   try {
     f();
     // it seems that libtorch may throw different types of exceptions which are
@@ -47,7 +47,7 @@ DeepPotPT::DeepPotPT(const std::string& model,
                      const std::string& file_content)
     : inited(false) {
   try {
-    trycatch([&] { init(model, gpu_rank, file_content); });
+    translate_error([&] { init(model, gpu_rank, file_content); });
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
     throw;
@@ -465,7 +465,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
-  trycatch([&] {
+  translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
             fparam, aparam);
   });
@@ -480,7 +480,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<float>& box,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
-  trycatch([&] {
+  translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
             fparam, aparam);
   });
@@ -498,7 +498,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const int& ago,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
-  trycatch([&] {
+  translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
             nghost, inlist, ago, fparam, aparam);
   });
@@ -516,7 +516,7 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const int& ago,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
-  trycatch([&] {
+  translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
             nghost, inlist, ago, fparam, aparam);
   });

@@ -330,11 +330,11 @@ class DeepPotPT : public DeepPotBase {
   at::Tensor firstneigh_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
   /**
-   * @brief A function to run a function with try-catch block.
+   * @brief Translate PyTorch exceptions to the DeePMD-kit exception.
    * @param[in] f The function to run.
-   * @example trycatch([&](){...});
+   * @example translate_error([&](){...});
    */
-  void trycatch(std::function<void()> f);
+  void translate_error(std::function<void()> f);
 };
 
 }  // namespace deepmd
