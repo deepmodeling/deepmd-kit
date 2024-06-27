@@ -175,7 +175,7 @@ The arguments here should be consistent with the class arguments of your new com
 The `source/tests/universal` directory provides universal test suites for different models and backends.
 The subdirectory `cases` defines fixtures for different cases of models, atomic models, descriptors, and fitting networks.
 The subdirectory `dpmodel` and `pt` are backend-specific test fixtures and suites.
-Each test suite tests APIs and whether the serialized models gives the same results as the original models.
+Each test suite tests APIs and whether the serialized models give the same results as the original models.
 Specially, the test suite for models also tests whether the model is permutation, translation, and rotation invariant, whether the model is differentiable and smooth near the cutoff radius, and whether the force is the negative gradient of the energy.
 
 When adding a new model, add the fixture to the `cases` subdiretory and then apply the test fixture in the suite of different backends.
