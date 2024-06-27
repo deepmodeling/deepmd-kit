@@ -2339,9 +2339,9 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
-    doc_profiling = "Profiling during training."
+    doc_profiling = "Export the profiling results to the Chrome JSON file for performance analysis, driven by the legacy TensorFlow profiling API or PyTorch Profiler. The output file will be saved to `profiling_file`."
     doc_profiling_file = "Output file for profiling."
-    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler to analyze performance. The log will be saved to `tensorboard_log_dir`."
+    doc_enable_profiler = "Export the profiling results to the TensorBoard log for performance analysis, driven by TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler. The log will be saved to `tensorboard_log_dir`."
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
@@ -2397,14 +2397,14 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             bool,
             optional=True,
             default=False,
-            doc=doc_only_tf_supported + doc_profiling,
+            doc=doc_profiling,
         ),
         Argument(
             "profiling_file",
             str,
             optional=True,
             default="timeline.json",
-            doc=doc_only_tf_supported + doc_profiling_file,
+            doc=doc_profiling_file,
         ),
         Argument(
             "enable_profiler",
