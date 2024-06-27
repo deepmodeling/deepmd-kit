@@ -108,10 +108,8 @@ class DipoleFitting(GeneralFitting):
         c_differentiable: bool = True,
         type_map: Optional[List[str]] = None,
         old_impl=False,
-        # not used
         seed: Optional[Union[int, List[int]]] = None,
     ):
-        # seed, uniform_seed are not included
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -143,6 +141,7 @@ class DipoleFitting(GeneralFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+            seed=seed,
         )
         self.old_impl = False
 

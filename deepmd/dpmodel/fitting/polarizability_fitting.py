@@ -114,10 +114,8 @@ class PolarFitting(GeneralFitting):
         scale: Optional[List[float]] = None,
         shift_diag: bool = True,
         type_map: Optional[List[str]] = None,
-        # not used
         seed: Optional[Union[int, List[int]]] = None,
     ):
-        # seed, uniform_seed are not included
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -167,6 +165,7 @@ class PolarFitting(GeneralFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+            seed=seed,
         )
         self.old_impl = False
 
