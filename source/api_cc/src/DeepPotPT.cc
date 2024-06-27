@@ -19,13 +19,13 @@ void DeepPotPT::trycatch(std::function<void()> f) {
     // inherbited from different base classes
     // https://github.com/pytorch/pytorch/blob/13316a8d4642454012d34da0d742f1ba93fc0667/torch/csrc/jit/runtime/interpreter.cpp#L924-L939
   } catch (const c10::Error& e) {
-    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend error:" +
+    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend error: " +
                                    std::string(e.what()));
   } catch (const torch::jit::JITException& e) {
-    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend JIT error:" +
+    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend JIT error: " +
                                    std::string(e.what()));
   } catch (const std::runtime_error& e) {
-    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend error:" +
+    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend error: " +
                                    std::string(e.what()));
   }
 }
