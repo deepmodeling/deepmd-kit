@@ -18,11 +18,11 @@ from ....consistent.common import (
 from ....seed import (
     GLOBAL_SEED,
 )
+from ....utils import (
+    TEST_DEVICE,
+)
 from ...common.cases.fitting.fitting import (
     FittingTest,
-)
-from ...pt.utils.utils import (
-    TEST_DEVICE,
 )
 from ..backend import (
     DPTestCase,

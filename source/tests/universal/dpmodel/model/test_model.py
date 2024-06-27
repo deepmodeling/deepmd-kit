@@ -23,12 +23,12 @@ from deepmd.utils.spin import (
 from ....consistent.common import (
     parameterized,
 )
+from ....utils import (
+    TEST_DEVICE,
+)
 from ...common.cases.model.model import (
     EnerModelTest,
     SpinEnerModelTest,
-)
-from ...pt.utils.utils import (
-    TEST_DEVICE,
 )
 from ..backend import (
     DPTestCase,

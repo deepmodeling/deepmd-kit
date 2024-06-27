@@ -24,6 +24,9 @@ from deepmd.dpmodel.fitting import (
 from ....consistent.common import (
     parameterized,
 )
+from ....utils import (
+    TEST_DEVICE,
+)
 from ...common.cases.atomic_model.atomic_model import (
     DipoleAtomicModelTest,
     DosAtomicModelTest,
@@ -47,9 +50,6 @@ from ...dpmodel.descriptor.test_descriptor import (
 )
 from ...dpmodel.model.test_model import (
     skip_model_tests,
-)
-from ...pt.utils.utils import (
-    TEST_DEVICE,
 )
 from ..backend import (
     DPTestCase,

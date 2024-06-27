@@ -23,7 +23,7 @@ from deepmd.dpmodel.utils.nlist import (
 from .....seed import (
     GLOBAL_SEED,
 )
-from ....pt.utils.utils import (
+from .....utils import (
     TEST_DEVICE,
 )
 

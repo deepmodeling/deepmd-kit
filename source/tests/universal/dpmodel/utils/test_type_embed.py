@@ -5,11 +5,11 @@ from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
 )
 
+from ....utils import (
+    TEST_DEVICE,
+)
 from ...common.cases.utils.type_embed import (
     TypeEmbdTest,
-)
-from ...pt.utils.utils import (
-    TEST_DEVICE,
 )
 from ..backend import (
     DPTestCase,

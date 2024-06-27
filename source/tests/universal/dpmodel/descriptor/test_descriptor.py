@@ -24,11 +24,11 @@ from ....consistent.common import (
 from ....seed import (
     GLOBAL_SEED,
 )
+from ....utils import (
+    TEST_DEVICE,
+)
 from ...common.cases.descriptor.descriptor import (
     DescriptorTest,
-)
-from ...pt.utils.utils import (
-    TEST_DEVICE,
 )
 from ..backend import (
     DPTestCase,
