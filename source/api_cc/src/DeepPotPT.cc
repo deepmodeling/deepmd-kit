@@ -151,6 +151,25 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
   int nframes = 1;
+  // TODO: dpa2 model may need a fake communication op to deal with nloc == 0.
+  // this should be fixed after wrapping comm op as a pure c++ implementation.
+  if (nloc == 0) {
+    // no backward map needed
+    ener.resize(nframes);
+    // dforce of size nall * 3
+    force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
+    fill(force.begin(), force.end(), (VALUETYPE)0.0);
+    // dvirial of size 9
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
+    // datom_energy_ of size nall
+    atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
+    fill(atom_energy.begin(), atom_energy.end(), (VALUETYPE)0.0);
+    // datom_virial_ of size nall * 9
+    atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+    fill(atom_virial.begin(), atom_virial.end(), (VALUETYPE)0.0);
+    return;
+  }
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, nall_real, 3}, options)
@@ -319,6 +338,23 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   int nframes = 1;
+  if (natoms == 0) {
+    // no backward map needed
+    ener.resize(nframes);
+    // dforce of size nall * 3
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    fill(force.begin(), force.end(), (VALUETYPE)0.0);
+    // dvirial of size 9
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
+    // datom_energy_ of size nall
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    fill(atom_energy.begin(), atom_energy.end(), (VALUETYPE)0.0);
+    // datom_virial_ of size nall * 9
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
+    fill(atom_virial.begin(), atom_virial.end(), (VALUETYPE)0.0);
+    return;
+  }
   std::vector<torch::jit::IValue> inputs;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, natoms, 3}, options)
