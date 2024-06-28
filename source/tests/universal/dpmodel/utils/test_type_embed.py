@@ -5,6 +5,9 @@ from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
 )
 
+from ....utils import (
+    TEST_DEVICE,
+)
 from ...common.cases.utils.type_embed import (
     TypeEmbdTest,
 )
@@ -13,6 +16,7 @@ from ..backend import (
 )
 
 
+@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
 class TestTypeEmbd(unittest.TestCase, TypeEmbdTest, DPTestCase):
     def setUp(self):
         TypeEmbdTest.setUp(self)

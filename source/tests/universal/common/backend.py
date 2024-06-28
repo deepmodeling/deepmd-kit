@@ -22,6 +22,10 @@ class BackendTestCase(ABC):
     def forward_wrapper(self, x):
         pass
 
+    @abstractmethod
+    def forward_wrapper_cpu_ref(self, module):
+        pass
+
     @classmethod
     @abstractmethod
     def convert_to_numpy(cls, xx):
