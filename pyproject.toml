@@ -48,6 +48,7 @@ dependencies = [
     'packaging',
     'ml_dtypes',
     'mendeleev',
+    'array-api-compat',
 ]
 requires-python = ">=3.8"
 keywords = ["deepmd"]
@@ -79,6 +80,7 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
+    "array-api-strict>=2",
 ]
 docs = [
     "sphinx>=3.1.1",
