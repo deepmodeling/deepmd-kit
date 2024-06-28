@@ -241,9 +241,8 @@ def train(FLAGS):
         )
 
     # argcheck
-    if not multi_task:
-        config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-        config = normalize(config)
+    config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
+    config = normalize(config, multi_task=multi_task)
 
     # do neighbor stat
     min_nbor_dist = None
