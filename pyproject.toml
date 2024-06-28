@@ -80,7 +80,7 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
-    "array-api-strict>=2",
+    "array-api-strict>=2;python_version>=3.9",
 ]
 docs = [
     "sphinx>=3.1.1",
