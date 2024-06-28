@@ -49,7 +49,8 @@ class DPPolarAtomicModel(DPAtomicModel):
 
                 # (nframes, nloc, 1)
                 modified_bias = (
-                    modified_bias.unsqueeze(-1) * self.fitting_net.scale[atype]
+                    modified_bias.unsqueeze(-1)
+                    * (self.fitting_net.scale.to(atype.device))[atype]
                 )
 
                 eye = torch.eye(3, dtype=dtype, device=device)

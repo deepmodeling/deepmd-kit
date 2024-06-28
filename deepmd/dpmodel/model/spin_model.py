@@ -10,15 +10,21 @@ import numpy as np
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
 )
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
 from deepmd.dpmodel.model.make_model import (
     make_model,
+)
+from deepmd.dpmodel.output_def import (
+    ModelOutputDef,
 )
 from deepmd.utils.spin import (
     Spin,
 )
 
 
-class SpinModel:
+class SpinModel(NativeOP):
     """A spin model wrapper, with spin input preprocess and output split."""
 
     def __init__(
@@ -152,15 +158,20 @@ class SpinModel:
         nlist_shift = nlist + nall
         nlist[~nlist_mask] = -1
         nlist_shift[~nlist_mask] = -1
-        self_spin = np.arange(0, nloc, dtype=nlist.dtype) + nall
-        self_spin = self_spin.reshape(1, -1, 1).repeat(nframes, axis=0)
-        # self spin + real neighbor + virtual neighbor
-        # nf x nloc x (1 + nnei + nnei)
-        extended_nlist = np.concatenate([self_spin, nlist, nlist_shift], axis=-1)
-        # nf x (nloc + nloc) x (1 + nnei + nnei)
-        extended_nlist = np.concatenate(
-            [extended_nlist, -1 * np.ones_like(extended_nlist)], axis=-2
+        self_real = (
+            np.arange(0, nloc, dtype=nlist.dtype)
+            .reshape(1, -1, 1)
+            .repeat(nframes, axis=0)
         )
+        self_spin = self_real + nall
+        # real atom's neighbors: self spin + real neighbor + virtual neighbor
+        # nf x nloc x (1 + nnei + nnei)
+        real_nlist = np.concatenate([self_spin, nlist, nlist_shift], axis=-1)
+        # spin atom's neighbors: real + real neighbor + virtual neighbor
+        # nf x nloc x (1 + nnei + nnei)
+        spin_nlist = np.concatenate([self_real, nlist, nlist_shift], axis=-1)
+        # nf x (nloc + nloc) x (1 + nnei + nnei)
+        extended_nlist = np.concatenate([real_nlist, spin_nlist], axis=-2)
         # update the index for switch
         first_part_index = (nloc <= extended_nlist) & (extended_nlist < nall)
         second_part_index = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
@@ -187,11 +198,39 @@ class SpinModel:
         extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
         return extended_tensor_updated.reshape(out_shape)
 
+    @staticmethod
+    def expand_aparam(aparam, nloc: int):
+        """Expand the atom parameters for virtual atoms if necessary."""
+        nframes, natom, numb_aparam = aparam.shape
+        if natom == nloc:  # good
+            pass
+        elif natom < nloc:  # for spin with virtual atoms
+            aparam = np.concatenate(
+                [
+                    aparam,
+                    np.zeros(
+                        [nframes, nloc - natom, numb_aparam],
+                        dtype=aparam.dtype,
+                    ),
+                ],
+                axis=1,
+            )
+        else:
+            raise ValueError(
+                f"get an input aparam with {aparam.shape[1]} inputs, ",
+                f"which is larger than {nloc} atoms.",
+            )
+        return aparam
+
     def get_type_map(self) -> List[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
         ntypes = len(tmap) // 2  # ignore the virtual type
         return tmap[:ntypes]
+
+    def get_ntypes(self):
+        """Returns the number of element types."""
+        return len(self.get_type_map())
 
     def get_rcut(self):
         """Get the cut-off radius."""
@@ -250,6 +289,16 @@ class SpinModel:
     def has_spin() -> bool:
         """Returns whether it has spin input and output."""
         return True
+
+    def model_output_def(self):
+        """Get the output def for the model."""
+        model_output_type = self.backbone_model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        var_name = model_output_type[0]
+        backbone_model_atomic_output_def = self.backbone_model.atomic_output_def()
+        backbone_model_atomic_output_def[var_name].magnetic = True
+        return ModelOutputDef(backbone_model_atomic_output_def)
 
     def __getattr__(self, name):
         """Get attribute from the wrapped model."""
@@ -313,8 +362,12 @@ class SpinModel:
             The keys are defined by the `ModelOutputDef`.
 
         """
-        nframes, nloc = coord.shape[:2]
+        nframes, nloc = atype.shape[:2]
+        coord = coord.reshape(nframes, nloc, 3)
+        spin = spin.reshape(nframes, nloc, 3)
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, nloc * 2)
         model_predict = self.backbone_model.call(
             coord_updated,
             atype_updated,
@@ -383,6 +436,8 @@ class SpinModel:
         ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
+        if aparam is not None:
+            aparam = self.expand_aparam(aparam, nloc * 2)
         model_predict = self.backbone_model.call_lower(
             extended_coord_updated,
             extended_atype_updated,
@@ -401,3 +456,5 @@ class SpinModel:
         )[0]
         # for now omit the grad output
         return model_predict
+
+    forward_lower = call_lower

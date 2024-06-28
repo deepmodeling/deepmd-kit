@@ -63,7 +63,7 @@ class AtomExcludeMask(torch.nn.Module):
 
         """
         nf, natom = atype.shape
-        return self.type_mask[atype].view(nf, natom)
+        return self.type_mask[atype].view(nf, natom).to(atype.device)
 
 
 class PairExcludeMask(torch.nn.Module):
@@ -150,5 +150,5 @@ class PairExcludeMask(torch.nn.Module):
         type_ij = type_i[:, :, None] + type_j
         # nf x (nloc x nnei)
         type_ij = type_ij.view(nf, nloc * nnei)
-        mask = self.type_mask[type_ij].view(nf, nloc, nnei)
+        mask = self.type_mask[type_ij].view(nf, nloc, nnei).to(atype_ext.device)
         return mask
