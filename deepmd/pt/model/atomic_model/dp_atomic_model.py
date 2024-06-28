@@ -270,6 +270,3 @@ class DPAtomicModel(BaseAtomicModel):
         """
         return False
 
-    def get_intensive(self) -> bool:
-        """Get whether the property is intensive."""
-        return False
