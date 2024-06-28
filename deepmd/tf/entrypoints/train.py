@@ -65,6 +65,7 @@ def train(
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
     finetune: Optional[str] = None,
+    use_pretrain_script: bool = False,
     **kwargs,
 ):
     """Run DeePMD model training.
@@ -93,6 +94,9 @@ def train(
         skip checking neighbor statistics
     finetune : Optional[str]
         path to pretrained model or None
+    use_pretrain_script : bool
+        Whether to use model script in pretrained model when doing init-model or init-frz-model.
+        Note that this option is true and unchangeable for fine-tuning.
     **kwargs
         additional arguments
 
@@ -122,6 +126,41 @@ def train(
         jdata, origin_type_map = replace_model_params_with_pretrained_model(
             jdata, run_opt.finetune
         )
+
+    if (
+        run_opt.init_model is not None or run_opt.init_frz_model is not None
+    ) and use_pretrain_script:
+        from deepmd.tf.utils.errors import (
+            GraphWithoutTensorError,
+        )
+        from deepmd.tf.utils.graph import (
+            get_tensor_by_name,
+            get_tensor_by_name_from_graph,
+        )
+
+        err_msg = (
+            f"The input model: {run_opt.init_model if run_opt.init_model is not None else run_opt.init_frz_model} has no training script, "
+            f"Please use the model pretrained with v2.1.5 or higher version of DeePMD-kit."
+        )
+        if run_opt.init_model is not None:
+            with tf.Graph().as_default() as graph:
+                tf.train.import_meta_graph(
+                    f"{run_opt.init_model}.meta", clear_devices=True
+                )
+            try:
+                t_training_script = get_tensor_by_name_from_graph(
+                    graph, "train_attr/training_script"
+                )
+            except GraphWithoutTensorError as e:
+                raise RuntimeError(err_msg) from e
+        else:
+            try:
+                t_training_script = get_tensor_by_name(
+                    run_opt.init_frz_model, "train_attr/training_script"
+                )
+            except GraphWithoutTensorError as e:
+                raise RuntimeError(err_msg) from e
+        jdata["model"] = json.loads(t_training_script)["model"]
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
