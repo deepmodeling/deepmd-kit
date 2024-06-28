@@ -378,7 +378,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
 
     set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
     log.debug("Log handles were successfully set")
-    log.info("DeepMD version: %s", __version__)
+    log.info("DeePMD version: %s", __version__)
 
     if FLAGS.command == "train":
         train(FLAGS)
