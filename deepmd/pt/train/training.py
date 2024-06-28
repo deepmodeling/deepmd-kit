@@ -315,7 +315,7 @@ class Trainer:
             elif loss_type == "property":
                 task_dim = _model.get_task_dim()
                 loss_params["task_dim"] = task_dim
-                loss_params["intensive"] =  _model.get_intensive()
+                loss_params["intensive"] = _model.get_intensive()
                 return PropertyLoss(**loss_params)
             else:
                 raise NotImplementedError
