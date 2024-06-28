@@ -231,9 +231,10 @@ class OutputVariableDef:
     @property
     def size(self):
         return self.output_size
-    
+
     def get_intensive(self) -> bool:
         return self.intensive
+
 
 class FittingOutputDef:
     """Defines the shapes and other properties of the fitting network outputs.

@@ -24,9 +24,6 @@ from deepmd.infer.deep_dipole import (
 from deepmd.infer.deep_dos import (
     DeepDOS,
 )
-from deepmd.infer.deep_property import (
-    DeepProperty,
-)
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
@@ -36,6 +33,9 @@ from deepmd.infer.deep_polar import (
 )
 from deepmd.infer.deep_pot import (
     DeepPot,
+)
+from deepmd.infer.deep_property import (
+    DeepProperty,
 )
 from deepmd.infer.deep_wfc import (
     DeepWFC,
@@ -827,7 +827,7 @@ def test_property(
         atomic=has_atom_property,
         mixed_type=mixed_type,
     )
-    
+
     property = ret[0]
 
     property = property.reshape([numb_test, dp.task_dim])

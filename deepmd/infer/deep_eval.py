@@ -171,7 +171,7 @@ class DeepEvalBackend(ABC):
 
     @abstractmethod
     def get_intensive(self) -> int:
-        """sss"""
+        """Sss"""
 
     def eval_descriptor(
         self,

@@ -66,9 +66,9 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [True, False],
             [None, self.scale],
             [
-                np.array([[1,2,3,4,5],[6,7,8,9,10]]),
-                np.array([[11,12,13,4,15], [16,17,18,9,20]])
-            ]
+                np.array([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]]),
+                np.array([[11, 12, 13, 4, 15], [16, 17, 18, 9, 20]]),
+            ],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
@@ -79,7 +79,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 mixed_types=mixed_types,
                 fit_diag=fit_diag,
                 scale=scale,
-                bias_atom_p=bias_atom_p
+                bias_atom_p=bias_atom_p,
             ).to(env.DEVICE)
 
             ft1 = DPProperFittingNet.deserialize(ft0.serialize())

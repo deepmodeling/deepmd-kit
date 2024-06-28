@@ -24,9 +24,6 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.pt.utils.utils import (
-    to_numpy_array,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )

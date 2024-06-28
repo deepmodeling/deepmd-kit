@@ -138,7 +138,7 @@ class DeepProperty(DeepEval):
 
     def get_task_dim(self) -> int:
         return self.deep_eval.get_task_dim()
-    
+
     def get_intensive(self) -> bool:
         return self.deep_eval.get_intensive()
 
