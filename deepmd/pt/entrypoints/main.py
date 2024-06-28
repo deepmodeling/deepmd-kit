@@ -342,7 +342,10 @@ def show(FLAGS):
             )
         model_branches = list(model_params["model_dict"].keys())
         model_branches += ["RANDOM"]
-        log.info(f"Available model branches are {model_branches}")
+        log.info(
+            f"Available model branches are {model_branches}, "
+            f"where 'RANDOM' means using a randomly initialized fitting net."
+        )
     if "type-map" in FLAGS.ATTRIBUTES:
         if model_is_multi_task:
             model_branches = list(model_params["model_dict"].keys())

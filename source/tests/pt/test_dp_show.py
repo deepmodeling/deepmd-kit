@@ -150,7 +150,8 @@ class TestMultiTaskModel(unittest.TestCase):
         results = f.getvalue().split("\n")[:-1]
         assert "This is a multitask model" in results[-8]
         assert (
-            "Available model branches are ['model_1', 'model_2', 'RANDOM']"
+            "Available model branches are ['model_1', 'model_2', 'RANDOM'], "
+            "where 'RANDOM' means using a randomly initialized fitting net."
             in results[-7]
         )
         assert "The type_map of branch model_1 is ['O', 'H', 'B']" in results[-6]
