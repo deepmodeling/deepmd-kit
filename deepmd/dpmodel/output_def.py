@@ -186,6 +186,8 @@ class OutputVariableDef:
           If hessian is requred
     magnetic : bool
           If the derivatives of variable have magnetic parts.
+    intensive : bool
+          It indicates whether the fitting property is intensive or extensive.
     """
 
     def __init__(
@@ -199,6 +201,7 @@ class OutputVariableDef:
         category: int = OutputVariableCategory.OUT.value,
         r_hessian: bool = False,
         magnetic: bool = False,
+        intensive: bool = False,
     ):
         self.name = name
         self.shape = list(shape)
@@ -218,6 +221,7 @@ class OutputVariableDef:
         self.category = category
         self.r_hessian = r_hessian
         self.magnetic = magnetic
+        self.intensive = intensive
         if self.r_hessian:
             if not self.reducible:
                 raise ValueError("only reducible variable can calculate hessian")
@@ -227,7 +231,9 @@ class OutputVariableDef:
     @property
     def size(self):
         return self.output_size
-
+    
+    def get_intensive(self) -> bool:
+        return self.intensive
 
 class FittingOutputDef:
     """Defines the shapes and other properties of the fitting network outputs.

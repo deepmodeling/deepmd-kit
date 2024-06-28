@@ -167,6 +167,9 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.model["Default"].get_dim_aparam()
 
+    def get_intensive(self) -> bool:
+        return self.dp.model["Default"].get_intensive()
+
     @property
     def model_type(self) -> Type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""

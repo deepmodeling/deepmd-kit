@@ -24,6 +24,9 @@ from deepmd.infer.deep_dipole import (
 from deepmd.infer.deep_dos import (
     DeepDOS,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
@@ -153,6 +156,16 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
+        elif isinstance(dp, DeepProperty):
+            err = test_property(
+                dp,
+                data,
+                system,
+                numb_test,
+                detail_file,
+                atomic,
+                append_detail=(cc != 0),
+            )
         elif isinstance(dp, DeepDipole):
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif isinstance(dp, DeepPolar):
@@ -179,6 +192,8 @@ def test(
             print_ener_sys_avg(avg_err)
         elif isinstance(dp, DeepDOS):
             print_dos_sys_avg(avg_err)
+        elif isinstance(dp, DeepProperty):
+            print_property_sys_avg(avg_err)
         elif isinstance(dp, DeepDipole):
             print_dipole_sys_avg(avg_err)
         elif isinstance(dp, DeepPolar):
@@ -733,6 +748,158 @@ def print_dos_sys_avg(avg: Dict[str, float]):
     log.info(f"DOS RMSE           : {avg['rmse_dos']:e} Occupation/eV")
     log.info(f"DOS MAE/Natoms     : {avg['mae_dosa']:e} Occupation/eV")
     log.info(f"DOS RMSE/Natoms    : {avg['rmse_dosa']:e} Occupation/eV")
+
+
+def test_property(
+    dp: "DeepProperty",
+    data: DeepmdData,
+    system: str,
+    numb_test: int,
+    detail_file: Optional[str],
+    has_atom_property: bool,
+    append_detail: bool = False,
+) -> Tuple[List[np.ndarray], List[int]]:
+    """Test Property type model.
+
+    Parameters
+    ----------
+    dp : DeepProperty
+        instance of deep potential
+    data : DeepmdData
+        data container object
+    system : str
+        system directory
+    numb_test : int
+        munber of tests to do
+    detail_file : Optional[str]
+        file where test details will be output
+    has_atom_property : bool
+        whether per atom quantities should be computed
+    append_detail : bool, optional
+        if true append output detail file, by default False
+
+    Returns
+    -------
+    Tuple[List[np.ndarray], List[int]]
+        arrays with results and their shapes
+    """
+    data.add("property", dp.task_dim, atomic=False, must=True, high_prec=True)
+    if has_atom_property:
+        data.add("atom_property", dp.task_dim, atomic=True, must=False, high_prec=True)
+
+    if dp.get_dim_fparam() > 0:
+        data.add(
+            "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False
+        )
+    if dp.get_dim_aparam() > 0:
+        data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
+
+    test_data = data.get_test()
+    mixed_type = data.mixed_type
+    natoms = len(test_data["type"][0])
+    nframes = test_data["box"].shape[0]
+    numb_test = min(nframes, numb_test)
+
+    coord = test_data["coord"][:numb_test].reshape([numb_test, -1])
+    box = test_data["box"][:numb_test]
+
+    if not data.pbc:
+        box = None
+    if mixed_type:
+        atype = test_data["type"][:numb_test].reshape([numb_test, -1])
+    else:
+        atype = test_data["type"][0]
+    if dp.get_dim_fparam() > 0:
+        fparam = test_data["fparam"][:numb_test]
+    else:
+        fparam = None
+    if dp.get_dim_aparam() > 0:
+        aparam = test_data["aparam"][:numb_test]
+    else:
+        aparam = None
+
+    ret = dp.eval(
+        coord,
+        box,
+        atype,
+        fparam=fparam,
+        aparam=aparam,
+        atomic=has_atom_property,
+        mixed_type=mixed_type,
+    )
+    
+    property = ret[0]
+
+    property = property.reshape([numb_test, dp.task_dim])
+
+    if has_atom_property:
+        aproperty = ret[1]
+        aproperty = aproperty.reshape([numb_test, natoms * dp.task_dim])
+
+    diff_property = property - test_data["property"][:numb_test]
+    mae_property = mae(diff_property)
+    rmse_property = rmse(diff_property)
+
+    if has_atom_property:
+        diff_aproperty = aproperty - test_data["atom_property"][:numb_test]
+        mae_aproperty = mae(diff_aproperty)
+        rmse_aproperty = rmse(diff_aproperty)
+
+    log.info(f"# number of test data : {numb_test:d} ")
+
+    log.info(f"PROPERTY MAE            : {mae_property:e} Occupation/eV")
+    log.info(f"PROPERTY RMSE           : {rmse_property:e} Occupation/eV")
+
+    if has_atom_property:
+        log.info(f"Atomic PROPERTY MAE     : {mae_aproperty:e} Occupation/eV")
+        log.info(f"Atomic PROPERTY RMSE    : {rmse_aproperty:e} Occupation/eV")
+
+    if detail_file is not None:
+        detail_path = Path(detail_file)
+
+        for ii in range(numb_test):
+            test_out = test_data["property"][ii].reshape(-1, 1)
+            pred_out = property[ii].reshape(-1, 1)
+
+            frame_output = np.hstack((test_out, pred_out))
+
+            save_txt_file(
+                detail_path.with_suffix(".property.out.%.d" % ii),
+                frame_output,
+                header="%s - %.d: data_property pred_property" % (system, ii),
+                append=append_detail,
+            )
+
+        if has_atom_property:
+            for ii in range(numb_test):
+                test_out = test_data["atom_property"][ii].reshape(-1, 1)
+                pred_out = aproperty[ii].reshape(-1, 1)
+
+                frame_output = np.hstack((test_out, pred_out))
+
+                save_txt_file(
+                    detail_path.with_suffix(".aproperty.out.%.d" % ii),
+                    frame_output,
+                    header="%s - %.d: data_aproperty pred_aproperty" % (system, ii),
+                    append=append_detail,
+                )
+
+    return {
+        "mae_property": (mae_property, property.size),
+        "rmse_property": (rmse_property, property.size),
+    }
+
+
+def print_property_sys_avg(avg: Dict[str, float]):
+    """Print errors summary for Property type potential.
+
+    Parameters
+    ----------
+    avg : np.ndarray
+        array with summaries
+    """
+    log.info(f"PROPERTY MAE            : {avg['mae_property']:e} Occupation/eV")
+    log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} Occupation/eV")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):

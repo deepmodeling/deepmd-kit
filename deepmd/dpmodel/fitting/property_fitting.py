@@ -85,6 +85,5 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
         }
-        dd["@variables"]["bias_atom_e"] = self.bias_atom_e
 
         return dd

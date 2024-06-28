@@ -84,6 +84,7 @@ class PropertyFittingNet(InvarFitting):
                     reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
+                    intensive=self.intensive,
                 ),
             ]
         )
@@ -105,7 +106,6 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
         }
-        dd["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
 
         return dd
 

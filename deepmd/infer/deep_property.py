@@ -49,12 +49,16 @@ class DeepProperty(DeepEval):
                     OutputVariableDef(
                         "property",
                         shape=[-1],
-                        reduciable=True,
+                        reducible=True,
                         atomic=True,
                     ),
                 ]
             )
         )
+
+    def change_output_def(self):
+        self.output_def["property"].shape = self.task_dim
+        self.output_def["property"].intensive = self.get_intensive()
 
     @property
     def task_dim(self) -> int:
@@ -100,6 +104,7 @@ class DeepProperty(DeepEval):
         property
             The properties of the system, in shape (nframes, num_tasks).
         """
+        self.change_output_def()
         (
             coords,
             cells,
@@ -133,6 +138,9 @@ class DeepProperty(DeepEval):
 
     def get_task_dim(self) -> int:
         return self.deep_eval.get_task_dim()
+    
+    def get_intensive(self) -> bool:
+        return self.deep_eval.get_intensive()
 
 
 __all__ = ["DeepProperty"]

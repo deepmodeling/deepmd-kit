@@ -55,7 +55,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
         model_predict["property"] = model_ret["property_redu"]
-        if self.atomic_model.fitting_net.intensive:
+        if self.get_intensive():
             natoms = model_predict["atom_property"].shape[1]
             model_predict["property"] = model_ret["property_redu"] / natoms
         if "mask" in model_ret:
@@ -66,6 +66,11 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def get_task_dim(self) -> int:
         """Get the output dimension of PropertyFittingNet."""
         return self.get_fitting_net().dim_out
+
+    @torch.jit.export
+    def get_intensive(self) -> bool:
+        """Whether the output is intensive"""
+        return self.model_output_def()["property"].get_intensive()
 
     @torch.jit.export
     def forward_lower(
@@ -92,7 +97,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         model_predict = {}
         model_predict["atom_property"] = model_ret["property"]
         model_predict["property"] = model_ret["property_redu"]
-        if self.atomic_model.fitting_net.intensive:
+        if self.get_intensive():
             natoms = model_predict["atom_property"].shape[1]
             model_predict["property"] = model_ret["property_redu"] / natoms
         if "mask" in model_ret:

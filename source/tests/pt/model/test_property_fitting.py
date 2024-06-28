@@ -59,12 +59,16 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for mixed_types, nfp, nap, fit_diag, scale in itertools.product(
+        for mixed_types, nfp, nap, fit_diag, scale, bias_atom_p in itertools.product(
             [True, False],
             [0, 3],
             [0, 4],
             [True, False],
             [None, self.scale],
+            [
+                np.array([[1,2,3,4,5],[6,7,8,9,10]]),
+                np.array([[11,12,13,4,15], [16,17,18,9,20]])
+            ]
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
@@ -75,6 +79,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 mixed_types=mixed_types,
                 fit_diag=fit_diag,
                 scale=scale,
+                bias_atom_p=bias_atom_p
             ).to(env.DEVICE)
 
             ft1 = DPProperFittingNet.deserialize(ft0.serialize())
@@ -325,6 +330,7 @@ class TestPropertyModel(unittest.TestCase):
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=True,
+            intensive=True,
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
         self.model = PropertyModel(self.dd0, self.ft0, self.type_mapping)

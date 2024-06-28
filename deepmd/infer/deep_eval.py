@@ -169,6 +169,10 @@ class DeepEvalBackend(ABC):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
 
+    @abstractmethod
+    def get_intensive(self) -> int:
+        """sss"""
+
     def eval_descriptor(
         self,
         coords: np.ndarray,
