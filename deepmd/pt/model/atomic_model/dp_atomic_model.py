@@ -269,3 +269,6 @@ class DPAtomicModel(BaseAtomicModel):
         If False, the shape is (nframes, nloc, ndim).
         """
         return False
+
+    def get_intensive(self) -> bool:
+        return False
