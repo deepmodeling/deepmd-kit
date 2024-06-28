@@ -224,12 +224,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         ener_list = []
 
         for i, model in enumerate(self.models):
-            mapping = self.mapping_list[i]
+            type_map_model = self.mapping_list[i].to(extended_atype.device)
             # apply bias to each individual model
             ener_list.append(
                 model.forward_common_atomic(
                     extended_coord,
-                    mapping[extended_atype],
+                    type_map_model[extended_atype],
                     nlists_[i],
                     mapping,
                     fparam,
@@ -239,7 +239,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         fit_ret = {
-            "energy": torch.sum(torch.stack(ener_list) * torch.stack(weights), dim=0),
+            "energy": torch.sum(
+                torch.stack(ener_list) * torch.stack(weights).to(extended_atype.device),
+                dim=0,
+            ),
         }  # (nframes, nloc, 1)
         return fit_ret
 

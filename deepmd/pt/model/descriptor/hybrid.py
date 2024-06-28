@@ -43,6 +43,8 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         The descriptor can be either an object or a dictionary.
     """
 
+    nlist_cut_idx: List[torch.Tensor]
+
     def __init__(
         self,
         list: List[Union[BaseDescriptor, Dict[str, Any]]],
@@ -278,11 +280,13 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         for ii, descrpt in enumerate(self.descrpt_list):
             # cut the nlist to the correct length
             if self.mixed_types() == descrpt.mixed_types():
-                nl = nlist[:, :, self.nlist_cut_idx[ii]]
+                nl = nlist[:, :, self.nlist_cut_idx[ii].to(atype_ext.device)]
             else:
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
-                nl = nl_distinguish_types[:, :, self.nlist_cut_idx[ii]]
+                nl = nl_distinguish_types[
+                    :, :, self.nlist_cut_idx[ii].to(atype_ext.device)
+                ]
             odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
             out_descriptor.append(odescriptor)
             if gr is not None:
