@@ -69,7 +69,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
 
     @torch.jit.export
     def get_intensive(self) -> bool:
-        """Whether the output is intensive"""
+        """Get whether the property is intensive."""
         return self.model_output_def()["property"].get_intensive()
 
     @torch.jit.export

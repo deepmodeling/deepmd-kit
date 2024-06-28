@@ -233,6 +233,7 @@ class OutputVariableDef:
         return self.output_size
 
     def get_intensive(self) -> bool:
+        """Get whether the property is intensive."""
         return self.intensive
 
 

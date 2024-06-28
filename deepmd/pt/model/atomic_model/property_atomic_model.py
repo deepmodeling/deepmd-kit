@@ -14,4 +14,5 @@ class DPPropertyAtomicModel(DPAtomicModel):
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def get_intensive(self) -> bool:
+        """Get whether the property is intensive."""
         return self.atomic_output_def()["property"].get_intensive()

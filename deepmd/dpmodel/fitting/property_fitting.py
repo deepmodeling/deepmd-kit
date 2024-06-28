@@ -66,7 +66,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("dim_out")
         data.pop("var_name")
         data.pop("tot_ener_zero")

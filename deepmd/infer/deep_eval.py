@@ -171,7 +171,7 @@ class DeepEvalBackend(ABC):
 
     @abstractmethod
     def get_intensive(self) -> int:
-        """Sss"""
+        """Get whether the property is intensive."""
 
     def eval_descriptor(
         self,

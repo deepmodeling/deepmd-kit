@@ -240,7 +240,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    intensive: Optional[bool] = False,
+    intensive: bool = False,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.

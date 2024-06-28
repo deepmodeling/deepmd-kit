@@ -313,9 +313,9 @@ class Trainer:
                 loss_params["tensor_name"] = label_name
                 return TensorLoss(**loss_params)
             elif loss_type == "property":
-                task_dim = _model.model_output_def()["property"].output_size
+                task_dim = _model.get_task_dim()
                 loss_params["task_dim"] = task_dim
-                loss_params["intensive"] = _model.atomic_model.fitting_net.intensive
+                loss_params["intensive"] =  _model.get_intensive()
                 return PropertyLoss(**loss_params)
             else:
                 raise NotImplementedError
