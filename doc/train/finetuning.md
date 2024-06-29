@@ -68,9 +68,12 @@ The command for this operation is:
 $ dp --pt train input.json --finetune pretrained.pt
 ```
 
-:::{note}
-We do not support fine-tuning from a randomly initialized fitting net in this case, which is the same as implementations in TensorFlow.
-:::
+In this case, it is important to note that the fitting net weights, except the energy bias, will be automatically set to those in the pre-trained model. This default setting is consistent with the implementations in TensorFlow.
+If you wish to conduct fine-tuning using a randomly initialized fitting net in this scenario, you can manually adjust the `--model-branch` parameter to "RANDOM":
+
+```bash
+$ dp --pt train input.json --finetune pretrained.pt --model-branch RANDOM
+```
 
 The model section in input.json **must be the same as that in the pretrained model**.
 If you do not know the model params in the pretrained model, you can add `--use-pretrain-script` in the fine-tuning command:
@@ -91,9 +94,9 @@ The model section will be overwritten (except the `type_map` subsection) by that
 
 #### Fine-tuning from a multi-task pre-trained model
 
-Additionally, within the PyTorch implementation and leveraging the flexibility offered by the framework and the multi-task training capabilities provided by DPA2,
+Additionally, within the PyTorch implementation and leveraging the flexibility offered by the framework and the multi-task training process proposed in DPA2 [paper](https://arxiv.org/abs/2312.15492),
 we also support more general multitask pre-trained models, which includes multiple datasets for pre-training. These pre-training datasets share a common descriptor while maintaining their individual fitting nets,
-as detailed in the DPA2 [paper](https://arxiv.org/abs/2312.15492).
+as detailed in the paper above.
 
 For fine-tuning using this multitask pre-trained model (`multitask_pretrained.pt`),
 one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask_pretrained.pt` for fine-tuning with the following command:
@@ -112,7 +115,7 @@ $ dp --pt show multitask_pretrained.pt model-branch
 :::
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
-If --model-branch is not set, a randomly initialized fitting net will be used.
+If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
 
 ### Multi-task fine-tuning
 

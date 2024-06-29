@@ -718,7 +718,7 @@ class TypeEmbedNetConsistent(nn.Module):
             )
         else:
             assert self.econf_tebd is not None
-            embed = self.embedding_net(self.econf_tebd)
+            embed = self.embedding_net(self.econf_tebd.to(device))
         if self.padding:
             embed = torch.cat(
                 [embed, torch.zeros(1, embed.shape[1], dtype=self.prec, device=device)]

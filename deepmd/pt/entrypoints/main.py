@@ -23,6 +23,9 @@ from torch.distributed.elastic.multiprocessing.errors import (
 from deepmd import (
     __version__,
 )
+from deepmd.env import (
+    GLOBAL_CONFIG,
+)
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
@@ -199,10 +202,19 @@ class SummaryPrinter(BaseSummaryPrinter):
 
     def get_backend_info(self) -> dict:
         """Get backend information."""
+        if ENABLE_CUSTOMIZED_OP:
+            op_info = {
+                "build with PT ver": GLOBAL_CONFIG["pt_version"],
+                "build with PT inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
+                "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+            }
+        else:
+            op_info = {}
         return {
             "Backend": "PyTorch",
             "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
             "Enable custom OP": ENABLE_CUSTOMIZED_OP,
+            **op_info,
         }
 
 
@@ -217,6 +229,10 @@ def train(FLAGS):
     shared_links = None
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
+        # handle the special key
+        assert (
+            "RANDOM" not in config["model"]["model_dict"]
+        ), "Model name can not be 'RANDOM' in multi-task mode!"
 
     # update fine-tuning config
     finetune_links = None
@@ -325,7 +341,11 @@ def show(FLAGS):
                 " The provided model does not meet this criterion."
             )
         model_branches = list(model_params["model_dict"].keys())
-        log.info(f"Available model branches are {model_branches}")
+        model_branches += ["RANDOM"]
+        log.info(
+            f"Available model branches are {model_branches}, "
+            f"where 'RANDOM' means using a randomly initialized fitting net."
+        )
     if "type-map" in FLAGS.ATTRIBUTES:
         if model_is_multi_task:
             model_branches = list(model_params["model_dict"].keys())
@@ -366,7 +386,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
 
     set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
     log.debug("Log handles were successfully set")
-    log.info("DeepMD version: %s", __version__)
+    log.info("DeePMD version: %s", __version__)
 
     if FLAGS.command == "train":
         train(FLAGS)

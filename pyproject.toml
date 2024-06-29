@@ -48,6 +48,7 @@ dependencies = [
     'packaging',
     'ml_dtypes',
     'mendeleev',
+    'array-api-compat',
 ]
 requires-python = ">=3.8"
 keywords = ["deepmd"]
@@ -79,6 +80,7 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
+    'array-api-strict>=2;python_version>="3.9"',
 ]
 docs = [
     "sphinx>=3.1.1",
@@ -125,9 +127,6 @@ cu12 = [
     "nvidia-cusparse-cu12",
     "nvidia-cudnn-cu12<9",
     "nvidia-cuda-nvcc-cu12",
-]
-torch = [
-    "torch>=2a",
 ]
 
 [tool.deepmd_build_backend.scripts]
@@ -198,12 +197,13 @@ replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 [tool.cibuildwheel]
 test-command = [
     "python -m deepmd -h",
+    """python -c "import deepmd.tf;import deepmd.pt" """,
     "dp -h",
     "dp_ipi",
     "pytest {project}/source/tests/tf/test_lammps.py"
 ]
-test-extras = ["cpu", "test", "lmp", "ipi"]
-build = ["cp310-*"]
+test-extras = ["cpu", "test", "lmp", "ipi", "torch"]
+build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated
 # manylinux-x86_64-image = "manylinux_2_28"
@@ -211,14 +211,27 @@ manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update3", DP_ENABLE_IPI="1" }
 before-all = [
-    """brew install mpich""",
+    '''pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
 ]
 repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
 
+[tool.cibuildwheel.macos.environment]
+PIP_PREFER_BINARY = "1"
+DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
+DP_ENABLE_IPI = "1"
+DP_ENABLE_PYTORCH = "1"
+# for unclear reason, when enabling PyTorch, OpenMP is found accidentally
+CMAKE_ARGS = "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=1"
+
+[[tool.cibuildwheel.overrides]]
+# error: 'value' is unavailable: introduced in macOS 10.13
+select = "*-macosx_x86_64"
+inherit.environment = "append"
+environment.MACOSX_DEPLOYMENT_TARGET = "10.13"
+
 [tool.cibuildwheel.linux]
-repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
+repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 --exclude libc10.so --exclude libtorch.so --exclude libtorch_cpu.so -w {dest_dir} {wheel}"
 environment-pass = [
     "CIBW_BUILD",
     "DP_VARIANT",
@@ -226,13 +239,12 @@ environment-pass = [
     "DP_PKG_NAME",
     "SETUPTOOLS_SCM_PRETEND_VERSION",
 ]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update3", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
     """if [ ! -z "${DP_PKG_NAME}" ]; then sed -i "s/name = \\"deepmd-kit\\"/name = \\"${DP_PKG_NAME}\\"/g" pyproject.toml; fi""",
     # https://almalinux.org/blog/2023-12-20-almalinux-8-key-update/
     """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
-    "yum install -y mpich-devel",
+    '''/opt/python/cp311-cp311/bin/python -m pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
     # uv is not available in the old manylinux image
     """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
 ]
@@ -240,14 +252,29 @@ before-build = [
     # old build doesn't support uv
     """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
 ]
+[tool.cibuildwheel.linux.environment]
+PIP_PREFER_BINARY = "1"
+DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
+DP_ENABLE_IPI = "1"
+DP_ENABLE_PYTORCH = "1"
+MPI_HOME = "/usr/lib64/mpich"
+PATH = "/usr/lib64/mpich/bin:$PATH"
+# use CPU version of torch for building, which should also work for GPU
+# note: uv has different behavior from pip on extra index url
+# https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#packages-that-exist-on-multiple-indexes
+UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+# trick to find the correction version of mpich
+CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
-environment = { PIP_PREFER_BINARY="1" }
-test-extras = ["cpu"]
+test-extras = ["cpu", "torch"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
 ]
+[tool.cibuildwheel.windows.environment]
+PIP_PREFER_BINARY = "1"
+DP_ENABLE_PYTORCH = "1"
 
 # One can run `tox` or `tox -e gpu`
 # to run pytest in an isolated environment
