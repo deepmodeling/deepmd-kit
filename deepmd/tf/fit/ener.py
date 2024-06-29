@@ -537,7 +537,7 @@ class EnerFitting(Fitting):
             if "t_bias_atom_e" in nvnmd_cfg.weight.keys():
                 self.bias_atom_e = nvnmd_cfg.weight["t_bias_atom_e"]
 
-        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
+        with tf.variable_scope("fitting_attr" + suffix, reuse=tf.AUTO_REUSE):
             t_dfparam = tf.constant(self.numb_fparam, name="dfparam", dtype=tf.int32)
             t_daparam = tf.constant(self.numb_aparam, name="daparam", dtype=tf.int32)
             self.t_bias_atom_e = tf.get_variable(
