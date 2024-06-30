@@ -141,6 +141,9 @@ class Trainer:
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
+        self.change_bias_after_training = training_params.get(
+            "change_bias_after_training", False
+        )
         self.lcurve_should_print_header = True
 
         def get_opt_param(params):
@@ -220,28 +223,7 @@ class Trainer:
             _data_requirement,
             finetune_has_new_type=False,
         ):
-            if _model.get_dim_fparam() > 0:
-                fparam_requirement_items = [
-                    DataRequirementItem(
-                        "fparam", _model.get_dim_fparam(), atomic=False, must=True
-                    )
-                ]
-                _data_requirement += fparam_requirement_items
-            if _model.get_dim_aparam() > 0:
-                aparam_requirement_items = [
-                    DataRequirementItem(
-                        "aparam", _model.get_dim_aparam(), atomic=True, must=True
-                    )
-                ]
-                _data_requirement += aparam_requirement_items
-            has_spin = getattr(_model, "has_spin", False)
-            if callable(has_spin):
-                has_spin = has_spin()
-            if has_spin:
-                spin_requirement_items = [
-                    DataRequirementItem("spin", ndof=3, atomic=True, must=True)
-                ]
-                _data_requirement += spin_requirement_items
+            _data_requirement += get_additional_data_requirement(_model)
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
@@ -264,15 +246,6 @@ class Trainer:
                     _stat_file_path.root.close()
             return get_sample
 
-        def get_single_model(
-            _model_params,
-        ):
-            if "use_srtab" in _model_params:
-                model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
-            else:
-                model = get_model(deepcopy(_model_params)).to(DEVICE)
-            return model
-
         def get_lr(lr_params):
             assert (
                 lr_params.get("type", "exp") == "exp"
@@ -280,39 +253,6 @@ class Trainer:
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
             lr_exp = LearningRateExp(**lr_params)
             return lr_exp
-
-        def get_loss(loss_params, start_lr, _ntypes, _model):
-            loss_type = loss_params.get("type", "ener")
-            if loss_type == "ener":
-                loss_params["starter_learning_rate"] = start_lr
-                return EnergyStdLoss(**loss_params)
-            elif loss_type == "dos":
-                loss_params["starter_learning_rate"] = start_lr
-                loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
-                return DOSLoss(**loss_params)
-            elif loss_type == "ener_spin":
-                loss_params["starter_learning_rate"] = start_lr
-                return EnergySpinLoss(**loss_params)
-            elif loss_type == "denoise":
-                loss_params["ntypes"] = _ntypes
-                return DenoiseLoss(**loss_params)
-            elif loss_type == "tensor":
-                model_output_type = _model.model_output_type()
-                if "mask" in model_output_type:
-                    model_output_type.pop(model_output_type.index("mask"))
-                tensor_name = model_output_type[0]
-                loss_params["tensor_name"] = tensor_name
-                loss_params["tensor_size"] = _model.model_output_def()[
-                    tensor_name
-                ].output_size
-                label_name = tensor_name
-                if label_name == "polarizability":
-                    label_name = "polar"
-                loss_params["label_name"] = label_name
-                loss_params["tensor_name"] = label_name
-                return TensorLoss(**loss_params)
-            else:
-                raise NotImplementedError
 
         # Optimizer
         if self.multi_task and training_params.get("optim_dict", None) is not None:
@@ -336,20 +276,6 @@ class Trainer:
         dp_random.seed(training_params["seed"])
         if training_params["seed"] is not None:
             torch.manual_seed(training_params["seed"])
-
-        def get_model_for_wrapper(_model_params):
-            if "model_dict" not in _model_params:
-                _model = get_single_model(
-                    _model_params,
-                )
-            else:
-                _model = {}
-                model_keys = list(_model_params["model_dict"])
-                for _model_key in model_keys:
-                    _model[_model_key] = get_single_model(
-                        _model_params["model_dict"][_model_key],
-                    )
-            return _model
 
         self.model = get_model_for_wrapper(model_params)
 
@@ -600,7 +526,7 @@ class Trainer:
                         _finetune_rule_single,
                         _sample_func,
                     ):
-                        _model = _model_change_out_bias(
+                        _model = model_change_out_bias(
                             _model,
                             _sample_func,
                             _bias_adjust_mode="change-by-statistic"
@@ -1019,6 +945,28 @@ class Trainer:
             if JIT:
                 break
 
+        if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
+            if not self.multi_task:
+                self.model = model_change_out_bias(
+                    self.model,
+                    self.get_sample_func,
+                    _bias_adjust_mode="change-by-statistic",
+                )
+            else:
+                for model_key in self.model_keys:
+                    self.model[model_key] = model_change_out_bias(
+                        self.model[model_key],
+                        self.get_sample_func[model_key],
+                        _bias_adjust_mode="change-by-statistic",
+                    )
+            self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
+            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
+            log.info(f"Saved model to {self.latest_model}")
+            symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+            with open("checkpoint", "w") as f:
+                f.write(str(self.latest_model))
+
         if (
             self.rank == 0 or dist.get_rank() == 0
         ):  # Handle the case if rank 0 aborted and re-assigned
@@ -1234,17 +1182,101 @@ class Trainer:
         fout.flush()
 
 
-def _model_change_out_bias(
+def get_additional_data_requirement(_model):
+    additional_data_requirement = []
+    if _model.get_dim_fparam() > 0:
+        fparam_requirement_items = [
+            DataRequirementItem(
+                "fparam", _model.get_dim_fparam(), atomic=False, must=True
+            )
+        ]
+        additional_data_requirement += fparam_requirement_items
+    if _model.get_dim_aparam() > 0:
+        aparam_requirement_items = [
+            DataRequirementItem(
+                "aparam", _model.get_dim_aparam(), atomic=True, must=True
+            )
+        ]
+        additional_data_requirement += aparam_requirement_items
+    has_spin = getattr(_model, "has_spin", False)
+    if callable(has_spin):
+        has_spin = has_spin()
+    if has_spin:
+        spin_requirement_items = [
+            DataRequirementItem("spin", ndof=3, atomic=True, must=True)
+        ]
+        additional_data_requirement += spin_requirement_items
+    return additional_data_requirement
+
+
+def get_loss(loss_params, start_lr, _ntypes, _model):
+    loss_type = loss_params.get("type", "ener")
+    if loss_type == "ener":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergyStdLoss(**loss_params)
+    elif loss_type == "dos":
+        loss_params["starter_learning_rate"] = start_lr
+        loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
+        return DOSLoss(**loss_params)
+    elif loss_type == "ener_spin":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergySpinLoss(**loss_params)
+    elif loss_type == "denoise":
+        loss_params["ntypes"] = _ntypes
+        return DenoiseLoss(**loss_params)
+    elif loss_type == "tensor":
+        model_output_type = _model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        tensor_name = model_output_type[0]
+        loss_params["tensor_name"] = tensor_name
+        loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
+        label_name = tensor_name
+        if label_name == "polarizability":
+            label_name = "polar"
+        loss_params["label_name"] = label_name
+        loss_params["tensor_name"] = label_name
+        return TensorLoss(**loss_params)
+    else:
+        raise NotImplementedError
+
+
+def get_single_model(
+    _model_params,
+):
+    if "use_srtab" in _model_params:
+        model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
+    else:
+        model = get_model(deepcopy(_model_params)).to(DEVICE)
+    return model
+
+
+def get_model_for_wrapper(_model_params):
+    if "model_dict" not in _model_params:
+        _model = get_single_model(
+            _model_params,
+        )
+    else:
+        _model = {}
+        model_keys = list(_model_params["model_dict"])
+        for _model_key in model_keys:
+            _model[_model_key] = get_single_model(
+                _model_params["model_dict"][_model_key],
+            )
+    return _model
+
+
+def model_change_out_bias(
     _model,
     _sample_func,
     _bias_adjust_mode="change-by-statistic",
 ):
-    old_bias = _model.get_out_bias()
+    old_bias = deepcopy(_model.get_out_bias())
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
     )
-    new_bias = _model.get_out_bias()
+    new_bias = deepcopy(_model.get_out_bias())
 
     model_type_map = _model.get_type_map()
     log.info(

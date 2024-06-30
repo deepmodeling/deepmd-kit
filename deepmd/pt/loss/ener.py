@@ -96,7 +96,7 @@ class EnergyStdLoss(TaskLoss):
         self.has_v = (start_pref_v != 0.0 and limit_pref_v != 0.0) or inference
         self.has_ae = (start_pref_ae != 0.0 and limit_pref_ae != 0.0) or inference
         self.has_pf = (start_pref_pf != 0.0 and limit_pref_pf != 0.0) or inference
-        self.has_gf = (start_pref_gf != 0.0 and limit_pref_gf != 0.0) or inference
+        self.has_gf = start_pref_gf != 0.0 and limit_pref_gf != 0.0
 
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e

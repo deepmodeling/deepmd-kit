@@ -145,6 +145,9 @@ class DPTrainer:
         self.tensorboard_log_dir = tr_data.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = tr_data.get("tensorboard_freq", 1)
         self.mixed_prec = tr_data.get("mixed_precision", None)
+        self.change_bias_after_training = tr_data.get(
+            "change_bias_after_training", False
+        )
         if self.mixed_prec is not None:
             if (
                 self.mixed_prec["compute_prec"] not in ("float16", "bfloat16")
@@ -563,6 +566,32 @@ class DPTrainer:
                     and self.saver is not None
                 ):
                     self.save_checkpoint(cur_batch)
+        if self.change_bias_after_training:
+            import tempfile
+
+            from deepmd.tf.entrypoints import (
+                freeze,
+            )
+
+            self.save_checkpoint(cur_batch)
+            with tempfile.NamedTemporaryFile(suffix=".pb") as f:
+                freeze(
+                    checkpoint_folder=os.path.join(os.getcwd(), self.save_ckpt),
+                    output=f.name,
+                )
+                self._change_energy_bias(
+                    train_data,
+                    f.name,
+                    self.type_map,
+                    bias_adjust_mode="change-by-statistic",
+                )
+            assign_op = tf.assign(
+                self.model.get_fitting().t_bias_atom_e,
+                self.model.get_fitting().bias_atom_e,
+            )
+            run_sess(self.sess, assign_op)
+            self.save_checkpoint(cur_batch)
+
         if (
             self.save_freq == 0 or cur_batch == 0 or cur_batch % self.save_freq != 0
         ) and self.saver is not None:
