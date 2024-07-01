@@ -69,6 +69,9 @@ from deepmd.pt.utils.multi_task import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
 from deepmd.utils.argcheck import (
     normalize,
 )
@@ -388,7 +391,7 @@ def show(FLAGS):
 
 
 def change_bias(FLAGS):
-    if FLAGS.INPUT.split(".")[-1] == "pt":
+    if FLAGS.INPUT.endswith(".pt"):
         old_state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
         model_state_dict = (
             copy.deepcopy(old_state_dict["model"])
@@ -396,7 +399,7 @@ def change_bias(FLAGS):
             else copy.deepcopy(old_state_dict)
         )
         model_params = model_state_dict["_extra_state"]["model_params"]
-    elif FLAGS.INPUT.split(".")[-1] == "pth":
+    elif FLAGS.INPUT.endswith(".pth"):
         old_model = torch.jit.load(FLAGS.INPUT, map_location=env.DEVICE)
         model_params_string = old_model.get_model_def_script()
         model_params = json.loads(model_params_string)
@@ -422,47 +425,68 @@ def change_bias(FLAGS):
         )
         log.info(f"Changing out bias for model {model_branch}.")
     model = training.get_model_for_wrapper(model_params)
-    data_systems = process_systems(expand_sys_str(FLAGS.system))
     type_map = (
         model_params["type_map"]
         if not multi_task
         else model_params["model_dict"][model_branch]["type_map"]
     )
-    data_single = DpLoaderSet(
-        data_systems,
-        1,
-        type_map,
-    )
     model_to_change = model if not multi_task else model[model_branch]
-    mock_loss = training.get_loss(
-        {"inference": True}, 1.0, len(type_map), model_to_change
-    )
-    data_requirement = mock_loss.label_requirement
-    data_requirement += training.get_additional_data_requirement(model_to_change)
-    data_single.add_data_requirement(data_requirement)
-    nbatches = FLAGS.numb_batch if FLAGS.numb_batch != 0 else float("inf")
-    sampled_data = make_stat_input(
-        data_single.systems,
-        data_single.dataloaders,
-        nbatches,
-    )
-    if FLAGS.INPUT.split(".")[-1] == "pt":
+    if FLAGS.INPUT.endswith(".pt"):
         wrapper = ModelWrapper(model)
         wrapper.load_state_dict(old_state_dict["model"])
     else:
         # for .pth
         model.load_state_dict(old_state_dict)
 
-    if not multi_task:
-        model = training.model_change_out_bias(
-            model, sampled_data, _bias_adjust_mode=bias_adjust_mode
+    if FLAGS.bias_value is not None:
+        # use user-defined bias
+        assert model_to_change.model_type in [
+            "ener"
+        ], "User-defined bias is only available for energy model!"
+        assert (
+            len(FLAGS.bias_value) == len(type_map)
+        ), f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
+        old_bias = model_to_change.get_out_bias()
+        bias_to_set = torch.tensor(
+            FLAGS.bias_value, dtype=old_bias.dtype, device=old_bias.device
+        ).view(old_bias.shape)
+        model_to_change.set_out_bias(bias_to_set)
+        log.info(
+            f"Change output bias of {type_map!s} "
+            f"from {to_numpy_array(old_bias).reshape(-1)!s} "
+            f"to {to_numpy_array(bias_to_set).reshape(-1)!s}."
         )
+        updated_model = model_to_change
     else:
-        model[model_branch] = training.model_change_out_bias(
+        # calculate bias on given systems
+        data_systems = process_systems(expand_sys_str(FLAGS.system))
+        data_single = DpLoaderSet(
+            data_systems,
+            1,
+            type_map,
+        )
+        mock_loss = training.get_loss(
+            {"inference": True}, 1.0, len(type_map), model_to_change
+        )
+        data_requirement = mock_loss.label_requirement
+        data_requirement += training.get_additional_data_requirement(model_to_change)
+        data_single.add_data_requirement(data_requirement)
+        nbatches = FLAGS.numb_batch if FLAGS.numb_batch != 0 else float("inf")
+        sampled_data = make_stat_input(
+            data_single.systems,
+            data_single.dataloaders,
+            nbatches,
+        )
+        updated_model = training.model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
         )
 
-    if FLAGS.INPUT.split(".")[-1] == "pt":
+    if not multi_task:
+        model = updated_model
+    else:
+        model[model_branch] = updated_model
+
+    if FLAGS.INPUT.endswith(".pt"):
         output_path = (
             FLAGS.output
             if FLAGS.output is not None

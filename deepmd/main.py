@@ -51,6 +51,18 @@ def get_ll(log_level: str) -> int:
     return int_level
 
 
+def float_list(value_str):
+    """Convert string to a list of float values."""
+    values = value_str.split(",")
+    try:
+        return [float(v) for v in values]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"'{value_str}' cannot be converted to a list of floats, "
+            f"please use ',' to separate each float value."
+        )
+
+
 class RawTextArgumentDefaultsHelpFormatter(
     argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
 ):
@@ -675,12 +687,21 @@ def main_parser() -> argparse.ArgumentParser:
     parser_change_bias.add_argument(
         "INPUT", help="The input checkpoint file or frozen model file"
     )
-    parser_change_bias.add_argument(
+    parser_change_bias_source = parser_change_bias.add_mutually_exclusive_group()
+    parser_change_bias_source.add_argument(
         "-s",
         "--system",
         default=".",
         type=str,
         help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_change_bias_source.add_argument(
+        "-b",
+        "--bias-value",
+        default=None,
+        type=float_list,
+        help="The user defined value for each type in the type_map of the model. "
+        "Only supports energy bias changing.",
     )
     parser_change_bias.add_argument(
         "-n",

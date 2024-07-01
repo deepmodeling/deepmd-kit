@@ -175,6 +175,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def get_out_bias(self) -> torch.Tensor:
             return self.atomic_model.get_out_bias()
 
+        def set_out_bias(self, out_bias: torch.Tensor) -> None:
+            self.atomic_model.set_out_bias(out_bias)
+
         def change_out_bias(
             self,
             merged,

@@ -103,6 +103,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.register_buffer("out_bias", out_bias_data)
         self.register_buffer("out_std", out_std_data)
 
+    def set_out_bias(self, out_bias: torch.Tensor) -> None:
+        self.out_bias = out_bias
+
     def __setitem__(self, key, value):
         if key in ["out_bias"]:
             self.out_bias = value
