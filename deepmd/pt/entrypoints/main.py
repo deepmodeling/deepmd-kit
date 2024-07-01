@@ -393,11 +393,7 @@ def show(FLAGS):
 def change_bias(FLAGS):
     if FLAGS.INPUT.endswith(".pt"):
         old_state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
-        model_state_dict = (
-            copy.deepcopy(old_state_dict["model"])
-            if "model" in old_state_dict
-            else copy.deepcopy(old_state_dict)
-        )
+        model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
     elif FLAGS.INPUT.endswith(".pth"):
         old_model = torch.jit.load(FLAGS.INPUT, map_location=env.DEVICE)
