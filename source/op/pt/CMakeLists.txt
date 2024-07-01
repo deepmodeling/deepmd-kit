@@ -21,6 +21,8 @@ endif()
 find_package(MPI)
 if(MPI_FOUND)
   include(CheckCXXSymbolExists)
+  set(CMAKE_REQUIRED_INCLUDES ${MPI_INCLUDE_PATH})
+  set(CMAKE_REQUIRED_LIBRARIES ${MPI_LIBRARIES})
   check_cxx_symbol_exists(MPIX_Query_cuda_support "${MPI_INCLUDE_PATH}/mpi.h"
                           CUDA_AWARE)
   if(NOT CUDA_AWARE)
