@@ -23,11 +23,9 @@ if(MPI_FOUND)
   include(CheckCXXSymbolExists)
   set(CMAKE_REQUIRED_INCLUDES ${MPI_INCLUDE_PATH})
   set(CMAKE_REQUIRED_LIBRARIES ${MPI_LIBRARIES})
-  check_cxx_symbol_exists(MPIX_Query_cuda_support "mpi.h"
-                          CUDA_AWARE)
+  check_cxx_symbol_exists(MPIX_Query_cuda_support "mpi.h" CUDA_AWARE)
   if(NOT CUDA_AWARE)
-    check_cxx_symbol_exists(MPIX_Query_cuda_support "mpi.h;mpi-ext.h"
-        OMP_CUDA)
+    check_cxx_symbol_exists(MPIX_Query_cuda_support "mpi.h;mpi-ext.h" OMP_CUDA)
     if(NOT OMP_CUDA)
       target_compile_definitions(deepmd_op_pt PRIVATE NO_CUDA_AWARE)
     endif()
