@@ -201,7 +201,7 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor nlocal_tensor = saved_variables[6];
     torch::Tensor nghost_tensor = saved_variables[7];
 
-    torch::Tensor d_local_g1_tensor = grad_output[0];
+    torch::Tensor d_local_g1_tensor = grad_output[0].contiguous();
 #ifdef USE_MPI
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);

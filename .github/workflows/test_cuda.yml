@@ -60,6 +60,7 @@ jobs:
     - run: python -m pytest source/tests --durations=0
       env:
         NUM_WORKERS: 0
+        CUDA_VISIBLE_DEVICES: 0
     - name: Download libtorch
       run: |
          wget https://download.pytorch.org/libtorch/cu121/libtorch-cxx11-abi-shared-with-deps-2.2.1%2Bcu121.zip -O libtorch.zip

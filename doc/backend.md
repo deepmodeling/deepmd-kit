@@ -37,6 +37,8 @@ As a reference backend, it is not aimed at the best performance, but only the co
 The DP backend uses [HDF5](https://docs.h5py.org/) to store model serialization data, which is backend-independent.
 Only Python inference interface can load this format.
 
+NumPy 1.21 or above is required.
+
 ## Switch the backend
 
 ### Training

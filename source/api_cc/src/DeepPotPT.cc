@@ -2,12 +2,33 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
+#include <torch/csrc/jit/runtime/jit_exception.h>
+
 #include <cstdint>
 
 #include "common.h"
 #include "device.h"
+#include "errors.h"
 
 using namespace deepmd;
+
+void DeepPotPT::translate_error(std::function<void()> f) {
+  try {
+    f();
+    // it seems that libtorch may throw different types of exceptions which are
+    // inherbited from different base classes
+    // https://github.com/pytorch/pytorch/blob/13316a8d4642454012d34da0d742f1ba93fc0667/torch/csrc/jit/runtime/interpreter.cpp#L924-L939
+  } catch (const c10::Error& e) {
+    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend error: " +
+                                   std::string(e.what()));
+  } catch (const torch::jit::JITException& e) {
+    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend JIT error: " +
+                                   std::string(e.what()));
+  } catch (const std::runtime_error& e) {
+    throw deepmd::deepmd_exception("DeePMD-kit PyTorch backend error: " +
+                                   std::string(e.what()));
+  }
+}
 
 torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
   std::vector<torch::Tensor> row_tensors;
@@ -26,7 +47,7 @@ DeepPotPT::DeepPotPT(const std::string& model,
                      const std::string& file_content)
     : inited(false) {
   try {
-    init(model, gpu_rank, file_content);
+    translate_error([&] { init(model, gpu_rank, file_content); });
   } catch (...) {
     // Clean up and rethrow, as the destructor will not be called
     throw;
@@ -444,8 +465,10 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam);
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            fparam, aparam);
+  });
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -457,8 +480,10 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<float>& box,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam);
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            fparam, aparam);
+  });
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<double>& force,
@@ -473,8 +498,10 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const int& ago,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam);
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            nghost, inlist, ago, fparam, aparam);
+  });
 }
 void DeepPotPT::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -489,8 +516,10 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const int& ago,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam);
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            nghost, inlist, ago, fparam, aparam);
+  });
 }
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<double>& force,
