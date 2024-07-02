@@ -229,6 +229,10 @@ def train(FLAGS):
     shared_links = None
     if multi_task:
         config["model"], shared_links = preprocess_shared_params(config["model"])
+        # handle the special key
+        assert (
+            "RANDOM" not in config["model"]["model_dict"]
+        ), "Model name can not be 'RANDOM' in multi-task mode!"
 
     # update fine-tuning config
     finetune_links = None
@@ -256,9 +260,8 @@ def train(FLAGS):
             )
 
     # argcheck
-    if not multi_task:
-        config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-        config = normalize(config)
+    config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
+    config = normalize(config, multi_task=multi_task)
 
     # do neighbor stat
     min_nbor_dist = None
@@ -352,7 +355,11 @@ def show(FLAGS):
                 " The provided model does not meet this criterion."
             )
         model_branches = list(model_params["model_dict"].keys())
-        log.info(f"Available model branches are {model_branches}")
+        model_branches += ["RANDOM"]
+        log.info(
+            f"Available model branches are {model_branches}, "
+            f"where 'RANDOM' means using a randomly initialized fitting net."
+        )
     if "type-map" in FLAGS.ATTRIBUTES:
         if model_is_multi_task:
             model_branches = list(model_params["model_dict"].keys())
@@ -393,7 +400,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
 
     set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
     log.debug("Log handles were successfully set")
-    log.info("DeepMD version: %s", __version__)
+    log.info("DeePMD version: %s", __version__)
 
     if FLAGS.command == "train":
         train(FLAGS)

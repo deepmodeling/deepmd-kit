@@ -67,7 +67,6 @@
     "_comment": "that's all"
   },
   "loss_dict": {
-    "_comment": " that's all",
     "water_1": {
       "type": "ener",
       "start_pref_e": 0.02,

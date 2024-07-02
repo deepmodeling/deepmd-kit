@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from copy import (
+    deepcopy,
+)
 from typing import (
     Dict,
     Optional,
@@ -34,6 +37,24 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
     ):
         DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)
+
+    def translated_output_def(self):
+        out_def_data = self.model_output_def().get_data()
+        output_def = {
+            "dipole": deepcopy(out_def_data["dipole"]),
+            "global_dipole": deepcopy(out_def_data["dipole_redu"]),
+        }
+        if self.do_grad_r("dipole"):
+            output_def["force"] = deepcopy(out_def_data["dipole_derv_r"])
+            output_def["force"].squeeze(-2)
+        if self.do_grad_c("dipole"):
+            output_def["virial"] = deepcopy(out_def_data["dipole_derv_c_redu"])
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = deepcopy(out_def_data["dipole_derv_c"])
+            output_def["atom_virial"].squeeze(-3)
+        if "mask" in out_def_data:
+            output_def["mask"] = deepcopy(out_def_data["mask"])
+        return output_def
 
     def forward(
         self,
@@ -96,13 +117,13 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
             model_predict["dipole"] = model_ret["dipole"]
             model_predict["global_dipole"] = model_ret["dipole_redu"]
             if self.do_grad_r("dipole"):
-                model_predict["force"] = model_ret["dipole_derv_r"].squeeze(-2)
+                model_predict["extended_force"] = model_ret["dipole_derv_r"].squeeze(-2)
             if self.do_grad_c("dipole"):
                 model_predict["virial"] = model_ret["dipole_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
-                    model_predict["atom_virial"] = model_ret["dipole_derv_c"].squeeze(
-                        -3
-                    )
+                    model_predict["extended_virial"] = model_ret[
+                        "dipole_derv_c"
+                    ].squeeze(-3)
         else:
             model_predict = model_ret
         return model_predict

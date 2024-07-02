@@ -61,6 +61,7 @@ from .descriptor import (
 
 
 def np_softmax(x, axis=-1):
+    x = np.nan_to_num(x)  # to avoid value warning
     e_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
     return e_x / np.sum(e_x, axis=axis, keepdims=True)
 
