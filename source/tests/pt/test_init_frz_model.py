@@ -131,9 +131,9 @@ class TestInitFrzModel(unittest.TestCase):
 
     def tearDown(self):
         for f in os.listdir("."):
-            if f.startswith("model") and f.endswith(".pt"):
-                os.remove(f)
             if f.startswith("frozen_model") and f.endswith(".pth"):
+                os.remove(f)
+            if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)
             if f in ["lcurve.out"]:
                 os.remove(f)
