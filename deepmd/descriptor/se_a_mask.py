@@ -307,8 +307,9 @@ class DescrptSeAMask(DescrptSeA):
         aparam[:, :] is the real/virtual sign for each atom.
         """
         aparam = input_dict["aparam"]
-        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
+        t_aparam_nall = tf.constant(
+            True, name=f"fitting_attr{suffix}/aparam_nall", dtype=tf.bool
+        )
         self.mask = tf.cast(aparam, tf.int32)
         self.mask = tf.reshape(self.mask, [-1, natoms[1]])
 
