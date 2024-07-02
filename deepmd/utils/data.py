@@ -442,7 +442,7 @@ class DeepmdData:
         dp_random.shuffle(idx)
         for kk in data:
             if (
-                type(data[kk]) == np.ndarray
+                isinstance(data[kk], np.ndarray)
                 and len(data[kk].shape) == 2
                 and data[kk].shape[0] == nframes
                 and "find_" not in kk
