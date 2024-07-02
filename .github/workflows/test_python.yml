@@ -25,7 +25,7 @@ jobs:
       if: ${{ matrix.tf == '' }}
       with:
         mpi: openmpi
-    - run: python -m pip install -U uv
+    - run: curl -LsSf https://astral.sh/uv/install.sh | sh
     - run: source/install/uv_with_retry.sh pip install --system -e .[cpu,test]
       env:
         # Please note that uv has some issues with finding
