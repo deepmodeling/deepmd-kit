@@ -17,7 +17,11 @@ Attention-based descriptor $\mathcal{D}^i \in \mathbb{R}^{M \times M_{<}}$, whic
 ```
 
 where $\hat{\mathcal{G}}^i$ represents the embedding matrix $\mathcal{G}^i$ after additional self-attention mechanism and $\mathcal{R}^i$ is defined by the full case in the [`se_e2_a`](./train-se-e2-a.md).
-Note that we obtain $\mathcal{G}^i$ using the type embedding method by default in this descriptor.
+Note that we obtain $\mathcal{G}^i$ using the type embedding method by default in this descriptor. By default, we concat $s(r_{ij})$ and the type embeddings of central and neighboring atoms $\mathcal{A}^i$ and $\mathcal{A}^j$ as input of the embedding network $\mathcal{N}_{e,2}$:
+
+```math
+   (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^i, \mathcal{A}^j\})  \quad \mathrm{or}\quad(\mathcal{G}^i)_j = \mathcal{N}_{e,2}(\{s(r_{ij}), \mathcal{A}^j\})
+```
 
 To perform the self-attention mechanism, the queries $\mathcal{Q}^{i,l} \in \mathbb{R}^{N_c\times d_k}$, keys $\mathcal{K}^{i,l} \in \mathbb{R}^{N_c\times d_k}$, and values $\mathcal{V}^{i,l} \in \mathbb{R}^{N_c\times d_v}$ are first obtained:
 
@@ -116,6 +120,12 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
       "stripped_type_embedding": true,
       "smooth_type_embedding": true,
       "set_davg_zero": false
+```
+
+You need to use descriptor `"se_atten_v2"` and do not need to set `stripped_type_embedding` and `smooth_type_embedding` because the default value of `stripped_type_embedding` is `true`, and the default value of `smooth_type_embedding` is `true`. When `stripped_type_embedding` is set to `true`, the embedding matrix $\mathcal{G}^i$ is constructed as:
+
+```math
+   (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{\mathcal{A}^i, \mathcal{A}^j\}) \odot s(r_{ij})) \quad \mathrm{or}
 ```
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
