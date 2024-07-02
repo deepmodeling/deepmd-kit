@@ -13,7 +13,7 @@ typedef float VALUETYPE;
 
 class Tabulated {
  public:
-  Tabulated(){};
+  Tabulated() {};
   Tabulated(const VALUETYPE rc,
             const VALUETYPE hh,
             const std::vector<VALUETYPE>& tab);

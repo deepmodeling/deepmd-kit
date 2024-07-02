@@ -137,7 +137,7 @@ class Wrap:
             # DEVELOP_DEBUG
             if jdata_sys["debug"]:
                 log.info("%s: %d x % d bit" % (k, h, w * 4))
-                FioTxt().save("nvnmd/wrap/h%s.txt" % (k), d)
+                FioTxt().save(f"nvnmd/wrap/h{k}.txt", d)
             datas[ii] = d
         # update h & w of nvnmd_cfg
         nvnmd_cfg.size["NH_DATA"] = nhs

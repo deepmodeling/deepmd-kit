@@ -540,12 +540,8 @@ class DescrptSeA(DescrptSe):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
         """Reveive the mixed precision setting.
@@ -1291,14 +1287,14 @@ class DescrptSeA(DescrptSe):
         super().init_variables(graph=graph, graph_def=graph_def, suffix=suffix)
         try:
             self.original_sel = get_tensor_by_name_from_graph(
-                graph, "descrpt_attr%s/original_sel" % suffix
+                graph, f"descrpt_attr{suffix}/original_sel"
             )
         except GraphWithoutTensorError:
             # original_sel is not restored in old graphs, assume sel never changed before
             pass
         # check sel == original sel?
         try:
-            sel = get_tensor_by_name_from_graph(graph, "descrpt_attr%s/sel" % suffix)
+            sel = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/sel")
         except GraphWithoutTensorError:
             # sel is not restored in old graphs
             pass

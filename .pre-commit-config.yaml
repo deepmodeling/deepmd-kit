@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v4.6.0
     hooks:
       - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.3.5
+    rev: v0.4.10
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -52,7 +52,7 @@ repos:
       - id: blacken-docs
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v18.1.2
+    rev: v18.1.7
     hooks:
       - id: clang-format
         exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
@@ -75,6 +75,25 @@ repos:
     hooks:
       - id: cmake-format
       #- id: cmake-lint
+  - repo: https://github.com/njzjz/mirrors-bibtex-tidy
+    rev: v1.13.0
+    hooks:
+      - id: bibtex-tidy
+        args:
+          - --curly
+          - --numeric
+          - --align=13
+          - --blank-lines
+          # disable sort: the order of keys and fields has explict meanings
+          #- --sort=key
+          - --duplicates=key,doi,citation,abstract
+          - --merge=combine
+          #- --sort-fields
+          #- --strip-comments
+          - --trailing-commas
+          - --encode-urls
+          - --remove-empty-fields
+          - --wrap=80
   # license header
   - repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.5.5

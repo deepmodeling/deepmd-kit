@@ -50,7 +50,7 @@ template <typename Device, typename FPTYPE>
 class CopyFltNvnmdOp : public OpKernel {
  public:
   /// Constructor.
-  explicit CopyFltNvnmdOp(OpKernelConstruction* context) : OpKernel(context){};
+  explicit CopyFltNvnmdOp(OpKernelConstruction* context) : OpKernel(context) {};
 
   /// Compute the descriptor
   /// param: context

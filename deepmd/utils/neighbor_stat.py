@@ -210,16 +210,15 @@ class NeighborStat:
         for mn, dt, jj in self.iterator(data):
             if np.isinf(dt):
                 log.warning(
-                    "Atoms with no neighbors found in %s. Please make sure it's what you expected."
-                    % jj
+                    f"Atoms with no neighbors found in {jj}. Please make sure it's what you expected."
                 )
             if dt < min_nbor_dist:
                 if math.isclose(dt, 0.0, rel_tol=1e-6):
                     # it's unexpected that the distance between two atoms is zero
                     # zero distance will cause nan (#874)
                     raise RuntimeError(
-                        "Some atoms are overlapping in %s. Please check your"
-                        " training data to remove duplicated atoms." % jj
+                        f"Some atoms are overlapping in {jj}. Please check your"
+                        " training data to remove duplicated atoms."
                     )
                 min_nbor_dist = dt
             max_nbor_size = np.maximum(mn, max_nbor_size)

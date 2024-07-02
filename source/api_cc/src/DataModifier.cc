@@ -15,7 +15,7 @@ DipoleChargeModifier::DipoleChargeModifier(const std::string& model,
   init(model, gpu_rank, name_scope_);
 }
 
-DipoleChargeModifier::~DipoleChargeModifier(){};
+DipoleChargeModifier::~DipoleChargeModifier() {};
 
 void DipoleChargeModifier::init(const std::string& model,
                                 const int& gpu_rank,

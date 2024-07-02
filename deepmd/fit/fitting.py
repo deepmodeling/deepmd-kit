@@ -82,8 +82,7 @@ class Fitting(PluginVariant):
         This method is called by others when the fitting supported initialization from the given variables.
         """
         raise NotImplementedError(
-            "Fitting %s doesn't support initialization from the given variables!"
-            % type(self).__name__
+            f"Fitting {type(self).__name__} doesn't support initialization from the given variables!"
         )
 
     @abstractmethod

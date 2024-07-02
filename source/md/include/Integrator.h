@@ -9,7 +9,7 @@
 template <typename VALUETYPE>
 class Integrator {
  public:
-  Integrator() : massConst(UnitManager::IntegratorMassConstant){};
+  Integrator() : massConst(UnitManager::IntegratorMassConstant) {};
 
  public:
   void stepVeloc(std::vector<VALUETYPE>& vv,

@@ -5,7 +5,7 @@
 
 class UnitManager {
  protected:
-  UnitManager(){};
+  UnitManager() {};
 
  public:
   static double Degree2Radian;

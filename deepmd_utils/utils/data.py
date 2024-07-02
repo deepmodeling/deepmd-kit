@@ -359,7 +359,7 @@ class DeepmdData:
     def avg(self, key):
         """Return the average value of an item."""
         if key not in self.data_dict.keys():
-            raise RuntimeError("key %s has not been added" % key)
+            raise RuntimeError(f"key {key} has not been added")
         info = self.data_dict[key]
         ndof = info["ndof"]
         eners = []
@@ -568,7 +568,7 @@ class DeepmdData:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(1.0), data
         elif must:
-            raise RuntimeError("%s not found!" % path)
+            raise RuntimeError(f"{path} not found!")
         else:
             data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:

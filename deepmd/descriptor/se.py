@@ -130,12 +130,8 @@ class DescrptSe(Descriptor):
         self.embedding_net_variables = get_embedding_net_variables_from_graph_def(
             graph_def, suffix=suffix
         )
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     @property
     def precision(self) -> tf.DType:

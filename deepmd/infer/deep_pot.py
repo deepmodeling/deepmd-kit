@@ -124,7 +124,7 @@ class DeepPot(DeepEval):
         # check if the graph has these operations:
         # if yes add them
 
-        if ("%s/t_efield" % load_prefix) in operations:
+        if (f"{load_prefix}/t_efield") in operations:
             self.tensors.update({"t_efield": "t_efield:0"})
             self.has_efield = True
         else:
@@ -132,7 +132,7 @@ class DeepPot(DeepEval):
             self.t_efield = None
             self.has_efield = False
 
-        if ("%s/t_fparam" % load_prefix) in operations:
+        if (f"{load_prefix}/t_fparam") in operations:
             self.tensors.update({"t_fparam": "t_fparam:0"})
             self.has_fparam = True
         else:
@@ -140,7 +140,7 @@ class DeepPot(DeepEval):
             self.t_fparam = None
             self.has_fparam = False
 
-        if ("%s/t_aparam" % load_prefix) in operations:
+        if (f"{load_prefix}/t_aparam") in operations:
             self.tensors.update({"t_aparam": "t_aparam:0"})
             self.has_aparam = True
         else:
@@ -148,7 +148,7 @@ class DeepPot(DeepEval):
             self.t_aparam = None
             self.has_aparam = False
 
-        if ("%s/spin_attr/ntypes_spin" % load_prefix) in operations:
+        if (f"{load_prefix}/spin_attr/ntypes_spin") in operations:
             self.tensors.update({"t_ntypes_spin": "spin_attr/ntypes_spin:0"})
             self.has_spin = True
         else:

@@ -59,6 +59,6 @@ def neighbor_stat(
     data.get_batch()
     nei = NeighborStat(data.get_ntypes(), rcut, one_type=one_type)
     min_nbor_dist, max_nbor_size = nei.get_stat(data)
-    log.info("min_nbor_dist: %f" % min_nbor_dist)
-    log.info("max_nbor_size: %s" % str(max_nbor_size))
+    log.info(f"min_nbor_dist: {min_nbor_dist:f}")
+    log.info(f"max_nbor_size: {max_nbor_size!s}")
     return min_nbor_dist, max_nbor_size
