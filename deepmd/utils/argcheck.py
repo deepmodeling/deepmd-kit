@@ -2325,7 +2325,9 @@ def mixed_precision_args():  # ! added by Denghui.
     )
 
 
-def training_args():  # ! modified by Ziyao: data configuration isolated.
+def training_args(
+    multi_task=False,
+):  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = "Number of training batch. Each training uses one batch of data."
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
@@ -2364,14 +2366,30 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."
+    doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
+    doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
     mixed_precision_data = mixed_precision_args()
 
-    args = [
+    data_args = [
         arg_training_data,
         arg_validation_data,
+        Argument(
+            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
+        ),
+    ]
+    args = (
+        data_args
+        if not multi_task
+        else [
+            Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
+            Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
+        ]
+    )
+
+    args += [
         mixed_precision_data,
         Argument(
             "numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]
@@ -2438,9 +2456,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             optional=True,
             doc=doc_only_pt_supported + doc_gradient_max_norm,
         ),
-        Argument(
-            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
-        ),
     ]
     variants = [
         Variant(
@@ -2470,6 +2485,34 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
 
     doc_training = "The training options."
     return Argument("training", dict, args, variants, doc=doc_training)
+
+
+def multi_model_args():
+    model_dict = model_args()
+    model_dict.name = "model_dict"
+    model_dict.repeat = True
+    model_dict.doc = (
+        "The multiple definition of the model, used in the multi-task mode."
+    )
+    doc_shared_dict = "The definition of the shared parameters used in the `model_dict` within multi-task mode."
+    return Argument(
+        "model",
+        dict,
+        [
+            model_dict,
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
+            ),
+        ],
+    )
+
+
+def multi_loss_args():
+    loss_dict = loss_args()
+    loss_dict.name = "loss_dict"
+    loss_dict.repeat = True
+    loss_dict.doc = "The multiple definition of the loss, used in the multi-task mode."
+    return loss_dict
 
 
 def make_index(keys):
@@ -2502,14 +2545,23 @@ def gen_json(**kwargs):
     )
 
 
-def gen_args(**kwargs) -> List[Argument]:
-    return [
-        model_args(),
-        learning_rate_args(),
-        loss_args(),
-        training_args(),
-        nvnmd_args(),
-    ]
+def gen_args(multi_task=False) -> List[Argument]:
+    if not multi_task:
+        return [
+            model_args(),
+            learning_rate_args(),
+            loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(),
+        ]
+    else:
+        return [
+            multi_model_args(),
+            learning_rate_args(),
+            multi_loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(),
+        ]
 
 
 def gen_json_schema() -> str:
@@ -2524,8 +2576,8 @@ def gen_json_schema() -> str:
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data):
-    base = Argument("base", dict, gen_args())
+def normalize(data, multi_task=False):
+    base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 
