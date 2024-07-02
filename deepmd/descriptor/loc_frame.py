@@ -427,12 +427,8 @@ class DescrptLocFrame(Descriptor):
         suffix : str, optional
             The suffix of the scope
         """
-        self.davg = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_avg" % suffix
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            graph, "descrpt_attr%s/t_std" % suffix
-        )
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     @classmethod
     def update_sel(cls, global_jdata: dict, local_jdata: dict):

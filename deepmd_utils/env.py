@@ -22,7 +22,7 @@ elif dp_float_prec == "low":
     global_float_prec = "float"
 else:
     raise RuntimeError(
-        "Unsupported float precision option: %s. Supported: high,"
+        f"Unsupported float precision option: {dp_float_prec}. Supported: high,"
         "low. Please set precision with environmental variable "
-        "DP_INTERFACE_PREC." % dp_float_prec
+        "DP_INTERFACE_PREC."
     )

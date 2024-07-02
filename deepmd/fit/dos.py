@@ -587,21 +587,21 @@ class DOSFitting(Fitting):
             self.fitting_net_variables.update(shared_variables)
         if self.numb_fparam > 0:
             self.fparam_avg = get_tensor_by_name_from_graph(
-                graph, "fitting_attr%s/t_fparam_avg" % suffix
+                graph, f"fitting_attr{suffix}/t_fparam_avg"
             )
             self.fparam_inv_std = get_tensor_by_name_from_graph(
-                graph, "fitting_attr%s/t_fparam_istd" % suffix
+                graph, f"fitting_attr{suffix}/t_fparam_istd"
             )
         if self.numb_aparam > 0:
             self.aparam_avg = get_tensor_by_name_from_graph(
-                graph, "fitting_attr%s/t_aparam_avg" % suffix
+                graph, f"fitting_attr{suffix}/t_aparam_avg"
             )
             self.aparam_inv_std = get_tensor_by_name_from_graph(
-                graph, "fitting_attr%s/t_aparam_istd" % suffix
+                graph, f"fitting_attr{suffix}/t_aparam_istd"
             )
         try:
             self.bias_dos = get_tensor_by_name_from_graph(
-                graph, "fitting_attr%s/t_bias_dos" % suffix
+                graph, f"fitting_attr{suffix}/t_bias_dos"
             )
         except GraphWithoutTensorError:
             # for compatibility, old models has no t_bias_dos

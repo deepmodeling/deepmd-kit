@@ -11,7 +11,7 @@
 
 class XtcSaver {
  public:
-  XtcSaver() : inited(false), prec(1000){};
+  XtcSaver() : inited(false), prec(1000) {};
   ~XtcSaver();
   XtcSaver(const char *filename, const int &natoms);
   bool reinit(const char *filename, const int &natoms);
@@ -33,7 +33,7 @@ class XtcSaver {
 
 class TrrSaver {
  public:
-  TrrSaver() : inited(false), lambda(0){};
+  TrrSaver() : inited(false), lambda(0) {};
   ~TrrSaver();
   TrrSaver(const char *filename, const int &natoms);
   bool reinit(const char *filename, const int &natoms);

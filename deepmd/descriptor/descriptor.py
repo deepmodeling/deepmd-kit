@@ -283,7 +283,7 @@ class Descriptor(PluginVariant):
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support compression!" % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support compression!"
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
@@ -299,8 +299,7 @@ class Descriptor(PluginVariant):
         This method is called by others when the descriptor supported compression.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support mixed precision training!"
-            % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support mixed precision training!"
         )
 
     @abstractmethod
@@ -351,8 +350,7 @@ class Descriptor(PluginVariant):
         This method is called by others when the descriptor supported initialization from the given variables.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support initialization from the given variables!"
-            % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support initialization from the given variables!"
         )
 
     def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
@@ -369,7 +367,7 @@ class Descriptor(PluginVariant):
             Names of tensors
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support this property!" % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support this property!"
         )
 
     def pass_tensors_from_frz_model(
@@ -389,7 +387,7 @@ class Descriptor(PluginVariant):
         :meth:`get_tensor_names`.
         """
         raise NotImplementedError(
-            "Descriptor %s doesn't support this method!" % type(self).__name__
+            f"Descriptor {type(self).__name__} doesn't support this method!"
         )
 
     def build_type_exclude_mask(

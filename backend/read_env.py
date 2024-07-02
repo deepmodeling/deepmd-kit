@@ -60,7 +60,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         if hipcc_flags is not None:
             os.environ["HIPFLAGS"] = os.environ.get("HIPFLAGS", "") + " " + hipcc_flags
     else:
-        raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
+        raise RuntimeError(f"Unsupported DP_VARIANT option: {dp_variant}")
 
     if os.environ.get("DP_BUILD_TESTING", "0") == "1":
         cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")

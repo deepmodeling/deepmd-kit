@@ -39,7 +39,7 @@ class DPPath(ABC):
                 # assume h5 if it is not dir
                 # TODO: check if it is a real h5? or just check suffix?
                 return super().__new__(DPH5Path)
-            raise FileNotFoundError("%s not found" % path)
+            raise FileNotFoundError(f"{path} not found")
         return super().__new__(cls)
 
     @abstractmethod
