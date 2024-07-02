@@ -22,3 +22,4 @@ Model
    dprc
    linear
    pairtab
+   change-bias

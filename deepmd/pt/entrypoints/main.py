@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
+import copy
 import json
 import logging
 import os
@@ -23,6 +24,9 @@ from torch.distributed.elastic.multiprocessing.errors import (
 from deepmd import (
     __version__,
 )
+from deepmd.common import (
+    expand_sys_str,
+)
 from deepmd.env import (
     GLOBAL_CONFIG,
 )
@@ -44,6 +48,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train import (
     training,
 )
+from deepmd.pt.train.wrapper import (
+    ModelWrapper,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -58,6 +65,12 @@ from deepmd.pt.utils.finetune import (
 )
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
+)
+from deepmd.pt.utils.stat import (
+    make_stat_input,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
 )
 from deepmd.utils.argcheck import (
     normalize,
@@ -376,6 +389,128 @@ def show(FLAGS):
             log.info(f"The fitting_net parameter is {fitting_net}")
 
 
+def change_bias(FLAGS):
+    if FLAGS.INPUT.endswith(".pt"):
+        old_state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
+        model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
+        model_params = model_state_dict["_extra_state"]["model_params"]
+    elif FLAGS.INPUT.endswith(".pth"):
+        old_model = torch.jit.load(FLAGS.INPUT, map_location=env.DEVICE)
+        model_params_string = old_model.get_model_def_script()
+        model_params = json.loads(model_params_string)
+        old_state_dict = old_model.state_dict()
+        model_state_dict = old_state_dict
+    else:
+        raise RuntimeError(
+            "The model provided must be a checkpoint file with a .pt extension "
+            "or a frozen model with a .pth extension"
+        )
+    multi_task = "model_dict" in model_params
+    model_branch = FLAGS.model_branch
+    bias_adjust_mode = (
+        "change-by-statistic" if FLAGS.mode == "change" else "set-by-statistic"
+    )
+    if multi_task:
+        assert (
+            model_branch is not None
+        ), "For multitask model, the model branch must be set!"
+        assert model_branch in model_params["model_dict"], (
+            f"For multitask model, the model branch must be in the 'model_dict'! "
+            f"Available options are : {list(model_params['model_dict'].keys())}."
+        )
+        log.info(f"Changing out bias for model {model_branch}.")
+    model = training.get_model_for_wrapper(model_params)
+    type_map = (
+        model_params["type_map"]
+        if not multi_task
+        else model_params["model_dict"][model_branch]["type_map"]
+    )
+    model_to_change = model if not multi_task else model[model_branch]
+    if FLAGS.INPUT.endswith(".pt"):
+        wrapper = ModelWrapper(model)
+        wrapper.load_state_dict(old_state_dict["model"])
+    else:
+        # for .pth
+        model.load_state_dict(old_state_dict)
+
+    if FLAGS.bias_value is not None:
+        # use user-defined bias
+        assert model_to_change.model_type in [
+            "ener"
+        ], "User-defined bias is only available for energy model!"
+        assert (
+            len(FLAGS.bias_value) == len(type_map)
+        ), f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
+        old_bias = model_to_change.get_out_bias()
+        bias_to_set = torch.tensor(
+            FLAGS.bias_value, dtype=old_bias.dtype, device=old_bias.device
+        ).view(old_bias.shape)
+        model_to_change.set_out_bias(bias_to_set)
+        log.info(
+            f"Change output bias of {type_map!s} "
+            f"from {to_numpy_array(old_bias).reshape(-1)!s} "
+            f"to {to_numpy_array(bias_to_set).reshape(-1)!s}."
+        )
+        updated_model = model_to_change
+    else:
+        # calculate bias on given systems
+        data_systems = process_systems(expand_sys_str(FLAGS.system))
+        data_single = DpLoaderSet(
+            data_systems,
+            1,
+            type_map,
+        )
+        mock_loss = training.get_loss(
+            {"inference": True}, 1.0, len(type_map), model_to_change
+        )
+        data_requirement = mock_loss.label_requirement
+        data_requirement += training.get_additional_data_requirement(model_to_change)
+        data_single.add_data_requirement(data_requirement)
+        nbatches = FLAGS.numb_batch if FLAGS.numb_batch != 0 else float("inf")
+        sampled_data = make_stat_input(
+            data_single.systems,
+            data_single.dataloaders,
+            nbatches,
+        )
+        updated_model = training.model_change_out_bias(
+            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+        )
+
+    if not multi_task:
+        model = updated_model
+    else:
+        model[model_branch] = updated_model
+
+    if FLAGS.INPUT.endswith(".pt"):
+        output_path = (
+            FLAGS.output
+            if FLAGS.output is not None
+            else FLAGS.INPUT.replace(".pt", "_updated.pt")
+        )
+        wrapper = ModelWrapper(model)
+        if "model" in old_state_dict:
+            old_state_dict["model"] = wrapper.state_dict()
+            old_state_dict["model"]["_extra_state"] = model_state_dict["_extra_state"]
+        else:
+            old_state_dict = wrapper.state_dict()
+            old_state_dict["_extra_state"] = model_state_dict["_extra_state"]
+        torch.save(old_state_dict, output_path)
+    else:
+        # for .pth
+        output_path = (
+            FLAGS.output
+            if FLAGS.output is not None
+            else FLAGS.INPUT.replace(".pth", "_updated.pth")
+        )
+        model = torch.jit.script(model)
+        torch.jit.save(
+            model,
+            output_path,
+            {},
+        )
+    log.info(f"Saved model to {output_path}")
+
+
 @record
 def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
@@ -400,6 +535,8 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
         freeze(FLAGS)
     elif FLAGS.command == "show":
         show(FLAGS)
+    elif FLAGS.command == "change-bias":
+        change_bias(FLAGS)
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 

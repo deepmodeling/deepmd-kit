@@ -53,7 +53,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
         sys_stat = {}
         with torch.device("cpu"):
             iterator = iter(dataloaders[i])
-            for _ in range(nbatches):
+            numb_batches = min(nbatches, len(dataloaders[i]))
+            for _ in range(numb_batches):
                 try:
                     stat_data = next(iterator)
                 except StopIteration:
