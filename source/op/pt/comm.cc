@@ -221,7 +221,7 @@ class Border : public torch::autograd::Function<Border> {
       if (version >= 4) {
 #ifdef NO_CUDA_AWARE
         cuda_aware = 0;
-#elif
+#else
         cuda_aware = MPIX_Query_cuda_support();
 #endif
       } else {
