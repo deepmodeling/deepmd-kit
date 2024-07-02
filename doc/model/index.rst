@@ -12,7 +12,6 @@ Model
    dpa2
    train-hybrid
    sel
-   change-bias
    train-energy
    train-energy-spin
    train-fitting-tensor
@@ -23,3 +22,4 @@ Model
    dprc
    linear
    pairtab
+   change-bias
