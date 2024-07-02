@@ -4,9 +4,6 @@ import os
 import shutil
 import tempfile
 import unittest
-from argparse import (
-    Namespace,
-)
 from copy import (
     deepcopy,
 )
@@ -17,7 +14,6 @@ from pathlib import (
 import numpy as np
 
 from deepmd.pt.entrypoints.main import (
-    freeze,
     get_trainer,
 )
 from deepmd.pt.infer.deep_eval import (
@@ -25,7 +21,7 @@ from deepmd.pt.infer.deep_eval import (
 )
 
 
-class TestInitFrzModel(unittest.TestCase):
+class TestInitModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
@@ -43,36 +39,33 @@ class TestInitFrzModel(unittest.TestCase):
 
         self.models = []
         for imodel in range(3):
-            frozen_model = f"frozen_model{imodel}.pth"
+            ckpt_model = f"model{imodel}.ckpt"
             if imodel == 0:
                 temp_config = deepcopy(config)
+                temp_config["training"]["save_ckpt"] = ckpt_model
                 trainer = get_trainer(temp_config)
             elif imodel == 1:
                 temp_config = deepcopy(config)
                 temp_config["training"]["numb_steps"] = 0
-                trainer = get_trainer(temp_config, init_frz_model=self.models[-1])
+                temp_config["training"]["save_ckpt"] = ckpt_model
+                trainer = get_trainer(temp_config, init_model=self.models[-1])
             else:
                 empty_config = deepcopy(config)
                 empty_config["model"]["descriptor"] = {}
                 empty_config["model"]["fitting_net"] = {}
                 empty_config["training"]["numb_steps"] = 0
+                empty_config["training"]["save_ckpt"] = ckpt_model
                 tmp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
                 with open(tmp_input.name, "w") as f:
                     json.dump(empty_config, f, indent=4)
                 os.system(
-                    f"dp --pt train {tmp_input.name} --init-frz-model {self.models[-1]} --use-pretrain-script --skip-neighbor-stat"
+                    f"dp --pt train {tmp_input.name} --init-model {self.models[-1]} --use-pretrain-script --skip-neighbor-stat"
                 )
                 trainer = None
 
             if imodel in [0, 1]:
                 trainer.run()
-            ns = Namespace(
-                model="model.pt",
-                output=frozen_model,
-                head=None,
-            )
-            freeze(ns)
-            self.models.append(frozen_model)
+            self.models.append(ckpt_model + ".pt")
 
     def test_dp_test(self):
         dp1 = DeepPot(str(self.models[0]))
@@ -132,8 +125,6 @@ class TestInitFrzModel(unittest.TestCase):
     def tearDown(self):
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):
-                os.remove(f)
-            if f.startswith("frozen_model") and f.endswith(".pth"):
                 os.remove(f)
             if f in ["lcurve.out"]:
                 os.remove(f)
