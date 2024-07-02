@@ -51,18 +51,6 @@ def get_ll(log_level: str) -> int:
     return int_level
 
 
-def float_list(value_str):
-    """Convert string to a list of float values."""
-    values = value_str.split(",")
-    try:
-        return [float(v) for v in values]
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            f"'{value_str}' cannot be converted to a list of floats, "
-            f"please use ',' to separate each float value."
-        )
-
-
 class RawTextArgumentDefaultsHelpFormatter(
     argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
 ):
@@ -699,8 +687,10 @@ def main_parser() -> argparse.ArgumentParser:
         "-b",
         "--bias-value",
         default=None,
-        type=float_list,
-        help="The user defined value for each type in the type_map of the model. "
+        type=float,
+        nargs="+",
+        help="The user defined value for each type in the type_map of the model, split with spaces.\n"
+        "For example, '-93.57 -187.1' for energy bias of two elements. "
         "Only supports energy bias changing.",
     )
     parser_change_bias.add_argument(
