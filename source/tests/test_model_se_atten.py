@@ -901,9 +901,7 @@ class TestModel(tf.test.TestCase):
         jdata["model"]["descriptor"]["exclude_types"] = [[0, 0], [0, 1]]
         jdata["model"]["descriptor"]["set_davg_zero"] = False
         descrpt = DescrptSeAtten(**jdata["model"]["descriptor"], uniform_seed=True)
-        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
-        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
-        jdata["model"]["fitting_net"]["dim_rot_mat_1"] = descrpt.get_dim_rot_mat_1()
+        jdata["model"]["fitting_net"]["descrpt"] = descrpt
         fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
         typeebd_param = jdata["model"]["type_embedding"]
         typeebd = TypeEmbedNet(
