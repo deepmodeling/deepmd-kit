@@ -31,10 +31,10 @@ dp --pt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-branc
 :::{tab-item} Changing bias using user input for **energy model**:
 
 ```sh
-dp --pt change-bias model.pt -b -92.523,-187.66 -o model_updated.pt
+dp --pt change-bias model.pt -b -92.523 -187.66 -o model_updated.pt
 ```
 
-Here, `-b` specifies user-defined energy bias for each type, separated by `,`,
+Here, `-b` specifies user-defined energy bias for each type, separated by space,
 in an order consistent with the `type_map` in the model.
 
 :::
