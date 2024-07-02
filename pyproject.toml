@@ -69,7 +69,9 @@ test = [
     "dpdata>=0.2.7",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0
-    "ase>=3.23.0",
+    # ase>=3.23.0 requires python>=3.8; luckily, we don't test i-PI with python<3.8
+    'ase>=3.23.0;python_version>="3.8"',
+    'ase;python_version<"3.8"',
     "pytest",
     "pytest-cov",
     "pytest-sugar",
