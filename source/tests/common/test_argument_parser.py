@@ -174,7 +174,7 @@ class TestParserOutput(unittest.TestCase):
                     t = data["type"][0]
                 else:
                     t = data["type"]
-                if t == str:
+                if t is str:
                     required.append("STRING")
                 elif t in (int, float):
                     required.append("11111")

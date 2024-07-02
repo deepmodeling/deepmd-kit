@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.4.10
+    rev: v0.5.0
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -47,12 +47,12 @@ repos:
         exclude: ^source/3rdparty
   # Python inside docs
   - repo: https://github.com/asottile/blacken-docs
-    rev: 1.16.0
+    rev: 1.18.0
     hooks:
       - id: blacken-docs
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v18.1.7
+    rev: v18.1.8
     hooks:
       - id: clang-format
         exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
