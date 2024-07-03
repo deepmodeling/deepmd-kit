@@ -65,6 +65,28 @@ model_dos = {
     "data_stat_nbatch": 20,
 }
 
+model_dipole = {
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [46, 92],
+        "rcut_smth": 0.50,
+        "rcut": 4.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "neuron": [24, 24, 24],
+        "resnet_dt": True,
+        "seed": 1,
+        "type": "dipole",
+    },
+    "data_stat_nbatch": 20,
+}
+
+
 model_zbl = {
     "type_map": ["O", "H", "B"],
     "use_srtab": f"{CUR_DIR}/water/data/zbl_tab_potential/H2O_tab_potential.txt",

@@ -50,7 +50,7 @@ class DeepTensor(DeepEval):
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
         **kwargs: dict,
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray]:
         """Evaluate the model.
 
         Parameters
@@ -105,9 +105,9 @@ class DeepTensor(DeepEval):
             **kwargs,
         )
         if atomic:
-            return results[self.output_tensor_name].reshape(nframes, natoms, -1)
+            return (results[self.output_tensor_name].reshape(nframes, natoms, -1),)
         else:
-            return results[f"{self.output_tensor_name}_redu"].reshape(nframes, -1)
+            return (results[f"{self.output_tensor_name}_redu"].reshape(nframes, -1),)
 
     def eval_full(
         self,

@@ -49,6 +49,7 @@ from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
     model_zbl,
+    model_dipole,
 )
 
 energy_data_requirement = [
@@ -76,6 +77,13 @@ energy_data_requirement = [
     DataRequirementItem(
         "dos",
         ndof=250,
+        atomic=False,
+        must=False,
+        high_prec=True,
+    ),
+    DataRequirementItem(
+        "global_dipole",
+        ndof=3,
         atomic=False,
         must=False,
         high_prec=True,
@@ -168,13 +176,16 @@ class FinetuneTest:
 
         energy = dp.eval(
             to_numpy_array(sampled[0]["coord"][:ntest]),
-            to_numpy_array(sampled[0]["box"][:ntest]),
+            to_numpy_array(sampled[0]["box"][:ntest]) if sampled[0]["box"] is not None else None,
             to_numpy_array(sampled[0]["atype"][0]),
+            atomic = False,
         )[0]
+       
         energy_small = dp.eval(
             to_numpy_array(sampled[1]["coord"][:ntest]),
-            to_numpy_array(sampled[1]["box"][:ntest]),
+            to_numpy_array(sampled[1]["box"][:ntest] if sampled[1]["box"] is not None else None),
             to_numpy_array(sampled[1]["atype"][0]),
+            atomic = False,
         )[0]
         energy_diff = to_numpy_array(sampled[0][self.testkey][:ntest]) - energy
         energy_diff_small = (
@@ -189,8 +200,10 @@ class FinetuneTest:
         ].reshape(-1)
 
         # check values
-        np.testing.assert_almost_equal(finetune_shift, ground_truth_shift, decimal=10)
-
+        if self.testkey == "global_dipole":
+            np.testing.assert_almost_equal(energy_bias_after[idx_type_map], energy_bias_before[idx_type_map]) # diploe model not applying bias
+        else:
+            np.testing.assert_almost_equal(finetune_shift, ground_truth_shift, decimal=10)
         self.tearDown()
 
     def test_finetune_change_type(self):
@@ -319,8 +332,21 @@ class TestEnergyZBLModelSeA(FinetuneTest, unittest.TestCase):
         self.mixed_types = False
         self.testkey = None
 
+class TestDipoleModelSeA(FinetuneTest, unittest.TestCase):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "dos/input.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.data_file = [str(Path(__file__).parents[3] / "examples/water_tensor/dipole/training_data_reformat/global_system")]
+        self.config["training"]["training_data"]["systems"] = self.data_file
+        self.config["training"]["validation_data"]["systems"] = self.data_file
+        self.config["model"] = deepcopy(model_dipole)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.mixed_types = False
+        self.testkey = "global_dipole"
 
-class TestEnergyDOSModelSeA(FinetuneTest, unittest.TestCase):
+class TestDOSModelSeA(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "dos/input.json")
         with open(input_json) as f:
