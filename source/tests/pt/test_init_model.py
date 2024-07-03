@@ -20,6 +20,10 @@ from deepmd.pt.infer.deep_eval import (
     DeepPot,
 )
 
+from .common import (
+    run_dp,
+)
+
 
 class TestInitModel(unittest.TestCase):
     def setUp(self):
@@ -58,7 +62,7 @@ class TestInitModel(unittest.TestCase):
                 tmp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
                 with open(tmp_input.name, "w") as f:
                     json.dump(empty_config, f, indent=4)
-                os.system(
+                run_dp(
                     f"dp --pt train {tmp_input.name} --init-model {self.models[-1]} --use-pretrain-script --skip-neighbor-stat"
                 )
                 trainer = None
