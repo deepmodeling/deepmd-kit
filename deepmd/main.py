@@ -258,7 +258,9 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "--use-pretrain-script",
         action="store_true",
-        help="Use model parameters from the script of the pretrained model instead of user input when doing finetuning. Note: This behavior is default and unchangeable in TensorFlow.",
+        help="When performing fine-tuning or init-model, "
+        "utilize the model parameters provided by the script of the pretrained model rather than relying on user input. "
+        "It is important to note that in TensorFlow, this behavior is the default and cannot be modified for fine-tuning. ",
     )
     parser_train.add_argument(
         "-o",
