@@ -113,6 +113,22 @@ class FinetuneTest:
             data.dataloaders,
             nbatches=1,
         )
+        # make sampled of multiple frames with different atom numbs
+        numb_atom = sampled[0]["atype"].shape[1]
+        small_numb_atom = numb_atom // 2
+        small_atom_data = deepcopy(sampled[0])
+        atomic_key = ["coord", "atype"]
+        for kk in atomic_key:
+            small_atom_data[kk] = small_atom_data[kk][:, :small_numb_atom]
+        scale_pref = float(small_numb_atom / numb_atom)
+        small_atom_data[self.testkey] *= scale_pref
+        small_atom_data["natoms"][:, :2] = small_numb_atom
+        small_atom_data["natoms"][:, 2:] = torch.bincount(
+            small_atom_data["atype"][0],
+            minlength=small_atom_data["natoms"].shape[1] - 2,
+        )
+        sampled = [sampled[0], small_atom_data]
+
         # get model
         model = get_model(self.config["model"]).to(env.DEVICE)
         atomic_model = model.atomic_model
@@ -144,12 +160,27 @@ class FinetuneTest:
             np.bincount(to_numpy_array(sampled[0]["atype"][0]))[idx_type_map],
             (ntest, 1),
         )
+        atom_nums_small = np.tile(
+            np.bincount(to_numpy_array(sampled[1]["atype"][0]))[idx_type_map],
+            (ntest, 1),
+        )
+        atom_nums = np.concatenate([atom_nums, atom_nums_small], axis=0)
+
         energy = dp.eval(
             to_numpy_array(sampled[0]["coord"][:ntest]),
             to_numpy_array(sampled[0]["box"][:ntest]),
             to_numpy_array(sampled[0]["atype"][0]),
         )[0]
+        energy_small = dp.eval(
+            to_numpy_array(sampled[1]["coord"][:ntest]),
+            to_numpy_array(sampled[1]["box"][:ntest]),
+            to_numpy_array(sampled[1]["atype"][0]),
+        )[0]
         energy_diff = to_numpy_array(sampled[0][self.testkey][:ntest]) - energy
+        energy_diff_small = (
+            to_numpy_array(sampled[1][self.testkey][:ntest]) - energy_small
+        )
+        energy_diff = np.concatenate([energy_diff, energy_diff_small], axis=0)
         finetune_shift = (
             energy_bias_after[idx_type_map] - energy_bias_before[idx_type_map]
         ).ravel()
