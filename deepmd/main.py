@@ -368,7 +368,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--datafile",
         default=None,
         type=str,
-        help="The path to file of test list.",
+        help="The path to the datafile, each line of which is a path to one data system.",
     )
     parser_tst.add_argument(
         "-S",
@@ -688,7 +688,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--datafile",
         default=None,
         type=str,
-        help="The path to file of test list.",
+        help="The path to the datafile, each line of which is a path to one data system.",
     )
     parser_change_bias_source.add_argument(
         "-b",
