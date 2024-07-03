@@ -313,7 +313,9 @@ def compute_output_stats(
 
         model_pred_g = (
             {
-                kk: [vv[idx] for idx in global_sampled_idx[kk]]
+                kk: [
+                    np.sum(vv[idx], axis=1) for idx in global_sampled_idx[kk]
+                ]  # sum atomic dim
                 for kk, vv in model_pred.items()
             }
             if model_pred
@@ -328,7 +330,7 @@ def compute_output_stats(
             else None
         )
 
-        # concat all frames within those systmes
+        # concat all frames within those systems
         model_pred_g = (
             {
                 kk: np.concatenate(model_pred_g[kk])
@@ -460,7 +462,6 @@ def compute_output_stats_global(
     else:
         # subtract the model bias and output the delta bias
 
-        model_pred = {kk: np.sum(model_pred[kk], axis=1) for kk in keys}
         stats_input = {
             kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
         }
