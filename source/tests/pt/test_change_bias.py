@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import tempfile
 import unittest
 from copy import (
     deepcopy,
@@ -36,6 +37,9 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
+from .common import (
+    run_dp,
+)
 from .model.test_permutation import (
     model_se_e2_a,
 )
@@ -77,12 +81,15 @@ class TestChangeBias(unittest.TestCase):
         self.model_path_data_bias = Path(current_path) / (
             model_name + "data_bias" + ".pt"
         )
+        self.model_path_data_file_bias = Path(current_path) / (
+            model_name + "data_file_bias" + ".pt"
+        )
         self.model_path_user_bias = Path(current_path) / (
             model_name + "user_bias" + ".pt"
         )
 
     def test_change_bias_with_data(self):
-        os.system(
+        run_dp(
             f"dp --pt change-bias {self.model_path!s} -s {self.data_file[0]} -o {self.model_path_data_bias!s}"
         )
         state_dict = torch.load(str(self.model_path_data_bias), map_location=DEVICE)
@@ -99,9 +106,32 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = expected_model.get_out_bias()
         torch.testing.assert_close(updated_bias, expected_bias)
 
+    def test_change_bias_with_data_sys_file(self):
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+        with open(tmp_file.name, "w") as f:
+            f.writelines([sys + "\n" for sys in self.data_file])
+        run_dp(
+            f"dp --pt change-bias {self.model_path!s} -f {tmp_file.name} -o {self.model_path_data_file_bias!s}"
+        )
+        state_dict = torch.load(
+            str(self.model_path_data_file_bias), map_location=DEVICE
+        )
+        model_params = state_dict["model"]["_extra_state"]["model_params"]
+        model_for_wrapper = get_model_for_wrapper(model_params)
+        wrapper = ModelWrapper(model_for_wrapper)
+        wrapper.load_state_dict(state_dict["model"])
+        updated_bias = wrapper.model["Default"].get_out_bias()
+        expected_model = model_change_out_bias(
+            self.trainer.wrapper.model["Default"],
+            self.sampled,
+            _bias_adjust_mode="change-by-statistic",
+        )
+        expected_bias = expected_model.get_out_bias()
+        torch.testing.assert_close(updated_bias, expected_bias)
+
     def test_change_bias_with_user_defined(self):
         user_bias = [0.1, 3.2, -0.5]
-        os.system(
+        run_dp(
             f"dp --pt change-bias {self.model_path!s} -b {' '.join([str(_) for _ in user_bias])} -o {self.model_path_user_bias!s}"
         )
         state_dict = torch.load(str(self.model_path_user_bias), map_location=DEVICE)

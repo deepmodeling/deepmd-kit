@@ -684,6 +684,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="The system dir. Recursively detect systems in this directory",
     )
     parser_change_bias_source.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to file of test list.",
+    )
+    parser_change_bias_source.add_argument(
         "-b",
         "--bias-value",
         default=None,

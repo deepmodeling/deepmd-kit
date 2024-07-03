@@ -454,7 +454,12 @@ def change_bias(FLAGS):
         updated_model = model_to_change
     else:
         # calculate bias on given systems
-        data_systems = process_systems(expand_sys_str(FLAGS.system))
+        if FLAGS.datafile is not None:
+            with open(FLAGS.datafile) as datalist:
+                all_sys = datalist.read().splitlines()
+        else:
+            all_sys = expand_sys_str(FLAGS.system)
+        data_systems = process_systems(all_sys)
         data_single = DpLoaderSet(
             data_systems,
             1,
