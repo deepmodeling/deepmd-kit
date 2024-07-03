@@ -1,4 +1,10 @@
-# Create a model in PyTorch
+# Create a model in other backends {{ pytorch_icon }} {{ dpmodel_icon }}
+
+:::{note}
+**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+
+In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
+:::
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
@@ -163,6 +169,19 @@ allows one to use your new descriptor as below:
 The arguments here should be consistent with the class arguments of your new component.
 
 ## Unit tests
+
+### Universal tests
+
+The `source/tests/universal` directory provides universal test suites for different models and backends.
+The subdirectory `cases` defines fixtures for different test cases of models, atomic models, descriptors, and fitting networks.
+The subdirectory `dpmodel` and `pt` are backend-specific test fixtures and suites.
+Each test suite tests APIs and whether the serialized models give the same results as the original models.
+Specially, the test suite for models also tests whether the model is permutation, translation, and rotation invariant, whether the model is differentiable and smooth near the cutoff radius, and whether the force is the negative gradient of the energy.
+
+When adding a new model, add the fixture to the `cases` subdiretory and then apply the test fixture in the suite of different backends.
+When implementing an existing model in a new backend, directly apply the existing test fixture to the test suite of that backend.
+
+### Consistent tests
 
 When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DP (Numpy) through the serialization/deserialization technique.
 

@@ -1,4 +1,4 @@
-# Create a model in TensorFlow
+# Create a model in TensorFlow {{ tensorflow_icon }}
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
