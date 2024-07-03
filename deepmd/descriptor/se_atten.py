@@ -959,6 +959,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 K_c = one_layer(
                     input_xyz,
                     self.att_n,
@@ -972,6 +974,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 V_c = one_layer(
                     input_xyz,
                     self.att_n,
@@ -985,6 +989,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 # # natom x nei_type_i x out_size
                 # xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1] // 4, outputs_size[-1]))
                 # natom x nei_type_i x att_n
@@ -1017,6 +1023,8 @@ class DescrptSeAtten(DescrptSeA):
                     uniform_seed=self.uniform_seed,
                     initial_variables=self.attention_layer_variables,
                 )
+                if not self.uniform_seed and self.seed is not None:
+                    self.seed += 1
                 input_xyz = tf.keras.layers.LayerNormalization(
                     beta_initializer=tf.constant_initializer(self.beta[i]),
                     gamma_initializer=tf.constant_initializer(self.gamma[i]),
@@ -1080,6 +1088,8 @@ class DescrptSeAtten(DescrptSeA):
                         initial_variables=self.embedding_net_variables,
                         mixed_prec=self.mixed_prec,
                     )
+                    if (not self.uniform_seed) and (self.seed is not None):
+                        self.seed += self.seed_shift
                 else:
                     if self.attn_layer == 0:
                         log.info(
@@ -1119,6 +1129,8 @@ class DescrptSeAtten(DescrptSeA):
                             initial_variables=self.embedding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
+                        if (not self.uniform_seed) and (self.seed is not None):
+                            self.seed += self.seed_shift
                     else:
                         net = "filter_net"
                         info = [
@@ -1176,6 +1188,8 @@ class DescrptSeAtten(DescrptSeA):
                             initial_variables=self.two_side_embeeding_net_variables,
                             mixed_prec=self.mixed_prec,
                         )
+                        if (not self.uniform_seed) and (self.seed is not None):
+                            self.seed += self.seed_shift
                         two_embd = tf.nn.embedding_lookup(
                             embedding_of_two_side_type_embedding, index_of_two_side
                         )
@@ -1194,8 +1208,6 @@ class DescrptSeAtten(DescrptSeA):
                             is_sorted=len(self.exclude_types) == 0,
                         )
 
-                if (not self.uniform_seed) and (self.seed is not None):
-                    self.seed += self.seed_shift
             input_r = tf.slice(
                 tf.reshape(inputs_i, (-1, shape_i[1] // 4, 4)), [0, 0, 1], [-1, -1, 3]
             )
