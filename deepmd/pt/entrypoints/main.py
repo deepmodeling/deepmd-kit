@@ -256,6 +256,21 @@ def train(FLAGS):
             model_branch=FLAGS.model_branch,
             change_model_params=FLAGS.use_pretrain_script,
         )
+    # update init_model or init_frz_model config if necessary
+    if (
+        FLAGS.init_model is not None or FLAGS.init_frz_model is not None
+    ) and FLAGS.use_pretrain_script:
+        if FLAGS.init_model is not None:
+            init_state_dict = torch.load(FLAGS.init_model, map_location=DEVICE)
+            if "model" in init_state_dict:
+                init_state_dict = init_state_dict["model"]
+            config["model"] = init_state_dict["_extra_state"]["model_params"]
+        else:
+            config["model"] = json.loads(
+                torch.jit.load(
+                    FLAGS.init_frz_model, map_location=DEVICE
+                ).get_model_def_script()
+            )
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
