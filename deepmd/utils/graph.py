@@ -176,10 +176,6 @@ def get_embedding_net_nodes_from_graph_def(
     embedding_net_nodes = get_pattern_nodes_from_graph_def(
         graph_def, embedding_net_pattern
     )
-    for key in embedding_net_nodes.keys():
-        assert (
-            key.find("bias") > 0 or key.find("matrix") > 0
-        ), "currently, only support weight matrix and bias matrix at the tabulation op!"
     return embedding_net_nodes
 
 

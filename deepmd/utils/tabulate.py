@@ -133,6 +133,10 @@ class DPTabulate:
         self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(
             self.graph_def, suffix=self.suffix
         )
+        for key in self.embedding_net_nodes.keys():
+            assert (
+                key.find("bias") > 0 or key.find("matrix") > 0
+            ), "currently, only support weight matrix and bias matrix at the tabulation op!"
 
         # move it to the descriptor class
         # for tt in self.exclude_types:
