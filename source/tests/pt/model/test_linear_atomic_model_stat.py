@@ -52,7 +52,7 @@ class FooFittingA(torch.nn.Module, BaseFitting):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 ),
@@ -104,7 +104,7 @@ class FooFittingB(torch.nn.Module, BaseFitting):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 ),

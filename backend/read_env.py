@@ -15,6 +15,7 @@ from packaging.version import (
 
 from .find_pytorch import (
     find_pytorch,
+    get_pt_version,
 )
 from .find_tensorflow import (
     find_tensorflow,
@@ -23,7 +24,7 @@ from .find_tensorflow import (
 
 
 @lru_cache
-def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
+def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
     """Get the arguments from environment variables.
 
     The environment variables are assumed to be not changed during the build.
@@ -40,6 +41,8 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         The extra scripts to be installed.
     str
         The TensorFlow version.
+    str
+        The PyTorch version.
     """
     cmake_args = []
     extra_scripts = {}
@@ -103,9 +106,8 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         tf_version = None
 
     if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
-        pt_install_dir = find_pytorch()
-        if pt_install_dir is None:
-            raise RuntimeError("Cannot find installed PyTorch.")
+        pt_install_dir, _ = find_pytorch()
+        pt_version = get_pt_version(pt_install_dir)
         cmake_args.extend(
             [
                 "-DENABLE_PYTORCH=ON",
@@ -114,6 +116,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         )
     else:
         cmake_args.append("-DENABLE_PYTORCH=OFF")
+        pt_version = None
 
     cmake_args = [
         "-DBUILD_PY_IF:BOOL=TRUE",
@@ -125,11 +128,12 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         find_libpython_requires,
         extra_scripts,
         tf_version,
+        pt_version,
     )
 
 
 def set_scikit_build_env():
     """Set scikit-build environment variables before executing scikit-build."""
-    cmake_minimum_required_version, cmake_args, _, _, _ = get_argument_from_env()
+    cmake_minimum_required_version, cmake_args, _, _, _, _ = get_argument_from_env()
     os.environ["SKBUILD_CMAKE_MINIMUM_VERSION"] = cmake_minimum_required_version
     os.environ["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)

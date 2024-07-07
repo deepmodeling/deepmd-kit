@@ -5,6 +5,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -134,8 +135,8 @@ class InvarFitting(GeneralFitting):
         mixed_types: bool = True,
         exclude_types: List[int] = [],
         type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
-        # seed, uniform_seed are not included
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -172,6 +173,7 @@ class InvarFitting(GeneralFitting):
             if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
             else [x is not None for x in atom_ener],
             type_map=type_map,
+            seed=seed,
         )
 
     def serialize(self) -> dict:
@@ -201,7 +203,7 @@ class InvarFitting(GeneralFitting):
                 OutputVariableDef(
                     self.var_name,
                     [self.dim_out],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 ),

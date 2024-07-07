@@ -2,6 +2,7 @@
 from typing import (
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -570,7 +571,7 @@ class TypeEmbedNet(nn.Module):
         bavg=0.0,
         stddev=1.0,
         precision="default",
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         use_econf_tebd=False,
         type_map=None,
     ):
@@ -667,7 +668,7 @@ class TypeEmbedNetConsistent(nn.Module):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         type_map: Optional[List[str]] = None,
@@ -717,7 +718,7 @@ class TypeEmbedNetConsistent(nn.Module):
             )
         else:
             assert self.econf_tebd is not None
-            embed = self.embedding_net(self.econf_tebd)
+            embed = self.embedding_net(self.econf_tebd.to(device))
         if self.padding:
             embed = torch.cat(
                 [embed, torch.zeros(1, embed.shape[1], dtype=self.prec, device=device)]

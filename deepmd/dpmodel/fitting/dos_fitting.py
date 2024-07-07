@@ -45,8 +45,7 @@ class DOSFittingNet(InvarFitting):
         mixed_types: bool = False,
         exclude_types: List[int] = [],
         type_map: Optional[List[str]] = None,
-        # not used
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
         if bias_dos is not None:
             self.bias_dos = bias_dos
@@ -69,6 +68,7 @@ class DOSFittingNet(InvarFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+            seed=seed,
         )
 
     @classmethod

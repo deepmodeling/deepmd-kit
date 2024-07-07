@@ -66,10 +66,10 @@ class DipoleFittingNet(GeneralFitting):
         Random seed.
     r_differentiable
         If the variable is differentiated with respect to coordinates of atoms.
-        Only reduciable variable are differentiable.
+        Only reducible variable are differentiable.
     c_differentiable
         If the variable is differentiated with respect to the cell tensor (pbc case).
-        Only reduciable variable are differentiable.
+        Only reducible variable are differentiable.
     type_map: List[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
@@ -87,7 +87,7 @@ class DipoleFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         exclude_types: List[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
@@ -142,7 +142,7 @@ class DipoleFittingNet(GeneralFitting):
                 OutputVariableDef(
                     self.var_name,
                     [3],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=self.r_differentiable,
                     c_differentiable=self.c_differentiable,
                 ),

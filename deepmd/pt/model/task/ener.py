@@ -5,6 +5,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Union,
 )
 
 import numpy as np
@@ -55,7 +56,7 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         type_map: Optional[List[str]] = None,
         **kwargs,
     ):
@@ -163,14 +164,14 @@ class EnergyFittingNetDirect(Fitting):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
                 OutputVariableDef(
                     "dforce",
                     [3],
-                    reduciable=False,
+                    reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),

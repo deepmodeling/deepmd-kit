@@ -62,7 +62,7 @@ class DeepPot(DeepEval):
                     OutputVariableDef(
                         "energy",
                         shape=[1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                         atomic=True,
@@ -80,7 +80,7 @@ class DeepPot(DeepEval):
                     OutputVariableDef(
                         "energy",
                         shape=[1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                         atomic=True,

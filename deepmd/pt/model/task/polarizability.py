@@ -91,7 +91,7 @@ class PolarFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         exclude_types: List[int] = [],
         fit_diag: bool = True,
         scale: Optional[Union[List[float], float]] = None,
@@ -216,7 +216,7 @@ class PolarFittingNet(GeneralFitting):
                 OutputVariableDef(
                     "polarizability",
                     [3, 3],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
@@ -241,7 +241,7 @@ class PolarFittingNet(GeneralFitting):
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        out = out * self.scale[atype]
+        out = out * (self.scale.to(atype.device))[atype]
         gr = gr.view(nframes * nloc, -1, 3)  # (nframes * nloc, m1, 3)
 
         if self.fit_diag:

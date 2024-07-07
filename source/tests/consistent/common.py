@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 import itertools
 import os
 import sys
@@ -13,6 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Dict,
     List,
     Optional,
     Tuple,
@@ -363,7 +365,7 @@ class CommonTest(ABC):
             clear_session()
 
 
-def parameterized(*attrs: tuple) -> Callable:
+def parameterized(*attrs: tuple, **subblock_attrs: tuple) -> Callable:
     """Parameterized test.
 
     Orginal class will not be actually generated. Avoid inherbiting from it.
@@ -374,6 +376,8 @@ def parameterized(*attrs: tuple) -> Callable:
     ----------
     *attrs : tuple
         The attributes to be parameterized.
+    **subblock_attrs : tuple
+        The sub-blocked attributes to be parameterized separately.
 
     Returns
     -------
@@ -398,10 +402,19 @@ def parameterized(*attrs: tuple) -> Callable:
     ...             "param2": param2,
     ...         }
     """
+    global_combine = list(itertools.product(*attrs)) if len(attrs) else []
+    block_combine = []
+    for kk in subblock_attrs:
+        block_combine += (
+            list(itertools.product(*subblock_attrs[kk]))
+            if len(subblock_attrs[kk])
+            else []
+        )
+    full_parameterized = global_combine + block_combine
 
     def decorator(base_class: type):
         class_module = sys.modules[base_class.__module__].__dict__
-        for pp in itertools.product(*attrs):
+        for pp in full_parameterized:
 
             class TestClass(base_class):
                 param: ClassVar = pp
@@ -413,3 +426,48 @@ def parameterized(*attrs: tuple) -> Callable:
         return object
 
     return decorator
+
+
+def parameterize_func(
+    func: Callable,
+    param_dict_list: Dict[str, Tuple],
+):
+    """Parameterize functions with different default values.
+
+    Parameters
+    ----------
+    func : Callable
+        The base function.
+    param_dict_list : Dict[str, Tuple]
+        Dictionary of parameters with default values to be changed in base function, each of which is a tuple of choices.
+
+    Returns
+    -------
+    list_func
+        List of parameterized functions with changed default values.
+
+    """
+
+    def create_wrapper(_func, _new_sig, _pp):
+        def wrapper(*args, **kwargs):
+            bound_args = _new_sig.bind(*args, **kwargs)
+            bound_args.apply_defaults()
+            return _func(*bound_args.args, **bound_args.kwargs)
+
+        wrapper.__name__ = f"{_func.__name__}_{'_'.join(str(x) for x in _pp)}"
+        wrapper.__qualname__ = wrapper.__name__
+        return wrapper
+
+    list_func = []
+    param_keys = list(param_dict_list.keys())
+    for pp in itertools.product(*[param_dict_list[kk] for kk in param_keys]):
+        sig = inspect.signature(func)
+        new_params = dict(sig.parameters)
+        for ii, val in enumerate(pp):
+            val_name = param_keys[ii]
+            # only change the default value of func
+            new_params[val_name] = sig.parameters[val_name].replace(default=val)
+        new_sig = sig.replace(parameters=list(new_params.values()))
+        list_func.append(create_wrapper(func, new_sig, pp))
+
+    return list_func

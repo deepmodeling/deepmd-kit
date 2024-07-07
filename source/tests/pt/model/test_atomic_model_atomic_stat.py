@@ -52,14 +52,14 @@ class FooFitting(torch.nn.Module, BaseFitting):
                 OutputVariableDef(
                     "foo",
                     [1],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 ),
                 OutputVariableDef(
                     "bar",
                     [1, 2],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=True,
                     c_differentiable=True,
                 ),

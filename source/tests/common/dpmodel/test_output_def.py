@@ -40,7 +40,7 @@ class TestDef(unittest.TestCase):
             OutputVariableDef(
                 "energy",
                 [1],
-                reduciable=True,
+                reducible=True,
                 r_differentiable=True,
                 c_differentiable=True,
                 atomic=True,
@@ -49,7 +49,7 @@ class TestDef(unittest.TestCase):
             OutputVariableDef(
                 "energy2",
                 [1],
-                reduciable=True,
+                reducible=True,
                 r_differentiable=True,
                 c_differentiable=True,
                 atomic=True,
@@ -58,7 +58,7 @@ class TestDef(unittest.TestCase):
             OutputVariableDef(
                 "energy3",
                 [1],
-                reduciable=True,
+                reducible=True,
                 r_differentiable=True,
                 c_differentiable=True,
                 atomic=True,
@@ -67,7 +67,7 @@ class TestDef(unittest.TestCase):
             OutputVariableDef(
                 "dos",
                 [10],
-                reduciable=True,
+                reducible=True,
                 r_differentiable=False,
                 c_differentiable=False,
                 atomic=True,
@@ -75,7 +75,7 @@ class TestDef(unittest.TestCase):
             OutputVariableDef(
                 "foo",
                 [3],
-                reduciable=False,
+                reducible=False,
                 r_differentiable=False,
                 c_differentiable=False,
                 atomic=True,
@@ -101,11 +101,11 @@ class TestDef(unittest.TestCase):
         self.assertEqual(fd["dos"].atomic, True)
         self.assertEqual(fd["foo"].atomic, True)
         # reduce
-        self.assertEqual(fd["energy"].reduciable, True)
-        self.assertEqual(fd["energy2"].reduciable, True)
-        self.assertEqual(fd["energy3"].reduciable, True)
-        self.assertEqual(fd["dos"].reduciable, True)
-        self.assertEqual(fd["foo"].reduciable, False)
+        self.assertEqual(fd["energy"].reducible, True)
+        self.assertEqual(fd["energy2"].reducible, True)
+        self.assertEqual(fd["energy3"].reducible, True)
+        self.assertEqual(fd["dos"].reducible, True)
+        self.assertEqual(fd["foo"].reducible, False)
         # derivative
         self.assertEqual(fd["energy"].r_differentiable, True)
         self.assertEqual(fd["energy"].c_differentiable, True)
@@ -160,11 +160,11 @@ class TestDef(unittest.TestCase):
         for kk in expected_keys:
             self.assertEqual(md[kk].name, kk)
         # reduce
-        self.assertEqual(md["energy"].reduciable, True)
-        self.assertEqual(md["energy2"].reduciable, True)
-        self.assertEqual(md["energy3"].reduciable, True)
-        self.assertEqual(md["dos"].reduciable, True)
-        self.assertEqual(md["foo"].reduciable, False)
+        self.assertEqual(md["energy"].reducible, True)
+        self.assertEqual(md["energy2"].reducible, True)
+        self.assertEqual(md["energy3"].reducible, True)
+        self.assertEqual(md["dos"].reducible, True)
+        self.assertEqual(md["foo"].reducible, False)
         # derivative
         self.assertEqual(md["energy"].r_differentiable, True)
         self.assertEqual(md["energy"].c_differentiable, True)
@@ -473,7 +473,7 @@ class TestDef(unittest.TestCase):
         OutputVariableDef(
             "energy",
             [1],
-            reduciable=False,
+            reducible=False,
             r_differentiable=True,
             c_differentiable=False,
         )
@@ -483,14 +483,14 @@ class TestDef(unittest.TestCase):
             OutputVariableDef(
                 "energy",
                 [1],
-                reduciable=True,
+                reducible=True,
                 r_differentiable=False,
                 c_differentiable=True,
             )
 
     def test_raise_redu_not_atomic(self):
         with self.assertRaises(ValueError) as context:
-            (OutputVariableDef("energy", [1], reduciable=True, atomic=False),)
+            (OutputVariableDef("energy", [1], reducible=True, atomic=False),)
 
     def test_hessian_not_reducible(self):
         with self.assertRaises(ValueError) as context:
@@ -498,7 +498,7 @@ class TestDef(unittest.TestCase):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=False,
+                    reducible=False,
                     atomic=False,
                     r_differentiable=True,
                     r_hessian=True,
@@ -511,7 +511,7 @@ class TestDef(unittest.TestCase):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=True,
+                    reducible=True,
                     atomic=False,
                     r_differentiable=False,
                     r_hessian=True,
@@ -524,7 +524,7 @@ class TestDef(unittest.TestCase):
                 OutputVariableDef(
                     "energy",
                     [1],
-                    reduciable=False,
+                    reducible=False,
                     atomic=False,
                     r_differentiable=True,
                     r_hessian=True,
@@ -544,7 +544,7 @@ class TestDef(unittest.TestCase):
                     OutputVariableDef(
                         "energy",
                         [1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                     ),
@@ -577,7 +577,7 @@ class TestDef(unittest.TestCase):
                     OutputVariableDef(
                         "energy",
                         [1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                     ),
@@ -615,7 +615,7 @@ class TestDef(unittest.TestCase):
                     OutputVariableDef(
                         "energy",
                         [1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                     ),
@@ -667,7 +667,7 @@ class TestDef(unittest.TestCase):
                     OutputVariableDef(
                         "energy",
                         [1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                     ),
@@ -699,7 +699,7 @@ class TestDef(unittest.TestCase):
                     OutputVariableDef(
                         "energy",
                         [1],
-                        reduciable=True,
+                        reducible=True,
                         r_differentiable=True,
                         c_differentiable=True,
                     ),
@@ -759,3 +759,20 @@ class TestDef(unittest.TestCase):
             check_var(np.zeros([2, 3, 4]), var_def)
             self.assertIn("shape not matching", context.exception)
         check_var(np.zeros([2, 2, 8]), var_def)
+
+    def test_squeeze(self):
+        out_var = OutputVariableDef("foo", [])
+        out_var.squeeze(0)
+        self.assertEqual(out_var.shape, [])
+        out_var = OutputVariableDef("foo", [1])
+        out_var.squeeze(0)
+        self.assertEqual(out_var.shape, [])
+        out_var = OutputVariableDef("foo", [1, 1])
+        out_var.squeeze(0)
+        self.assertEqual(out_var.shape, [1])
+        out_var = OutputVariableDef("foo", [1, 3])
+        out_var.squeeze(0)
+        self.assertEqual(out_var.shape, [3])
+        out_var = OutputVariableDef("foo", [3, 3])
+        out_var.squeeze(0)
+        self.assertEqual(out_var.shape, [3, 3])

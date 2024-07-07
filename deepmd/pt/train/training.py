@@ -31,7 +31,6 @@ from deepmd.pt.loss import (
     TensorLoss,
 )
 from deepmd.pt.model.model import (
-    DOSModel,
     get_model,
     get_zbl_model,
 )
@@ -601,15 +600,13 @@ class Trainer:
                         _finetune_rule_single,
                         _sample_func,
                     ):
-                        # need fix for DOSModel
-                        if not isinstance(_model, DOSModel):
-                            _model = _model_change_out_bias(
-                                _model,
-                                _sample_func,
-                                _bias_adjust_mode="change-by-statistic"
-                                if not _finetune_rule_single.get_random_fitting()
-                                else "set-by-statistic",
-                            )
+                        _model = _model_change_out_bias(
+                            _model,
+                            _sample_func,
+                            _bias_adjust_mode="change-by-statistic"
+                            if not _finetune_rule_single.get_random_fitting()
+                            else "set-by-statistic",
+                        )
                         return _model
 
                     if not self.multi_task:
@@ -702,6 +699,8 @@ class Trainer:
         self.tensorboard_log_dir = training_params.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = training_params.get("tensorboard_freq", 1)
         self.enable_profiler = training_params.get("enable_profiler", False)
+        self.profiling = training_params.get("profiling", False)
+        self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self):
         fout = (
@@ -719,12 +718,14 @@ class Trainer:
             )
 
             writer = SummaryWriter(log_dir=self.tensorboard_log_dir)
-        if self.enable_profiler:
+        if self.enable_profiler or self.profiling:
             prof = torch.profiler.profile(
                 schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
                 on_trace_ready=torch.profiler.tensorboard_trace_handler(
                     self.tensorboard_log_dir
-                ),
+                )
+                if self.enable_profiler
+                else None,
                 record_shapes=True,
                 with_stack=True,
             )
@@ -732,7 +733,7 @@ class Trainer:
 
         def step(_step_id, task_key="Default"):
             # PyTorch Profiler
-            if self.enable_profiler:
+            if self.enable_profiler or self.profiling:
                 prof.step()
             self.wrapper.train()
             if isinstance(self.lr_exp, dict):
@@ -1064,8 +1065,13 @@ class Trainer:
             fout1.close()
         if self.enable_tensorboard:
             writer.close()
-        if self.enable_profiler:
+        if self.enable_profiler or self.profiling:
             prof.stop()
+            if self.profiling:
+                prof.export_chrome_trace(self.profiling_file)
+                log.info(
+                    f"The profiling trace have been saved to: {self.profiling_file}"
+                )
 
     def save_model(self, save_path, lr=0.0, step=0):
         module = (

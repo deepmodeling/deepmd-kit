@@ -5,6 +5,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
@@ -76,10 +77,10 @@ class DipoleFitting(GeneralFitting):
             Atomic contributions of the excluded atom types are set zero.
     r_differentiable
             If the variable is differentiated with respect to coordinates of atoms.
-            Only reduciable variable are differentiable.
+            Only reducible variable are differentiable.
     c_differentiable
             If the variable is differentiated with respect to the cell tensor (pbc case).
-            Only reduciable variable are differentiable.
+            Only reducible variable are differentiable.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
@@ -107,10 +108,8 @@ class DipoleFitting(GeneralFitting):
         c_differentiable: bool = True,
         type_map: Optional[List[str]] = None,
         old_impl=False,
-        # not used
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
     ):
-        # seed, uniform_seed are not included
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -142,6 +141,7 @@ class DipoleFitting(GeneralFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+            seed=seed,
         )
         self.old_impl = False
 
@@ -172,7 +172,7 @@ class DipoleFitting(GeneralFitting):
                 OutputVariableDef(
                     self.var_name,
                     [3],
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=self.r_differentiable,
                     c_differentiable=self.c_differentiable,
                 ),

@@ -127,7 +127,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 for ii in md0.atomic_output_def().get_data().values():
                     if ii.name == "mask":
                         self.assertEqual(ii.shape, [1])
-                        self.assertFalse(ii.reduciable)
+                        self.assertFalse(ii.reducible)
                         self.assertFalse(ii.r_differentiable)
                         self.assertFalse(ii.c_differentiable)
 

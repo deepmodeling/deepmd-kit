@@ -8,9 +8,25 @@ $ cd $deepmd_source_dir/examples/water/se_e2_a/
 
 After switching to that directory, the training can be invoked by
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
-$ dp train input.json
+$ dp --tf train input.json
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+$ dp --pt train input.json
+```
+
+:::
+
+::::
 
 where `input.json` is the name of the input script.
 

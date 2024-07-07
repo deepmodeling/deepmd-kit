@@ -70,6 +70,7 @@ pair_style deepmd models ... keyword value ...
 pair_style deepmd graph.pb
 pair_style deepmd graph.pb fparam 1.2
 pair_style deepmd graph_0.pb graph_1.pb graph_2.pb out_file md.out out_freq 10 atomic relative 1.0
+pair_style deepmd graph_0.pb graph_1.pth out_file md.out out_freq 100
 pair_coeff * * O H
 
 pair_style deepmd cp.pb fparam_from_compute TEMP

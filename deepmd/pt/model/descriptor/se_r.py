@@ -12,6 +12,9 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.pt.model.descriptor import (
     prod_env_mat,
 )
@@ -70,7 +73,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         old_impl: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, List[int]]] = None,
         type_map: Optional[List[str]] = None,
         **kwargs,
     ):
@@ -120,7 +123,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
-                seed=self.seed,
+                seed=child_seed(self.seed, ii),
             )
         self.filter_layers = filter_layers
         self.stats = None
@@ -305,6 +308,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -318,6 +322,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, not required by this descriptor.
+        comm_dict
+            The data needed for communication for parallel inference.
 
         Returns
         -------

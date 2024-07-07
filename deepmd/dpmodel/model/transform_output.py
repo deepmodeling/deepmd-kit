@@ -31,7 +31,7 @@ def fit_output_to_model_output(
         vdef = fit_output_def[kk]
         shap = vdef.shape
         atom_axis = -(len(shap) + 1)
-        if vdef.reduciable:
+        if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             # cast to energy prec brefore reduction
             model_ret[kk_redu] = np.sum(
@@ -63,7 +63,7 @@ def communicate_extended_output(
         vv = model_ret[kk]
         vdef = model_output_def[kk]
         new_ret[kk] = vv
-        if vdef.reduciable:
+        if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             new_ret[kk_redu] = model_ret[kk_redu]
             if vdef.r_differentiable:

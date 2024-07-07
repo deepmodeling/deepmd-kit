@@ -65,7 +65,7 @@ def model_check_output(cls):
             for kk in self.md.keys_outp():
                 dd = self.md[kk]
                 check_var(ret[kk], dd)
-                if dd.reduciable:
+                if dd.reducible:
                     rk = get_reduce_name(kk)
                     check_var(ret[rk], self.md[rk])
                 if dd.r_differentiable:
@@ -166,15 +166,15 @@ class OutputVariableDef:
     shape
           The shape of the variable. e.g. energy should be [1],
           dipole should be [3], polarizabilty should be [3,3].
-    reduciable
+    reducible
           If the variable is reduced.
     r_differentiable
           If the variable is differentiated with respect to coordinates
-          of atoms. Only reduciable variable are differentiable.
+          of atoms. Only reducible variable are differentiable.
           Negative derivative w.r.t. coordinates will be calcualted. (e.g. force)
     c_differentiable
           If the variable is differentiated with respect to the
-          cell tensor (pbc case). Only reduciable variable
+          cell tensor (pbc case). Only reducible variable
           are differentiable.
           Virial, the transposed negative gradient with cell tensor times
           cell tensor, will be calculated, see eq 40 JCP 159, 054801 (2023).
@@ -192,7 +192,7 @@ class OutputVariableDef:
         self,
         name: str,
         shape: List[int],
-        reduciable: bool = False,
+        reducible: bool = False,
         r_differentiable: bool = False,
         c_differentiable: bool = False,
         atomic: bool = True,
@@ -208,25 +208,30 @@ class OutputVariableDef:
         for i in range(len_shape):
             self.output_size *= self.shape[i]
         self.atomic = atomic
-        self.reduciable = reduciable
+        self.reducible = reducible
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
         if self.c_differentiable and not self.r_differentiable:
             raise ValueError("c differentiable requires r_differentiable")
-        if self.reduciable and not self.atomic:
-            raise ValueError("a reduciable variable should be atomic")
+        if self.reducible and not self.atomic:
+            raise ValueError("a reducible variable should be atomic")
         self.category = category
         self.r_hessian = r_hessian
         self.magnetic = magnetic
         if self.r_hessian:
-            if not self.reduciable:
-                raise ValueError("only reduciable variable can calculate hessian")
+            if not self.reducible:
+                raise ValueError("only reducible variable can calculate hessian")
             if not self.r_differentiable:
                 raise ValueError("only r_differentiable variable can calculate hessian")
 
     @property
     def size(self):
         return self.output_size
+
+    def squeeze(self, dim):
+        # squeeze the shape on given dimension
+        if -len(self.shape) <= dim < len(self.shape) and self.shape[dim] == 1:
+            self.shape.pop(dim)
 
 
 class FittingOutputDef:
@@ -306,7 +311,6 @@ class ModelOutputDef:
 
     def get_data(
         self,
-        key: str,
     ) -> Dict[str, OutputVariableDef]:
         return self.var_defs
 
@@ -402,17 +406,27 @@ def check_operation_applied(
     return var_def.category & op.value == op.value
 
 
+def check_deriv(var_def: OutputVariableDef) -> bool:
+    """Check if a variable is obtained by derivative."""
+    deriv = (
+        check_operation_applied(var_def, OutputVariableOperation.DERV_R)
+        or check_operation_applied(var_def, OutputVariableOperation._SEC_DERV_R)
+        or check_operation_applied(var_def, OutputVariableOperation.DERV_C)
+    )
+    return deriv
+
+
 def do_reduce(
     def_outp_data: Dict[str, OutputVariableDef],
 ) -> Dict[str, OutputVariableDef]:
     def_redu: Dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
-        if vv.reduciable:
+        if vv.reducible:
             rk = get_reduce_name(kk)
             def_redu[rk] = OutputVariableDef(
                 rk,
                 vv.shape,
-                reduciable=False,
+                reducible=False,
                 r_differentiable=False,
                 c_differentiable=False,
                 atomic=False,
@@ -429,7 +443,7 @@ def do_mask(
     def_mask["mask"] = OutputVariableDef(
         name="mask",
         shape=[1],
-        reduciable=False,
+        reducible=False,
         r_differentiable=False,
         c_differentiable=False,
     )
@@ -439,7 +453,7 @@ def do_mask(
             def_mask["mask_mag"] = OutputVariableDef(
                 name="mask_mag",
                 shape=[1],
-                reduciable=False,
+                reducible=False,
                 r_differentiable=False,
                 c_differentiable=False,
             )
@@ -458,7 +472,7 @@ def do_derivative(
             def_derv_r[rkr] = OutputVariableDef(
                 rkr,
                 vv.shape + [3],  # noqa: RUF005
-                reduciable=False,
+                reducible=False,
                 r_differentiable=(
                     vv.r_hessian and vv.category == OutputVariableCategory.OUT.value
                 ),
@@ -470,7 +484,7 @@ def do_derivative(
                 def_derv_r[rkrm] = OutputVariableDef(
                     rkrm,
                     vv.shape + [3],  # noqa: RUF005
-                    reduciable=False,
+                    reducible=False,
                     r_differentiable=(
                         vv.r_hessian and vv.category == OutputVariableCategory.OUT.value
                     ),
@@ -485,7 +499,7 @@ def do_derivative(
             def_derv_c[rkc] = OutputVariableDef(
                 rkc,
                 vv.shape + [9],  # noqa: RUF005
-                reduciable=True,
+                reducible=True,
                 r_differentiable=False,
                 c_differentiable=False,
                 atomic=True,
@@ -495,7 +509,7 @@ def do_derivative(
                 def_derv_r[rkcm] = OutputVariableDef(
                     rkcm,
                     vv.shape + [9],  # noqa: RUF005
-                    reduciable=True,
+                    reducible=True,
                     r_differentiable=False,
                     c_differentiable=False,
                     atomic=True,
