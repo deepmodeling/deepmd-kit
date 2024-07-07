@@ -23,6 +23,10 @@ from deepmd.pt.utils.tabulate import (
     DPTabulate,
 )
 
+from deepmd.pt.utils.compress import (
+    make_data,
+)
+
 from deepmd.pt.utils.spin import (
     Spin,
 )
