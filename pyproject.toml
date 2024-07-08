@@ -344,6 +344,7 @@ select = [
     "TID251", # banned-api
     "TID253", # banned-module-level-imports
     "T20", # ban print
+    "B904", # raise-without-from-inside-except
 ]
 
 ignore = [

@@ -48,8 +48,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of DescriptorBlock should be set by `type`")
+            except KeyError as e:
+                raise KeyError(
+                    "the type of DescriptorBlock should be set by `type`"
+                ) from e
             cls = cls.get_class_by_type(descrpt_type)
         return super().__new__(cls)
 
