@@ -187,6 +187,7 @@ def DescriptorParamDPA1(
     set_davg_zero=True,
     smooth_type_embedding=True,
     use_econf_tebd=False,
+    use_tebd_bias=False,
     precision="float64",
 ):
     input_dict = {
@@ -214,6 +215,7 @@ def DescriptorParamDPA1(
         "set_davg_zero": set_davg_zero,
         "smooth_type_embedding": smooth_type_embedding,
         "use_econf_tebd": use_econf_tebd,
+        "use_tebd_bias": use_tebd_bias,
         "precision": precision,
     }
     return input_dict
@@ -275,6 +277,7 @@ def DescriptorParamDPA2(
     smooth=True,
     add_tebd_to_repinit_out=True,
     use_econf_tebd=False,
+    use_tebd_bias=False,
     env_protection=0.0,
     exclude_types=[],
     precision="float64",
@@ -336,6 +339,7 @@ def DescriptorParamDPA2(
         "env_protection": env_protection,
         "trainable": True,
         "use_econf_tebd": use_econf_tebd,
+        "use_tebd_bias": use_tebd_bias,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
         "add_tebd_to_repinit_out": add_tebd_to_repinit_out,
