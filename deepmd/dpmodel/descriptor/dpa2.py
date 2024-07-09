@@ -481,6 +481,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
                 self.repformers.dim_in,
                 bias=False,
                 precision=precision,
+                seed=child_seed(seed, 3),
             )
         self.tebd_transform = None
         if self.add_tebd_to_repinit_out:
@@ -489,6 +490,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
                 self.repformers.dim_in,
                 bias=False,
                 precision=precision,
+                seed=child_seed(seed, 4),
             )
         assert self.repinit.rcut > self.repformers.rcut
         assert self.repinit.sel[0] > self.repformers.sel[0]
