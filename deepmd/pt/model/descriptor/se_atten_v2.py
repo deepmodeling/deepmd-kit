@@ -68,6 +68,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         stripped_type_embedding: Optional[bool] = None,
         seed: Optional[Union[int, List[int]]] = None,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         # not implemented
         spin=None,
@@ -124,6 +125,10 @@ class DescrptSeAttenV2(DescrptDPA1):
             Whether to normalize the hidden vectors in attention weights calculation.
         temperature : float
             If not None, the scaling of attention weights is `temperature` itself.
+        concat_output_tebd : bool
+            Whether to concat type embedding at the output of the descriptor.
+        trainable : bool
+            If the weights of this descriptors are trainable.
         trainable_ln : bool
             Whether to use trainable shift and scale weights in layer normalization.
         ln_eps : float, Optional
@@ -132,8 +137,24 @@ class DescrptSeAttenV2(DescrptDPA1):
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
             Default is 'False'.
+        stripped_type_embedding : bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
         seed : int, Optional
             Random seed for parameter initialization.
+        use_econf_tebd : bool, Optional
+            Whether to use electronic configuration type embedding.
+        use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
+        type_map : List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+        spin
+            (Only support None to keep consistent with other backend references.)
+            (Not used in this version. Not-none option is not implemented.)
+            The old implementation of deepspin.
         """
         DescrptDPA1.__init__(
             self,
@@ -167,6 +188,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             stripped_type_embedding=stripped_type_embedding,
             seed=seed,
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # not implemented
             spin=spin,
@@ -179,7 +201,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         data = {
             "@class": "Descriptor",
             "type": "se_atten_v2",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -202,6 +224,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": RESERVED_PRECISON_DICT[obj.prec],
@@ -224,7 +247,7 @@ class DescrptSeAttenV2(DescrptDPA1):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 2)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")

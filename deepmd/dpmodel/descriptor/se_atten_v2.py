@@ -64,6 +64,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
         seed: Optional[Union[int, List[int]]] = None,
@@ -100,6 +101,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             spin=spin,
             stripped_type_embedding=stripped_type_embedding,
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # consistent with argcheck, not used though
             seed=seed,
@@ -111,7 +113,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         data = {
             "@class": "Descriptor",
             "type": "se_atten_v2",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -134,6 +136,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
@@ -158,7 +161,7 @@ class DescrptSeAttenV2(DescrptDPA1):
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 2)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")

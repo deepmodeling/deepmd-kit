@@ -2079,6 +2079,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to concat type embedding at the output of the descriptor.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
@@ -2116,6 +2118,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
@@ -2167,6 +2170,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         )
         self.tebd_dim = tebd_dim
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2176,6 +2180,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             padding=True,
             activation_function="Linear",
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # precision=precision,
             seed=seed,
@@ -2303,7 +2308,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         if cls is not DescrptDPA1Compat:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 2)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -2357,12 +2362,14 @@ class DescrptDPA1Compat(DescrptSeAtten):
         data.update(
             {
                 "type": "dpa1",
+                "@version": 2,
                 "tebd_dim": self.tebd_dim,
                 "scaling_factor": self.scaling_factor,
                 "normalize": self.normalize,
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
                 "use_econf_tebd": self.use_econf_tebd,
+                "use_tebd_bias": self.use_tebd_bias,
                 "type_embedding": self.type_embedding.serialize(suffix),
             }
         )

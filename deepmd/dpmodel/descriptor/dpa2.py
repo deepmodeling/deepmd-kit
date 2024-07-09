@@ -331,6 +331,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         seed: Optional[Union[int, List[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
@@ -361,6 +362,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             Whether to add type embedding to the output representation from repinit before inputting it into repformer.
         use_econf_tebd : bool, Optional
             Whether to use electronic configuration type embedding.
+        use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
         type_map : List[str], Optional
             A list of strings. Give the name to each type of atoms.
 
@@ -449,6 +452,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             seed=child_seed(seed, 1),
         )
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes=ntypes,
@@ -457,6 +461,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             activation_function="Linear",
             precision=precision,
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 2),
         )
@@ -718,7 +723,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa2",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "repinit_args": self.repinit_args.serialize(),
             "repformer_args": self.repformer_args.serialize(),
@@ -730,6 +735,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             "trainable": self.trainable,
             "add_tebd_to_repinit_out": self.add_tebd_to_repinit_out,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
             "g1_shape_tranform": self.g1_shape_tranform.serialize(),
@@ -772,7 +778,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 2)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()

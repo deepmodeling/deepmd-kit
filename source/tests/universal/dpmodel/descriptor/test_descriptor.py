@@ -240,6 +240,7 @@ DescriptorParamDPA1List = parameterize_func(
             "smooth_type_embedding": (True, False),
             "concat_output_tebd": (True,),
             "use_econf_tebd": (False, True),
+            "use_tebd_bias": (False,),
             "precision": ("float64",),
         }
     ),
@@ -368,6 +369,7 @@ DescriptorParamDPA2List = parameterize_func(
             "precision": ("float64",),
             "add_tebd_to_repinit_out": (True, False),
             "use_econf_tebd": (False,),
+            "use_tebd_bias": (False,),
         }
     ),
 )

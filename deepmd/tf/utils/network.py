@@ -219,6 +219,7 @@ def embedding_net(
     uniform_seed=False,
     initial_variables=None,
     mixed_prec=None,
+    bias=True,
 ):
     r"""The embedding network.
 
@@ -274,6 +275,8 @@ def embedding_net(
         The input dict which stores the embedding net variables
     mixed_prec
         The input dict which stores the mixed precision setting for the embedding net
+    bias : bool Optional
+        Whether to use bias in the embedding layer.
 
     References
     ----------
@@ -289,18 +292,26 @@ def embedding_net(
             stddev=stddev / np.sqrt(outputs_size[ii] + outputs_size[ii - 1]),
             seed=seed if (seed is None or uniform_seed) else seed + ii * 3 + 0,
         )
-        b_initializer = tf.random_normal_initializer(
-            stddev=stddev,
-            mean=bavg,
-            seed=seed if (seed is None or uniform_seed) else seed + 3 * ii + 1,
+        b_initializer = (
+            tf.random_normal_initializer(
+                stddev=stddev,
+                mean=bavg,
+                seed=seed if (seed is None or uniform_seed) else seed + 3 * ii + 1,
+            )
+            if bias
+            else None
         )
         if initial_variables is not None:
             scope = tf.get_variable_scope().name
             w_initializer = tf.constant_initializer(
                 initial_variables[scope + "/matrix_" + str(ii) + name_suffix]
             )
-            b_initializer = tf.constant_initializer(
-                initial_variables[scope + "/bias_" + str(ii) + name_suffix]
+            b_initializer = (
+                tf.constant_initializer(
+                    initial_variables[scope + "/bias_" + str(ii) + name_suffix]
+                )
+                if bias
+                else None
             )
         w = tf.get_variable(
             "matrix_" + str(ii) + name_suffix,
@@ -311,27 +322,35 @@ def embedding_net(
         )
         variable_summaries(w, "matrix_" + str(ii) + name_suffix)
 
-        b = tf.get_variable(
-            "bias_" + str(ii) + name_suffix,
-            [outputs_size[ii]],
-            precision,
-            b_initializer,
-            trainable=trainable,
+        b = (
+            tf.get_variable(
+                "bias_" + str(ii) + name_suffix,
+                [outputs_size[ii]],
+                precision,
+                b_initializer,
+                trainable=trainable,
+            )
+            if bias
+            else None
         )
-        variable_summaries(b, "bias_" + str(ii) + name_suffix)
+        if bias:
+            variable_summaries(b, "bias_" + str(ii) + name_suffix)
 
         if mixed_prec is not None:
             xx = tf.cast(xx, get_precision(mixed_prec["compute_prec"]))
             w = tf.cast(w, get_precision(mixed_prec["compute_prec"]))
-            b = tf.cast(b, get_precision(mixed_prec["compute_prec"]))
+            b = tf.cast(b, get_precision(mixed_prec["compute_prec"])) if bias else None
         if activation_fn is not None:
             hidden = tf.reshape(
-                activation_fn(tf.nn.bias_add(tf.matmul(xx, w), b)),
+                activation_fn(
+                    tf.nn.bias_add(tf.matmul(xx, w), b) if bias else tf.matmul(xx, w)
+                ),
                 [-1, outputs_size[ii]],
             )
         else:
             hidden = tf.reshape(
-                tf.nn.bias_add(tf.matmul(xx, w), b), [-1, outputs_size[ii]]
+                tf.nn.bias_add(tf.matmul(xx, w), b) if bias else tf.matmul(xx, w),
+                [-1, outputs_size[ii]],
             )
         if resnet_dt:
             idt_initializer = tf.random_normal_initializer(
