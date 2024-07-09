@@ -250,7 +250,7 @@ class TestDPA1(unittest.TestCase):
         atype = self.atype
         box = self.cell
         # handel type_embedding
-        type_embedding = TypeEmbedNet(ntypes, 8).to(env.DEVICE)
+        type_embedding = TypeEmbedNet(ntypes, 8, use_tebd_bias=True).to(env.DEVICE)
         type_embedding.load_state_dict(torch.load(self.file_type_embed))
 
         ## to save model parameters
@@ -294,6 +294,7 @@ class TestDPA1(unittest.TestCase):
         dparams["ntypes"] = ntypes
         assert dparams.pop("type") == "se_atten"
         dparams["concat_output_tebd"] = False
+        dparams["use_tebd_bias"] = True
         des = DescrptDPA1(
             **dparams,
         ).to(env.DEVICE)
