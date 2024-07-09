@@ -37,6 +37,7 @@ else:
     ("float32", "float64"),  # precision
     (True, False),  # padding
     (True, False),  # use_econf_tebd
+    (True, False),  # use_tebd_bias
 )
 class TestTypeEmbedding(CommonTest, unittest.TestCase):
     """Useful utilities for descriptor tests."""
@@ -48,12 +49,14 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             precision,
             padding,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return {
             "neuron": [2, 4, 4],
             "resnet_dt": resnet_dt,
             "precision": precision,
             "use_econf_tebd": use_econf_tebd,
+            "use_tebd_bias": use_tebd_bias,
             "seed": 20240327,
         }
 
@@ -69,6 +72,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             precision,
             padding,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         # implict argument not input by users
         return {
@@ -110,6 +114,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             precision,
             padding,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -128,6 +133,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             precision,
             padding,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         if precision == "float64":
             return 1e-10
