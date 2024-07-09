@@ -694,6 +694,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 activation_function=activation_function,
                 resnet_dt=resnet_dt,
                 precision=precision,
+                seed=seed,
             )
             i_in = neuron[-1] if len(neuron) > 0 else in_dim
             i_ot = out_dim
