@@ -28,7 +28,9 @@ class TestTypeEbd(tf.test.TestCase):
         np.testing.assert_almost_equal(atom_embed, expected_out, 10)
 
     def test_type_embed_net(self):
-        ten = TypeEmbedNet(ntypes=2, neuron=[2, 4, 8], seed=1, uniform_seed=True)
+        ten = TypeEmbedNet(
+            ntypes=2, neuron=[2, 4, 8], seed=1, uniform_seed=True, use_tebd_bias=True
+        )
         type_embedding = ten.build(2)
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())

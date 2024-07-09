@@ -299,6 +299,7 @@ class TestModel(tf.test.TestCase):
         typeebd = TypeEmbedNet(
             ntypes=len(jdata["model"]["descriptor"]["sel"]),
             **jdata["model"]["type_embeding"],
+            use_tebd_bias=True,
         )
         jdata["model"]["descriptor"].pop("type", None)
         descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
