@@ -275,7 +275,7 @@ def embedding_net(
         The input dict which stores the embedding net variables
     mixed_prec
         The input dict which stores the mixed precision setting for the embedding net
-    bias : bool Optional
+    bias : bool, Optional
         Whether to use bias in the embedding layer.
 
     References

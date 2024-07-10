@@ -810,11 +810,14 @@ class TypeEmbedNetConsistent(nn.Module):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 2)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data_cls = data.pop("@class")
         assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
 
         embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         type_embedding_net = cls(**data)
         type_embedding_net.embedding_net = embedding_net
         return type_embedding_net
