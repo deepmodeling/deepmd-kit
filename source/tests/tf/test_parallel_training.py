@@ -16,10 +16,10 @@ class TestSingleMachine(unittest.TestCase):
     def setUp(self):
         try:
             import horovod  # noqa: F401
-        except ImportError:
+        except ImportError as e:
             raise unittest.SkipTest(
                 "Package horovod is required for parallel-training tests."
-            )
+            ) from e
         self.input_file = str(tests_path / "model_compression" / "input.json")
 
     def test_two_workers(self):

@@ -102,7 +102,7 @@ def find_tensorflow() -> Tuple[Optional[str], List[str]]:
                 )
                 tf_version = "2.14.1"
             else:
-                raise RuntimeError("Unsupported CUDA version")
+                raise RuntimeError("Unsupported CUDA version") from None
         requires.extend(get_tf_requirement(tf_version)["cpu"])
         # setuptools will re-find tensorflow after installing setup_requires
         tf_install_dir = None

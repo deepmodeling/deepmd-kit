@@ -75,8 +75,8 @@ def neighbor_stat(
     backends = Backend.get_backends_by_feature(Backend.Feature.NEIGHBOR_STAT)
     try:
         backend_obj = backends[backend]()
-    except KeyError:
-        raise ValueError(f"Invalid backend {backend}")
+    except KeyError as e:
+        raise ValueError(f"Invalid backend {backend}") from e
     NeighborStat = backend_obj.neighbor_stat
     all_sys = expand_sys_str(system)
     if not len(all_sys):

@@ -196,8 +196,8 @@ class DeepmdDataSystem:
             words = self.test_size.split("%")
             try:
                 percent = int(words[0])
-            except ValueError:
-                raise RuntimeError("unknown test_size rule " + words[0])
+            except ValueError as e:
+                raise RuntimeError("unknown test_size rule " + words[0]) from e
             self.test_size = self._make_auto_ts(percent)
         elif isinstance(self.test_size, list):
             pass
