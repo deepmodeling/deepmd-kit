@@ -515,7 +515,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 2)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
@@ -526,6 +526,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         add_tebd_to_repinit_out = data["add_tebd_to_repinit_out"]
         data["repinit"] = RepinitArgs(**data.pop("repinit_args"))
         data["repformer"] = RepformerArgs(**data.pop("repformer_args"))
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding

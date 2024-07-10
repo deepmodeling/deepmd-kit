@@ -246,7 +246,7 @@ class TypeEmbedNet:
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 2)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data_cls = data.pop("@class")
         assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
 
@@ -256,9 +256,10 @@ class TypeEmbedNet:
             embedding_net_variables[
                 f"type_embed_net{suffix}/matrix_{layer_idx + 1}"
             ] = layer.w
-            embedding_net_variables[f"type_embed_net{suffix}/bias_{layer_idx + 1}"] = (
-                layer.b
-            )
+            if layer.b is not None:
+                embedding_net_variables[
+                    f"type_embed_net{suffix}/bias_{layer_idx + 1}"
+                ] = layer.b
             if layer.idt is not None:
                 embedding_net_variables[
                     f"type_embed_net{suffix}/idt_{layer_idx + 1}"
@@ -269,6 +270,9 @@ class TypeEmbedNet:
                     f"type_embed_net{suffix}/idt_{layer_idx + 1}"
                 ] = 0.0
 
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         type_embedding_net = cls(**data)
         type_embedding_net.type_embedding_net_variables = embedding_net_variables
         return type_embedding_net

@@ -2308,7 +2308,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         if cls is not DescrptDPA1Compat:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 2)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -2330,6 +2330,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             )
         else:
             two_side_embeeding_net_variables = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables

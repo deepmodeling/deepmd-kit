@@ -547,7 +547,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 2)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -560,6 +560,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             embeddings_strip = data.pop("embeddings_strip")
         else:
             embeddings_strip = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
 
         obj.se_atten["davg"] = variables["davg"]

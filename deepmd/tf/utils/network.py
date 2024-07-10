@@ -306,6 +306,7 @@ def embedding_net(
             w_initializer = tf.constant_initializer(
                 initial_variables[scope + "/matrix_" + str(ii) + name_suffix]
             )
+            bias = (scope + "/bias_" + str(ii) + name_suffix) in initial_variables
             b_initializer = (
                 tf.constant_initializer(
                     initial_variables[scope + "/bias_" + str(ii) + name_suffix]

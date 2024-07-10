@@ -571,6 +571,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             Floating point precision for the model paramters.
         seed : int, optional
             Random seed.
+        bias : bool Optional
+            Whether to use bias in the embedding layer.
         """
 
         def __init__(
