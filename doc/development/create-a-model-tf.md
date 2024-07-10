@@ -58,16 +58,12 @@ The arguments here should be consistent with the class arguments of your new com
 
 ## Package new codes
 
-You may use `setuptools` to package new codes into a new Python package. It's crucial to add your new component to `entry_points['deepmd']` in `setup.py`:
+You may package new codes into a new Python package if you don't want to contribute it to the main DeePMD-kit repository.
+It's crucial to add your new component to `project.entry-points."deepmd"` in `pyproject.toml`:
 
-```py
-entry_points = (
-    {
-        "deepmd": [
-            "some_descrpt=deepmd_some_descrtpt:SomeDescript",
-        ],
-    },
-)
+```toml
+[project.entry-points."deepmd"]
+some_descrpt = "deepmd_some_descrtpt:SomeDescript"
 ```
 
 where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `from deepmd_some_descrtpt import SomeDescript`.

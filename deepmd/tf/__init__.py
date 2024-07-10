@@ -1,14 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Root of the deepmd package, exposes all public classes and submodules."""
 
-try:
-    from importlib import (
-        metadata,
-    )
-except ImportError:  # for Python<3.8
-    import importlib_metadata as metadata
-
 import deepmd.tf.utils.network as network
+from deepmd.utils.entry_point import (
+    load_entry_point,
+)
 
 from . import (
     cluster,
@@ -39,12 +35,7 @@ except ImportError:
     )
 
 # load third-party plugins
-try:
-    eps = metadata.entry_points(group="deepmd")
-except TypeError:
-    eps = metadata.entry_points().get("deepmd", [])
-for ep in eps:
-    ep.load()
+load_entry_point("deepmd")
 
 __all__ = [
     "__version__",
