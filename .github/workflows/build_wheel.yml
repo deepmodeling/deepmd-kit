@@ -75,7 +75,7 @@ jobs:
           # https://github.com/pypa/setuptools_scm/issues/480
           fetch-depth: 0
       - name: Install uv
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/0.2.18/uv-installer.sh | sh
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/0.2.24/uv-installer.sh | sh
         if: runner.os != 'Linux'
       - uses: docker/setup-qemu-action@v3
         name: Setup QEMU
