@@ -118,6 +118,7 @@ class TestDPA2(unittest.TestCase):
         dparams["ntypes"] = ntypes
         assert dparams.pop("type") == "dpa2"
         dparams["concat_output_tebd"] = False
+        dparams["use_tebd_bias"] = True
         des = DescrptDPA2(
             **dparams,
         ).to(env.DEVICE)

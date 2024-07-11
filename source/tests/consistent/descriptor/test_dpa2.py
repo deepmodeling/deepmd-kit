@@ -64,6 +64,7 @@ from deepmd.utils.argcheck import (
     ("float64",),  # precision
     (True, False),  # add_tebd_to_repinit_out
     (True, False),  # use_econf_tebd
+    (False,),  # use_tebd_bias
 )
 class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -91,6 +92,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -149,6 +151,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             "env_protection": 0.0,
             "trainable": True,
             "use_econf_tebd": use_econf_tebd,
+            "use_tebd_bias": use_tebd_bias,
             "type_map": ["O", "H"] if use_econf_tebd else None,
             "add_tebd_to_repinit_out": add_tebd_to_repinit_out,
         }
@@ -178,6 +181,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -206,6 +210,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -234,6 +239,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return True
 
@@ -298,6 +304,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
 
     def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
@@ -359,6 +366,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -393,6 +401,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             add_tebd_to_repinit_out,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         if precision == "float64":
             return 1e-6  # need to fix in the future, see issue https://github.com/deepmodeling/deepmd-kit/issues/3786

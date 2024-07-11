@@ -100,6 +100,8 @@ class TypeEmbedNet:
             Concat the zero padding to the output, as the default embedding of empty type.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
@@ -117,6 +119,7 @@ class TypeEmbedNet:
         uniform_seed: bool = False,
         padding: bool = False,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         **kwargs,
     ) -> None:
@@ -133,6 +136,7 @@ class TypeEmbedNet:
         self.type_embedding_net_variables = None
         self.padding = padding
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         if self.use_econf_tebd:
             self.econf_tebd, _ = get_econf_tebd(self.type_map, precision=precision)
@@ -191,6 +195,7 @@ class TypeEmbedNet:
                 trainable=self.trainable,
                 initial_variables=self.type_embedding_net_variables,
                 uniform_seed=self.uniform_seed,
+                bias=self.use_tebd_bias,
             )
         ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]])  # ntypes * neuron[-1]
         if self.padding:
@@ -241,7 +246,7 @@ class TypeEmbedNet:
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data_cls = data.pop("@class")
         assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
 
@@ -251,9 +256,10 @@ class TypeEmbedNet:
             embedding_net_variables[
                 f"type_embed_net{suffix}/matrix_{layer_idx + 1}"
             ] = layer.w
-            embedding_net_variables[f"type_embed_net{suffix}/bias_{layer_idx + 1}"] = (
-                layer.b
-            )
+            if layer.b is not None:
+                embedding_net_variables[
+                    f"type_embed_net{suffix}/bias_{layer_idx + 1}"
+                ] = layer.b
             if layer.idt is not None:
                 embedding_net_variables[
                     f"type_embed_net{suffix}/idt_{layer_idx + 1}"
@@ -264,6 +270,9 @@ class TypeEmbedNet:
                     f"type_embed_net{suffix}/idt_{layer_idx + 1}"
                 ] = 0.0
 
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         type_embedding_net = cls(**data)
         type_embedding_net.type_embedding_net_variables = embedding_net_variables
         return type_embedding_net
@@ -303,6 +312,7 @@ class TypeEmbedNet:
             activation_function=self.filter_activation_fn_name,
             resnet_dt=self.filter_resnet_dt,
             precision=self.filter_precision.name,
+            bias=self.use_tebd_bias,
         )
         for key, value in self.type_embedding_net_variables.items():
             m = re.search(type_embedding_pattern, key)
@@ -315,7 +325,7 @@ class TypeEmbedNet:
 
         return {
             "@class": "TypeEmbedNet",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "neuron": self.neuron,
             "resnet_dt": self.filter_resnet_dt,
@@ -324,6 +334,7 @@ class TypeEmbedNet:
             "trainable": self.trainable,
             "padding": self.padding,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "embedding": embedding_net.serialize(),
         }

@@ -201,6 +201,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
@@ -253,6 +255,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         # consistent with argcheck, not used though
         seed: Optional[Union[int, List[int]]] = None,
@@ -301,6 +304,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             seed=child_seed(seed, 0),
         )
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes=ntypes,
@@ -309,6 +313,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             activation_function="Linear",
             precision=precision,
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 1),
         )
@@ -491,7 +496,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -516,6 +521,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
@@ -541,7 +547,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -554,6 +560,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             embeddings_strip = data.pop("embeddings_strip")
         else:
             embeddings_strip = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
 
         obj.se_atten["davg"] = variables["davg"]

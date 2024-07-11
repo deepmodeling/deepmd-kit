@@ -90,6 +90,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         seed: Optional[Union[int, List[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         old_impl: bool = False,
     ):
@@ -121,6 +122,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             Whether to add type embedding to the output representation from repinit before inputting it into repformer.
         use_econf_tebd : bool, Optional
             Whether to use electronic configuration type embedding.
+        use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
         type_map : List[str], Optional
             A list of strings. Give the name to each type of atoms.
 
@@ -211,6 +214,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -218,6 +222,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             precision=precision,
             seed=child_seed(seed, 2),
             use_econf_tebd=self.use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
         self.concat_output_tebd = concat_output_tebd
@@ -455,7 +460,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         data = {
             "@class": "Descriptor",
             "type": "dpa2",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "repinit_args": self.repinit_args.serialize(),
             "repformer_args": self.repformer_args.serialize(),
@@ -467,6 +472,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             "trainable": self.trainable,
             "add_tebd_to_repinit_out": self.add_tebd_to_repinit_out,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
             "g1_shape_tranform": self.g1_shape_tranform.serialize(),
@@ -509,7 +515,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
@@ -520,6 +526,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         add_tebd_to_repinit_out = data["add_tebd_to_repinit_out"]
         data["repinit"] = RepinitArgs(**data.pop("repinit_args"))
         data["repformer"] = RepformerArgs(**data.pop("repformer_args"))
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding

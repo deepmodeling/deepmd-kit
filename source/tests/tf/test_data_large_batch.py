@@ -121,6 +121,7 @@ class TestDataLargeBatch(tf.test.TestCase):
             activation_function=None,
             seed=typeebd_param["seed"],
             uniform_seed=True,
+            use_tebd_bias=True,
             padding=True,
         )
         model = EnerModel(descrpt, fitting, typeebd)
@@ -320,6 +321,7 @@ class TestDataLargeBatch(tf.test.TestCase):
             activation_function=None,
             seed=typeebd_param["seed"],
             uniform_seed=True,
+            use_tebd_bias=True,
             padding=True,
         )
         model = EnerModel(descrpt, fitting, typeebd)
@@ -519,6 +521,7 @@ class TestDataLargeBatch(tf.test.TestCase):
             activation_function=None,
             seed=typeebd_param["seed"],
             uniform_seed=True,
+            use_tebd_bias=True,
             padding=True,
         )
         model = EnerModel(descrpt, fitting, typeebd)
