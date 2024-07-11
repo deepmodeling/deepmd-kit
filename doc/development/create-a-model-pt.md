@@ -168,6 +168,22 @@ allows one to use your new descriptor as below:
 
 The arguments here should be consistent with the class arguments of your new component.
 
+## Package new codes
+
+You may package new codes into a new Python package if you don't want to contribute it to the main DeePMD-kit repository.
+It's crucial to add your new component to `project.entry-points."deepmd.pt"` in `pyproject.toml`:
+
+```toml
+[project.entry-points."deepmd.pt"]
+some_descrpt = "deepmd_some_descrtpt:SomeDescript"
+```
+
+where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `from deepmd_some_descrtpt import SomeDescript`.
+
+If you place `SomeDescript` and `descrpt_some_args` into different modules, you are also expected to add `descrpt_some_args` to `entry_points`.
+
+After you install your new package, you can now use `dp train` to run your new model.
+
 ## Unit tests
 
 ### Universal tests
