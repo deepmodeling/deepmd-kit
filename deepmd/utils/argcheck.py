@@ -1533,6 +1533,10 @@ def model_args(exclude_hybrid=False):
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+    doc_finetune_head = (
+        "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
+        "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
+    )
 
     hybrid_models = []
     if not exclude_hybrid:
@@ -1629,6 +1633,12 @@ def model_args(exclude_hybrid=False):
                 fold_subdoc=True,
             ),
             Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
+            Argument(
+                "finetune_head",
+                str,
+                optional=True,
+                doc=doc_only_pt_supported + doc_finetune_head,
+            ),
         ],
         [
             Variant(
