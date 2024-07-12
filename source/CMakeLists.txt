@@ -176,10 +176,7 @@ if(BUILD_CPP_IF
         "Cannot determine PyTorch CMake prefix path, error code: $PYTORCH_CMAKE_PREFIX_PATH_RESULT_VAR}, error message: ${PYTORCH_CMAKE_PREFIX_PATH_ERROR_VAR}"
     )
   endif()
-  list(APPEND BACKEND_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH})
-  if(Protobuf_LIBRARY_DIRECTORY)
-    list(APPEND BACKEND_LIBRARY_PATH ${Protobuf_LIBRARY_DIRECTORY})
-  endif()
+  list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_CMAKE_PREFIX_PATH})
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
