@@ -1,119 +1,140 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
     hooks:
-    -   id: trailing-whitespace
+      - id: trailing-whitespace
         exclude: "^.+\\.pbtxt$"
-    -   id: end-of-file-fixer
+      - id: end-of-file-fixer
         exclude: "^.+\\.pbtxt$"
-    -   id: check-yaml
-    -   id: check-json
-    -   id: check-added-large-files
-        args: ['--maxkb=1024', '--enforce-all']
-        # TODO: remove the following after resolved
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=1024", "--enforce-all"]
         exclude: |
-            (?x)^(
-                source/tests/infer/dipolecharge_e.pbtxt|
-                source/tests/infer/deeppolar_new.pbtxt
-            )$
-    -   id: check-merge-conflict
-    -   id: check-symlinks
-    -   id: check-toml
-# Python
--   repo: https://github.com/PyCQA/isort
-    rev: 5.13.0
+          (?x)^(
+              source/tests/infer/dipolecharge_e.pbtxt|
+              source/tests/infer/deeppolar_new.pbtxt
+          )$
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+  # Python
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
     hooks:
-    - id: isort
-      files: \.py$
-      exclude: ^source/3rdparty
--   repo: https://github.com/astral-sh/ruff-pre-commit
+      - id: isort
+        files: \.py$
+        exclude: ^source/3rdparty
+  - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.1.7
+    rev: v0.5.1
     hooks:
-    - id: ruff
-      args: ["--fix"]
-      exclude: ^source/3rdparty
-      types_or: [python, pyi, jupyter]
-    - id: ruff-format
-      exclude: ^source/3rdparty
-      types_or: [python, pyi, jupyter]
-# numpydoc
--   repo: https://github.com/Carreau/velin
+      - id: ruff
+        args: ["--fix"]
+        exclude: ^source/3rdparty
+        types_or: [python, pyi, jupyter]
+      - id: ruff-format
+        exclude: ^source/3rdparty
+        types_or: [python, pyi, jupyter]
+  # numpydoc
+  - repo: https://github.com/Carreau/velin
     rev: 0.0.12
     hooks:
-    - id: velin
-      args: ["--write"]
-      exclude: ^source/3rdparty
-# Python inside docs
--   repo: https://github.com/asottile/blacken-docs
-    rev: 1.16.0
+      - id: velin
+        args: ["--write"]
+        exclude: ^source/3rdparty
+  # Python inside docs
+  - repo: https://github.com/asottile/blacken-docs
+    rev: 1.18.0
     hooks:
-    -   id: blacken-docs
-# C++
--   repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v17.0.6
+      - id: blacken-docs
+  # C++
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.8
     hooks:
-    -   id: clang-format
+      - id: clang-format
         exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
-# CSS
--   repo: https://github.com/pre-commit/mirrors-csslint
-    rev: v1.0.5
+  # markdown, yaml, CSS, javascript
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
     hooks:
-    -   id: csslint
-# Shell
-- repo: https://github.com/scop/pre-commit-shfmt
-  rev: v3.7.0-4
-  hooks:
-    - id: shfmt
-# CMake
-- repo: https://github.com/cheshirekow/cmake-format-precommit
-  rev: v0.6.13
-  hooks:
-    - id: cmake-format
-    #- id: cmake-lint
-# license header
-- repo: https://github.com/Lucas-C/pre-commit-hooks
-  rev: v1.5.4
-  hooks:
-    # C++, js
-    -   id: insert-license
+      - id: prettier
+        types_or: [markdown, yaml, css]
+        # workflow files cannot be modified by pre-commit.ci
+        exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
+  # Shell
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.8.0-1
+    hooks:
+      - id: shfmt
+  # CMake
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.13
+    hooks:
+      - id: cmake-format
+      #- id: cmake-lint
+  - repo: https://github.com/njzjz/mirrors-bibtex-tidy
+    rev: v1.13.0
+    hooks:
+      - id: bibtex-tidy
+        args:
+          - --curly
+          - --numeric
+          - --align=13
+          - --blank-lines
+          # disable sort: the order of keys and fields has explict meanings
+          #- --sort=key
+          - --duplicates=key,doi,citation,abstract
+          - --merge=combine
+          #- --sort-fields
+          #- --strip-comments
+          - --trailing-commas
+          - --encode-urls
+          - --remove-empty-fields
+          - --wrap=80
+  # license header
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.5
+    hooks:
+      # C++, js
+      - id: insert-license
         files: \.(c|cc|cpp|js|ts|h|hpp)$
         args:
-        - --license-filepath
-        - .license-header.txt
-        - --comment-style
-        - //
-        - --no-extra-eol
+          - --license-filepath
+          - .license-header.txt
+          - --comment-style
+          - //
+          - --no-extra-eol
         exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
-    # CSS
-    -   id: insert-license
+      # CSS
+      - id: insert-license
         files: \.(css|scss)$
         args:
-        - --license-filepath
-        - .license-header.txt
-        - --comment-style
-        - /*| *| */
-        - --no-extra-eol
-    # Python
-    -   id: insert-license
+          - --license-filepath
+          - .license-header.txt
+          - --comment-style
+          - /*| *| */
+          - --no-extra-eol
+      # Python
+      - id: insert-license
         files: \.(py|pyx)$
         args:
-        - --license-filepath
-        - .license-header.txt
-        - --comment-style
-        - "#"
-        - --no-extra-eol
+          - --license-filepath
+          - .license-header.txt
+          - --comment-style
+          - "#"
+          - --no-extra-eol
         exclude: ^source/3rdparty
-    # HTML
-    -   id: insert-license
+      # HTML
+      - id: insert-license
         files: \.(html|vue|xml)$
         args:
-        - --license-filepath
-        - .license-header.txt
-        - --comment-style
-        - <!--|  ~|  -->
-        - --no-extra-eol
+          - --license-filepath
+          - .license-header.txt
+          - --comment-style
+          - <!--|  ~|  -->
+          - --no-extra-eol
 ci:
   autoupdate_branch: devel

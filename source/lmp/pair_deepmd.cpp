@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <string.h>
 
+#include <cassert>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -204,7 +205,7 @@ static void make_uniform_aparam(vector<double> &daparam,
                                 const vector<double> &aparam,
                                 const int &nlocal) {
   unsigned dim_aparam = aparam.size();
-  daparam.resize(dim_aparam * nlocal);
+  daparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
   for (int ii = 0; ii < nlocal; ++ii) {
     for (int jj = 0; jj < dim_aparam; ++jj) {
       daparam[ii * dim_aparam + jj] = aparam[jj];
@@ -218,7 +219,9 @@ void PairDeepMD::make_fparam_from_compute(vector<double> &fparam) {
   int icompute = modify->find_compute(compute_fparam_id);
   Compute *compute = modify->compute[icompute];
 
-  assert(compute);
+  if (!compute) {
+    error->all(FLERR, "compute id is not found: " + compute_fparam_id);
+  }
   fparam.resize(dim_fparam);
 
   if (dim_fparam == 1) {
@@ -245,9 +248,11 @@ void PairDeepMD::make_aparam_from_compute(vector<double> &aparam) {
   int icompute = modify->find_compute(compute_aparam_id);
   Compute *compute = modify->compute[icompute];
 
-  assert(compute);
+  if (!compute) {
+    error->all(FLERR, "compute id is not found: " + compute_aparam_id);
+  }
   int nlocal = atom->nlocal;
-  aparam.resize(dim_aparam * nlocal);
+  aparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
 
   if (!(compute->invoked_flag & Compute::INVOKED_PERATOM)) {
     compute->compute_peratom();
@@ -276,7 +281,9 @@ void PairDeepMD::make_ttm_fparam(vector<double> &fparam) {
       ttm_fix = dynamic_cast<FixTTMDP *>(modify->fix[ii]);
     }
   }
-  assert(ttm_fix);
+  if (!ttm_fix) {
+    error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
+  }
 
   fparam.resize(dim_fparam);
 
@@ -315,7 +322,9 @@ void PairDeepMD::make_ttm_aparam(vector<double> &daparam) {
       ttm_fix = dynamic_cast<FixTTMDP *>(modify->fix[ii]);
     }
   }
-  assert(ttm_fix);
+  if (!ttm_fix) {
+    error->all(FLERR, "fix ttm id is not found: " + ttm_fix_id);
+  }
   // modify
   double **x = atom->x;
   int *mask = atom->mask;
@@ -450,16 +459,17 @@ void PairDeepMD::compute(int eflag, int vflag) {
   if (numb_models == 0) {
     return;
   }
-  if (eflag || vflag) {
-    ev_setup(eflag, vflag);
-  }
+  // See
+  // https://docs.lammps.org/Developer_updating.html#use-ev-init-to-initialize-variables-derived-from-eflag-and-vflag
+  ev_init(eflag, vflag);
   if (vflag_atom) {
     error->all(FLERR,
                "6-element atomic virial is not supported. Use compute "
                "centroid/stress/atom command for 9-element atomic virial.");
   }
   bool do_ghost = true;
-
+  //  dpa2 communication
+  commdata_ = (CommBrickDeepMD *)comm;
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
@@ -550,8 +560,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
   multi_models_mod_devi =
       (numb_models > 1 && (out_freq > 0 && update->ntimestep % out_freq == 0));
   if (do_ghost) {
-    deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                       list->firstneigh);
+    deepmd_compat::InputNlist lmp_list(
+        list->inum, list->ilist, list->numneigh, list->firstneigh,
+        commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
+        commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
+        commdata_->recvproc, &world);
     deepmd_compat::InputNlist extend_lmp_list;
     if (atom->sp_flag) {
       extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
@@ -573,7 +586,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->one(FLERR, e.what());
           }
         } else {
-          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
           try {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
@@ -596,7 +609,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             error->one(FLERR, e.what());
           }
         } else {
-          dforce.resize((extend_inum + extend_nghost) * 3);
+          dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
           try {
             deep_pot.compute(dener, dforce, dvirial, extend_dcoord,
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
@@ -1495,7 +1508,7 @@ void PairDeepMD::extend(int &extend_inum,
   }
 
   // extend coord
-  extend_dcoord.resize(extend_nall * 3);
+  extend_dcoord.resize(static_cast<size_t>(extend_nall) * 3);
   for (int ii = 0; ii < nloc; ii++) {
     for (int jj = 0; jj < 3; jj++) {
       extend_dcoord[new_idx_map[ii] * 3 + jj] = dcoord[ii * 3 + jj];

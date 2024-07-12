@@ -8,7 +8,11 @@ struct Region {
   FPTYPE* boxt;
   FPTYPE* rec_boxt;
   Region();
+  Region(FPTYPE* extern_boxt, FPTYPE* extern_rec_boxt);
   ~Region();
+
+ private:
+  bool self_allocated;
 };
 
 template <typename FPTYPE>

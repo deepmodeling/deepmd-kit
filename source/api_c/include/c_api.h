@@ -7,6 +7,13 @@ extern "C" {
 #include <stdbool.h>
 #endif
 
+/** @file */
+
+/** C API version. Bumped whenever the API is changed.
+ * @since API version 22
+ */
+#define DP_C_API_VERSION 22
+
 /**
  * @brief Neighbor list.
  */
@@ -24,6 +31,50 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int* ilist_,
                              int* numneigh_,
                              int** firstneigh_);
+/*
+ * @brief Create a new neighbor list with communication capabilities.
+ * @details This function extends DP_NewNlist by adding support for parallel
+ * communication, allowing the neighbor list to be used in distributed
+ * environments.
+ * @param[in] inum_ Number of core region atoms.
+ * @param[in] ilist_ Array storing the core region atom's index.
+ * @param[in] numneigh_ Array storing the core region atom's neighbor atom
+ * number.
+ * @param[in] firstneigh_ Array storing the core region atom's neighbor index.
+ * @param[in] nswap Number of swaps to be performed in communication.
+ * @param[in] sendnum Array storing the number of atoms to send for each swap.
+ * @param[in] recvnum Array storing the number of atoms to receive for each
+ * swap.
+ * @param[in] firstrecv Index of the first receive operation for each swap.
+ * @param[in] sendlist List of atoms to be sent for each swap.
+ * @param[in] sendproc Array of processor IDs to send atoms to for each swap.
+ * @param[in] recvproc Array of processor IDs from which atoms are received for
+ * each swap.
+ * @param[in] world Pointer to the MPI communicator or similar communication
+ * world used for the operation.
+ * @returns A pointer to the initialized neighbor list with communication
+ * capabilities.
+ */
+extern DP_Nlist* DP_NewNlist_comm(int inum_,
+                                  int* ilist_,
+                                  int* numneigh_,
+                                  int** firstneigh_,
+                                  int nswap,
+                                  int* sendnum,
+                                  int* recvnum,
+                                  int* firstrecv,
+                                  int** sendlist,
+                                  int* sendproc,
+                                  int* recvproc,
+                                  void* world);
+
+/**
+ * @brief Delete a neighbor list.
+ *
+ * @param nl Neighbor list to delete.
+ *
+ **/
+extern void DP_DeleteNlist(DP_Nlist* nl);
 
 /**
  * @brief Check if there is any exceptions throw.
@@ -71,6 +122,13 @@ extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
                                            const int gpu_rank,
                                            const char* c_file_content,
                                            const int size_file_content);
+
+/**
+ * @brief Delete a Deep Potential.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPot(DP_DeepPot* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -492,6 +550,154 @@ extern DP_DeepPotModelDevi* DP_NewDeepPotModelDeviWithParam(
     const int* size_file_contents);
 
 /**
+ * @brief Delete a Deep Potential Model Deviation.
+ *
+ * @param dp Deep Potential to delete.
+ */
+extern void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP model deviation
+ *with neighbor list. (double version)
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotModelDeviCompute(DP_DeepPotModelDevi* dp,
+                                       const int natom,
+                                       const double* coord,
+                                       const int* atype,
+                                       const double* cell,
+                                       double* energy,
+                                       double* force,
+                                       double* virial,
+                                       double* atomic_energy,
+                                       double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP model deviation
+ *with neighbor list. (float version)
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotModelDeviComputef(DP_DeepPotModelDevi* dp,
+                                        const int natom,
+                                        const float* coord,
+                                        const int* atype,
+                                        const float* cell,
+                                        double* energy,
+                                        float* force,
+                                        float* virial,
+                                        float* atomic_energy,
+                                        float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP model deviation
+ *with neighbor list. (double version)
+ * @version 2
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+void DP_DeepPotModelDeviCompute2(DP_DeepPotModelDevi* dp,
+                                 const int nframes,
+                                 const int natoms,
+                                 const double* coord,
+                                 const int* atype,
+                                 const double* cell,
+                                 const double* fparam,
+                                 const double* aparam,
+                                 double* energy,
+                                 double* force,
+                                 double* virial,
+                                 double* atomic_energy,
+                                 double* atomic_virial);
+/**
+ * @brief Evaluate the energy, force and virial by using a DP model deviation
+ *with neighbor list. (float version)
+ * @version 2
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+void DP_DeepPotModelDeviComputef2(DP_DeepPotModelDevi* dp,
+                                  const int nframes,
+                                  const int natoms,
+                                  const float* coord,
+                                  const int* atype,
+                                  const float* cell,
+                                  const float* fparam,
+                                  const float* aparam,
+                                  double* energy,
+                                  float* force,
+                                  float* virial,
+                                  float* atomic_energy,
+                                  float* atomic_virial);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP model deviation
  *with neighbor list. (double version)
  * @param[in] dp The DP model deviation to use.
@@ -791,6 +997,13 @@ extern DP_DeepTensor* DP_NewDeepTensor(const char* c_model);
 extern DP_DeepTensor* DP_NewDeepTensorWithParam(const char* c_model,
                                                 const int gpu_rank,
                                                 const char* c_name_scope);
+
+/**
+ * @brief Delete a Deep Tensor.
+ *
+ * @param dp Deep Tensor to delete.
+ */
+extern void DP_DeleteDeepTensor(DP_DeepTensor* dt);
 
 /**
  * @brief Evaluate the tensor by using a DP. (double version)
@@ -1095,24 +1308,31 @@ extern DP_DipoleChargeModifier* DP_NewDipoleChargeModifierWithParam(
     const char* c_model, const int gpu_rank, const char* c_name_scope);
 
 /**
+ * @brief Delete a Dipole Charge Modifier.
+ *
+ * @param dp Dipole Charge Modifier to delete.
+ */
+extern void DP_DeleteDipoleChargeModifier(DP_DipoleChargeModifier* dcm);
+
+/**
  * @brief Evaluate the force and virial correction by using a dipole charge
  *modifier with the neighbor list. (double version)
  * @param[in] dcm The dipole charge modifier to use.
  * @param[in] natoms The number of atoms.
- * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ * @param[in] coord The coordinates of atoms. The array should be of size nall
  *x 3.
- * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] atype The atom types. The array should contain nall ints.
  * @param[in] cell The cell of the region. The array should be of size 9. Pass
  *NULL if pbc is not used.
  * @param[in] pairs The pairs of atoms. The list should contain npairs pairs of
  *ints.
  * @param[in] npairs The number of pairs.
  * @param[in] delef_ The electric field on each atom. The array should be of
- *size nframes x natoms x 3.
+ *size nframes x nloc x 3.
  * @param[in] nghost The number of ghost atoms.
  * @param[in] nlist The neighbor list.
  * @param[out] dfcorr_ Output force correction. The array should be of size
- *natoms x 3.
+ *nall x 3.
  * @param[out] dvcorr_ Output virial correction. The array should be of size 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
@@ -1270,6 +1490,13 @@ void DP_SelectMapInt(const int* in,
                      const int nall1,
                      const int nall2,
                      int* out);
+
+/**
+ * @brief Destroy a char array.
+ *
+ * @param c_str The char array.
+ */
+void DP_DeleteChar(const char* c_str);
 
 #ifdef __cplusplus
 } /* end extern "C" */

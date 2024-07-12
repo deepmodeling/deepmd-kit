@@ -245,18 +245,10 @@ type_HO = np.array([2, 1, 1, 2, 1, 1, 3])
 nktv2p = 1.6021765e6
 
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        pbtxt_file.resolve(),
-        pb_file.resolve(),
-    ).split()
+    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
 )
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        pbtxt_file2.resolve(),
-        pb_file2.resolve(),
-    ).split()
+    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
 )
 
 
@@ -337,9 +329,7 @@ def test_pair_deepmd_virial(lammps):
 
 def test_pair_deepmd_model_devi(lammps):
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve()
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -365,9 +355,7 @@ def test_pair_deepmd_model_devi(lammps):
 
 def test_pair_deepmd_model_devi_virial(lammps):
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve()
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
     )
     lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")
@@ -406,9 +394,7 @@ def test_pair_deepmd_model_devi_virial(lammps):
 def test_pair_deepmd_model_devi_atomic_relative(lammps):
     relative = 1.0
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic relative {}".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative {relative}"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -437,9 +423,7 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps):
 def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
     relative = 1.0
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic relative_v {}".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative_v {relative}"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)

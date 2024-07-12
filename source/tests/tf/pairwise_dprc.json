@@ -1,0 +1,176 @@
+{
+  "_comment1": " model parameters",
+  "model": {
+    "type": "pairwise_dprc",
+    "type_map": [
+      "C",
+      "N",
+      "O",
+      "H",
+      "OW",
+      "HW"
+    ],
+    "type_embedding": {
+      "use_tebd_bias": true,
+      "neuron": [
+        2
+      ]
+    },
+    "qm_model": {
+      "descriptor": {
+        "type": "se_atten_v2",
+        "sel": 100,
+        "rcut_smth": 5.80,
+        "rcut": 6.00,
+        "neuron": [
+          25,
+          50,
+          100
+        ],
+        "resnet_dt": false,
+        "axis_neuron": 16,
+        "attn_layer": 0,
+        "seed": 1
+      },
+      "fitting_net": {
+        "type": "ener",
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "seed": 1
+      }
+    },
+    "qmmm_model": {
+      "descriptor": {
+        "type": "se_atten_v2",
+        "sel": 100,
+        "rcut_smth": 5.80,
+        "rcut": 6.00,
+        "neuron": [
+          25,
+          50,
+          100
+        ],
+        "resnet_dt": false,
+        "axis_neuron": 16,
+        "set_davg_zero": true,
+        "attn_layer": 0,
+        "exclude_types": [
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            0,
+            3
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            1,
+            3
+          ],
+          [
+            2,
+            2
+          ],
+          [
+            2,
+            3
+          ],
+          [
+            3,
+            3
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            5
+          ],
+          [
+            5,
+            5
+          ]
+        ],
+        "seed": 1
+      },
+      "fitting_net": {
+        "type": "ener",
+        "neuron": [
+          240,
+          240,
+          240
+        ],
+        "resnet_dt": true,
+        "seed": 1,
+        "atom_ener": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    }
+  },
+  "loss": {
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0
+  },
+  "learning_rate": {
+    "start_lr": 0.005,
+    "decay_steps": 5000,
+    "stop_lr": 1e-8
+  },
+
+  "training": {
+    "training_data": {
+      "systems": [
+        "system"
+      ],
+      "batch_size": 1
+    },
+    "stop_batch": 0,
+
+    "seed": 1,
+
+    "_comment2": " display and restart",
+    "_comment3": " frequencies counted in batch",
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "numb_test": 1,
+    "save_freq": 1000,
+    "save_ckpt": "model.ckpt",
+    "disp_training": true,
+    "time_training": true,
+    "profiling": false,
+    "profiling_file": "timeline.json"
+  },
+
+  "_comment4": "that's all"
+}

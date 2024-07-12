@@ -14,12 +14,22 @@ template <typename FPTYPE>
 Region<FPTYPE>::Region() {
   boxt = new FPTYPE[BOXT_DIM];
   rec_boxt = new FPTYPE[BOXT_DIM];
+  self_allocated = true;
+}
+
+template <typename FPTYPE>
+Region<FPTYPE>::Region(FPTYPE* extern_boxt, FPTYPE* extern_rec_boxt) {
+  boxt = extern_boxt;
+  rec_boxt = extern_rec_boxt;
+  self_allocated = false;
 }
 
 template <typename FPTYPE>
 Region<FPTYPE>::~Region() {
-  delete[] boxt;
-  delete[] rec_boxt;
+  if (self_allocated) {
+    delete[] boxt;
+    delete[] rec_boxt;
+  }
 }
 
 template struct deepmd::Region<double>;

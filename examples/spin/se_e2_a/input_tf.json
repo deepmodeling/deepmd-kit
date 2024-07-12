@@ -1,0 +1,101 @@
+{
+  "_comment1": " model parameters",
+  "model": {
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        60,
+        60
+      ],
+      "rcut_smth": 5.4,
+      "rcut": 5.6,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 16,
+      "type_one_side": true,
+      "precision": "float64",
+      "seed": 1,
+      "_comment2": " that's all"
+    },
+    "fitting_net": {
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "precision": "float64",
+      "seed": 1,
+      "_comment3": " that's all"
+    },
+    "spin": {
+      "use_spin": [
+        true,
+        false
+      ],
+      "virtual_len": [
+        0.4
+      ],
+      "spin_norm": [
+        1.2737
+      ],
+      "_comment4": " that's all"
+    },
+    "_comment5": " that's all"
+  },
+
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 10000,
+    "start_lr": 1.00e-3,
+    "stop_lr": 5.92e-6,
+    "_comment6": " that's all"
+  },
+
+  "loss": {
+    "type": "ener_spin",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_fr": 1000,
+    "limit_pref_fr": 1.0,
+    "start_pref_fm": 10000,
+    "limit_pref_fm": 10.0,
+    "start_pref_v": 0,
+    "limit_pref_v": 0,
+    "_comment7": " that's all"
+  },
+
+  "training": {
+    "training_data": {
+      "systems": [
+        "../data/data_0/"
+      ],
+      "batch_size": 1,
+      "_comment8": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_1/"
+      ],
+      "batch_size": 1,
+      "numb_btch": 10,
+      "_comment9": "that's all"
+    },
+    "numb_steps": 1000000,
+    "seed": 1,
+    "disp_file": "lcurve.out",
+    "disp_freq": 5000,
+    "save_freq": 10000,
+    "_comment10": "that's all"
+  },
+
+  "_comment11": "that's all"
+}

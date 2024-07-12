@@ -17,106 +17,14 @@ from datetime import (
     date,
 )
 
-from deepmd.common import (
+from deepmd.utils.argcheck import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
-)
-from deepmd.utils.argcheck import (
     list_to_doc,
 )
 
 sys.path.append(os.path.dirname(__file__))
 import sphinx_contrib_exhale_multiproject  # noqa: F401
-
-
-def mkindex(dirname):
-    dirname = dirname + "/"
-    oldfindex = open(dirname + "index.md")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    for entry in oldlist:
-        _name = entry[entry.find("(") + 1 : entry.find(")")]
-        oldnames.append(_name)
-
-    newfindex = open(dirname + "index.md", "a")
-    for root, dirs, files in os.walk(dirname, topdown=False):
-        newnames = [
-            name for name in files if "index.md" not in name and name not in oldnames
-        ]
-        for name in newnames:
-            f = open(dirname + name)
-            _lines = f.readlines()
-            for _headline in _lines:
-                _headline = _headline.strip("#")
-                headline = _headline.strip()
-                if len(headline) == 0 or headline[0] == "." or headline[0] == "=":
-                    continue
-                else:
-                    break
-            longname = "- [" + headline + "]" + "(" + name + ")\n"
-            newfindex.write(longname)
-
-    newfindex.close()
-
-
-def classify_index_TS():
-    dirname = "troubleshooting/"
-    oldfindex = open(dirname + "index.md")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    sub_titles = []
-    heads = []
-    while len(oldlist) > 0:
-        entry = oldlist.pop(0)
-        if entry.find("(") >= 0:
-            _name = entry[entry.find("(") + 1 : entry.find(")")]
-            oldnames.append(_name)
-            continue
-        if entry.find("##") >= 0:
-            _name = entry[entry.find("##") + 3 : -1]
-            sub_titles.append(_name)
-            continue
-        entry.strip()
-        if entry != "\n":
-            heads.append(entry)
-
-    newfindex = open(dirname + "index.md", "w")
-    for entry in heads:
-        newfindex.write(entry)
-    newfindex.write("\n")
-    sub_lists = [[], []]
-    for root, dirs, files in os.walk(dirname, topdown=False):
-        newnames = [name for name in files if "index.md" not in name]
-        for name in newnames:
-            f = open(dirname + name)
-            _lines = f.readlines()
-            f.close()
-            for _headline in _lines:
-                _headline = _headline.strip("#")
-                headline = _headline.strip()
-                if len(headline) == 0 or headline[0] == "." or headline[0] == "=":
-                    continue
-                else:
-                    break
-            longname = "- [" + headline + "]" + "(" + name + ")\n"
-            if "howtoset_" in name:
-                sub_lists[1].append(longname)
-            else:
-                sub_lists[0].append(longname)
-
-    newfindex.write("## Trouble shooting\n")
-    for entry in sub_lists[0]:
-        newfindex.write(entry)
-    newfindex.write("\n")
-    newfindex.write("## Parameters setting\n")
-    for entry in sub_lists[1]:
-        newfindex.write(entry)
-    newfindex.close()
-
 
 # -- Project information -----------------------------------------------------
 
@@ -124,36 +32,8 @@ project = "DeePMD-kit"
 copyright = "2017-%d, DeepModeling" % date.today().year
 author = "DeepModeling"
 
-
-def run_apidoc(_):
-    import sys
-
-    from sphinx.ext.apidoc import (
-        main,
-    )
-
-    sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-    cur_dir = os.path.abspath(os.path.dirname(__file__))
-    module = os.path.join(cur_dir, "..")
-    main(
-        [
-            "-M",
-            "--tocfile",
-            "api_py",
-            "-H",
-            "Python API",
-            "-o",
-            os.path.join(cur_dir, "api_py"),
-            module,
-            "source/*",
-            "--force",
-        ]
-    )
-
-
-def setup(app):
-    # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", run_apidoc)
+autoapi_dirs = ["../deepmd"]
+autoapi_add_toctree_entry = False
 
 
 # -- General configuration ---------------------------------------------------
@@ -169,10 +49,6 @@ def setup(app):
 #     'sphinx.ext.autosummary'
 # ]
 
-# mkindex("troubleshooting")
-# mkindex("development")
-# classify_index_TS()
-
 extensions = [
     "deepmodeling_sphinx",
     "dargs.sphinx",
@@ -181,6 +57,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
+    "sphinx.ext.imgconverter",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinxarg.ext",
@@ -188,6 +65,8 @@ extensions = [
     "breathe",
     "exhale",
     "sphinxcontrib.bibtex",
+    "sphinx_design",
+    "autoapi.extension",
 ]
 
 # breathe_domain_by_extension = {
@@ -213,7 +92,10 @@ exhale_args = {
 exhale_projects_args = {
     "cc": {
         "containmentFolder": "./API_CC",
-        "exhaleDoxygenStdin": "INPUT = ../source/api_cc/include/",
+        "exhaleDoxygenStdin": """INPUT = ../source/api_cc/include/
+                                 PREDEFINED += BUILD_TENSORFLOW
+                                               BUILD_PYTORCH
+        """,
         "rootFileTitle": "C++ API",
         "rootFileName": "api_cc.rst",
     },
@@ -268,12 +150,18 @@ numpydoc_xref_aliases = {}
 import typing
 
 for typing_type in typing.__all__:
-    numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
+    numpydoc_xref_aliases[typing_type] = f"typing.{typing_type}"
 
 rst_epilog = f"""
 .. |ACTIVATION_FN| replace:: {list_to_doc(ACTIVATION_FN_DICT.keys())}
 .. |PRECISION| replace:: {list_to_doc(PRECISION_DICT.keys())}
 """
+
+myst_substitutions = {
+    "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
+    "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
+    "dpmodel_icon": """![DP](/_static/logo_icon.svg){class=platform-icon}""",
+}
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -298,6 +186,8 @@ mathjax_path = (
 myst_enable_extensions = [
     "dollarmath",
     "colon_fence",
+    "substitution",
+    "attrs_inline",
 ]
 myst_fence_as_directive = ("math",)
 # fix emoji issue in pdf

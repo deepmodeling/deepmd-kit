@@ -27,6 +27,7 @@
       ],
       "resnet_dt": true,
       "axis_neuron": 16,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1,
       "_comment2": " that's all"
@@ -68,14 +69,14 @@
   "training": {
     "training_data": {
       "systems": [
-        "example/zinc_protein/train_data_dp_mask/"
+        "examples/zinc_protein/train_data_dp_mask/"
       ],
       "batch_size": 2,
       "_comment7": "that's all"
     },
     "validation_data": {
       "systems": [
-        "example/zinc_protein/val_data_dp_mask/"
+        "examples/zinc_protein/val_data_dp_mask/"
       ],
       "batch_size": 2,
       "_comment8": "that's all"

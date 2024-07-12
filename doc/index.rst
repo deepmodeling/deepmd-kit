@@ -34,6 +34,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    :numbered:
    :caption: Advanced
 
+   backend
    install/index
    data/index
    model/index
@@ -63,11 +64,12 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    :caption: Developer Guide
 
    development/cmake
-   development/create-a-model
+   development/create-a-model-tf
+   development/create-a-model-pt
    development/type-embedding
    development/coding-conventions
    development/cicd
-   api_py/api_py
+   Python API <autoapi/deepmd/index>
    api_op
    API_CC/api_cc
    api_c/api_c

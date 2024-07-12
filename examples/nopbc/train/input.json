@@ -22,6 +22,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 12,
+      "type_one_side": true,
       "seed": 1,
       "_comment2": " that's all"
     },

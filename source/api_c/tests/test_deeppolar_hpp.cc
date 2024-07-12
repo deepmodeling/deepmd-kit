@@ -466,7 +466,7 @@ class TestInferDeepPolarNew : public ::testing::Test {
       }
     }
 
-    expected_gv.resize(odim * 9);
+    expected_gv.resize(static_cast<size_t>(odim) * 9);
     for (int kk = 0; kk < odim; ++kk) {
       for (int ii = 0; ii < natoms; ++ii) {
         for (int dd = 0; dd < 9; ++dd) {

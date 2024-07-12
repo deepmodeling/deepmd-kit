@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
+import warnings
 from typing import (
     Callable,
     List,
@@ -13,12 +14,18 @@ from dargs import (
     Variant,
     dargs,
 )
-
-from deepmd.common import (
-    ACTIVATION_FN_DICT,
-    PRECISION_DICT,
+from dargs.json_schema import (
+    generate_json_schema,
 )
-from deepmd.nvnmd.utils.argcheck import (
+
+from deepmd import (
+    __version__,
+)
+from deepmd.common import (
+    VALID_ACTIVATION,
+    VALID_PRECISION,
+)
+from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
 from deepmd.utils.plugin import (
@@ -26,6 +33,13 @@ from deepmd.utils.plugin import (
 )
 
 log = logging.getLogger(__name__)
+
+
+ACTIVATION_FN_DICT = dict.fromkeys(VALID_ACTIVATION)
+PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
+
+doc_only_tf_supported = "(Supported Backend: TensorFlow) "
+doc_only_pt_supported = "(Supported Backend: PyTorch) "
 
 
 def list_to_doc(xx):
@@ -47,6 +61,24 @@ def make_link(content, ref_key):
     )
 
 
+def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
+    """Generate an extra check to deprecate an argument in sub fields.
+
+    Parameters
+    ----------
+    key : str
+        The name of the deprecated argument.
+    """
+
+    def deprecate_something(data: Optional[dict]):
+        if data is not None and key in data:
+            warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
+            data.pop(key)
+        return True
+
+    return deprecate_something
+
+
 def type_embedding_args():
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -54,6 +86,8 @@ def type_embedding_args():
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
 
     return [
         Argument("neuron", List[int], optional=True, default=[8], doc=doc_neuron),
@@ -68,18 +102,57 @@ def type_embedding_args():
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        Argument(
+            "use_econf_tebd", bool, optional=True, default=False, doc=doc_use_econf_tebd
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
     ]
 
 
 def spin_args():
-    doc_use_spin = "Whether to use atomic spin model for each atom type"
+    doc_use_spin = (
+        "Whether to use atomic spin model for each atom type. "
+        "List of boolean values with the shape of [ntypes] to specify which types use spin, "
+        f"or a list of integer values {doc_only_pt_supported} "
+        "to indicate the index of the type that uses spin."
+    )
     doc_spin_norm = "The magnitude of atomic spin for each atom type with spin"
     doc_virtual_len = "The distance between virtual atom representing spin and its corresponding real atom for each atom type with spin"
+    doc_virtual_scale = (
+        "The scaling factor to determine the virtual distance between a virtual atom "
+        "representing spin and its corresponding real atom for each atom type with spin. "
+        "This factor is defined as the virtual distance divided by the magnitude of atomic spin "
+        "for each atom type with spin. The virtual coordinate is defined as the real coordinate "
+        "plus spin * virtual_scale. List of float values with shape of [ntypes] or [ntypes_spin] "
+        "or one single float value for all types, only used when use_spin is True for each atom type."
+    )
 
     return [
-        Argument("use_spin", List[bool], doc=doc_use_spin),
-        Argument("spin_norm", List[float], doc=doc_spin_norm),
-        Argument("virtual_len", List[float], doc=doc_virtual_len),
+        Argument("use_spin", [List[bool], List[int]], doc=doc_use_spin),
+        Argument(
+            "spin_norm",
+            List[float],
+            optional=True,
+            doc=doc_only_tf_supported + doc_spin_norm,
+        ),
+        Argument(
+            "virtual_len",
+            List[float],
+            optional=True,
+            doc=doc_only_tf_supported + doc_virtual_len,
+        ),
+        Argument(
+            "virtual_scale",
+            [List[float], float],
+            optional=True,
+            doc=doc_only_pt_supported + doc_virtual_scale,
+        ),
     ]
 
 
@@ -91,7 +164,7 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[List[str]] = None
+        self, name: str, alias: Optional[List[str]] = None, doc: str = ""
     ) -> Callable[[], List[Argument]]:
         """Register a descriptor argument plugin.
 
@@ -117,7 +190,7 @@ class ArgsPlugin:
         # convert alias to hashed item
         if isinstance(alias, list):
             alias = tuple(alias)
-        return self.__plugin.register((name, alias))
+        return self.__plugin.register((name, alias, doc))
 
     def get_all_argument(self, exclude_hybrid: bool = False) -> List[Argument]:
         """Get all arguments.
@@ -133,11 +206,11 @@ class ArgsPlugin:
             all arguments
         """
         arguments = []
-        for (name, alias), metd in self.__plugin.plugins.items():
+        for (name, alias, doc), metd in self.__plugin.plugins.items():
             if exclude_hybrid and name == "hybrid":
                 continue
             arguments.append(
-                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias)
+                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc)
             )
         return arguments
 
@@ -145,7 +218,7 @@ class ArgsPlugin:
 descrpt_args_plugin = ArgsPlugin()
 
 
-@descrpt_args_plugin.register("loc_frame")
+@descrpt_args_plugin.register("loc_frame", doc=doc_only_tf_supported)
 def descrpt_local_frame_args():
     doc_sel_a = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor."
     doc_sel_r = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius."
@@ -182,6 +255,7 @@ def descrpt_se_a_args():
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
 
     return [
@@ -221,6 +295,13 @@ def descrpt_se_a_args():
             doc=doc_exclude_types,
         ),
         Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
+        Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
     ]
@@ -240,6 +321,8 @@ def descrpt_se_t_args():
     doc_trainable = "If the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
         Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
@@ -262,10 +345,24 @@ def descrpt_se_t_args():
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
+        Argument(
+            "exclude_types",
+            List[List[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
     ]
 
 
-@descrpt_args_plugin.register("se_a_tpe", alias=["se_a_ebd"])
+@descrpt_args_plugin.register("se_a_tpe", alias=["se_a_ebd"], doc=doc_only_tf_supported)
 def descrpt_se_a_tpe_args():
     doc_type_nchanl = "number of channels for type embedding"
     doc_type_nlayer = "number of hidden layers of type embedding net"
@@ -295,6 +392,7 @@ def descrpt_se_r_args():
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
         Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
@@ -326,6 +424,13 @@ def descrpt_se_r_args():
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
         ),
     ]
 
@@ -359,13 +464,14 @@ def descrpt_se_atten_common_args():
     doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_type_one_side = r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net is trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and stripped_type_embedding is True"
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
     doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
 
@@ -407,6 +513,13 @@ def descrpt_se_atten_common_args():
             default=[],
             doc=doc_exclude_types,
         ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
         Argument("attn", int, optional=True, default=128, doc=doc_attn),
         Argument("attn_layer", int, optional=True, default=2, doc=doc_attn_layer),
         Argument("attn_dotr", bool, optional=True, default=True, doc=doc_attn_dotr),
@@ -414,11 +527,44 @@ def descrpt_se_atten_common_args():
     ]
 
 
-@descrpt_args_plugin.register("se_atten")
+@descrpt_args_plugin.register("se_atten", alias=["dpa1"])
 def descrpt_se_atten_args():
-    doc_stripped_type_embedding = "Whether to strip the type embedding into a separated embedding network. Setting it to `False` will fall back to the previous version of `se_atten` which is non-compressible."
-    doc_smooth_type_embdding = "When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
+    doc_scaling_factor = (
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
+        "Else, the scaling of attention weights is setting to `temperature`."
+    )
+    doc_normalize = (
+        "Whether to normalize the hidden vectors during attention calculation."
+    )
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
+        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+    )
+    doc_stripped_type_embedding = (
+        "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
+        "Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'. "
+        "Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'."
+        "The default value is `None`, which means the `tebd_input_mode` setting will be used instead."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
@@ -426,18 +572,79 @@ def descrpt_se_atten_args():
             "stripped_type_embedding",
             bool,
             optional=True,
-            default=False,
+            default=None,
             doc=doc_stripped_type_embedding,
         ),
         Argument(
-            "smooth_type_embdding",
+            "smooth_type_embedding",
             bool,
             optional=True,
             default=False,
-            doc=doc_smooth_type_embdding,
+            alias=["smooth_type_embdding"],
+            doc=doc_smooth_type_embedding,
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
+        ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
+        # pt only
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
+        Argument(
+            "tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_tebd_input_mode,
+        ),
+        Argument(
+            "scaling_factor",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_scaling_factor,
+        ),
+        Argument(
+            "normalize",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_normalize,
+        ),
+        Argument(
+            "temperature",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_temperature,
+        ),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
         ),
     ]
 
@@ -445,21 +652,497 @@ def descrpt_se_atten_args():
 @descrpt_args_plugin.register("se_atten_v2")
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
+    doc_scaling_factor = (
+        "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
+        "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
+        "Else, the scaling of attention weights is setting to `temperature`."
+    )
+    doc_normalize = (
+        "Whether to normalize the hidden vectors during attention calculation."
+    )
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
 
     return [
         *descrpt_se_atten_common_args(),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
+        Argument(
+            "trainable_ln", bool, optional=True, default=True, doc=doc_trainable_ln
+        ),
+        Argument("ln_eps", float, optional=True, default=None, doc=doc_ln_eps),
+        # pt only
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
+        Argument(
+            "scaling_factor",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_scaling_factor,
+        ),
+        Argument(
+            "normalize",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_normalize,
+        ),
+        Argument(
+            "temperature",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_temperature,
+        ),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
+        ),
     ]
 
 
-@descrpt_args_plugin.register("se_a_ebd_v2", alias=["se_a_tpe_v2"])
+@descrpt_args_plugin.register("dpa2", doc=doc_only_pt_supported)
+def descrpt_dpa2_args():
+    # repinit args
+    doc_repinit = "The arguments used to initialize the repinit block."
+    # repformer args
+    doc_repformer = "The arguments used to initialize the repformer block."
+    # descriptor args
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_smooth = (
+        "Whether to use smoothness in processes such as attention weights calculation."
+    )
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
+    doc_trainable = "If the parameters in the embedding net is trainable."
+    doc_seed = "Random seed for parameter initialization."
+    doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
+    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    return [
+        # repinit args
+        Argument("repinit", dict, dpa2_repinit_args(), doc=doc_repinit),
+        # repformer args
+        Argument("repformer", dict, dpa2_repformer_args(), doc=doc_repformer),
+        # descriptor args
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_concat_output_tebd,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("smooth", bool, optional=True, default=True, doc=doc_smooth),
+        Argument(
+            "exclude_types",
+            List[List[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument(
+            "add_tebd_to_repinit_out",
+            bool,
+            optional=True,
+            default=False,
+            alias=["repformer_add_type_ebd_to_seq"],
+            doc=doc_add_tebd_to_repinit_out,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
+    ]
+
+
+# repinit for dpa2
+def dpa2_repinit_args():
+    # repinit args
+    doc_rcut = "The cut-off radius."
+    doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_neuron = (
+        "Number of neurons in each hidden layers of the embedding net."
+        "When two layers are of the same size or one layer is twice as large as the previous layer, "
+        "a skip connection is built."
+    )
+    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
+        "The output is `out_ij = embeding(input_ij)` for the pair-wise representation of atom i with neighbor j."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
+        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+    )
+    doc_set_davg_zero = (
+        "Set the normalization average to zero. "
+        "This option should be set when `atom_ener` in the energy fitting is used."
+    )
+    doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
+
+    return [
+        # repinit args
+        Argument("rcut", float, doc=doc_rcut),
+        Argument("rcut_smth", float, doc=doc_rcut_smth),
+        Argument("nsel", int, doc=doc_nsel),
+        Argument(
+            "neuron",
+            list,
+            optional=True,
+            default=[25, 50, 100],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "axis_neuron",
+            int,
+            optional=True,
+            default=16,
+            doc=doc_axis_neuron,
+        ),
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_tebd_dim,
+        ),
+        Argument(
+            "tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_tebd_input_mode,
+        ),
+        Argument(
+            "set_davg_zero",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_set_davg_zero,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "type_one_side",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_type_one_side,
+        ),
+        Argument(
+            "resnet_dt",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_resnet_dt,
+        ),
+    ]
+
+
+# repformer for dpa2
+def dpa2_repformer_args():
+    # repformer args
+    doc_rcut = "The cut-off radius."
+    doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
+    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_nlayers = "The number of repformer layers."
+    doc_g1_dim = "The dimension of invariant single-atom representation."
+    doc_g2_dim = "The dimension of invariant pair-atom representation."
+    doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
+    doc_direct_dist = "Whether or not use direct distance as input for the embedding net to get g2 instead of smoothed 1/r."
+    doc_update_g1_has_conv = "Update the g1 rep with convolution term."
+    doc_update_g1_has_drrd = "Update the g1 rep with the drrd term."
+    doc_update_g1_has_grrg = "Update the g1 rep with the grrg term."
+    doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
+    doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
+    doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
+    doc_update_h2 = "Update the h2 rep."
+    doc_attn1_hidden = (
+        "The hidden dimension of localized self-attention to update the g1 rep."
+    )
+    doc_attn1_nhead = (
+        "The number of heads in localized self-attention to update the g1 rep."
+    )
+    doc_attn2_hidden = (
+        "The hidden dimension of gated self-attention to update the g2 rep."
+    )
+    doc_attn2_nhead = (
+        "The number of heads in gated self-attention to update the g2 rep."
+    )
+    doc_attn2_has_gate = (
+        "Whether to use gate in the gated self-attention to update the g2 rep."
+    )
+    doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
+    doc_update_style = (
+        "Style to update a representation. "
+        "Supported options are: "
+        "-'res_avg': Updates a rep `u` with: u = 1/\\sqrt{n+1} (u + u_1 + u_2 + ... + u_n) "
+        "-'res_incr': Updates a rep `u` with: u = u + 1/\\sqrt{n} (u_1 + u_2 + ... + u_n)"
+        "-'res_residual': Updates a rep `u` with: u = u + (r1*u_1 + r2*u_2 + ... + r3*u_n) "
+        "where `r1`, `r2` ... `r3` are residual weights defined by `update_residual` "
+        "and `update_residual_init`."
+    )
+    doc_update_residual = (
+        "When update using residual mode, "
+        "the initial std of residual vector weights."
+    )
+    doc_update_residual_init = (
+        "When update using residual mode, "
+        "the initialization mode of residual vector weights."
+        "Supported modes are: ['norm', 'const']."
+    )
+    doc_set_davg_zero = (
+        "Set the normalization average to zero. "
+        "This option should be set when `atom_ener` in the energy fitting is used."
+    )
+    doc_trainable_ln = (
+        "Whether to use trainable shift and scale weights in layer normalization."
+    )
+    doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
+
+    return [
+        # repformer args
+        Argument("rcut", float, doc=doc_rcut),
+        Argument("rcut_smth", float, doc=doc_rcut_smth),
+        Argument("nsel", int, doc=doc_nsel),
+        Argument(
+            "nlayers",
+            int,
+            optional=True,
+            default=3,
+            doc=doc_nlayers,
+        ),
+        Argument(
+            "g1_dim",
+            int,
+            optional=True,
+            default=128,
+            doc=doc_g1_dim,
+        ),
+        Argument("g2_dim", int, optional=True, default=16, doc=doc_g2_dim),
+        Argument(
+            "axis_neuron",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_axis_neuron,
+        ),
+        Argument(
+            "direct_dist",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_direct_dist,
+        ),
+        Argument(
+            "update_g1_has_conv",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_conv,
+        ),
+        Argument(
+            "update_g1_has_drrd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_drrd,
+        ),
+        Argument(
+            "update_g1_has_grrg",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_grrg,
+        ),
+        Argument(
+            "update_g1_has_attn",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g1_has_attn,
+        ),
+        Argument(
+            "update_g2_has_g1g1",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g2_has_g1g1,
+        ),
+        Argument(
+            "update_g2_has_attn",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_update_g2_has_attn,
+        ),
+        Argument(
+            "update_h2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_update_h2,
+        ),
+        Argument(
+            "attn1_hidden",
+            int,
+            optional=True,
+            default=64,
+            doc=doc_attn1_hidden,
+        ),
+        Argument(
+            "attn1_nhead",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_attn1_nhead,
+        ),
+        Argument(
+            "attn2_hidden",
+            int,
+            optional=True,
+            default=16,
+            doc=doc_attn2_hidden,
+        ),
+        Argument(
+            "attn2_nhead",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_attn2_nhead,
+        ),
+        Argument(
+            "attn2_has_gate",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_attn2_has_gate,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "update_style",
+            str,
+            optional=True,
+            default="res_avg",
+            doc=doc_update_style,
+        ),
+        Argument(
+            "update_residual",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_update_residual,
+        ),
+        Argument(
+            "update_residual_init",
+            str,
+            optional=True,
+            default="norm",
+            doc=doc_update_residual_init,
+        ),
+        Argument(
+            "set_davg_zero",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_set_davg_zero,
+        ),
+        Argument(
+            "trainable_ln",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_trainable_ln,
+        ),
+        Argument(
+            "ln_eps",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_ln_eps,
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
+    "se_a_ebd_v2", alias=["se_a_tpe_v2"], doc=doc_only_tf_supported
+)
 def descrpt_se_a_ebd_v2_args():
     return descrpt_se_a_args()
 
 
-@descrpt_args_plugin.register("se_a_mask")
+@descrpt_args_plugin.register("se_a_mask", doc=doc_only_tf_supported)
 def descrpt_se_a_mask_args():
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -551,9 +1234,9 @@ def fitting_ener():
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
-    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+    doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
     doc_rcond = "The condition number used to determine the inital energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -710,7 +1393,7 @@ def fitting_polar():
             [List[int], int, None],
             optional=True,
             alias=["pol_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -751,7 +1434,7 @@ def fitting_dipole():
             [List[int], int, None],
             optional=True,
             alias=["dipole_type"],
-            doc=doc_sel_type,
+            doc=doc_sel_type + doc_only_tf_supported,
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
@@ -848,6 +1531,9 @@ def model_args(exclude_hybrid=False):
     doc_srtab_add_bias = "Whether add energy bias from the statistics of the data to short-range tabulated atomic energy. It only takes effect when `use_srtab` is provided."
     doc_compress_config = "Model compression configurations"
     doc_spin = "The settings for systems with spin."
+    doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
+    doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+
     hybrid_models = []
     if not exclude_hybrid:
         hybrid_models.extend(
@@ -882,16 +1568,40 @@ def model_args(exclude_hybrid=False):
                 default=10,
                 doc=doc_data_bias_nsample,
             ),
-            Argument("use_srtab", str, optional=True, doc=doc_use_srtab),
-            Argument("smin_alpha", float, optional=True, doc=doc_smin_alpha),
+            Argument(
+                "use_srtab",
+                str,
+                optional=True,
+                doc=doc_use_srtab,
+            ),
+            Argument(
+                "smin_alpha",
+                float,
+                optional=True,
+                doc=doc_smin_alpha,
+            ),
             Argument("sw_rmin", float, optional=True, doc=doc_sw_rmin),
             Argument("sw_rmax", float, optional=True, doc=doc_sw_rmax),
+            Argument(
+                "pair_exclude_types",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_only_pt_supported + doc_pair_exclude_types,
+            ),
+            Argument(
+                "atom_exclude_types",
+                list,
+                optional=True,
+                default=[],
+                doc=doc_only_pt_supported + doc_atom_exclude_types,
+            ),
             Argument(
                 "srtab_add_bias",
                 bool,
                 optional=True,
                 default=True,
-                doc=doc_srtab_add_bias,
+                doc=doc_only_tf_supported + doc_srtab_add_bias,
             ),
             Argument(
                 "type_embedding",
@@ -899,7 +1609,7 @@ def model_args(exclude_hybrid=False):
                 type_embedding_args(),
                 [],
                 optional=True,
-                doc=doc_type_embedding,
+                doc=doc_only_tf_supported + doc_type_embedding,
             ),
             Argument(
                 "modifier",
@@ -907,7 +1617,7 @@ def model_args(exclude_hybrid=False):
                 [],
                 [modifier_variant_type_args()],
                 optional=True,
-                doc=doc_modifier,
+                doc=doc_only_tf_supported + doc_modifier,
             ),
             Argument(
                 "compress",
@@ -915,7 +1625,7 @@ def model_args(exclude_hybrid=False):
                 [],
                 [model_compression_type_args()],
                 optional=True,
-                doc=doc_compress_config,
+                doc=doc_only_tf_supported + doc_compress_config,
                 fold_subdoc=True,
             ),
             Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
@@ -925,8 +1635,8 @@ def model_args(exclude_hybrid=False):
                 "type",
                 [
                     standard_model_args(),
-                    multi_model_args(),
                     frozen_model_args(),
+                    pairtab_model_args(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -960,29 +1670,6 @@ def standard_model_args() -> Argument:
     return ca
 
 
-def multi_model_args() -> Argument:
-    doc_descrpt = "The descriptor of atomic environment. See model[standard]/descriptor for details."
-    doc_fitting_net_dict = "The dictionary of multiple fitting nets in multi-task mode. Each fitting_net_dict[fitting_key] is the single definition of fitting of physical properties with user-defined name `fitting_key`."
-
-    ca = Argument(
-        "multi",
-        dict,
-        [
-            Argument(
-                "descriptor",
-                dict,
-                [],
-                [descrpt_variant_type_args()],
-                doc=doc_descrpt,
-                fold_subdoc=True,
-            ),
-            Argument("fitting_net_dict", dict, doc=doc_fitting_net_dict),
-        ],
-        doc="Multiple-task model.",
-    )
-    return ca
-
-
 def pairwise_dprc() -> Argument:
     qm_model_args = model_args(exclude_hybrid=True)
     qm_model_args.name = "qm_model"
@@ -997,6 +1684,7 @@ def pairwise_dprc() -> Argument:
             qm_model_args,
             qmmm_model_args,
         ],
+        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1009,6 +1697,26 @@ def frozen_model_args() -> Argument:
         [
             Argument("model_file", str, optional=False, doc=doc_model_file),
         ],
+    )
+    return ca
+
+
+def pairtab_model_args() -> Argument:
+    doc_tab_file = "Path to the tabulation file."
+    doc_rcut = "The cut-off radius."
+    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    ca = Argument(
+        "pairtab",
+        dict,
+        [
+            Argument("tab_file", str, optional=False, doc=doc_tab_file),
+            Argument("rcut", float, optional=False, doc=doc_rcut),
+            Argument("sel", [int, List[int], str], optional=False, doc=doc_sel),
+        ],
+        doc=doc_only_tf_supported + "Pairwise tabulation energy model.",
     )
     return ca
 
@@ -1037,6 +1745,7 @@ def linear_ener_model_args() -> Argument:
                 doc=doc_weights,
             ),
         ],
+        doc=doc_only_tf_supported,
     )
     return ca
 
@@ -1044,15 +1753,32 @@ def linear_ener_model_args() -> Argument:
 #  --- Learning rate configurations: --- #
 def learning_rate_exp():
     doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = "The desired learning rate at the end of the training."
+    doc_stop_lr = (
+        "The desired learning rate at the end of the training. "
+        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
+        "this value will serve as the minimum learning rate during training. "
+        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
+    )
     doc_decay_steps = (
         "The learning rate is decaying every this number of training steps."
+    )
+    doc_decay_rate = (
+        "The decay rate for the learning rate. "
+        "If this is provided, it will be used directly as the decay rate for learning rate "
+        "instead of calculating it through interpolation between start_lr and stop_lr."
     )
 
     args = [
         Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
         Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
+        Argument(
+            "decay_rate",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_decay_rate,
+        ),
     ]
     return args
 
@@ -1088,17 +1814,6 @@ def learning_rate_args():
         optional=True,
         doc=doc_lr,
     )
-
-
-def learning_rate_dict_args():
-    doc_learning_rate_dict = (
-        "The dictionary of definitions of learning rates in multi-task mode. "
-        "Each learning_rate_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of learning rate.\n"
-    )
-    ca = Argument(
-        "learning_rate_dict", dict, [], [], optional=True, doc=doc_learning_rate_dict
-    )
-    return ca
 
 
 #  --- Loss configurations: --- #
@@ -1466,15 +2181,6 @@ def loss_args():
     return ca
 
 
-def loss_dict_args():
-    doc_loss_dict = (
-        "The dictionary of definitions of multiple loss functions in multi-task mode. "
-        "Each loss_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, is the single definition of loss function, whose type should be set to `tensor`, `ener` or left unset.\n"
-    )
-    ca = Argument("loss_dict", dict, [], [], optional=True, doc=doc_loss_dict)
-    return ca
-
-
 #  --- Training configurations: --- #
 def training_data_args():  # ! added by Ziyao: new specification style for data systems.
     link_sys = make_link("systems", "training/training_data/systems")
@@ -1483,13 +2189,12 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
-    doc_set_prefix = f"The prefix of the sets in the {link_sys}."
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
-- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor.\n\n\
+- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for Tensorflow backend.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -1505,7 +2210,6 @@ If MPI is used, the value should be considered as the batch size per task.'
         Argument(
             "systems", [List[str], str], optional=False, default=".", doc=doc_systems
         ),
-        Argument("set_prefix", str, optional=True, default="set", doc=doc_set_prefix),
         Argument(
             "batch_size",
             [List[int], int, str],
@@ -1541,6 +2245,7 @@ If MPI is used, the value should be considered as the batch size per task.'
         sub_fields=args,
         sub_variants=[],
         doc=doc_training_data,
+        extra_check=deprecate_argument_extra_check("set_prefix"),
     )
 
 
@@ -1551,7 +2256,6 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         "This key can be provided with a list that specifies the systems, or be provided with a string "
         "by which the prefix of all systems are given and the list of the systems is automatically generated."
     )
-    doc_set_prefix = f"The prefix of the sets in the {link_sys}."
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -1572,7 +2276,6 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         Argument(
             "systems", [List[str], str], optional=False, default=".", doc=doc_systems
         ),
-        Argument("set_prefix", str, optional=True, default="set", doc=doc_set_prefix),
         Argument(
             "batch_size",
             [List[int], int, str],
@@ -1622,6 +2325,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         sub_fields=args,
         sub_variants=[],
         doc=doc_validation_data,
+        extra_check=deprecate_argument_extra_check("set_prefix"),
     )
 
 
@@ -1653,41 +2357,76 @@ def mixed_precision_args():  # ! added by Denghui.
     )
 
 
-def training_args():  # ! modified by Ziyao: data configuration isolated.
+def training_args(
+    multi_task=False,
+):  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = "Number of training batch. Each training uses one batch of data."
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_max_ckpt_keep = (
+        "The maximum number of checkpoints to keep. "
+        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
+        "Defaults to 5."
+    )
+    doc_change_bias_after_training = (
+        "Whether to change the output bias after the last training step, "
+        "by performing predictions using trained model on training data and "
+        "doing least square on the errors to add the target shift on the bias."
+    )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
-    doc_profiling = "Profiling during training."
+    doc_profiling = "Export the profiling results to the Chrome JSON file for performance analysis, driven by the legacy TensorFlow profiling API or PyTorch Profiler. The output file will be saved to `profiling_file`."
     doc_profiling_file = "Output file for profiling."
-    doc_enable_profiler = "Enable TensorFlow Profiler (available in TensorFlow 2.3) to analyze performance. The log will be saved to `tensorboard_log_dir`."
+    doc_enable_profiler = "Export the profiling results to the TensorBoard log for performance analysis, driven by TensorFlow Profiler (available in TensorFlow 2.3) or PyTorch Profiler. The log will be saved to `tensorboard_log_dir`."
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
-    doc_data_dict = (
-        "The dictionary of multi DataSystems in multi-task mode. "
-        "Each data_dict[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, "
-        "contains training data and optional validation data definitions."
+    doc_warmup_steps = (
+        "The number of steps for learning rate warmup. During warmup, "
+        "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
+        "rather than starting directly from `start_lr`"
     )
-    doc_fitting_weight = (
-        "Each fitting_weight[fitting_key], with user-defined name `fitting_key` in `model/fitting_net_dict`, "
-        "is the training weight of fitting net `fitting_key`. "
-        "Fitting nets with higher weights will be selected with higher probabilities to be trained in one step. "
-        "Weights will be normalized and minus ones will be ignored. "
-        "If not set, each fitting net will be equally selected when training."
+    doc_gradient_max_norm = (
+        "Clips the gradient norm to a maximum value. "
+        "If the gradient norm exceeds this value, it will be clipped to this limit. "
+        "No gradient clipping will occur if set to 0."
     )
+    doc_stat_file = (
+        "The file path for saving the data statistics results. "
+        "If set, the results will be saved and directly loaded during the next training session, "
+        "avoiding the need to recalculate the statistics. "
+        "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
+        "otherwise, a directory containing NumPy binary files are used."
+    )
+    doc_opt_type = "The type of optimizer to use."
+    doc_kf_blocksize = "The blocksize for the Kalman filter."
+    doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
+    doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
     mixed_precision_data = mixed_precision_args()
 
-    args = [
+    data_args = [
         arg_training_data,
         arg_validation_data,
+        Argument(
+            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
+        ),
+    ]
+    args = (
+        data_args
+        if not multi_task
+        else [
+            Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
+            Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
+        ]
+    )
+
+    args += [
         mixed_precision_data,
         Argument(
             "numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]
@@ -1701,13 +2440,27 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
+        Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "change_bias_after_training",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_change_bias_after_training,
+        ),
         Argument(
             "disp_training", bool, optional=True, default=True, doc=doc_disp_training
         ),
         Argument(
             "time_training", bool, optional=True, default=True, doc=doc_time_training
         ),
-        Argument("profiling", bool, optional=True, default=False, doc=doc_profiling),
+        Argument(
+            "profiling",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_profiling,
+        ),
         Argument(
             "profiling_file",
             str,
@@ -1735,12 +2488,75 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         Argument(
             "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
         ),
-        Argument("data_dict", dict, optional=True, doc=doc_data_dict),
-        Argument("fitting_weight", dict, optional=True, doc=doc_fitting_weight),
+        Argument(
+            "warmup_steps",
+            int,
+            optional=True,
+            doc=doc_only_pt_supported + doc_warmup_steps,
+        ),
+        Argument(
+            "gradient_max_norm",
+            float,
+            optional=True,
+            doc=doc_only_pt_supported + doc_gradient_max_norm,
+        ),
+    ]
+    variants = [
+        Variant(
+            "opt_type",
+            choices=[
+                Argument("Adam", dict, [], [], optional=True),
+                Argument(
+                    "LKF",
+                    dict,
+                    [
+                        Argument(
+                            "kf_blocksize",
+                            int,
+                            optional=True,
+                            doc=doc_only_pt_supported + doc_kf_blocksize,
+                        ),
+                    ],
+                    [],
+                    optional=True,
+                ),
+            ],
+            optional=True,
+            default_tag="Adam",
+            doc=doc_only_pt_supported + doc_opt_type,
+        )
     ]
 
     doc_training = "The training options."
-    return Argument("training", dict, args, [], doc=doc_training)
+    return Argument("training", dict, args, variants, doc=doc_training)
+
+
+def multi_model_args():
+    model_dict = model_args()
+    model_dict.name = "model_dict"
+    model_dict.repeat = True
+    model_dict.doc = (
+        "The multiple definition of the model, used in the multi-task mode."
+    )
+    doc_shared_dict = "The definition of the shared parameters used in the `model_dict` within multi-task mode."
+    return Argument(
+        "model",
+        dict,
+        [
+            model_dict,
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
+            ),
+        ],
+    )
+
+
+def multi_loss_args():
+    loss_dict = loss_args()
+    loss_dict.name = "loss_dict"
+    loss_dict.repeat = True
+    loss_dict.doc = "The multiple definition of the loss, used in the multi-task mode."
+    return loss_dict
 
 
 def make_index(keys):
@@ -1773,230 +2589,39 @@ def gen_json(**kwargs):
     )
 
 
-def gen_args(**kwargs) -> List[Argument]:
-    return [
-        model_args(),
-        learning_rate_args(),
-        learning_rate_dict_args(),
-        loss_args(),
-        loss_dict_args(),
-        training_args(),
-        nvnmd_args(),
-    ]
-
-
-def normalize_multi_task(data):
-    # single-task or multi-task mode
-    if data["model"].get("type", "standard") not in ("standard", "multi"):
-        return data
-    single_fitting_net = "fitting_net" in data["model"].keys()
-    single_training_data = "training_data" in data["training"].keys()
-    single_valid_data = "validation_data" in data["training"].keys()
-    single_loss = "loss" in data.keys()
-    single_learning_rate = "learning_rate" in data.keys()
-    multi_fitting_net = "fitting_net_dict" in data["model"].keys()
-    multi_training_data = "data_dict" in data["training"].keys()
-    multi_loss = "loss_dict" in data.keys()
-    multi_fitting_weight = "fitting_weight" in data["training"].keys()
-    multi_learning_rate = "learning_rate_dict" in data.keys()
-    assert (single_fitting_net == single_training_data) and (
-        multi_fitting_net == multi_training_data
-    ), (
-        "In single-task mode, 'model/fitting_net' and 'training/training_data' must be defined at the same time! "
-        "While in multi-task mode, 'model/fitting_net_dict', 'training/data_dict' "
-        "must be defined at the same time! Please check your input script. "
-    )
-    assert not (single_fitting_net and multi_fitting_net), (
-        "Single-task mode and multi-task mode can not be performed together. "
-        "Please check your input script and choose just one format! "
-    )
-    assert (
-        single_fitting_net or multi_fitting_net
-    ), "Please define your fitting net and training data! "
-    if multi_fitting_net:
-        assert not single_valid_data, (
-            "In multi-task mode, 'training/validation_data' should not appear "
-            "outside 'training/data_dict'! Please check your input script."
-        )
-        assert (
-            not single_loss
-        ), "In multi-task mode, please use 'model/loss_dict' in stead of 'model/loss'! "
-        assert (
-            "type_map" in data["model"]
-        ), "In multi-task mode, 'model/type_map' must be defined! "
-        data["model"]["type"] = "multi"
-        data["model"]["fitting_net_dict"] = normalize_fitting_net_dict(
-            data["model"]["fitting_net_dict"]
-        )
-        data["training"]["data_dict"] = normalize_data_dict(
-            data["training"]["data_dict"]
-        )
-        data["loss_dict"] = (
-            normalize_loss_dict(
-                data["model"]["fitting_net_dict"].keys(), data["loss_dict"]
-            )
-            if multi_loss
-            else {}
-        )
-        if multi_learning_rate:
-            data["learning_rate_dict"] = normalize_learning_rate_dict(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate_dict"]
-            )
-        elif single_learning_rate:
-            data[
-                "learning_rate_dict"
-            ] = normalize_learning_rate_dict_with_single_learning_rate(
-                data["model"]["fitting_net_dict"].keys(), data["learning_rate"]
-            )
-        fitting_weight = (
-            data["training"]["fitting_weight"] if multi_fitting_weight else None
-        )
-        data["training"]["fitting_weight"] = normalize_fitting_weight(
-            data["model"]["fitting_net_dict"].keys(),
-            data["training"]["data_dict"].keys(),
-            fitting_weight=fitting_weight,
-        )
-    else:
-        assert not multi_loss, "In single-task mode, please use 'model/loss' in stead of 'model/loss_dict'! "
-        assert not multi_learning_rate, "In single-task mode, please use 'model/learning_rate' in stead of 'model/learning_rate_dict'! "
-    return data
-
-
-def normalize_fitting_net_dict(fitting_net_dict):
-    new_dict = {}
-    base = Argument("base", dict, [], [fitting_variant_type_args()], doc="")
-    for fitting_key_item in fitting_net_dict:
-        data = base.normalize_value(
-            fitting_net_dict[fitting_key_item], trim_pattern="_*"
-        )
-        base.check_value(data, strict=True)
-        new_dict[fitting_key_item] = data
-    return new_dict
-
-
-def normalize_data_dict(data_dict):
-    new_dict = {}
-    base = Argument(
-        "base", dict, [training_data_args(), validation_data_args()], [], doc=""
-    )
-    for data_system_key_item in data_dict:
-        data = base.normalize_value(data_dict[data_system_key_item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[data_system_key_item] = data
-    return new_dict
-
-
-def normalize_loss_dict(fitting_keys, loss_dict):
-    # check the loss dict
-    failed_loss_keys = [item for item in loss_dict if item not in fitting_keys]
-    assert (
-        not failed_loss_keys
-    ), "Loss dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_loss_keys), str(list(fitting_keys))
-    )
-    new_dict = {}
-    base = Argument("base", dict, [], [loss_variant_type_args()], doc="")
-    for item in loss_dict:
-        data = base.normalize_value(loss_dict[item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[item] = data
-    return new_dict
-
-
-def normalize_learning_rate_dict(fitting_keys, learning_rate_dict):
-    # check the learning_rate dict
-    failed_learning_rate_keys = [
-        item for item in learning_rate_dict if item not in fitting_keys
-    ]
-    assert not failed_learning_rate_keys, "Learning rate dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_learning_rate_keys), str(list(fitting_keys))
-    )
-    new_dict = {}
-    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
-    for item in learning_rate_dict:
-        data = base.normalize_value(learning_rate_dict[item], trim_pattern="_*")
-        base.check_value(data, strict=True)
-        new_dict[item] = data
-    return new_dict
-
-
-def normalize_learning_rate_dict_with_single_learning_rate(fitting_keys, learning_rate):
-    new_dict = {}
-    base = Argument("base", dict, [], [learning_rate_variant_type_args()], doc="")
-    data = base.normalize_value(learning_rate, trim_pattern="_*")
-    base.check_value(data, strict=True)
-    for fitting_key in fitting_keys:
-        new_dict[fitting_key] = data
-    return new_dict
-
-
-def normalize_fitting_weight(fitting_keys, data_keys, fitting_weight=None):
-    # check the mapping
-    failed_data_keys = [item for item in data_keys if item not in fitting_keys]
-    assert (
-        not failed_data_keys
-    ), "Data dict key(s) {} not have corresponding fitting keys in {}! ".format(
-        str(failed_data_keys), str(list(fitting_keys))
-    )
-    empty_fitting_keys = []
-    valid_fitting_keys = []
-    for item in fitting_keys:
-        if item not in data_keys:
-            empty_fitting_keys.append(item)
-        else:
-            valid_fitting_keys.append(item)
-    if empty_fitting_keys:
-        log.warning(
-            "Fitting net(s) {} have no data and will not be used in training.".format(
-                str(empty_fitting_keys)
-            )
-        )
-    num_pair = len(valid_fitting_keys)
-    assert num_pair > 0, "No valid training data systems for fitting nets!"
-
-    # check and normalize the fitting weight
-    new_weight = {}
-    if fitting_weight is None:
-        equal_weight = 1.0 / num_pair
-        for item in fitting_keys:
-            new_weight[item] = equal_weight if item in valid_fitting_keys else 0.0
-    else:
-        failed_weight_keys = [
-            item for item in fitting_weight if item not in fitting_keys
+def gen_args(multi_task=False) -> List[Argument]:
+    if not multi_task:
+        return [
+            model_args(),
+            learning_rate_args(),
+            loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(),
         ]
-        assert not failed_weight_keys, "Fitting weight key(s) {} not have corresponding fitting keys in {}! ".format(
-            str(failed_weight_keys), str(list(fitting_keys))
-        )
-        sum_prob = 0.0
-        for item in fitting_keys:
-            if item in valid_fitting_keys:
-                if (
-                    item in fitting_weight
-                    and isinstance(fitting_weight[item], (int, float))
-                    and fitting_weight[item] > 0.0
-                ):
-                    sum_prob += fitting_weight[item]
-                    new_weight[item] = fitting_weight[item]
-                else:
-                    valid_fitting_keys.remove(item)
-                    log.warning(
-                        f"Fitting net '{item}' has zero or invalid weight "
-                        "and will not be used in training."
-                    )
-                    new_weight[item] = 0.0
-            else:
-                new_weight[item] = 0.0
-        assert sum_prob > 0.0, "No valid training weight for fitting nets!"
-        # normalize
-        for item in new_weight:
-            new_weight[item] /= sum_prob
-    return new_weight
+    else:
+        return [
+            multi_model_args(),
+            learning_rate_args(),
+            multi_loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(),
+        ]
 
 
-def normalize(data):
-    data = normalize_multi_task(data)
+def gen_json_schema() -> str:
+    """Generate JSON schema.
 
-    base = Argument("base", dict, gen_args())
+    Returns
+    -------
+    str
+        JSON schema.
+    """
+    arg = Argument("DeePMD-kit", dict, gen_args(), doc=f"DeePMD-kit {__version__}")
+    return json.dumps(generate_json_schema(arg))
+
+
+def normalize(data, multi_task=False):
+    base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 

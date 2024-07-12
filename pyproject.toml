@@ -1,9 +1,10 @@
 [build-system]
 requires = [
+    # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    # TODO: unpin the upper bound when it is stable
-    "scikit-build-core>=0.5,<0.8,!=0.6.0",
+    "scikit-build-core>=0.5,<0.9,!=0.6.0",
     "packaging",
+    'tomli >= 1.1.0 ; python_version < "3.11"',
 ]
 build-backend = "backend.dp_backend"
 backend-path = ["."]
@@ -27,7 +28,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.2",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
@@ -38,27 +39,98 @@ dependencies = [
     'numpy',
     'scipy',
     'pyyaml',
-    'dargs >= 0.4.1',
-    'python-hostlist >= 1.21',
+    'dargs >= 0.4.7',
     'typing_extensions; python_version < "3.8"',
     'importlib_metadata>=1.4; python_version < "3.8"',
     'h5py',
+    "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
     'packaging',
+    'ml_dtypes',
+    'mendeleev',
+    'array-api-compat',
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]
-deepmd = "deepmd.lmp:get_op_dir"
+deepmd = "deepmd.tf.lmp:get_op_dir"
 
 [project.entry-points."dpgui"]
 "DeePMD-kit" = "deepmd.utils.argcheck:gen_args"
+
+[project.entry-points."dpdata.plugins"]
+deepmd_driver = "deepmd.driver:DPDriver"
 
 [project.urls]
 Homepage = "https://github.com/deepmodeling/deepmd-kit"
 documentation = "https://docs.deepmodeling.com/projects/deepmd"
 repository = "https://github.com/deepmodeling/deepmd-kit"
+
+# Metadata below is dynamic. However, it still has static parts,
+# which can be read by the build backend.
+[tool.deepmd_build_backend.optional-dependencies]
+test = [
+    "dpdata>=0.2.7",
+    # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
+    # fixed in 3.23.0
+    "ase>=3.23.0",
+    "pytest",
+    "pytest-cov",
+    "pytest-sugar",
+    "pytest-split",
+    "dpgui",
+    'array-api-strict>=2;python_version>="3.9"',
+]
+docs = [
+    "sphinx>=3.1.1",
+    "sphinx_rtd_theme>=1.0.0rc1",
+    "myst-nb>=1.0.0rc0",
+    "myst-parser>=0.19.2",
+    "sphinx-design",
+    "breathe",
+    "exhale>=0.3.7",
+    "numpydoc",
+    "ase",
+    "deepmodeling-sphinx>=0.1.0",
+    "dargs>=0.3.4",
+    "sphinx-argparse",
+    "pygments-lammps",
+    "sphinxcontrib-bibtex",
+    "sphinx-autoapi>=3.0.0",
+]
+lmp = [
+    "lammps~=2023.8.2.3.0",
+]
+ipi = [
+    "ipi",
+]
+gui = [
+    "dpgui",
+]
+cu11 = [
+    "nvidia-cuda-runtime-cu11",
+    "nvidia-cublas-cu11",
+    "nvidia-cufft-cu11",
+    "nvidia-curand-cu11",
+    "nvidia-cusolver-cu11",
+    "nvidia-cusparse-cu11",
+    "nvidia-cudnn-cu11<9",
+    "nvidia-cuda-nvcc-cu11",
+]
+cu12 = [
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cublas-cu12",
+    "nvidia-cufft-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cusolver-cu12",
+    "nvidia-cusparse-cu12",
+    "nvidia-cudnn-cu12<9",
+    "nvidia-cuda-nvcc-cu12",
+]
+
+[tool.deepmd_build_backend.scripts]
+dp = "deepmd.main:main"
 
 [tool.setuptools_scm]
 
@@ -82,7 +154,6 @@ sdist.exclude = [
 ]
 wheel.packages = [
     "deepmd",
-    "deepmd_utils",
 ]
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
@@ -102,7 +173,7 @@ provider-path = "backend"
 provider = "scikit_build_core.metadata.fancy_pypi_readme"
 
 [[tool.scikit-build.generate]]
-path = "deepmd_utils/_version.py"
+path = "deepmd/_version.py"
 template = '''
 version = "${version}"
 '''
@@ -126,50 +197,84 @@ replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 [tool.cibuildwheel]
 test-command = [
     "python -m deepmd -h",
+    """python -c "import deepmd.tf;import deepmd.pt" """,
     "dp -h",
     "dp_ipi",
-    "pytest {project}/source/tests/test_lammps.py"
+    "pytest {project}/source/tests/tf/test_lammps.py"
 ]
-test-extras = ["cpu", "test", "lmp", "ipi"]
-build = ["cp310-*"]
+test-extras = ["cpu", "test", "lmp", "ipi", "torch"]
+build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
-# TODO: uncomment when CUDA 11 is deprecated
+# TODO: uncomment to use the latest image when CUDA 11 is deprecated
 # manylinux-x86_64-image = "manylinux_2_28"
 manylinux-x86_64-image = "quay.io/pypa/manylinux_2_28_x86_64:2022-11-19-1b19e81"
 manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.cibuildwheel.macos]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1" }
 before-all = [
-    """if [[ "$CIBW_BUILD" != *macosx_arm64* ]]; then brew install mpich; fi""",
+    '''pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
 ]
-before-build = [
-    """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then python -m pip install "tensorflow-macos>=2.13.0rc0" --platform macosx_12_0_arm64 --no-deps --target=$RUNNER_TEMP/tensorflow; fi""",
-]
-repair-wheel-command = """if [[ "$CIBW_BUILD" == *macosx_arm64* ]]; then rm -rf $RUNNER_TEMP/tensorflow; fi && delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
+repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel} --ignore-missing-dependencies"""
+
+[tool.cibuildwheel.macos.environment]
+PIP_PREFER_BINARY = "1"
+DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
+DP_ENABLE_IPI = "1"
+DP_ENABLE_PYTORCH = "1"
+# for unclear reason, when enabling PyTorch, OpenMP is found accidentally
+CMAKE_ARGS = "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=1"
+
+[[tool.cibuildwheel.overrides]]
+# error: 'value' is unavailable: introduced in macOS 10.13
+select = "*-macosx_x86_64"
+inherit.environment = "append"
+environment.MACOSX_DEPLOYMENT_TARGET = "10.13"
 
 [tool.cibuildwheel.linux]
-repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 -w {dest_dir} {wheel}"
+repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 --exclude libc10.so --exclude libtorch.so --exclude libtorch_cpu.so -w {dest_dir} {wheel}"
 environment-pass = [
     "CIBW_BUILD",
     "DP_VARIANT",
     "CUDA_VERSION",
     "DP_PKG_NAME",
+    "SETUPTOOLS_SCM_PRETEND_VERSION",
 ]
-environment = { PIP_PREFER_BINARY="1", DP_LAMMPS_VERSION="stable_2Aug2023_update1", DP_ENABLE_IPI="1", MPI_HOME="/usr/lib64/mpich", PATH="/usr/lib64/mpich/bin:$PATH" }
 before-all = [
     """if [ ! -z "${DP_PKG_NAME}" ]; then sed -i "s/name = \\"deepmd-kit\\"/name = \\"${DP_PKG_NAME}\\"/g" pyproject.toml; fi""",
+    # https://almalinux.org/blog/2023-12-20-almalinux-8-key-update/
+    """rpm --import https://repo.almalinux.org/almalinux/RPM-GPG-KEY-AlmaLinux""",
     """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
-    "yum install -y mpich-devel",
+    '''/opt/python/cp311-cp311/bin/python -m pip install -i https://pypi.anaconda.org/mpi4py/simple mpich''',
+    # uv is not available in the old manylinux image
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then pipx install uv; fi }""",
 ]
+before-build = [
+    # old build doesn't support uv
+    """{ if [ "$(uname -m)" = "x86_64" ] ; then uv pip install --system -U build; fi }""",
+]
+[tool.cibuildwheel.linux.environment]
+PIP_PREFER_BINARY = "1"
+DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
+DP_ENABLE_IPI = "1"
+DP_ENABLE_PYTORCH = "1"
+MPI_HOME = "/usr/lib64/mpich"
+PATH = "/usr/lib64/mpich/bin:$PATH"
+# use CPU version of torch for building, which should also work for GPU
+# note: uv has different behavior from pip on extra index url
+# https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#packages-that-exist-on-multiple-indexes
+UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+# trick to find the correction version of mpich
+CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
-environment = { PIP_PREFER_BINARY="1" }
-test-extras = ["cpu"]
+test-extras = ["cpu", "torch"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
 ]
+[tool.cibuildwheel.windows.environment]
+PIP_PREFER_BINARY = "1"
+DP_ENABLE_PYTORCH = "1"
 
 # One can run `tox` or `tox -e gpu`
 # to run pytest in an isolated environment
@@ -223,15 +328,23 @@ ignore = "D413, D416, D203, D107, D213"
 profile = "black"
 force_grid_wrap = 1
 
-[tool.ruff]
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
 select = [
     "E", # errors
+    "W", # warning
     "F", # pyflakes
     "D", # pydocstyle
     "UP", # pyupgrade
     "C4", # flake8-comprehensions
     "RUF", # ruff
     "NPY", # numpy
+    "TID251", # banned-api
+    "TID253", # banned-module-level-imports
+    "T20", # ban print
+    "B904", # raise-without-from-inside-except
 ]
 
 ignore = [
@@ -251,8 +364,37 @@ ignore = [
 ]
 ignore-init-module-imports = true
 
-[tool.ruff.pydocstyle]
+exclude = [
+    "source/3rdparty/**",
+]
+
+[tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.ruff.lint.flake8-tidy-imports]
+banned-module-level-imports = [
+    "deepmd.tf",
+    "deepmd.pt",
+    "tensorflow",
+    "torch",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"torch.testing.assert_allclose".msg = "Use `torch.testing.assert_close()` instead, see https://github.com/pytorch/pytorch/issues/61844."
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Also ignore `E402` in all `__init__.py` files.
+"deepmd/tf/**" = ["TID253"]
+"deepmd/pt/**" = ["TID253"]
+"source/tests/tf/**" = ["TID253"]
+"source/tests/pt/**" = ["TID253"]
+"source/tests/universal/pt/**" = ["TID253"]
+"source/ipi/tests/**" = ["TID253"]
+"source/lmp/tests/**" = ["TID253"]
+"**/*.ipynb" = ["T20"]  # printing in a nb file is expected
 
 [tool.pytest.ini_options]
 markers = "run"
+
+[tool.coverage.run]
+plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]

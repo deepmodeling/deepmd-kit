@@ -23,6 +23,7 @@
           ],
           "resnet_dt": false,
           "axis_neuron": 4,
+          "type_one_side": true,
           "precision": "float64",
           "seed": 1,
           "_comment2": " that's all"
@@ -41,6 +42,7 @@
             20
           ],
           "resnet_dt": false,
+          "type_one_side": true,
           "precision": "float64",
           "seed": 1,
           "_comment3": " that's all"

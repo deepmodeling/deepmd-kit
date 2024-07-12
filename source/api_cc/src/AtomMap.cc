@@ -39,8 +39,10 @@ void AtomMap::forward(typename std::vector<VALUETYPE>::iterator out,
       int gro_i = idx_map[ii];
       for (int dd = 0; dd < stride; ++dd) {
         // out[ii*stride+dd] = in[gro_i*stride+dd];
-        *(out + kk * nall * stride + ii * stride + dd) =
-            *(in + kk * nall * stride + gro_i * stride + dd);
+        *(out + static_cast<std::ptrdiff_t>(kk) * nall * stride +
+          static_cast<std::ptrdiff_t>(ii) * stride + dd) =
+            *(in + static_cast<std::ptrdiff_t>(kk) * nall * stride +
+              static_cast<std::ptrdiff_t>(gro_i) * stride + dd);
       }
     }
   }
@@ -58,8 +60,10 @@ void AtomMap::backward(typename std::vector<VALUETYPE>::iterator out,
       int gro_i = idx_map[ii];
       for (int dd = 0; dd < stride; ++dd) {
         // out[gro_i*stride+dd] = in[ii*stride+dd];
-        *(out + kk * nall * stride + gro_i * stride + dd) =
-            *(in + kk * nall * stride + ii * stride + dd);
+        *(out + static_cast<std::ptrdiff_t>(kk) * nall * stride +
+          static_cast<std::ptrdiff_t>(gro_i) * stride + dd) =
+            *(in + static_cast<std::ptrdiff_t>(kk) * nall * stride +
+              static_cast<std::ptrdiff_t>(ii) * stride + dd);
       }
     }
   }

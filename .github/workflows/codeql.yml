@@ -1,0 +1,66 @@
+name: "CodeQL"
+
+on:
+  push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
+  pull_request:
+  schedule:
+    - cron: '45 2 * * 2'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    timeout-minutes: ${{ (matrix.language == 'swift' && 120) || 360 }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'c-cpp', 'javascript-typescript', 'python' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+      if: matrix.language == 'c-cpp'
+    - name: "Setup dependencies"
+      if: matrix.language == 'c-cpp'
+      run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb \
+         && sudo dpkg -i cuda-keyring_1.0-1_all.deb \
+         && sudo apt-get update \
+         && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
+        python -m pip install tensorflow
+        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
+        unzip libtorch.zip
+      env:
+        DEBIAN_FRONTEND: noninteractive
+    # Initializes the CodeQL tools for scanning.
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: ${{ matrix.language }}
+        queries: security-extended,security-and-quality
+    - name: "Run, Build Application using script"
+      run: |
+        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+        source/install/build_cc.sh
+      env:
+        DP_VARIANT: cuda
+        DOWNLOAD_TENSORFLOW: "FALSE"
+      if: matrix.language == 'c-cpp'
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{matrix.language}}"

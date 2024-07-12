@@ -1,4 +1,8 @@
-# Descriptor `"se_e2_a"`
+# Descriptor `"se_e2_a"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+:::
 
 The notation of `se_e2_a` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations. The `e2` stands for the embedding with two-atoms information. This descriptor was described in detail in [the DeepPot-SE paper](https://arxiv.org/abs/1805.09003).
 
@@ -39,10 +43,10 @@ where $\boldsymbol{r}_{ij}=\boldsymbol{r}_j-\boldsymbol{r}_i = (x_{ij}, y_{ij}, 
     \end{cases}
 ```
 
-where $x=\frac{r - r_s}{ r_c - r_s}$  switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$.
+where $x=\frac{r - r_s}{ r_c - r_s}$ switches from 1 at $r_s$ to 0 at the cutoff radius $r_c$.
 The switching function $s(r)$ is smooth in the sense that the second-order derivative is continuous.
 
-Each row of the embedding matrix  $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_ {g}$ of $s(r_{ij})$:
+Each row of the embedding matrix $\mathcal{G}^i \in \mathbb{R}^{N_c \times M}$ consists of $M$ nodes from the output layer of an NN function $\mathcal{N}_ {g}$ of $s(r_{ij})$:
 
 ```math
     (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})),
@@ -54,17 +58,20 @@ $\mathcal{G}^i_< \in \mathbb{R}^{N_c \times M_<}$ only takes first $M_<$ columns
 $r_s$, $r_c$, $M$ and $M_<$ are hyperparameters provided by the user.
 The DeepPot-SE is continuous up to the second-order derivative in its domain.[^1]
 
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 ## Instructions
 
-In this example, we will train a DeepPot-SE model for a water system.  A complete training input script of this example can be found in the directory.
+In this example, we will train a DeepPot-SE model for a water system. A complete training input script of this example can be found in the directory.
+
 ```bash
 $deepmd_source_dir/examples/water/se_e2_a/input.json
 ```
+
 With the training input script, data are also provided in the example directory. One may train the model with the DeePMD-kit from the directory.
 
 The construction of the descriptor is given by section {ref}`descriptor <model/descriptor>`. An example of the descriptor is provided as follows
+
 ```json
 	"descriptor" :{
 	    "type":		"se_e2_a",
@@ -78,11 +85,12 @@ The construction of the descriptor is given by section {ref}`descriptor <model/d
 	    "seed":		1
 	}
 ```
-* The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_e2_a"`.
-* {ref}`rcut <model/descriptor[se_e2_a]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_e2_a]/rcut_smth>` gives where the smoothing starts.
-* {ref}`sel <model/descriptor[se_e2_a]/sel>` gives the maximum possible number of neighbors in the cut-off radius. It is a list, the length of which is the same as the number of atom types in the system, and `sel[i]` denotes the maximum possible number of neighbors with type `i`.
-* The {ref}`neuron <model/descriptor[se_e2_a]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
-* If the option {ref}`type_one_side <model/descriptor[se_e2_a]/type_one_side>` is set to `true`, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters.
-* The {ref}`axis_neuron <model/descriptor[se_e2_a]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
-* If the option {ref}`resnet_dt <model/descriptor[se_e2_a]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
-* {ref}`seed <model/descriptor[se_e2_a]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
+
+- The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_e2_a"`.
+- {ref}`rcut <model/descriptor[se_e2_a]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_e2_a]/rcut_smth>` gives where the smoothing starts.
+- {ref}`sel <model/descriptor[se_e2_a]/sel>` gives the maximum possible number of neighbors in the cut-off radius. It is a list, the length of which is the same as the number of atom types in the system, and `sel[i]` denotes the maximum possible number of neighbors with type `i`.
+- The {ref}`neuron <model/descriptor[se_e2_a]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
+- If the option {ref}`type_one_side <model/descriptor[se_e2_a]/type_one_side>` is set to `true`, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters.
+- The {ref}`axis_neuron <model/descriptor[se_e2_a]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
+- If the option {ref}`resnet_dt <model/descriptor[se_e2_a]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
+- {ref}`seed <model/descriptor[se_e2_a]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.

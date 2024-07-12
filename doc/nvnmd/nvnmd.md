@@ -1,4 +1,8 @@
-# Introduction
+# Introduction {{ tensorflow_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}
+:::
 
 NVNMD stands for non-von Neumann molecular dynamics.
 
@@ -29,7 +33,6 @@ where `$dataset` is the path to the data set and `$workspace` is the path to the
 
 Create and go to the training directory.
 
-
 ```bash
 mkdir train
 cd train
@@ -46,10 +49,10 @@ The structure of the input script is as follows
 
 ```json
 {
-    "nvnmd" : {},
-    "learning_rate" : {},
-    "loss" : {},
-    "training": {}
+  "nvnmd": {},
+  "learning_rate": {},
+  "loss": {},
+  "training": {}
 }
 ```
 
@@ -59,29 +62,30 @@ The "nvnmd" section is defined as
 
 ```json
 {
-    "version": 0,
-    "max_nnei":128,
-    "net_size":128,
-    "sel":[60, 60],
-    "rcut":6.0,
-    "rcut_smth":0.5,
-    "type_map": ["Ge", "Te"]
+  "version": 0,
+  "max_nnei": 128,
+  "net_size": 128,
+  "sel": [60, 60],
+  "rcut": 6.0,
+  "rcut_smth": 0.5,
+  "type_map": ["Ge", "Te"]
 }
 ```
 
 where items are defined as:
 
-| Item      | Mean                        | Optional Value                                |
-| --------- | --------------------------- | --------------------------------------------- |
-| version | the version of network structure | 0 or 1 |
-| max_nnei  | the maximum number of neighbors that do not distinguish element types | 128  or 256 |
-| net_size  | the size of nueral network  | 128                                     |
-| sel       | the number of neighbors     | version 0: integer list of lengths 1 to 4 are acceptable; version 1: integer |
-| rcut      | the cutoff radial           | (0, 8.0]                                      |
-| rcut_smth | the smooth cutoff parameter | (0, 8.0]                                      |
-| type_map | mapping atom type to the name (str) of the type | string list, optional |
+| Item      | Mean                                                                  | Optional Value                                                               |
+| --------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| version   | the version of network structure                                      | 0 or 1                                                                       |
+| max_nnei  | the maximum number of neighbors that do not distinguish element types | 128 or 256                                                                   |
+| net_size  | the size of nueral network                                            | 128                                                                          |
+| sel       | the number of neighbors                                               | version 0: integer list of lengths 1 to 4 are acceptable; version 1: integer |
+| rcut      | the cutoff radial                                                     | (0, 8.0]                                                                     |
+| rcut_smth | the smooth cutoff parameter                                           | (0, 8.0]                                                                     |
+| type_map  | mapping atom type to the name (str) of the type                       | string list, optional                                                        |
 
 Multiple versions of the nvnmd model correspond to different network structures. `nvnmd-v0` and `nvnmd-v1` differ in the following ways:
+
 1. `nvnmd-v0` and `nvnmd-v1` use the `se_a` descriptor and `se_atten` descriptor, respectively
 2. `nvnmd-v0` has 1 set of parameters for each element and supports up to 4 element types. `nvnmd-v1` shares 1 set of parameters for each element and supports up to 31 types.
 3. `nvnmd-v0` distinguishes between neighboring atoms, so `sel` is a list of integers. `nvnmd-v1` does not distinguish between neighboring atoms, so `sel` is an integer.
@@ -92,20 +96,20 @@ The "learning_rate" section is defined as
 
 ```json
 {
-    "type":"exp",
-    "start_lr": 1e-3,
-    "stop_lr": 3e-8,
-    "decay_steps": 5000
+  "type": "exp",
+  "start_lr": 1e-3,
+  "stop_lr": 3e-8,
+  "decay_steps": 5000
 }
 ```
 
 where items are defined as:
 
-| Item        | Mean                                                         | Optional Value         |
-| ----------- | ------------------------------------------------------------ | ---------------------- |
-| type        | learning rate variant type                                   | exp                    |
-| start_lr    | the learning rate at the beginning of the training           | a positive real number |
-| stop_lr     | the desired learning rate at the end of the training         | a positive real number |
+| Item        | Mean                                                             | Optional Value         |
+| ----------- | ---------------------------------------------------------------- | ---------------------- |
+| type        | learning rate variant type                                       | exp                    |
+| start_lr    | the learning rate at the beginning of the training               | a positive real number |
+| stop_lr     | the desired learning rate at the end of the training             | a positive real number |
 | decay_stops | the learning rate is decaying every {decay_stops} training steps | a positive integer     |
 
 ### loss
@@ -114,12 +118,12 @@ The "loss" section is defined as
 
 ```json
 {
-    "start_pref_e": 0.02,
-    "limit_pref_e": 2,
-    "start_pref_f": 1000,
-    "limit_pref_f": 1,
-    "start_pref_v": 0,
-    "limit_pref_v": 0
+  "start_pref_e": 0.02,
+  "limit_pref_e": 2,
+  "start_pref_f": 1000,
+  "limit_pref_f": 1,
+  "start_pref_v": 0,
+  "limit_pref_v": 0
 }
 ```
 
@@ -141,17 +145,16 @@ The "training" section is defined as
 ```json
 {
   "seed": 1,
-    "stop_batch": 1000000,
-    "numb_test": 1,
-    "disp_file": "lcurve.out",
-    "disp_freq": 1000,
-    "save_ckpt": "model.ckpt",
-    "save_freq": 10000,
-    "training_data":{
-      "systems":["system1_path", "system2_path", "..."],
-      "set_prefix": "set",
-      "batch_size": ["batch_size_of_system1", "batch_size_of_system2", "..."]
-    }
+  "stop_batch": 1000000,
+  "numb_test": 1,
+  "disp_file": "lcurve.out",
+  "disp_freq": 1000,
+  "save_ckpt": "model.ckpt",
+  "save_freq": 10000,
+  "training_data": {
+    "systems": ["system1_path", "system2_path", "..."],
+    "batch_size": ["batch_size_of_system1", "batch_size_of_system2", "..."]
+  }
 }
 ```
 
@@ -167,7 +170,6 @@ where items are defined as:
 | save_ckpt  | path prefix of check point files                    | a string           |
 | save_freq  | save frequency                                      | a positive integer |
 | systems    | a list of data directory which contains the dataset | string list        |
-| set_prefix | the prefix of dataset                               | a string           |
 | batch_size | a list of batch size of corresponding dataset       | a integer list     |
 
 ## Training
@@ -185,19 +187,18 @@ After the training process, you will get two folders: `nvnmd_cnn` and `nvnmd_qnn
 
 You can also restart the CNN training from the path prefix of checkpoint files (`nvnmd_cnn/model.ckpt`) by
 
-``` bash
+```bash
 dp train-nvnmd train_cnn.json -r nvnmd_cnn/model.ckpt -s s1
 ```
 
 You can also initialize the CNN model and train it by
 
-``` bash
+```bash
 mv nvnmd_cnn nvnmd_cnn_bck
 cp train_cnn.json train_cnn2.json
 # please edit train_cnn2.json
 dp train-nvnmd train_cnn2.json -s s1 -i nvnmd_cnn_bck/model.ckpt
 ```
-
 
 # Testing
 
@@ -211,6 +212,7 @@ dp test -m ./nvnmd_qnn/frozen_model.pb -s path/to/system -d ./test/detail -n 999
 where the frozen model file to import is given via the `-m` command line flag, the path to the testing data set is given via the `-s` command line flag, and the file containing details of energy, forces and virials accuracy is given via the `-d` command line flag, the amount of data for testing is given via the `-n` command line flag.
 
 # Running MD in Bohrium
+
 After CNN and QNN training, you can upload the ML model to our online NVNMD system and run MD there through Bohrium (https://bohrium.dp.tech). Bohrium is a research platfrom designed for AI for Science Era. For more information, please refer to [Bohrium Introduction](https://bohrium-doc.dp.tech/en/docs/WhatIsBohrium/).
 
 ## Registration
@@ -247,30 +249,30 @@ Then you need prepare the configuration file `job.json`, the configuration file 
 
 ```json
 {
-    "job_name": "test",
-    "command": "/usr/bin/lmp_mpi < in.lmp;",
-    "log_file": "OUTCAR",
-    "machine_type": "c4_m16_cpu",
-    "job_type": "container",
-    "image_name": "lammps_dp:29Sep2021",
-    "platform": "hnugba",
-    "region": "default",
-    "project_id": 0000
+  "job_name": "test",
+  "command": "/usr/bin/lmp_mpi < in.lmp;",
+  "log_file": "OUTCAR",
+  "machine_type": "c4_m16_cpu",
+  "job_type": "container",
+  "image_name": "lammps_dp:29Sep2021",
+  "platform": "hnugba",
+  "region": "default",
+  "project_id": 0000
 }
 ```
 
 where items are defined as:
 
-| Item         | Mean                                                                                                                       | Optional Value |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| job_name     | the name of computing job, which can be named freely                                                                       | a string       |
-| command      | the command to be executed on the computing node                                                                           | a string       |
-| log_file     | the log file that can be viewed at any time during the calculation process, which can be viewed on the Bohrium "Jobs" page | a string       |
-| machine_type | the machine type used for the job                                                                                          | "c1_m4_cpu", "c4_m16_cpu", "c8_m32_cpu"   |
-| job_type     | the job type                                                                                                               | "container"    |
-| image_name   | the image name used for the job                                                                                            | "lammps_dp:29Sep2021"|
-| platform     | resource provider                                                                                                          | "hnugba"          |
-| project_id   | the project ID to which the job belongs, which can be viewed on the "Projects" page                                        | a integer      |
+| Item         | Mean                                                                                                                       | Optional Value                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| job_name     | the name of computing job, which can be named freely                                                                       | a string                                |
+| command      | the command to be executed on the computing node                                                                           | a string                                |
+| log_file     | the log file that can be viewed at any time during the calculation process, which can be viewed on the Bohrium "Jobs" page | a string                                |
+| machine_type | the machine type used for the job                                                                                          | "c1_m4_cpu", "c4_m16_cpu", "c8_m32_cpu" |
+| job_type     | the job type                                                                                                               | "container"                             |
+| image_name   | the image name used for the job                                                                                            | "lammps_dp:29Sep2021"                   |
+| platform     | resource provider                                                                                                          | "hnugba"                                |
+| project_id   | the project ID to which the job belongs, which can be viewed on the "Projects" page                                        | a integer                               |
 
 Notice：The task will use 4 CPU cores for computation, so do not repeatedly use the `mpirun` command, otherwise an error will be reported. All 0000 after "project_id" need to be replaced with your own project ID, which can be viewed on the "Projects" page. Also, the JSON file format requires that no commas be added after the last field within the {}, otherwise, there will be a syntax error. Please check the [documentation](https://github.com/LiuGroupHNU/md-data/blob/master/code/doc/mdpu/hardware.md) for the latest hardware configuration information.
 

@@ -37,7 +37,7 @@ def _main():
     outpath = args.OUTPUT
 
     if not os.path.isdir(inpath):
-        print("# no input dir " + inpath + ", exit")
+        print("# no input dir " + inpath + ", exit")  # noqa: T201
         return
 
     if not os.path.isdir(outpath):
@@ -47,16 +47,16 @@ def _main():
         raws = detect_raw(inpath)
 
     if len(raws) == 0:
-        print("# no file to shuffle, exit")
+        print("# no file to shuffle, exit")  # noqa: T201
         return
 
     assert "box.raw" in raws
     tmp = np.loadtxt(os.path.join(inpath, "box.raw"))
     tmp = np.reshape(tmp, [-1, 9])
     nframe = tmp.shape[0]
-    print(nframe)
+    print(nframe)  # noqa: T201
 
-    print(
+    print(  # noqa: T201
         "# will shuffle raw files "
         + str(raws)
         + " in dir "

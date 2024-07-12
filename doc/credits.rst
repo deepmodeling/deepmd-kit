@@ -47,7 +47,14 @@ Cite DeePMD-kit and methods
 .. bibliography::
    :filter: False
 
-   Zhang_2022_DPA1
+   Zhang_NpjComputMater_2024_v10_p94
+
+- If DPA-2 descriptor (`dpa2`) is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_2023_DPA2
 
 - If frame-specific parameters (`fparam`, e.g. electronic temperature) is used,
 

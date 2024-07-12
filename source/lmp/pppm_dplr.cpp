@@ -59,7 +59,7 @@ void PPPMDPLR::init() {
 
   int nlocal = atom->nlocal;
   // cout << " ninit pppm/dplr ---------------------- " << nlocal << endl;
-  fele.resize(nlocal * 3);
+  fele.resize(static_cast<size_t>(nlocal) * 3);
   fill(fele.begin(), fele.end(), 0.0);
 }
 
@@ -296,7 +296,7 @@ void PPPMDPLR::fieldforce_ik() {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
-  fele.resize(nlocal * 3);
+  fele.resize(static_cast<size_t>(nlocal) * 3);
   fill(fele.begin(), fele.end(), 0.0);
 
   for (i = 0; i < nlocal; i++) {
@@ -372,7 +372,7 @@ void PPPMDPLR::fieldforce_ad() {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
-  fele.resize(nlocal * 3);
+  fele.resize(static_cast<size_t>(nlocal) * 3);
   fill(fele.begin(), fele.end(), 0.0);
 
   for (i = 0; i < nlocal; i++) {

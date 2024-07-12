@@ -26,13 +26,73 @@ struct InputNlist {
   int* numneigh;
   /// Array stores the core region atom's neighbor index
   int** firstneigh;
-  InputNlist() : inum(0), ilist(NULL), numneigh(NULL), firstneigh(NULL){};
+  ///  # of swaps to perform = sum of maxneed
+  int nswap;
+  /// # of atoms to send in each swap
+  int* sendnum;
+  /// # of atoms to recv in each swap
+  int* recvnum;
+  /// where to put 1st recv atom in each swap
+  int* firstrecv;
+  /// list of atoms to send in each swap
+  int** sendlist;
+  /// proc to send to at each swap
+  int* sendproc;
+  /// proc to recv from at each swap
+  int* recvproc;
+  /// MPI_comm data in lmp
+  void* world;
+  InputNlist()
+      : inum(0),
+        ilist(NULL),
+        numneigh(NULL),
+        firstneigh(NULL),
+        nswap(0),
+        sendnum(nullptr),
+        recvnum(nullptr),
+        firstrecv(nullptr),
+        sendlist(nullptr),
+        sendproc(nullptr),
+        recvproc(nullptr),
+        world(0) {};
   InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
-        firstneigh(firstneigh_){};
-  ~InputNlist(){};
+        firstneigh(firstneigh_),
+        nswap(0),
+        sendnum(nullptr),
+        recvnum(nullptr),
+        firstrecv(nullptr),
+        sendlist(nullptr),
+        sendproc(nullptr),
+        recvproc(nullptr),
+        world(0) {};
+  InputNlist(int inum_,
+             int* ilist_,
+             int* numneigh_,
+             int** firstneigh_,
+             int nswap,
+             int* sendnum,
+             int* recvnum,
+             int* firstrecv,
+             int** sendlist,
+             int* sendproc,
+             int* recvproc,
+             void* world)
+      : inum(inum_),
+        ilist(ilist_),
+        numneigh(numneigh_),
+        firstneigh(firstneigh_),
+        nswap(nswap),
+        sendnum(sendnum),
+        recvnum(recvnum),
+        firstrecv(firstrecv),
+        sendlist(sendlist),
+        sendproc(sendproc),
+        recvproc(recvproc),
+        world(world) {};
+  ~InputNlist() {};
 };
 
 /**

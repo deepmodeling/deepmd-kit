@@ -1,128 +1,62 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    TYPE_CHECKING,
     List,
     Optional,
+    Union,
 )
 
 import numpy as np
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    ModelOutputDef,
+    OutputVariableDef,
+)
 from deepmd.infer.deep_tensor import (
     DeepTensor,
+    OldDeepTensor,
 )
-
-if TYPE_CHECKING:
-    from pathlib import (
-        Path,
-    )
 
 
 class DeepPolar(DeepTensor):
-    """Constructor.
+    """Deep polar model.
 
     Parameters
     ----------
     model_file : Path
         The name of the frozen model file.
-    load_prefix: str
-        The prefix in the load computational graph
-    default_tf_graph : bool
-        If uses the default tf graph, otherwise build a new tf graph for evaluation
-    input_map : dict, optional
-        The input map for tf.import_graph_def. Only work with default tf graph
-    neighbor_list : ase.neighborlist.NeighborList, optional
-        The neighbor list object. If None, then build the native neighbor list.
-
-    Warnings
-    --------
-    For developers: `DeepTensor` initializer must be called at the end after
-    `self.tensors` are modified because it uses the data in `self.tensors` dict.
-    Do not chanage the order!
+    *args : list
+        Positional arguments.
+    auto_batch_size : bool or int or AutoBatchSize, default: True
+        If True, automatic batch size will be used. If int, it will be used
+        as the initial batch size.
+    neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
+        The ASE neighbor list class to produce the neighbor list. If None, the
+        neighbor list will be built natively in the model.
+    **kwargs : dict
+        Keyword arguments.
     """
 
-    def __init__(
-        self,
-        model_file: "Path",
-        load_prefix: str = "load",
-        default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
-        neighbor_list=None,
-    ) -> None:
-        # use this in favor of dict update to move attribute from class to
-        # instance namespace
-        self.tensors = dict(
-            {
-                # output tensor
-                "t_tensor": "o_polar:0",
-            },
-            **self.tensors,
-        )
-
-        DeepTensor.__init__(
-            self,
-            model_file,
-            load_prefix=load_prefix,
-            default_tf_graph=default_tf_graph,
-            input_map=input_map,
-            neighbor_list=neighbor_list,
-        )
-
-    def get_dim_fparam(self) -> int:
-        """Unsupported in this model."""
-        raise NotImplementedError("This model type does not support this attribute")
-
-    def get_dim_aparam(self) -> int:
-        """Unsupported in this model."""
-        raise NotImplementedError("This model type does not support this attribute")
+    @property
+    def output_tensor_name(self) -> str:
+        return "polar"
 
 
-class DeepGlobalPolar(DeepTensor):
-    """Constructor.
-
-    Parameters
-    ----------
-    model_file : str
-        The name of the frozen model file.
-    load_prefix: str
-        The prefix in the load computational graph
-    default_tf_graph : bool
-        If uses the default tf graph, otherwise build a new tf graph for evaluation
-    neighbor_list : ase.neighborlist.NeighborList, optional
-        The neighbor list object. If None, then build the native neighbor list.
-    """
-
-    def __init__(
-        self,
-        model_file: str,
-        load_prefix: str = "load",
-        default_tf_graph: bool = False,
-        neighbor_list=None,
-    ) -> None:
-        self.tensors.update(
-            {
-                "t_sel_type": "model_attr/sel_type:0",
-                # output tensor
-                "t_tensor": "o_global_polar:0",
-            }
-        )
-
-        DeepTensor.__init__(
-            self,
-            model_file,
-            load_prefix=load_prefix,
-            default_tf_graph=default_tf_graph,
-            neighbor_list=None,
-        )
+class DeepGlobalPolar(OldDeepTensor):
+    @property
+    def output_tensor_name(self) -> str:
+        return "global_polar"
 
     def eval(
         self,
         coords: np.ndarray,
-        cells: np.ndarray,
-        atom_types: List[int],
+        cells: Optional[np.ndarray],
+        atom_types: Union[List[int], np.ndarray],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        mixed_type: bool = False,
+        **kwargs,
     ) -> np.ndarray:
         """Evaluate the model.
 
@@ -135,31 +69,54 @@ class DeepGlobalPolar(DeepTensor):
             The cell of the region.
             If None then non-PBC is assumed, otherwise using PBC.
             The array should be of size nframes x 9
-        atom_types
+        atom_types : list[int] or np.ndarray
             The atom types
             The list should contain natoms ints
         atomic
-            Not used in this model
+            If True (default), return the atomic tensor
+            Otherwise return the global tensor
         fparam
             Not used in this model
         aparam
             Not used in this model
-        efield
-            Not used in this model
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
 
         Returns
         -------
         tensor
             The returned tensor
-            If atomic == False then of size nframes x variable_dof
-            else of size nframes x natoms x variable_dof
+            If atomic == False then of size nframes x output_dim
+            else of size nframes x natoms x output_dim
         """
-        return DeepTensor.eval(self, coords, cells, atom_types, atomic=False)
+        return super().eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=atomic,
+            fparam=fparam,
+            aparam=aparam,
+            mixed_type=mixed_type,
+            **kwargs,
+        )
 
-    def get_dim_fparam(self) -> int:
-        """Unsupported in this model."""
-        raise NotImplementedError("This model type does not support this attribute")
-
-    def get_dim_aparam(self) -> int:
-        """Unsupported in this model."""
-        raise NotImplementedError("This model type does not support this attribute")
+    @property
+    def output_def(self) -> ModelOutputDef:
+        """Get the output definition of this model."""
+        # no atomic or differentiable output is defined
+        return ModelOutputDef(
+            FittingOutputDef(
+                [
+                    OutputVariableDef(
+                        self.output_tensor_name,
+                        shape=[-1],
+                        reducible=False,
+                        r_differentiable=False,
+                        c_differentiable=False,
+                        atomic=False,
+                    ),
+                ]
+            )
+        )

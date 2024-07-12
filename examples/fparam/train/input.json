@@ -1,6 +1,9 @@
 {
   "_comment1": " model parameters",
   "model": {
+    "type_map": [
+      "Be"
+    ],
     "data_stat_nbatch": 1,
     "descriptor": {
       "type": "se_a",
@@ -16,6 +19,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 8,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1
     },
@@ -54,7 +58,6 @@
         "../data/e3000_i2000/",
         "../data/e8000_i2000/"
       ],
-      "set_prefix": "set",
       "batch_size": 1
     },
     "stop_batch": 1000000,

@@ -532,11 +532,12 @@ TEST_F(TestEnvMatAMix, prod_cpu) {
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   deepmd::convert_nlist(inlist, nlist_a_cpy);
 
-  std::vector<double> em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3),
-      rij(nloc * nnei * 3);
-  std::vector<int> nlist(nloc * nnei);
-  std::vector<int> ntype(nloc * nnei);
-  bool *nmask = new bool[nloc * nnei];
+  std::vector<double> em(static_cast<size_t>(nloc) * ndescrpt),
+      em_deriv(static_cast<size_t>(nloc) * ndescrpt * 3),
+      rij(static_cast<size_t>(nloc) * nnei * 3);
+  std::vector<int> nlist(static_cast<size_t>(nloc) * nnei);
+  std::vector<int> ntype(static_cast<size_t>(nloc) * nnei);
+  bool *nmask = new bool[static_cast<size_t>(nloc) * nnei];
   memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double> avg(ntypes * ndescrpt, 0);
   std::vector<double> std(ntypes * ndescrpt, 1);
@@ -575,11 +576,12 @@ TEST_F(TestEnvMatAMix, prod_cpu_equal_cpu) {
   std::vector<int *> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_a_cpy);
-  std::vector<double> em(nloc * ndescrpt), em_deriv(nloc * ndescrpt * 3),
-      rij(nloc * nnei * 3);
-  std::vector<int> nlist(nloc * nnei);
-  std::vector<double> avg(ntypes * ndescrpt, 0);
-  std::vector<double> std(ntypes * ndescrpt, 1);
+  std::vector<double> em(static_cast<size_t>(nloc) * ndescrpt),
+      em_deriv(static_cast<size_t>(nloc) * ndescrpt * 3),
+      rij(static_cast<size_t>(nloc) * nnei * 3);
+  std::vector<int> nlist(static_cast<size_t>(nloc) * nnei);
+  std::vector<double> avg(static_cast<size_t>(ntypes) * ndescrpt, 0);
+  std::vector<double> std(static_cast<size_t>(ntypes) * ndescrpt, 1);
   deepmd::prod_env_mat_a_cpu(&em[0], &em_deriv[0], &rij[0], &nlist[0],
                              &posi_cpy[0], &atype[0], inlist, max_nbor_size,
                              &avg[0], &std[0], nloc, nall, rc, rc_smth, sec_a,
@@ -652,11 +654,12 @@ TEST_F(TestEnvMatAMix, prod_gpu) {
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]),
       gpu_inlist;
   convert_nlist(inlist, nlist_a_cpy);
-  std::vector<double> em(nloc * ndescrpt, 0.0),
-      em_deriv(nloc * ndescrpt * 3, 0.0), rij(nloc * nnei * 3, 0.0);
-  std::vector<int> nlist(nloc * nnei, 0);
-  std::vector<int> ntype(nloc * nnei, 0);
-  bool *nmask = new bool[nloc * nnei];
+  std::vector<double> em(static_cast<size_t>(nloc) * ndescrpt, 0.0),
+      em_deriv(nloc * ndescrpt * 3, 0.0),
+      rij(static_cast<size_t>(nloc) * nnei * 3, 0.0);
+  std::vector<int> nlist(static_cast<size_t>(nloc) * nnei, 0);
+  std::vector<int> ntype(static_cast<size_t>(nloc) * nnei, 0);
+  bool *nmask = new bool[static_cast<size_t>(nloc) * nnei];
   memset(nmask, 0, sizeof(bool) * nloc * nnei);
   std::vector<double> avg(ntypes * ndescrpt, 0);
   std::vector<double> std(ntypes * ndescrpt, 1);

@@ -192,7 +192,7 @@ class OnlineResource:
     @property
     def gzip_path(self) -> Path:
         if self.gzip is None:
-            raise RuntimeError("gzip is None for %s" % self.path)
+            raise RuntimeError(f"gzip is None for {self.path}")
         return PACKAGE_DIR / self.gzip
 
     @property
@@ -257,10 +257,9 @@ class Build(metaclass=ABCMeta):
                     dd()
                 else:
                     dlog.info(
-                        "Skip installing %s, which has been already installed"
-                        % dd.__class__.__name__
+                        f"Skip installing {dd.__class__.__name__}, which has been already installed"
                     )
-            dlog.info("Start installing %s..." % self.__class__.__name__)
+            dlog.info(f"Start installing {self.__class__.__name__}...")
             with tempfile.TemporaryDirectory() as tmpdirname:
                 self._prefix = Path(tmpdirname)
                 self.build()
@@ -294,7 +293,7 @@ def set_directory(path: Path):
     Examples
     --------
     >>> with set_directory("some_path"):
-    ...    do_something()
+    ...     do_something()
     """
     cwd = Path().absolute()
     path.mkdir(exist_ok=True, parents=True)
@@ -423,14 +422,14 @@ class BuildBazelisk(Build):
         self.version = version
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {
             "bazelisk": RESOURCES["bazelisk-" + self.version],
         }
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -449,12 +448,12 @@ class BuildNumpy(Build):
     """Build NumPy."""
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {}
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -481,12 +480,12 @@ class BuildCUDA(Build):
     """Find CUDA."""
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {}
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -536,7 +535,7 @@ class BuildCUDA(Build):
         )
 
     @property
-    @lru_cache()
+    @lru_cache
     def cuda_compute_capabilities(self):
         """Get cuda compute capabilities."""
         cuda_version = tuple(map(int, self.cuda_version.split(".")))
@@ -554,12 +553,12 @@ class BuildROCM(Build):
     """Find ROCm."""
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {}
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         return {}
 
@@ -599,14 +598,14 @@ class BuildTensorFlow(Build):
         self.enable_rocm = enable_rocm
 
     @property
-    @lru_cache()
+    @lru_cache
     def resources(self) -> Dict[str, OnlineResource]:
         return {
             "tensorflow": RESOURCES["tensorflow-" + self.version],
         }
 
     @property
-    @lru_cache()
+    @lru_cache
     def dependencies(self) -> Dict[str, Build]:
         optional_dep = {}
         if self.enable_cuda:
@@ -621,7 +620,7 @@ class BuildTensorFlow(Build):
 
     def build(self):
         tf_res = self.resources["tensorflow"]
-        src = tf_res.gzip_path / ("tensorflow-%s" % self.version)
+        src = tf_res.gzip_path / (f"tensorflow-{self.version}")
         with set_directory(src):
             # configure -- need bazelisk in PATH
             call(

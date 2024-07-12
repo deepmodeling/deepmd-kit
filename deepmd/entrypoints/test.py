@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test trained DeePMD model."""
+
 import logging
 from pathlib import (
     Path,
@@ -14,11 +15,27 @@ from typing import (
 
 import numpy as np
 
-from deepmd import (
-    DeepPotential,
-)
 from deepmd.common import (
     expand_sys_str,
+)
+from deepmd.infer.deep_dipole import (
+    DeepDipole,
+)
+from deepmd.infer.deep_dos import (
+    DeepDOS,
+)
+from deepmd.infer.deep_eval import (
+    DeepEval,
+)
+from deepmd.infer.deep_polar import (
+    DeepGlobalPolar,
+    DeepPolar,
+)
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
@@ -29,13 +46,6 @@ from deepmd.utils.weight_avg import (
 )
 
 if TYPE_CHECKING:
-    from deepmd.infer import (
-        DeepDipole,
-        DeepDOS,
-        DeepPolar,
-        DeepPot,
-        DeepWFC,
-    )
     from deepmd.infer.deep_tensor import (
         DeepTensor,
     )
@@ -50,12 +60,12 @@ def test(
     model: str,
     system: str,
     datafile: str,
-    set_prefix: str,
     numb_test: int,
     rand_seed: Optional[int],
     shuffle_test: bool,
     detail_file: str,
     atomic: bool,
+    head: Optional[str] = None,
     **kwargs,
 ):
     """Test model predictions.
@@ -68,8 +78,6 @@ def test(
         system directory
     datafile : str
         the path to the list of systems to test
-    set_prefix : str
-        string prefix of set
     numb_test : int
         munber of tests to do. 0 means all data.
     rand_seed : Optional[int]
@@ -80,6 +88,8 @@ def test(
         file where test details will be output
     atomic : bool
         whether per atom quantities should be computed
+    head : Optional[str], optional
+        (Supported backend: PyTorch) Task head to test if in multi-task mode.
     **kwargs
         additional arguments
 
@@ -92,9 +102,8 @@ def test(
         # only float has inf, but should work for min
         numb_test = float("inf")
     if datafile is not None:
-        datalist = open(datafile)
-        all_sys = datalist.read().splitlines()
-        datalist.close()
+        with open(datafile) as datalist:
+            all_sys = datalist.read().splitlines()
     else:
         all_sys = expand_sys_str(system)
 
@@ -108,23 +117,23 @@ def test(
         dp_random.seed(rand_seed % (2**32))
 
     # init model
-    dp = DeepPotential(model)
+    dp = DeepEval(model, head=head)
 
     for cc, system in enumerate(all_sys):
         log.info("# ---------------output of dp test--------------- ")
         log.info(f"# testing system : {system}")
 
         # create data class
-        tmap = dp.get_type_map() if dp.model_type == "ener" else None
+        tmap = dp.get_type_map() if isinstance(dp, DeepPot) else None
         data = DeepmdData(
             system,
-            set_prefix,
+            set_prefix="set",
             shuffle_test=shuffle_test,
             type_map=tmap,
             sort_atoms=False,
         )
 
-        if dp.model_type == "ener":
+        if isinstance(dp, DeepPot):
             err = test_ener(
                 dp,
                 data,
@@ -134,7 +143,7 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
-        elif dp.model_type == "dos":
+        elif isinstance(dp, DeepDOS):
             err = test_dos(
                 dp,
                 data,
@@ -144,11 +153,11 @@ def test(
                 atomic,
                 append_detail=(cc != 0),
             )
-        elif dp.model_type == "dipole":
+        elif isinstance(dp, DeepDipole):
             err = test_dipole(dp, data, numb_test, detail_file, atomic)
-        elif dp.model_type == "polar":
+        elif isinstance(dp, DeepPolar):
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
-        elif dp.model_type == "global_polar":  # should not appear in this new version
+        elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
             log.warning(
                 "Global polar model is not currently supported. Please directly use the polar mode and change loss parameters."
             )
@@ -166,17 +175,17 @@ def test(
     if len(all_sys) > 1:
         log.info("# ----------weighted average of errors----------- ")
         log.info(f"# number of systems : {len(all_sys)}")
-        if dp.model_type == "ener":
+        if isinstance(dp, DeepPot):
             print_ener_sys_avg(avg_err)
-        elif dp.model_type == "dos":
+        elif isinstance(dp, DeepDOS):
             print_dos_sys_avg(avg_err)
-        elif dp.model_type == "dipole":
+        elif isinstance(dp, DeepDipole):
             print_dipole_sys_avg(avg_err)
-        elif dp.model_type == "polar":
+        elif isinstance(dp, DeepPolar):
             print_polar_sys_avg(avg_err)
-        elif dp.model_type == "global_polar":
+        elif isinstance(dp, DeepGlobalPolar):
             print_polar_sys_avg(avg_err)
-        elif dp.model_type == "wfc":
+        elif isinstance(dp, DeepGlobalPolar):
             print_wfc_sys_avg(avg_err)
         log.info("# ----------------------------------------------- ")
 
@@ -280,6 +289,9 @@ def test_ener(
         )
     if dp.get_dim_aparam() > 0:
         data.add("aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False)
+    if dp.has_spin:
+        data.add("spin", 3, atomic=True, must=True, high_prec=False)
+        data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -293,6 +305,10 @@ def test_ener(
         efield = test_data["efield"][:numb_test].reshape([numb_test, -1])
     else:
         efield = None
+    if dp.has_spin:
+        spin = test_data["spin"][:numb_test].reshape([numb_test, -1])
+    else:
+        spin = None
     if not data.pbc:
         box = None
     if mixed_type:
@@ -317,6 +333,7 @@ def test_ener(
         atomic=has_atom_ener,
         efield=efield,
         mixed_type=mixed_type,
+        spin=spin,
     )
     energy = ret[0]
     force = ret[1]
@@ -329,26 +346,50 @@ def test_ener(
         av = ret[4]
         ae = ae.reshape([numb_test, -1])
         av = av.reshape([numb_test, -1])
-    if dp.get_ntypes_spin() != 0:
-        ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
-        nloc = natoms
-        nloc_real = sum([np.count_nonzero(atype == ii) for ii in range(ntypes_real)])
-        force_r = np.split(
-            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-        )[0]
-        force_m = np.split(
-            force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
-        )[1]
-        test_force_r = np.split(
-            test_data["force"][:numb_test],
-            indices_or_sections=[nloc_real * 3, nloc * 3],
-            axis=1,
-        )[0]
-        test_force_m = np.split(
-            test_data["force"][:numb_test],
-            indices_or_sections=[nloc_real * 3, nloc * 3],
-            axis=1,
-        )[1]
+        if dp.has_spin:
+            force_m = ret[5]
+            force_m = force_m.reshape([numb_test, -1])
+            mask_mag = ret[6]
+            mask_mag = mask_mag.reshape([numb_test, -1])
+    else:
+        if dp.has_spin:
+            force_m = ret[3]
+            force_m = force_m.reshape([numb_test, -1])
+            mask_mag = ret[4]
+            mask_mag = mask_mag.reshape([numb_test, -1])
+    out_put_spin = dp.get_ntypes_spin() != 0 or dp.has_spin
+    if out_put_spin:
+        if dp.get_ntypes_spin() != 0:  # old tf support for spin
+            ntypes_real = dp.get_ntypes() - dp.get_ntypes_spin()
+            nloc = natoms
+            nloc_real = sum(
+                [np.count_nonzero(atype == ii) for ii in range(ntypes_real)]
+            )
+            force_r = np.split(
+                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+            )[0]
+            force_m = np.split(
+                force, indices_or_sections=[nloc_real * 3, nloc * 3], axis=1
+            )[1]
+            test_force_r = np.split(
+                test_data["force"][:numb_test],
+                indices_or_sections=[nloc_real * 3, nloc * 3],
+                axis=1,
+            )[0]
+            test_force_m = np.split(
+                test_data["force"][:numb_test],
+                indices_or_sections=[nloc_real * 3, nloc * 3],
+                axis=1,
+            )[1]
+        else:  # pt support for spin
+            force_r = force
+            test_force_r = test_data["force"][:numb_test]
+            # The shape of force_m and test_force_m are [-1, 3],
+            # which is designed for mixed_type cases
+            force_m = force_m.reshape(-1, 3)[mask_mag.reshape(-1)]
+            test_force_m = test_data["force_mag"][:numb_test].reshape(-1, 3)[
+                mask_mag.reshape(-1)
+            ]
 
     diff_e = energy - test_data["energy"][:numb_test].reshape([-1, 1])
     mae_e = mae(diff_e)
@@ -367,7 +408,7 @@ def test_ener(
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
         rmse_ae = rmse(diff_ae)
-    if dp.get_ntypes_spin() != 0:
+    if out_put_spin:
         mae_fr = mae(force_r - test_force_r)
         mae_fm = mae(force_m - test_force_m)
         rmse_fr = rmse(force_r - test_force_r)
@@ -378,16 +419,16 @@ def test_ener(
     log.info(f"Energy RMSE        : {rmse_e:e} eV")
     log.info(f"Energy MAE/Natoms  : {mae_ea:e} eV")
     log.info(f"Energy RMSE/Natoms : {rmse_ea:e} eV")
-    if dp.get_ntypes_spin() == 0:
+    if not out_put_spin:
         log.info(f"Force  MAE         : {mae_f:e} eV/A")
         log.info(f"Force  RMSE        : {rmse_f:e} eV/A")
     else:
         log.info(f"Force atom MAE      : {mae_fr:e} eV/A")
-        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
         log.info(f"Force atom RMSE     : {rmse_fr:e} eV/A")
+        log.info(f"Force spin MAE      : {mae_fm:e} eV/uB")
         log.info(f"Force spin RMSE     : {rmse_fm:e} eV/uB")
 
-    if data.pbc:
+    if data.pbc and not out_put_spin:
         log.info(f"Virial MAE         : {mae_v:e} eV")
         log.info(f"Virial RMSE        : {rmse_v:e} eV")
         log.info(f"Virial MAE/Natoms  : {mae_va:e} eV")
@@ -409,17 +450,17 @@ def test_ener(
         save_txt_file(
             detail_path.with_suffix(".e.out"),
             pe,
-            header="%s: data_e pred_e" % system,
+            header=f"{system}: data_e pred_e",
             append=append_detail,
         )
         pe_atom = pe / natoms
         save_txt_file(
             detail_path.with_suffix(".e_peratom.out"),
             pe_atom,
-            header="%s: data_e pred_e" % system,
+            header=f"{system}: data_e pred_e",
             append=append_detail,
         )
-        if dp.get_ntypes_spin() == 0:
+        if not out_put_spin:
             pf = np.concatenate(
                 (
                     np.reshape(test_data["force"][:numb_test], [-1, 3]),
@@ -430,7 +471,7 @@ def test_ener(
             save_txt_file(
                 detail_path.with_suffix(".f.out"),
                 pf,
-                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
                 append=append_detail,
             )
         else:
@@ -445,14 +486,13 @@ def test_ener(
             save_txt_file(
                 detail_path.with_suffix(".fr.out"),
                 pf_real,
-                header="%s: data_fx data_fy data_fz pred_fx pred_fy pred_fz" % system,
+                header=f"{system}: data_fx data_fy data_fz pred_fx pred_fy pred_fz",
                 append=append_detail,
             )
             save_txt_file(
                 detail_path.with_suffix(".fm.out"),
                 pf_mag,
-                header="%s: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz"
-                % system,
+                header=f"{system}: data_fmx data_fmy data_fmz pred_fmx pred_fmy pred_fmz",
                 append=append_detail,
             )
         pv = np.concatenate(
@@ -479,7 +519,7 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-    if dp.get_ntypes_spin() == 0:
+    if not out_put_spin:
         return {
             "mae_e": (mae_e, energy.size),
             "mae_ea": (mae_ea, energy.size),
@@ -842,7 +882,11 @@ def test_polar(
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
-        rmse_f = rmse(polar - test_data["atomic_polarizability"][:numb_test])
+        sel_mask = np.isin(atype, sel_type)
+        polar = polar.reshape((polar.shape[0], -1, 9))[:, sel_mask, :].reshape(
+            (polar.shape[0], -1)
+        )
+        rmse_f = rmse(polar - test_data["atom_polarizability"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d} ")
     log.info(f"Polarizability  RMSE       : {rmse_f:e}")
@@ -871,7 +915,7 @@ def test_polar(
             pe = np.concatenate(
                 (
                     np.reshape(
-                        test_data["atomic_polarizability"][:numb_test],
+                        test_data["atom_polarizability"][:numb_test],
                         [-1, 9 * sel_natoms],
                     ),
                     np.reshape(polar, [-1, 9 * sel_natoms]),
@@ -978,7 +1022,11 @@ def test_dipole(
         rmse_fs = rmse_f / np.sqrt(sel_natoms)
         rmse_fa = rmse_f / sel_natoms
     else:
-        rmse_f = rmse(dipole - test_data["atomic_dipole"][:numb_test])
+        sel_mask = np.isin(atype, sel_type)
+        dipole = dipole.reshape((dipole.shape[0], -1, 3))[:, sel_mask, :].reshape(
+            (dipole.shape[0], -1)
+        )
+        rmse_f = rmse(dipole - test_data["atom_dipole"][:numb_test])
 
     log.info(f"# number of test data : {numb_test:d}")
     log.info(f"Dipole  RMSE       : {rmse_f:e}")
@@ -1002,7 +1050,7 @@ def test_dipole(
             pe = np.concatenate(
                 (
                     np.reshape(
-                        test_data["atomic_dipole"][:numb_test], [-1, 3 * sel_natoms]
+                        test_data["atom_dipole"][:numb_test], [-1, 3 * sel_natoms]
                     ),
                     np.reshape(dipole, [-1, 3 * sel_natoms]),
                 ),

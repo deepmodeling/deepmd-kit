@@ -1,20 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+from abc import (
+    ABC,
+    abstractmethod,
+)
 from typing import (
     Callable,
     Tuple,
 )
 
 import numpy as np
-from packaging.version import (
-    Version,
-)
 
-from deepmd.env import (
-    TF_VERSION,
-    tf,
-)
 from deepmd.utils.errors import (
     OutOfMemoryError,
 )
@@ -22,7 +19,7 @@ from deepmd.utils.errors import (
 log = logging.getLogger(__name__)
 
 
-class AutoBatchSize:
+class AutoBatchSize(ABC):
     """This class allows DeePMD-kit to automatically decide the maximum
     batch size that will not cause an OOM error.
 
@@ -54,7 +51,6 @@ class AutoBatchSize:
 
     def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
         # See also PyTorchLightning/pytorch-lightning#1638
-        # TODO: discuss a proper initial batch size
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
         if DP_INFER_BATCH_SIZE > 0:
@@ -63,11 +59,13 @@ class AutoBatchSize:
             self.minimal_not_working_batch_size = self.maximum_working_batch_size + 1
         else:
             self.maximum_working_batch_size = initial_batch_size
-            if (
-                Version(TF_VERSION) >= Version("1.14")
-                and tf.config.experimental.get_visible_devices("GPU")
-            ) or tf.test.is_gpu_available():
+            if self.is_gpu_available():
                 self.minimal_not_working_batch_size = 2**31
+                log.info(
+                    "If you encounter the error 'an illegal memory access was encountered', this may be due to a TensorFlow issue. "
+                    "To avoid this, set the environment variable DP_INFER_BATCH_SIZE to a smaller value than the last adjusted batch size. "
+                    "The environment variable DP_INFER_BATCH_SIZE controls the inference batch size (nframes * natoms). "
+                )
             else:
                 self.minimal_not_working_batch_size = (
                     self.maximum_working_batch_size + 1
@@ -113,9 +111,9 @@ class AutoBatchSize:
             batch_nframes = self.current_batch_size
         try:
             n_batch, result = callable(max(batch_nframes, 1), start_index)
-        except OutOfMemoryError as e:
-            # TODO: it's very slow to catch OOM error; I don't know what TF is doing here
-            # but luckily we only need to catch once
+        except Exception as e:
+            if not self.is_oom_error(e):
+                raise e
             self.minimal_not_working_batch_size = min(
                 self.minimal_not_working_batch_size, self.current_batch_size
             )
@@ -212,3 +210,28 @@ class AutoBatchSize:
             # avoid returning tuple if callable doesn't return tuple
             r = r[0]
         return r
+
+    @abstractmethod
+    def is_gpu_available(self) -> bool:
+        """Check if GPU is available.
+
+        Returns
+        -------
+        bool
+            True if GPU is available
+        """
+
+    @abstractmethod
+    def is_oom_error(self, e: Exception) -> bool:
+        """Check if the exception is an OOM error.
+
+        Parameters
+        ----------
+        e : Exception
+            Exception
+
+        Returns
+        -------
+        bool
+            True if the exception is an OOM error
+        """

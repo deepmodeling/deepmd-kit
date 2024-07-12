@@ -56,8 +56,8 @@ class TestSoftMinSwitchVirialGrad : public ::testing::Test {
     }
     build_nlist(nlist_a_cpy, nlist_r_cpy, posi_cpy, nloc, rc, rc, nat_stt,
                 ncell, ext_stt, ext_end, region, ncell);
-    nlist.resize(nloc * nnei);
-    rij.resize(nloc * nnei * 3);
+    nlist.resize(static_cast<size_t>(nloc) * nnei);
+    rij.resize(static_cast<size_t>(nloc) * nnei * 3);
     for (int ii = 0; ii < nloc; ++ii) {
       // format nlist and record
       format_nlist_i_cpu<double>(fmt_nlist_a, posi_cpy, atype_cpy, ii,
@@ -75,11 +75,11 @@ class TestSoftMinSwitchVirialGrad : public ::testing::Test {
       }
     }
     sw_value.resize(nloc);
-    sw_deriv.resize(nloc * nnei * 3);
+    sw_deriv.resize(static_cast<size_t>(nloc) * nnei * 3);
     deepmd::soft_min_switch_cpu<double>(&sw_value[0], &sw_deriv[0], &rij[0],
                                         &nlist[0], nloc, nnei, alpha, rmin,
                                         rmax);
-    grad.resize(nloc * 3);
+    grad.resize(static_cast<size_t>(nloc) * 3);
     for (int ii = 0; ii < nloc; ++ii) {
       grad[ii] = 1.0 - ii * 0.1;
     }
