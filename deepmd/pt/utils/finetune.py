@@ -155,7 +155,6 @@ def get_finetune_rules(
             change_model_params=change_model_params,
         )
         finetune_links["Default"] = finetune_rule
-        model_config.pop("finetune_head", None)  # for argcheck
     else:
         assert model_branch == "", (
             "Multi-task fine-tuning does not support command-line branches chosen!"
@@ -201,7 +200,4 @@ def get_finetune_rules(
             )
             finetune_links[model_key] = finetune_rule
             finetune_links[model_key].resuming = resuming
-            model_config["model_dict"][model_key].pop(
-                "finetune_head", None
-            )  # for argcheck
     return model_config, finetune_links
