@@ -9,6 +9,13 @@ set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
 
+set(CMAKE_CXX_STANDARD 11)
+macro(set_if_higher VARIABLE VALUE)
+  if("${VARIABLE}" LESS "${VALUE}")
+    set(${VARIABLE} ${VALUE})
+  endif()
+endmacro()
+
 if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
@@ -181,11 +188,6 @@ if(BUILD_CPP_IF
     list(APPEND BACKEND_LIBRARY_PATH ${Protobuf_LIBRARY_DIRECTORY})
   endif()
 endif()
-macro(set_if_higher VARIABLE VALUE)
-  if("${VARIABLE}" LESS "${VALUE}")
-    set(${VARIABLE} ${VALUE})
-  endif()
-endmacro()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
   if(NOT Torch_VERSION VERSION_LESS "2.1.0")
