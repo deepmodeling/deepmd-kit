@@ -11,6 +11,7 @@
         4,
         8
       ],
+      "activation_function": "tanh",
       "resnet_dt": false,
       "precision": "float64",
       "seed": 1

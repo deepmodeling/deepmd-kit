@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 import re
 from typing import (
     List,
@@ -32,6 +33,8 @@ from deepmd.tf.utils.network import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+log = logging.getLogger(__name__)
 
 
 def embed_atom_type(
@@ -131,6 +134,11 @@ class TypeEmbedNet:
         self.filter_precision = get_precision(precision)
         self.filter_activation_fn_name = str(activation_function)
         self.filter_activation_fn = get_activation_func(activation_function)
+        if len(neuron) > 1 and self.filter_activation_fn_name == "linear":
+            log.warning(
+                "Multi-layer type embedding is being used with a 'linear' activation function. "
+                "This is equivalent to a single linear layer. Please ensure this is intentional."
+            )
         self.trainable = trainable
         self.uniform_seed = uniform_seed
         self.type_embedding_net_variables = None
