@@ -148,7 +148,7 @@ class TensorLoss(Loss):
         # data required
         data_requirements.append(
             DataRequirementItem(
-                "atomic_" + self.label_name,
+                "atom_" + self.label_name,
                 self.tensor_size,
                 atomic=True,
                 must=False,
