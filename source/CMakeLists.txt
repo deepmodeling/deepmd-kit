@@ -9,6 +9,13 @@ set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
 
+set(CMAKE_CXX_STANDARD 11)
+macro(set_if_higher VARIABLE VALUE)
+  if("${VARIABLE}" LESS "${VALUE}")
+    set(${VARIABLE} ${VALUE})
+  endif()
+endmacro()
+
 if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
@@ -180,6 +187,11 @@ if(BUILD_CPP_IF
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
+  if(NOT Torch_VERSION VERSION_LESS "2.1.0")
+    set_if_higher(CMAKE_CXX_STANDARD 17)
+  elseif(NOT Torch_VERSION VERSION_LESS "1.5.0")
+    set_if_higher(CMAKE_CXX_STANDARD 14)
+  endif()
   string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)" CXXABI_PT_MATCH
                "${TORCH_CXX_FLAGS}")
   if(CXXABI_PT_MATCH)
