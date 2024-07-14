@@ -178,7 +178,7 @@ def filter_lower_R42GR(inputs_i, atype, nei_type_vec):
     NIDP = nvnmd_cfg.dscp["NIDP"]
     two_embd_value = nvnmd_cfg.map["gt"]
     # print(two_embd_value)
-
+    two_embd_value = GLOBAL_NP_FLOAT_PRECISION(two_embd_value)
     # copy
     inputs_reshape = op_module.flt_nvnmd(inputs_reshape)
     inputs_reshape = tf.ensure_shape(inputs_reshape, [None, 4])
@@ -214,7 +214,7 @@ def filter_lower_R42GR(inputs_i, atype, nei_type_vec):
         two_embd = tf.ensure_shape(two_embd, [None, M1])
     # G_s, G_t -> G
     G = tf.reshape(G, [-1, M1])
-    G = op_module.mul_flt_nvnmd(G, tf.cast(two_embd, tf.float64))
+    G = op_module.mul_flt_nvnmd(G, two_embd)
     G = tf.ensure_shape(G, [None, M1])
     with tf.variable_scope("g", reuse=True):
         G = op_module.flt_nvnmd(G)
