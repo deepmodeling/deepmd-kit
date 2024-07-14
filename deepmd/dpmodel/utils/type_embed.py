@@ -234,5 +234,6 @@ def get_econf_tebd(type_map, precision: str = "default"):
         [electronic_configuration_embedding[kk] for kk in type_map],
         dtype=PRECISION_DICT[precision],
     )
+    econf_tebd /= econf_tebd.sum(-1, keepdims=True)  # do normalization
     embed_input_dim = ECONF_DIM
     return econf_tebd, embed_input_dim
