@@ -11,7 +11,8 @@ set(DEEPMD_C_ROOT
 
 set(CMAKE_CXX_STANDARD 11)
 macro(set_if_higher VARIABLE VALUE)
-  if("${VARIABLE}" LESS "${VALUE}")
+  # ${VARIABLE} is a variable name, not a string
+  if(${VARIABLE} LESS "${VALUE}")
     set(${VARIABLE} ${VALUE})
   endif()
 endmacro()
