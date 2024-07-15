@@ -5,7 +5,7 @@
  set(GMX_PUBLIC_LIBRARIES "")
 
 +# DeePMD-kit
-+message(STATUS "Compling with DeePMD-kit...")
++message(STATUS "Compiling with DeePMD-kit...")
 +add_definitions(-w) # close warning
 +# define deepmd and tensorflow root
 +if (NOT DEFINED GMX_DEEPMD_ROOT)
