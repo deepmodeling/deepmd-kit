@@ -4,6 +4,7 @@ from typing import (
     Optional,
 )
 
+import copy
 import numpy as np
 
 from deepmd.tf.env import (
@@ -137,7 +138,7 @@ class Wrap:
             # DEVELOP_DEBUG
             if jdata_sys["debug"]:
                 log.info("%s: %d x % d bit" % (k, h, w * 4))
-                FioTxt().save(f"nvnmd/wrap/h{k}.txt", d)
+                FioTxt().save("nvnmd/wrap/h%s.txt" % (k), d)
             datas[ii] = d
         # update h & w of nvnmd_cfg
         nvnmd_cfg.size["NH_DATA"] = nhs
@@ -163,6 +164,7 @@ class Wrap:
         ntype      number of atomic species
         nnei       number of neighbors
         atom_ener  atom bias energy
+        ener_fact  factor for atom_ener
         """
         nbit = nvnmd_cfg.nbit
         ctrl = nvnmd_cfg.ctrl
@@ -209,19 +211,27 @@ class Wrap:
             atom_ener = weight["t_bias_atom_e"]
         else:
             atom_ener = [0] * 32
+        atom_ener_shift = []
         nlayer_fit = fitn["nlayer_fit"]
         if VERSION == 0:
             for tt in range(ntype):
                 w, b, _idt = get_fitnet_weight(weight, tt, nlayer_fit - 1, nlayer_fit)
                 shift = atom_ener[tt] + b[0]
-                SHIFT = e.qr(shift, NBIT_FIXD_FL)
-                bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+                atom_ener_shift.append(shift)
         if VERSION == 1:
             for tt in range(ntype):
                 w, b, _idt = get_fitnet_weight(weight, 0, nlayer_fit - 1, nlayer_fit)
                 shift = atom_ener[tt] + b[0]
-                SHIFT = e.qr(shift, NBIT_FIXD_FL)
-                bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+                atom_ener_shift.append(shift)
+        atom_ener_shift = np.array(atom_ener_shift)
+        max_ea = np.ceil(np.log2(np.max(np.abs(atom_ener_shift))))
+        max_ea = np.max([max_ea + NBIT_FIXD_FL - NBIT_MODEL_HEAD + 1, 0])
+        atom_ener_shift = atom_ener_shift / 2**max_ea
+        print(atom_ener_shift)
+        for shift in atom_ener_shift:
+            SHIFT = e.qr(shift, NBIT_FIXD_FL)
+            bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+        bs = e.dec2bin(max_ea, NBIT_MODEL_HEAD, signed=True)[0] + bs
         # extend
         hs = e.bin2hex(bs)
         hs = e.extend_hex(hs, NBIT_MODEL_HEAD * nhead)
@@ -230,14 +240,15 @@ class Wrap:
     def wrap_dscp(self):
         r"""Wrap the configuration of descriptor.
 
-                version 0:
+            version 0:
                 [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
-        [NBIT_NEIB*NTYPE-1:0] SELs
-        [NBIT_FIXD*M1*NTYPE*NTYPE-1:0] GSs
-        [NBIT_FLTE-1:0] NEXPO_DIV_NI
+                [NBIT_NEIB*NTYPE-1:0] SELs
+                [NBIT_FIXD*M1*NTYPE*NTYPE-1:0] GSs
+                [NBIT_FLTE-1:0] NEXPO_DIV_NI
 
-                version 1:
-        [NBIT_FLTE-1:0] NEXPO_DIV_NI
+            version 1:
+                [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
+                [NBIT_FLTE-1:0] NEXPO_DIV_NI
         """
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
@@ -316,8 +327,15 @@ class Wrap:
             ln2_NIX = -int(np.log2(NIX))
             bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
         if nvnmd_cfg.version == 1:
+            NBIT_IDX_S2G = nbit["NBIT_IDX_S2G"]
             NBIT_FLTE = nbit["NBIT_FLTE"]
             NIX = dscp["NIX"]
+            print(dscp)
+            # shift_idx_s2g
+            x_st, x_ed, x_dt, N0, N1 = mapt["cfg_s2g"][0]
+            shift_idx_s2g = int(np.round(-x_st / x_dt))
+            bs = e.dec2bin(shift_idx_s2g, NBIT_IDX_S2G)[0] + bs
+            # NI
             ln2_NIX = -int(np.log2(NIX))
             bs = e.dec2bin(ln2_NIX, NBIT_FLTE, signed=True)[0] + bs
         return bs
@@ -495,25 +513,29 @@ class Wrap:
         dsws = []
         feas = []
         gras = []
+        
         for tt in range(ntype_max):
-            if tt < ntype:
-                swt = np.concatenate([maps["s"][tt], maps["h"][tt]], axis=1)
-                dsw = np.concatenate([maps["s_grad"][tt], maps["h_grad"][tt]], axis=1)
-                fea = maps["g"][tt]
-                gra = maps["g_grad"][tt]
+            ttt = tt if tt < ntype else 0
+            kkk = 1  if tt < ntype else 0
+            if nvnmd_cfg.version == 0:
+                swt = np.concatenate([maps["s"][ttt], maps["h"][ttt]], axis=1)
+                dsw = np.concatenate([maps["s_grad"][ttt], maps["h_grad"][ttt]], axis=1)
             else:
-                swt = np.concatenate([maps["s"][0], maps["h"][0]], axis=1)
-                dsw = np.concatenate([maps["s_grad"][0], maps["h_grad"][0]], axis=1)
-                fea = maps["g"][0]
-                gra = maps["g_grad"][0]
-                swt *= 0
-                dsw *= 0
-                fea *= 0
-                gra *= 0
-            swts.append(swt.copy())
-            dsws.append(dsw.copy())
-            feas.append(fea.copy())
-            gras.append(gra.copy())
+                swt = np.concatenate([maps["s"][ttt], maps["h"][ttt], maps["k"][ttt]], axis=1)
+                dsw = np.concatenate([maps["s_grad"][ttt], maps["h_grad"][ttt], maps["k_grad"][ttt]], axis=1)
+            
+            fea = maps["g"][ttt]
+            gra = maps["g_grad"][ttt]
+
+            swt *= kkk
+            dsw *= kkk
+            fea *= kkk
+            gra *= kkk
+
+            swts.append(copy.deepcopy(swt))
+            dsws.append(copy.deepcopy(dsw))
+            feas.append(copy.deepcopy(fea))
+            gras.append(copy.deepcopy(gra))
         mapts = [swts, dsws, feas, gras]
         # reshape
         if nvnmd_cfg.version == 0:
@@ -531,7 +553,7 @@ class Wrap:
                 bs = e.merge_bin(bs, nmerges[ii])
                 bss.append(bs)
         if nvnmd_cfg.version == 1:
-            ndim = [2, 2, M1, M1]
+            ndim = [3, 3, M1, M1]
             bss = []
             for ii in range(len(mapts)):
                 nd = ndim[ii]
@@ -543,7 +565,7 @@ class Wrap:
                 #
                 bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
                 bss.append(bs)
-        bswt, bdsw, bfea, bgra = bss
+        bswt, bdsw, bfea, bgra, = bss
         return bswt, bdsw, bfea, bgra
 
     def wrap_lut(self):
@@ -564,14 +586,15 @@ class Wrap:
         NBIT_DATA_FL = nvnmd_cfg.nbit["NBIT_FIT_DATA_FL"]
 
         e = Encode()
-        # std
-        d = maps["dstd_inv"]
-        d2 = np.zeros([ntype_max, 2])
+        # avg & std
+        d_avg = maps["davg_opp"]
+        d_std = maps["dstd_inv"]
+        # d2 = np.zeros([ntype_max, 3])
+        d2 = np.zeros([ntype_max, 4])
         for ii in range(ntype):
-            _d = d[ii, :2]
-            _d = np.reshape(_d, [-1, 2])
-            _d = np.concatenate([_d[:, 0], _d[:, 1]], axis=0)
-            d2[ii] = _d
+            d2[ii, 0] = d_avg[ii, 0]
+            d2[ii, 1] = d_std[ii, 0]
+            d2[ii, 2] = d_std[ii, 1]
         bstd = e.flt2bin(d2, NBIT_FLTE, NBIT_FLTF)
         # gtt
         d = maps["gt"]
@@ -592,8 +615,6 @@ class Wrap:
             _d = d[ii]
             _d = np.reshape(_d, [1, -1])
             _d = np.matmul(_d, w)
-            # _d = np.reshape(_d, [-1, 2])
-            # _d = np.concatenate([_d[:,0], _d[:,1]], axis=0)
             d2[ii] = _d
         d2 = e.qr(d2, NBIT_DATA_FL)
         bavc = e.dec2bin(d2, NBIT_WXDB, True)
