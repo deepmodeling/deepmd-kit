@@ -41,6 +41,6 @@ component_management:
       paths:
         - source/lmp/**
     - component_id: module_ipi
-      name: i-Pi
+      name: i-PI
       paths:
         - source/ipi/**
