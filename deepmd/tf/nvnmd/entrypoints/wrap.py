@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import copy
 import logging
 from typing import (
     Optional,
 )
 
-import copy
 import numpy as np
 
 from deepmd.tf.env import (
@@ -240,15 +240,15 @@ class Wrap:
     def wrap_dscp(self):
         r"""Wrap the configuration of descriptor.
 
-            version 0:
-                [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
-                [NBIT_NEIB*NTYPE-1:0] SELs
-                [NBIT_FIXD*M1*NTYPE*NTYPE-1:0] GSs
-                [NBIT_FLTE-1:0] NEXPO_DIV_NI
+        version 0:
+            [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
+            [NBIT_NEIB*NTYPE-1:0] SELs
+            [NBIT_FIXD*M1*NTYPE*NTYPE-1:0] GSs
+            [NBIT_FLTE-1:0] NEXPO_DIV_NI
 
-            version 1:
-                [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
-                [NBIT_FLTE-1:0] NEXPO_DIV_NI
+        version 1:
+            [NBIT_IDX_S2G-1:0] SHIFT_IDX_S2G
+            [NBIT_FLTE-1:0] NEXPO_DIV_NI
         """
         dscp = nvnmd_cfg.dscp
         nbit = nvnmd_cfg.nbit
@@ -513,17 +513,22 @@ class Wrap:
         dsws = []
         feas = []
         gras = []
-        
+
         for tt in range(ntype_max):
             ttt = tt if tt < ntype else 0
-            kkk = 1  if tt < ntype else 0
+            kkk = 1 if tt < ntype else 0
             if nvnmd_cfg.version == 0:
                 swt = np.concatenate([maps["s"][ttt], maps["h"][ttt]], axis=1)
                 dsw = np.concatenate([maps["s_grad"][ttt], maps["h_grad"][ttt]], axis=1)
             else:
-                swt = np.concatenate([maps["s"][ttt], maps["h"][ttt], maps["k"][ttt]], axis=1)
-                dsw = np.concatenate([maps["s_grad"][ttt], maps["h_grad"][ttt], maps["k_grad"][ttt]], axis=1)
-            
+                swt = np.concatenate(
+                    [maps["s"][ttt], maps["h"][ttt], maps["k"][ttt]], axis=1
+                )
+                dsw = np.concatenate(
+                    [maps["s_grad"][ttt], maps["h_grad"][ttt], maps["k_grad"][ttt]],
+                    axis=1,
+                )
+
             fea = maps["g"][ttt]
             gra = maps["g_grad"][ttt]
 
@@ -565,7 +570,12 @@ class Wrap:
                 #
                 bs = e.flt2bin(d, NBIT_FLTE, NBIT_FLTF)
                 bss.append(bs)
-        bswt, bdsw, bfea, bgra, = bss
+        (
+            bswt,
+            bdsw,
+            bfea,
+            bgra,
+        ) = bss
         return bswt, bdsw, bfea, bgra
 
     def wrap_lut(self):
