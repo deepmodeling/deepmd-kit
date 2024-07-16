@@ -136,5 +136,13 @@ repos:
           - --comment-style
           - <!--|  ~|  -->
           - --no-extra-eol
+  - repo: local
+    hooks:
+      - id: disallow-caps
+        name: Disallow improper capitalization
+        language: pygrep
+        entry: DeepMD|DeepMd|Pytorch|Tensorflow|Numpy|Github|Lammps|I-Pi|I-PI|i-Pi
+        # unclear why PairDeepMD is used instead of PairDeePMD
+        exclude: .pre-commit-config.yaml|source/lmp
 ci:
   autoupdate_branch: devel

@@ -33,6 +33,6 @@ LAMMPS:
 Gromacs:
   - changed-files:
       - any-glob-to-any-file: source/gmx/**/*
-i-Pi:
+i-PI:
   - changed-files:
       - any-glob-to-any-file: source/ipi/**/*

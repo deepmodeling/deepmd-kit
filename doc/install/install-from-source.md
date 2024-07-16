@@ -225,7 +225,7 @@ If you don't install Horovod, DeePMD-kit will fall back to serial mode.
 
 ## Install the C++ interface
 
-If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python interface installed in the previous section does everything and he/she can safely skip this section.
+If one does not need to use DeePMD-kit with LAMMPS or i-PI, then the python interface installed in the previous section does everything and he/she can safely skip this section.
 
 ### Install Backends' C++ interface (optional)
 
@@ -235,9 +235,9 @@ If one does not need to use DeePMD-kit with Lammps or I-Pi, then the python inte
 
 Since TensorFlow 2.12, TensorFlow C++ library (`libtensorflow_cc`) is packaged inside the Python library. Thus, you can skip building TensorFlow C++ library manually. If that does not work for you, you can still build it manually.
 
-The C++ interface of DeePMD-kit was tested with compiler GCC >= 4.8. It is noticed that the I-Pi support is only compiled with GCC >= 4.8. Note that TensorFlow may have specific requirements for the compiler version.
+The C++ interface of DeePMD-kit was tested with compiler GCC >= 4.8. It is noticed that the i-PI support is only compiled with GCC >= 4.8. Note that TensorFlow may have specific requirements for the compiler version.
 
-First, the C++ interface of Tensorflow should be installed. It is noted that the version of Tensorflow should be consistent with the python interface. You may follow [the instruction](install-tf.2.12.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
+First, the C++ interface of TensorFlow should be installed. It is noted that the version of TensorFlow should be consistent with the python interface. You may follow [the instruction](install-tf.2.12.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
 
 :::
 
