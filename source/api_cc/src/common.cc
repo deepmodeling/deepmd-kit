@@ -996,6 +996,7 @@ template void deepmd::session_get_vector<int>(std::vector<int>&,
                                               Session*,
                                               const std::string,
                                               const std::string);
+#endif
 
 template void deepmd::select_map<int>(std::vector<int>& out,
                                       const std::vector<int>& in,
@@ -1025,6 +1026,8 @@ template void deepmd::select_map_inv<int>(
     const std::vector<int>& idx_map,
     const int& stride);
 
+
+#ifdef BUILD_TENSORFLOW
 template float deepmd::session_get_scalar<float>(Session*,
                                                  const std::string,
                                                  const std::string);
