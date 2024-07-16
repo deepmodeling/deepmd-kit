@@ -236,6 +236,11 @@ def train(FLAGS):
     SummaryPrinter()()
     with open(FLAGS.INPUT) as fin:
         config = json.load(fin)
+    # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
+    if FLAGS.init_model is not None and not FLAGS.init_model.endswith(".pt"):
+        FLAGS.init_model += ".pt"
+    if FLAGS.restart is not None and not FLAGS.restart.endswith(".pt"):
+        FLAGS.restart += ".pt"
 
     # update multitask config
     multi_task = "model_dict" in config["model"]
