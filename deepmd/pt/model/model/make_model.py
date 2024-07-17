@@ -215,6 +215,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
             comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+            extra_nlist_sort: bool = False,
         ):
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -239,6 +240,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 whether calculate atomic virial.
             comm_dict
                 The data needed for communication for parallel inference.
+            extra_nlist_sort
+                whether to forcibly sort the nlist.
 
             Returns
             -------
@@ -248,7 +251,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.view(nframes, -1, 3)
-            nlist = self.format_nlist(extended_coord, extended_atype, nlist)
+            nlist = self.format_nlist(
+                extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
+            )
             cc_ext, _, fp, ap, input_prec = self.input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
@@ -349,6 +354,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             extended_coord: torch.Tensor,
             extended_atype: torch.Tensor,
             nlist: torch.Tensor,
+            extra_nlist_sort: bool = False,
         ):
             """Format the neighbor list.
 
@@ -374,6 +380,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 atomic type in extended region. nf x nall
             nlist
                 neighbor list. nf x nloc x nsel
+            extra_nlist_sort
+                whether to forcibly sort the nlist.
 
             Returns
             -------
@@ -382,7 +390,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             mixed_types = self.mixed_types()
-            nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
+            nlist = self._format_nlist(
+                extended_coord,
+                nlist,
+                sum(self.get_sel()),
+                extra_nlist_sort=extra_nlist_sort,
+            )
             if not mixed_types:
                 nlist = nlist_distinguish_types(nlist, extended_atype, self.get_sel())
             return nlist
@@ -392,6 +405,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             extended_coord: torch.Tensor,
             nlist: torch.Tensor,
             nnei: int,
+            extra_nlist_sort: bool = False,
         ):
             n_nf, n_nloc, n_nnei = nlist.shape
             # nf x nall x 3
@@ -411,7 +425,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                     ],
                     dim=-1,
                 )
-            elif n_nnei > nnei:
+
+            if n_nnei > nnei or (extra_nlist_sort and n_nnei <= nnei):
+                n_nf, n_nloc, n_nnei = nlist.shape
                 m_real_nei = nlist >= 0
                 nlist = torch.where(m_real_nei, nlist, 0)
                 # nf x nloc x 3
@@ -428,7 +444,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 nlist = torch.gather(nlist, 2, nlist_mapping)
                 nlist = torch.where(rr > rcut, -1, nlist)
                 nlist = nlist[..., :nnei]
-            else:  # n_nnei == nnei:
+            else:  # not extra_nlist_sort and n_nnei <= nnei:
                 pass  # great!
             assert nlist.shape[-1] == nnei
             return nlist
