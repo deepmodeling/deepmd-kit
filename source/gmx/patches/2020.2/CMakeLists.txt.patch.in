@@ -4,8 +4,8 @@
  #    (i.e., something that is exposed in installed headers).
  set(GMX_PUBLIC_LIBRARIES "")
 
-+# DeepMD
-+message(STATUS "Compling with DeepMD...")
++# DeePMD-kit
++message(STATUS "Compiling with DeePMD-kit...")
 +add_definitions(-w) # close warning
 +# define deepmd and tensorflow root
 +if (NOT DEFINED GMX_DEEPMD_ROOT)
@@ -22,7 +22,7 @@
 +
 +# add link libraries
 +list (APPEND GMX_PUBLIC_LIBRARIES deepmd_gromacs)
-+# DeepMD
++# DeePMD-kit
 +
  ########################################################################
  # Check and warn if cache generated on a different host is being reused

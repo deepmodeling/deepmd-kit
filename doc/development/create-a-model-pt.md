@@ -199,6 +199,6 @@ When implementing an existing model in a new backend, directly apply the existin
 
 ### Consistent tests
 
-When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DP (Numpy) through the serialization/deserialization technique.
+When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DP (NumPy) through the serialization/deserialization technique.
 
-During the development of new components within the PyTorch backend, it is necessary to provide a DP (Numpy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.
+During the development of new components within the PyTorch backend, it is necessary to provide a DP (NumPy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.

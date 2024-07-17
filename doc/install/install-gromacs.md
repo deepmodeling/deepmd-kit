@@ -1,4 +1,4 @@
-# Install GROMACS with DeepMD
+# Install GROMACS with DeePMD-kit
 
 Before following this section, [DeePMD-kit C++ interface](install-from-source.md) should have be installed.
 

@@ -95,7 +95,7 @@ docs = [
     "ase",
     "deepmodeling-sphinx>=0.1.0",
     "dargs>=0.3.4",
-    "sphinx-argparse",
+    "sphinx-argparse<0.5.0",
     "pygments-lammps",
     "sphinxcontrib-bibtex",
     "sphinx-autoapi>=3.0.0",

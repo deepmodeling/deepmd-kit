@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.5.1
+    rev: v0.5.2
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -136,5 +136,13 @@ repos:
           - --comment-style
           - <!--|  ~|  -->
           - --no-extra-eol
+  - repo: local
+    hooks:
+      - id: disallow-caps
+        name: Disallow improper capitalization
+        language: pygrep
+        entry: DeepMD|DeepMd|Pytorch|Tensorflow|Numpy|Github|Lammps|I-Pi|I-PI|i-Pi
+        # unclear why PairDeepMD is used instead of PairDeePMD
+        exclude: .pre-commit-config.yaml|source/lmp
 ci:
   autoupdate_branch: devel
