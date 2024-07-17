@@ -444,7 +444,7 @@ class BuildBazelisk(Build):
         return (PREFIX / "bin" / "bazelisk").exists()
 
 
-class BuildNumpy(Build):
+class BuildNumPy(Build):
     """Build NumPy."""
 
     @property
@@ -614,7 +614,7 @@ class BuildTensorFlow(Build):
             optional_dep["rocm"] = BuildROCM()
         return {
             "bazelisk": BuildBazelisk(),
-            "numpy": BuildNumpy(),
+            "numpy": BuildNumPy(),
             **optional_dep,
         }
 
@@ -865,7 +865,7 @@ def parse_args(args: Optional[List[str]] = None):
         takes arguments from sys.argv
     """
     parser = argparse.ArgumentParser(
-        description="Installer of Tensorflow C++ Library.\n\n" + pretty_print_env(),
+        description="Installer of TensorFlow C++ Library.\n\n" + pretty_print_env(),
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

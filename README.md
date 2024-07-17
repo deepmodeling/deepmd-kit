@@ -91,7 +91,7 @@ The code is organized as follows:
 - `source/api_c`: source code of the C API.
 - `source/nodejs`: source code of the Node.js API.
 - `source/ipi`: source code of i-PI client.
-- `source/lmp`: source code of Lammps module.
+- `source/lmp`: source code of LAMMPS module.
 - `source/gmx`: source code of Gromacs plugin.
 
 # Contributing

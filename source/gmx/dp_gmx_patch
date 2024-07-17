@@ -59,7 +59,7 @@ check_patched () {
 }
 
 dp_gmx_patch () {
-    echo "- Staring DeepMD patch program to GROMACS ${VERSION}"
+    echo "- Staring DeePMD-kit patch program to GROMACS ${VERSION}"
     echo "- Mode: patch"
     if [ ! -d $1 ]; then
         echo "- ERROR: invalid gromacs root: $1"
@@ -86,7 +86,7 @@ dp_gmx_patch () {
 }
 
 dp_gmx_revert () {
-    echo "- Staring DeepMD patch program to GROMACS ${VERSION}"
+    echo "- Staring DeePMD-kit patch program to GROMACS ${VERSION}"
     echo "- Mode: revert"
     check_patched $1
     if [ ! -d $1 ]; then
