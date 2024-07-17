@@ -85,7 +85,8 @@ users can refer to [this section](./finetuning.md#fine-tuning-from-a-multi-task-
 Details of some parameters that are the same as [the regular parameters](./train-input.rst) are not shown below.
 :::
 
-```{dargs}
-:module: deepmd.utils.argcheck
-:func: gen_args_multi_task
+```{eval-rst}
+.. dargs::
+   :module: deepmd.utils.argcheck
+   :func: gen_args_multi_task
 ```
