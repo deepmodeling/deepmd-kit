@@ -167,8 +167,8 @@ class ArgsPlugin:
     def register(
         self, name: str, alias: Optional[List[str]] = None, doc: str = ""
     ) -> Callable[
-        [Callable[[], Union[Argument, List[Argument]]]],
-        Callable[[], Union[Argument, List[Argument]]],
+        [Union[Callable[[], Argument], Callable[[], List[Argument]]]],
+        Union[Callable[[], Argument], Callable[[], List[Argument]]],
     ]:
         """Register a descriptor argument plugin.
 
@@ -181,7 +181,7 @@ class ArgsPlugin:
 
         Returns
         -------
-        Callable[[Callable[[], Union[Argument, List[Argument]]]], Callable[[], Union[Argument, List[Argument]]]]
+        Callable[[Union[Callable[[], Argument], Callable[[], List[Argument]]]], Union[Callable[[], Argument], Callable[[], List[Argument]]]]
             decorator to return the registered descriptor argument method
 
         Examples
