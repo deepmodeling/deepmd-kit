@@ -511,6 +511,11 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="The output type",
     )
+    parsers_doc.add_argument(
+        "--multi-task",
+        action="store_true",
+        help="Print the documentation of multi-task training input parameters.",
+    )
 
     # * make model deviation ***********************************************************
     parser_model_devi = subparsers.add_parser(

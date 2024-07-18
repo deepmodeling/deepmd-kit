@@ -78,3 +78,15 @@ An example input for multi-task training two models in water system is shown as 
 
 To finetune based on the checkpoint `model.pt` after the multi-task pre-training is completed,
 users can refer to [this section](./finetuning.md#fine-tuning-from-a-multi-task-pre-trained-model).
+
+## Multi-task specific parameters
+
+:::{note}
+Details of some parameters that are the same as [the regular parameters](./train-input.rst) are not shown below.
+:::
+
+```{eval-rst}
+.. dargs::
+   :module: deepmd.utils.argcheck
+   :func: gen_args_multi_task
+```

@@ -10,14 +10,14 @@ from deepmd.utils.argcheck import (
 __all__ = ["doc_train_input"]
 
 
-def doc_train_input(*, out_type: str = "rst", **kwargs):
+def doc_train_input(*, out_type: str = "rst", multi_task: bool = False, **kwargs):
     """Print out trining input arguments to console."""
     if out_type == "rst":
-        doc_str = gen_doc(make_anchor=True)
+        doc_str = gen_doc(make_anchor=True, multi_task=multi_task)
     elif out_type == "json":
-        doc_str = gen_json()
+        doc_str = gen_json(multi_task=multi_task)
     elif out_type == "json_schema":
-        doc_str = gen_json_schema()
+        doc_str = gen_json_schema(multi_task=multi_task)
     else:
         raise RuntimeError(f"Unsupported out type {out_type}")
     print(doc_str)  # noqa: T201

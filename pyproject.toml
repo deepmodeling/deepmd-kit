@@ -58,6 +58,7 @@ deepmd = "deepmd.tf.lmp:get_op_dir"
 
 [project.entry-points."dpgui"]
 "DeePMD-kit" = "deepmd.utils.argcheck:gen_args"
+"DeePMD-kit Multi-task" = "deepmd.utils.argcheck:gen_args_multi_task"
 
 [project.entry-points."dpdata.plugins"]
 deepmd_driver = "deepmd.driver:DPDriver"
