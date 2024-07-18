@@ -424,7 +424,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                     dim=-1,
                 )
 
-            if n_nnei > nnei or (extra_nlist_sort and n_nnei <= nnei):
+            if n_nnei > nnei or extra_nlist_sort:
                 n_nf, n_nloc, n_nnei = nlist.shape
                 m_real_nei = nlist >= 0
                 nlist = torch.where(m_real_nei, nlist, 0)
