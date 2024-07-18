@@ -250,7 +250,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.view(nframes, -1, 3)
-            nlist = self.format_nlist(extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort)
+            nlist = self.format_nlist(
+                extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
+            )
             cc_ext, _, fp, ap, input_prec = self.input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
@@ -386,7 +388,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             """
             mixed_types = self.mixed_types()
-            nlist = self._format_nlist(extended_coord, nlist, sum(self.get_sel()), extra_nlist_sort=extra_nlist_sort)
+            nlist = self._format_nlist(
+                extended_coord,
+                nlist,
+                sum(self.get_sel()),
+                extra_nlist_sort=extra_nlist_sort,
+            )
             if not mixed_types:
                 nlist = nlist_distinguish_types(nlist, extended_atype, self.get_sel())
             return nlist
@@ -396,7 +403,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             extended_coord: torch.Tensor,
             nlist: torch.Tensor,
             nnei: int,
-            extra_nlist_sort: bool=False,
+            extra_nlist_sort: bool = False,
         ):
             n_nf, n_nloc, n_nnei = nlist.shape
             # nf x nall x 3
