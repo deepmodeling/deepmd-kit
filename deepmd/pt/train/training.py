@@ -184,6 +184,7 @@ class Trainer:
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
+                    collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
                 )
                 with torch.device("cpu"):
@@ -1093,7 +1094,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
-            if key == "sid" or key == "fid" or key == "box":
+            if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
