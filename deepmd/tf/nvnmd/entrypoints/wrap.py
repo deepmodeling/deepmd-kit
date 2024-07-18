@@ -226,7 +226,6 @@ class Wrap:
         max_ea = np.ceil(np.log2(np.max(np.abs(atom_ener_shift))))
         max_ea = np.max([max_ea + NBIT_FIXD_FL - NBIT_MODEL_HEAD + 1, 0])
         atom_ener_shift = atom_ener_shift / 2**max_ea
-        print(atom_ener_shift)
         for shift in atom_ener_shift:
             SHIFT = e.qr(shift, NBIT_FIXD_FL)
             bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
