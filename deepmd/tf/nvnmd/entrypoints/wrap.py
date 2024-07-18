@@ -163,6 +163,7 @@ class Wrap:
         ntype      number of atomic species
         nnei       number of neighbors
         atom_ener  atom bias energy
+        ener_fact  factor for atom_ener
         """
         nbit = nvnmd_cfg.nbit
         ctrl = nvnmd_cfg.ctrl
@@ -209,19 +210,26 @@ class Wrap:
             atom_ener = weight["t_bias_atom_e"]
         else:
             atom_ener = [0] * 32
+        atom_ener_shift = []
         nlayer_fit = fitn["nlayer_fit"]
         if VERSION == 0:
             for tt in range(ntype):
                 w, b, _idt = get_fitnet_weight(weight, tt, nlayer_fit - 1, nlayer_fit)
                 shift = atom_ener[tt] + b[0]
-                SHIFT = e.qr(shift, NBIT_FIXD_FL)
-                bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+                atom_ener_shift.append(shift)
         if VERSION == 1:
             for tt in range(ntype):
                 w, b, _idt = get_fitnet_weight(weight, 0, nlayer_fit - 1, nlayer_fit)
                 shift = atom_ener[tt] + b[0]
-                SHIFT = e.qr(shift, NBIT_FIXD_FL)
-                bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+                atom_ener_shift.append(shift)
+        atom_ener_shift = np.array(atom_ener_shift)
+        max_ea = np.ceil(np.log2(np.max(np.abs(atom_ener_shift))))
+        max_ea = np.max([max_ea + NBIT_FIXD_FL - NBIT_MODEL_HEAD + 1, 0])
+        atom_ener_shift = atom_ener_shift / 2**max_ea
+        for shift in atom_ener_shift:
+            SHIFT = e.qr(shift, NBIT_FIXD_FL)
+            bs = e.dec2bin(SHIFT, NBIT_MODEL_HEAD, signed=True)[0] + bs
+        bs = e.dec2bin(max_ea, NBIT_MODEL_HEAD, signed=True)[0] + bs
         # extend
         hs = e.bin2hex(bs)
         hs = e.extend_hex(hs, NBIT_MODEL_HEAD * nhead)
@@ -592,8 +600,6 @@ class Wrap:
             _d = d[ii]
             _d = np.reshape(_d, [1, -1])
             _d = np.matmul(_d, w)
-            # _d = np.reshape(_d, [-1, 2])
-            # _d = np.concatenate([_d[:,0], _d[:,1]], axis=0)
             d2[ii] = _d
         d2 = e.qr(d2, NBIT_DATA_FL)
         bavc = e.dec2bin(d2, NBIT_WXDB, True)
