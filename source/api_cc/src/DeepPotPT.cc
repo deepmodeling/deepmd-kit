@@ -396,7 +396,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   inputs.push_back(aparam_tensor);
-  bool do_atom_virial_tensor = true;
+  bool do_atom_virial_tensor = atomic;
   inputs.push_back(do_atom_virial_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
