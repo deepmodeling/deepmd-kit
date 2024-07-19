@@ -976,9 +976,14 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const std::vector<int>& atype,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
-                         const std::vector<double>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam);
+                         const std::vector<double>& aparam,
+                         const bool atomic) {
+  if (atomic) {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            fparam, aparam);
+  } else {
+    compute(ener, force, virial, coord, atype, box, fparam, aparam);
+  }
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -989,9 +994,14 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const std::vector<int>& atype,
                          const std::vector<float>& box,
                          const std::vector<float>& fparam,
-                         const std::vector<float>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam);
+                         const std::vector<float>& aparam,
+                         const bool atomic) {
+  if (atomic) {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            fparam, aparam);
+  } else {
+    compute(ener, force, virial, coord, atype, box, fparam, aparam);
+  }
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<double>& force,
@@ -1005,9 +1015,15 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const InputNlist& inlist,
                          const int& ago,
                          const std::vector<double>& fparam,
-                         const std::vector<double>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam);
+                         const std::vector<double>& aparam,
+                         const bool atomic) {
+  if (atomic) {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            nghost, inlist, ago, fparam, aparam);
+  } else {
+    compute(ener, force, virial, coord, atype, box, nghost, inlist, ago, fparam,
+            aparam);
+  }
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -1021,9 +1037,15 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const InputNlist& inlist,
                          const int& ago,
                          const std::vector<float>& fparam,
-                         const std::vector<float>& aparam) {
-  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam);
+                         const std::vector<float>& aparam,
+                         const bool atomic) {
+  if (atomic) {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            nghost, inlist, ago, fparam, aparam);
+  } else {
+    compute(ener, force, virial, coord, atype, box, nghost, inlist, ago, fparam,
+            aparam);
+  }
 }
 void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<double>& force,
@@ -1035,9 +1057,15 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<int>& atype,
                                     const std::vector<double>& box,
                                     const std::vector<double>& fparam,
-                                    const std::vector<double>& aparam) {
-  compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-                     coord, atype, box, fparam, aparam);
+                                    const std::vector<double>& aparam,
+                                    const bool atomic) {
+  if (atomic) {
+    compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
+                       coord, atype, box, fparam, aparam);
+  } else {
+    compute_mixed_type(ener, force, virial, nframes, coord, atype, box, fparam,
+                       aparam);
+  }
 }
 void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<float>& force,
@@ -1049,8 +1077,14 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<int>& atype,
                                     const std::vector<float>& box,
                                     const std::vector<float>& fparam,
-                                    const std::vector<float>& aparam) {
-  compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-                     coord, atype, box, fparam, aparam);
+                                    const std::vector<float>& aparam,
+                                    const bool atomic) {
+  if (atomic) {
+    compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
+                       coord, atype, box, fparam, aparam);
+  } else {
+    compute_mixed_type(ener, force, virial, nframes, coord, atype, box, fparam,
+                       aparam);
+  }
 }
 #endif

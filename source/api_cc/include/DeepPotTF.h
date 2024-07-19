@@ -248,8 +248,9 @@ class DeepPotTF : public DeepPotBase {
                 const std::vector<double>& coord,
                 const std::vector<int>& atype,
                 const std::vector<double>& box,
-                const std::vector<double>& fparam = std::vector<double>(),
-                const std::vector<double>& aparam = std::vector<double>());
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
@@ -258,8 +259,9 @@ class DeepPotTF : public DeepPotBase {
                 const std::vector<float>& coord,
                 const std::vector<int>& atype,
                 const std::vector<float>& box,
-                const std::vector<float>& fparam = std::vector<float>(),
-                const std::vector<float>& aparam = std::vector<float>());
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
@@ -271,8 +273,9 @@ class DeepPotTF : public DeepPotBase {
                 const int nghost,
                 const InputNlist& inlist,
                 const int& ago,
-                const std::vector<double>& fparam = std::vector<double>(),
-                const std::vector<double>& aparam = std::vector<double>());
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
@@ -284,32 +287,33 @@ class DeepPotTF : public DeepPotBase {
                 const int nghost,
                 const InputNlist& inlist,
                 const int& ago,
-                const std::vector<float>& fparam = std::vector<float>(),
-                const std::vector<float>& aparam = std::vector<float>());
-  void computew_mixed_type(
-      std::vector<double>& ener,
-      std::vector<double>& force,
-      std::vector<double>& virial,
-      std::vector<double>& atom_energy,
-      std::vector<double>& atom_virial,
-      const int& nframes,
-      const std::vector<double>& coord,
-      const std::vector<int>& atype,
-      const std::vector<double>& box,
-      const std::vector<double>& fparam = std::vector<double>(),
-      const std::vector<double>& aparam = std::vector<double>());
-  void computew_mixed_type(
-      std::vector<double>& ener,
-      std::vector<float>& force,
-      std::vector<float>& virial,
-      std::vector<float>& atom_energy,
-      std::vector<float>& atom_virial,
-      const int& nframes,
-      const std::vector<float>& coord,
-      const std::vector<int>& atype,
-      const std::vector<float>& box,
-      const std::vector<float>& fparam = std::vector<float>(),
-      const std::vector<float>& aparam = std::vector<float>());
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const bool atomic);
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<double>& force,
+                           std::vector<double>& virial,
+                           std::vector<double>& atom_energy,
+                           std::vector<double>& atom_virial,
+                           const int& nframes,
+                           const std::vector<double>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<double>& box,
+                           const std::vector<double>& fparam,
+                           const std::vector<double>& aparam,
+                           const bool atomic);
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<float>& force,
+                           std::vector<float>& virial,
+                           std::vector<float>& atom_energy,
+                           std::vector<float>& atom_virial,
+                           const int& nframes,
+                           const std::vector<float>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<float>& box,
+                           const std::vector<float>& fparam,
+                           const std::vector<float>& aparam,
+                           const bool atomic);
 
  private:
   tensorflow::Session* session;
