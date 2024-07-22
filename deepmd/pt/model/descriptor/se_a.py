@@ -617,6 +617,7 @@ class DescrptBlockSeA(DescriptorBlock):
         - `torch.Tensor`: descriptor matrix with shape [nframes, natoms[0]*self.filter_neuron[-1]*self.axis_neuron].
         """
         del extended_atype_embd, mapping
+        nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -657,7 +658,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 device=extended_coord.device,
             )
             # nfnl x nnei
-            exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
+            exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
             for embedding_idx, ll in enumerate(self.filter_layers.networks):
                 if self.type_one_side:
                     ii = embedding_idx
@@ -698,8 +699,8 @@ class DescrptBlockSeA(DescriptorBlock):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nall, self.filter_neuron[-1], self.axis_neuron]
-        result = result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron)
-        rot_mat = rot_mat.view([-1, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
+        result = result.view(nf, nloc, self.filter_neuron[-1] * self.axis_neuron)
+        rot_mat = rot_mat.view([nf, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),

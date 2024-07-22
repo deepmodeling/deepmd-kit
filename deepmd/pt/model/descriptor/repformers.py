@@ -505,7 +505,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         # (nb x nloc) x ng2 x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 
-        return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
+        return g1, g2, h2, rot_mat.view(nframes, nloc, self.dim_emb, 3), sw
 
     def compute_input_stats(
         self,

@@ -580,10 +580,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
         return (
-            result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
-            gg.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
-            dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-            rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
+            result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1]),
+            dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
+            rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
             sw,
         )
 

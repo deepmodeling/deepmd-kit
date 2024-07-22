@@ -341,7 +341,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
         res_rescale = 1.0 / 5.0
         res = xyz_scatter * res_rescale
-        res = res.reshape(nf, nloc, -1).astype(GLOBAL_NP_FLOAT_PRECISION)
+        res = res.reshape(nf, nloc, ng).astype(GLOBAL_NP_FLOAT_PRECISION)
         return res, None, None, None, ww
 
     def serialize(self) -> dict:

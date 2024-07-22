@@ -343,6 +343,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         """
         del mapping
+        nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -367,7 +368,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         )
 
         # nfnl x nnei
-        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
+        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, self.nnei)
         for ii, ll in enumerate(self.filter_layers.networks):
             # nfnl x nt
             mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
@@ -381,7 +382,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         res_rescale = 1.0 / 5.0
         result = xyz_scatter * res_rescale
-        result = result.view(-1, nloc, self.filter_neuron[-1])
+        result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,
