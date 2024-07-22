@@ -29,7 +29,7 @@ class DPChecker(BaseChecker):
         "EDP02": (
             "No explicit dtype.",
             "no-explicit-dtype",
-            "Require explicit dtype when initializing an NumPy array, a TensorFlow tensor, or a PyTorch tensor.",
+            "Require explicit dtype when initializing a NumPy array, a TensorFlow tensor, or a PyTorch tensor.",
         ),
     }
 
