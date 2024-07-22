@@ -938,7 +938,7 @@ class Trainer:
                 continue
             if self.multi_task:
                 chosen_index_list = dp_random.choice(
-                    np.arange(self.num_model),
+                    np.arange(self.num_model),  # pylint: disable=no-explicit-dtype
                     p=np.array(self.model_prob),
                     size=self.world_size,
                     replace=True,

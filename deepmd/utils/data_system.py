@@ -440,7 +440,7 @@ class DeepmdDataSystem:
             self.pick_idx = sys_idx
         else:
             # prob = self._get_sys_probs(sys_probs, auto_prob_style)
-            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)  # pylint: disable=no-explicit-dtype
         b_data = self.data_systems[self.pick_idx].get_batch(
             self.batch_size[self.pick_idx]
         )
@@ -460,7 +460,7 @@ class DeepmdDataSystem:
         batch_size = self.batch_size[0]
         batch_data = []
         for _ in range(batch_size):
-            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)  # pylint: disable=no-explicit-dtype
             bb_data = self.data_systems[self.pick_idx].get_batch(1)
             bb_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
             bb_data["default_mesh"] = self.default_mesh[self.pick_idx]
@@ -720,7 +720,7 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
         block_weights.append(weight)
     nblocks = len(block_str)
     block_probs = np.array(block_weights) / np.sum(block_weights)
-    sys_probs = np.zeros([nsystems])
+    sys_probs = np.zeros([nsystems])  # pylint: disable=no-explicit-dtype
     for ii in range(nblocks):
         nbatch_block = nbatch[block_stt[ii] : block_end[ii]]
         tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)

@@ -140,7 +140,7 @@ class PolarFittingSeA(Fitting):
         if not isinstance(self.sel_type, list):
             self.sel_type = [self.sel_type]
         self.sel_type = sorted(self.sel_type)
-        self.constant_matrix = np.zeros(
+        self.constant_matrix = np.zeros(  # pylint: disable=no-explicit-dtype
             self.ntypes
         )  # self.ntypes x 1, store the average diagonal value
         # if type(self.diag_shift) is not list:
@@ -171,7 +171,7 @@ class PolarFittingSeA(Fitting):
             can be prepared by model.make_stat_input
         """
         if "polarizability" not in all_stat.keys():
-            self.avgeig = np.zeros([9])
+            self.avgeig = np.zeros([9])  # pylint: disable=no-explicit-dtype
             warnings.warn(
                 "no polarizability data, cannot do data stat. use zeros as guess"
             )
@@ -190,7 +190,7 @@ class PolarFittingSeA(Fitting):
 
         # YWolfeee: support polar normalization, initialize to a more appropriate point
         if self.shift_diag:
-            mean_polar = np.zeros([len(self.sel_type), 9])
+            mean_polar = np.zeros([len(self.sel_type), 9])  # pylint: disable=no-explicit-dtype
             sys_matrix, polar_bias = [], []
             for ss in range(len(all_stat["type"])):
                 nframes = all_stat["type"][ss].shape[0]
@@ -207,7 +207,7 @@ class PolarFittingSeA(Fitting):
                             if w == self.sel_type[itype]
                         ]  # select index in this type
 
-                        sys_matrix.append(np.zeros((1, len(self.sel_type))))
+                        sys_matrix.append(np.zeros((1, len(self.sel_type))))  # pylint: disable=no-explicit-dtype
                         sys_matrix[-1][0, itype] = len(index_lis)
 
                         polar_bias.append(
@@ -226,7 +226,7 @@ class PolarFittingSeA(Fitting):
                         continue
                     # Till here, we have global polar
                     sys_matrix.append(
-                        np.zeros((1, len(self.sel_type)))
+                        np.zeros((1, len(self.sel_type)))  # pylint: disable=no-explicit-dtype
                     )  # add a line in the equations
                     for itype in range(
                         len(self.sel_type)
@@ -299,7 +299,7 @@ class PolarFittingSeA(Fitting):
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
         if self.fit_diag:
-            bavg = np.zeros(self.dim_rot_mat_1)
+            bavg = np.zeros(self.dim_rot_mat_1)  # pylint: disable=no-explicit-dtype
             # bavg[0] = self.avgeig[0]
             # bavg[1] = self.avgeig[1]
             # bavg[2] = self.avgeig[2]
@@ -327,7 +327,7 @@ class PolarFittingSeA(Fitting):
             # (nframes x natoms) x naxis x naxis
             final_layer = tf.matrix_diag(final_layer)
         else:
-            bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)
+            bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)  # pylint: disable=no-explicit-dtype
             # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
             # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
             # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]

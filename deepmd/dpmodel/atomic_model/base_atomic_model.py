@@ -57,8 +57,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
         self.n_out = len(self.bias_keys)
-        out_bias_data = np.zeros([self.n_out, ntypes, self.max_out_size])
-        out_std_data = np.ones([self.n_out, ntypes, self.max_out_size])
+        out_bias_data = np.zeros([self.n_out, ntypes, self.max_out_size])  # pylint: disable=no-explicit-dtype
+        out_std_data = np.ones([self.n_out, ntypes, self.max_out_size])  # pylint: disable=no-explicit-dtype
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 

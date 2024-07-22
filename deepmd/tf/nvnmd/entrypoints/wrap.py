@@ -292,7 +292,7 @@ class Wrap:
                         cfgs = mapt["cfg_u2s"]
                         cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
                         feed_dict = {
-                            t_x: np.ones([1, 1]) * 0.0,
+                            t_x: np.ones([1, 1]) * 0.0,  # pylint: disable=no-explicit-dtype
                             t_table: mi,
                             t_table_grad: mi * 0.0,
                             t_table_info: cfgs,
@@ -304,7 +304,7 @@ class Wrap:
                         cfgs = mapt["cfg_s2g"]
                         cfgs = np.array([np.float64(v) for vs in cfgs for v in vs])
                         feed_dict = {
-                            t_x: np.ones([1, 1]) * si,
+                            t_x: np.ones([1, 1]) * si,  # pylint: disable=no-explicit-dtype
                             t_table: mi,
                             t_table_grad: mi * 0.0,
                             t_table_info: cfgs,
@@ -312,7 +312,7 @@ class Wrap:
                         gi = run_sess(sess, t_y, feed_dict=feed_dict)
                         gsi = np.reshape(si, [-1]) * np.reshape(gi, [-1])
                     else:
-                        gsi = np.zeros(M1)
+                        gsi = np.zeros(M1)  # pylint: disable=no-explicit-dtype
                     for ii in range(M1):
                         GSs.extend(
                             e.dec2bin(e.qr(gsi[ii], NBIT_FIXD_FL), NBIT_FIXD, True)
@@ -453,10 +453,10 @@ class Wrap:
         NBIT_WEIGHT_FL = NBIT_WEIGHT - 2
         sh = weight.shape
         nr, nc = sh[0], sh[1]
-        nrs = np.zeros(nr)
-        ncs = np.zeros(nc)
-        wrs = np.zeros([nr, nc])
-        wcs = np.zeros([nr, nc])
+        nrs = np.zeros(nr)  # pylint: disable=no-explicit-dtype
+        ncs = np.zeros(nc)  # pylint: disable=no-explicit-dtype
+        wrs = np.zeros([nr, nc])  # pylint: disable=no-explicit-dtype
+        wcs = np.zeros([nr, nc])  # pylint: disable=no-explicit-dtype
         e = Encode()
         # row
         for ii in range(nr):
@@ -574,7 +574,7 @@ class Wrap:
         e = Encode()
         # std
         d = maps["dstd_inv"]
-        d2 = np.zeros([ntype_max, 2])
+        d2 = np.zeros([ntype_max, 2])  # pylint: disable=no-explicit-dtype
         for ii in range(ntype):
             _d = d[ii, :2]
             _d = np.reshape(_d, [-1, 2])
@@ -583,7 +583,7 @@ class Wrap:
         bstd = e.flt2bin(d2, NBIT_FLTE, NBIT_FLTF)
         # gtt
         d = maps["gt"]
-        d2 = np.zeros([ntype_max**2, M1])
+        d2 = np.zeros([ntype_max**2, M1])  # pylint: disable=no-explicit-dtype
         for ii in range(ntype):
             for jj in range(ntype):
                 _d = d[ii * (ntype + 1) + jj]
@@ -595,7 +595,7 @@ class Wrap:
         d = maps["t_ebd"]
         w = get_type_weight(weight, 0)
         nd = w.shape[1]
-        d2 = np.zeros([ntype_max, nd])
+        d2 = np.zeros([ntype_max, nd])  # pylint: disable=no-explicit-dtype
         for ii in range(ntype):
             _d = d[ii]
             _d = np.reshape(_d, [1, -1])

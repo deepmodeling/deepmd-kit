@@ -253,12 +253,15 @@ class DescrptSeA(DescrptSe):
         self.embedding_net_variables = None
         self.mixed_prec = None
         self.place_holders = {}
-        self.nei_type = np.repeat(np.arange(self.ntypes), self.sel_a)  # like a mask
+        self.nei_type = np.repeat(
+            np.arange(self.ntypes),  # pylint: disable=no-explicit-dtype
+            self.sel_a,
+        )  # like a mask
 
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         sub_graph = tf.Graph()
@@ -607,9 +610,9 @@ class DescrptSeA(DescrptSe):
             check_switch_range(davg, dstd)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
@@ -1315,10 +1318,10 @@ class DescrptSeA(DescrptSe):
                         "Adjusting sel is only supported when `set_davg_zero` is true!"
                     )
                 # as set_davg_zero, self.davg is safely zero
-                self.davg = np.zeros([self.ntypes, self.ndescrpt]).astype(
+                self.davg = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
                     GLOBAL_NP_FLOAT_PRECISION
                 )
-                new_dstd = np.ones([self.ntypes, self.ndescrpt]).astype(
+                new_dstd = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
                     GLOBAL_NP_FLOAT_PRECISION
                 )
                 # shape of davg and dstd is (ntypes, ndescrpt), ndescrpt = 4*sel

@@ -332,10 +332,10 @@ class DPTabulate:
 
         # tt.shape: [nspline, self.last_layer_size]
         if isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeA):
-            tt = np.full((nspline, self.last_layer_size), stride1)
+            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
         elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeT):
-            tt = np.full((nspline, self.last_layer_size), stride1)
+            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[
                 int((lower - extrapolate * lower) / stride1) + 1 : (
                     int((lower - extrapolate * lower) / stride1)
@@ -344,7 +344,7 @@ class DPTabulate:
                 :,
             ] = stride0
         elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeR):
-            tt = np.full((nspline, self.last_layer_size), stride1)
+            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
@@ -581,7 +581,7 @@ class DPTabulate:
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
                                 tf.constant(self.functype),
-                            ) + tf.ones([1, 1], yy.dtype)
+                            ) + tf.ones([1, 1], yy.dtype)  # pylint: disable=no-explicit-dtype
                             dy2 = op_module.unaggregated_dy2_dx_s(
                                 yy - xx,
                                 dy,
@@ -600,7 +600,7 @@ class DPTabulate:
                                 self.matrix["layer_" + str(layer + 1)][idx],
                                 xbar,
                                 tf.constant(self.functype),
-                            ) + tf.ones([1, 2], yy.dtype)
+                            ) + tf.ones([1, 2], yy.dtype)  # pylint: disable=no-explicit-dtype
                             dy2 = op_module.unaggregated_dy2_dx_s(
                                 yy - tt,
                                 dy,

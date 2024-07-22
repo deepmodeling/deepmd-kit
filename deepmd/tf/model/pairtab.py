@@ -171,8 +171,8 @@ class PairTabModel(Model):
             natoms,
             box,
             mesh,
-            np.zeros([self.ntypes, self.sel * 4]),
-            np.ones([self.ntypes, self.sel * 4]),
+            np.zeros([self.ntypes, self.sel * 4]),  # pylint: disable=no-explicit-dtype
+            np.ones([self.ntypes, self.sel * 4]),  # pylint: disable=no-explicit-dtype
             rcut_a=-1,
             rcut_r=self.rcut,
             rcut_r_smth=self.rcut,
