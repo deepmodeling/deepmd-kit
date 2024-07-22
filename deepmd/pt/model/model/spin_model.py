@@ -167,8 +167,11 @@ class SpinModel(torch.nn.Module):
         )
         if add_mag:
             extended_out_real = extended_out_real + extended_out_mag
+        shape2 = 1
+        for ss in extended_out_tensor.shape[2:]:
+            shape2 *= ss
         extended_out_mag = (
-            extended_out_mag.view([nframes, nall, -1]) * atomic_mask
+            extended_out_mag.view([nframes, nall, shape2]) * atomic_mask
         ).view(extended_out_mag.shape)
         return extended_out_real, extended_out_mag, atomic_mask > 0.0
 
