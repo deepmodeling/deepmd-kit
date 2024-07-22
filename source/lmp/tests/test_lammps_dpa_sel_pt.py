@@ -249,9 +249,6 @@ def _lammps(data_file, units="metal") -> PyLammps:
     lammps.units(units)
     lammps.boundary("p p p")
     lammps.atom_style("atomic")
-    lammps.plugin(
-        "load /home/data/zhangd/deepmd-kit-sources/deepmd-kit-refactor/dp/lib/libdeepmd_lmp.so"
-    )
     if units == "metal" or units == "real":
         lammps.neighbor("2.0 bin")
     elif units == "si":
