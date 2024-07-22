@@ -400,9 +400,11 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 ret = np.take_along_axis(ret, ret_mapping, axis=2)
                 ret = np.where(rr > rcut, -1, ret)
                 ret = ret[..., :nnei]
-            else:  # not extra_nlist_sort and n_nnei <= nnei:
-                # copy anyway...
+            # not extra_nlist_sort and n_nnei <= nnei:
+            elif n_nnei == nnei:
                 ret = nlist
+            else:
+                pass
             assert ret.shape[-1] == nnei
             return ret
 
