@@ -591,6 +591,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns whether the descriptor block has message passing."""
         return False
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return False
+
 
 class NeighborGatedAttention(nn.Module):
     def __init__(

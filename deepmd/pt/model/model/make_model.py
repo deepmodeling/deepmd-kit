@@ -568,6 +568,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Returns whether the model has message passing."""
             return self.atomic_model.has_message_passing()
 
+        def need_sorted_nlist_for_lower(self) -> bool:
+            """Returns whether the model needs sorted nlist when using `forward_lower`."""
+            return self.atomic_model.need_sorted_nlist_for_lower()
+
         def forward(
             self,
             coord,

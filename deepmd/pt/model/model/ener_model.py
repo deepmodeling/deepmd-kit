@@ -105,7 +105,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-        extra_nlist_sort: bool = True,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -116,7 +115,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
-            extra_nlist_sort=extra_nlist_sort,
+            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

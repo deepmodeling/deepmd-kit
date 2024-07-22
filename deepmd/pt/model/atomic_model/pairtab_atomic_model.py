@@ -164,6 +164,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return False
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return False
+
     def change_type_map(
         self, type_map: List[str], model_with_new_type_stat=None
     ) -> None:
