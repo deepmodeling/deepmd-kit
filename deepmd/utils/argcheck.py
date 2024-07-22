@@ -1805,7 +1805,7 @@ def learning_rate_variant_type_args():
     )
 
 
-def learning_rate_args():
+def learning_rate_args(fold_subdoc: bool = False) -> Argument:
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definitio of learning rate"
     return Argument(
@@ -1823,6 +1823,7 @@ def learning_rate_args():
         [learning_rate_variant_type_args()],
         optional=True,
         doc=doc_lr,
+        fold_subdoc=fold_subdoc,
     )
 
 
@@ -2545,6 +2546,7 @@ def multi_model_args():
     model_dict = model_args()
     model_dict.name = "model_dict"
     model_dict.repeat = True
+    model_dict.fold_subdoc = True
     model_dict.doc = (
         "The multiple definition of the model, used in the multi-task mode."
     )
@@ -2565,6 +2567,7 @@ def multi_loss_args():
     loss_dict = loss_args()
     loss_dict.name = "loss_dict"
     loss_dict.repeat = True
+    loss_dict.fold_subdoc = True
     loss_dict.doc = "The multiple definition of the loss, used in the multi-task mode."
     return loss_dict
 
@@ -2576,11 +2579,11 @@ def make_index(keys):
     return ", ".join(ret)
 
 
-def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
+def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> str:
     if make_link:
         make_anchor = True
     ptr = []
-    for ii in gen_args():
+    for ii in gen_args(multi_task=multi_task):
         ptr.append(ii.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
@@ -2592,14 +2595,14 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     return "\n\n".join(ptr)
 
 
-def gen_json(**kwargs):
+def gen_json(multi_task: bool = False, **kwargs) -> str:
     return json.dumps(
-        tuple(gen_args()),
+        tuple(gen_args(multi_task=multi_task)),
         cls=ArgumentEncoder,
     )
 
 
-def gen_args(multi_task=False) -> List[Argument]:
+def gen_args(multi_task: bool = False) -> List[Argument]:
     if not multi_task:
         return [
             model_args(),
@@ -2611,14 +2614,24 @@ def gen_args(multi_task=False) -> List[Argument]:
     else:
         return [
             multi_model_args(),
-            learning_rate_args(),
+            learning_rate_args(fold_subdoc=True),
             multi_loss_args(),
             training_args(multi_task=multi_task),
-            nvnmd_args(),
+            nvnmd_args(fold_subdoc=True),
         ]
 
 
-def gen_json_schema() -> str:
+def gen_args_multi_task() -> Argument:
+    """Generate multi-task arguments."""
+    return Argument(
+        "multi-task",
+        dict,
+        sub_fields=gen_args(multi_task=True),
+        doc="Multi-task arguments.",
+    )
+
+
+def gen_json_schema(multi_task: bool = False) -> str:
     """Generate JSON schema.
 
     Returns
@@ -2626,11 +2639,16 @@ def gen_json_schema() -> str:
     str
         JSON schema.
     """
-    arg = Argument("DeePMD-kit", dict, gen_args(), doc=f"DeePMD-kit {__version__}")
+    arg = Argument(
+        "DeePMD-kit",
+        dict,
+        gen_args(multi_task=multi_task),
+        doc=f"DeePMD-kit {__version__}",
+    )
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data, multi_task=False):
+def normalize(data, multi_task: bool = False):
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
