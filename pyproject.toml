@@ -399,3 +399,8 @@ markers = "run"
 
 [tool.coverage.run]
 plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
+
+[tool.pylint.'MESSAGES CONTROL']
+load-plugins = "deepmd_checker"
+disable = "all"
+enable = "EDP01,EDP02"
