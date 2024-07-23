@@ -459,6 +459,7 @@ class SpinModel(torch.nn.Module):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        inference: bool = False,
     ):
         nframes, nloc = nlist.shape[:2]
         (
@@ -479,6 +480,7 @@ class SpinModel(torch.nn.Module):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            inference=inference,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -603,6 +605,7 @@ class SpinEnergyModel(SpinModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            inference=True,
         )
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]

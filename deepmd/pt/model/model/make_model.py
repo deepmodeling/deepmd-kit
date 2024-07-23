@@ -215,6 +215,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
             comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+            inference: bool = False,
         ):
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -239,6 +240,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 whether calculate atomic virial.
             comm_dict
                 The data needed for communication for parallel inference.
+            inference
+                Whether only perform inference rather than undergoing training.
 
             Returns
             -------
@@ -267,6 +270,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 self.atomic_output_def(),
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
+                inference=inference,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
