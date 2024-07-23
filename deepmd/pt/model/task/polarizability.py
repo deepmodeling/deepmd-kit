@@ -242,7 +242,7 @@ class PolarFittingNet(GeneralFitting):
             self.var_name
         ]
         out = out * (self.scale.to(atype.device))[atype]
-        gr = gr.view(nframes * nloc, -1, 3)  # (nframes * nloc, m1, 3)
+        gr = gr.view(nframes * nloc, self.embedding_width, 3)  # (nframes * nloc, m1, 3)
 
         if self.fit_diag:
             out = out.reshape(-1, self.embedding_width)

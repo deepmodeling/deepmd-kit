@@ -99,12 +99,15 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    xmax = torch.max(coord) + 2.0 * rcut
+    if coord.numel() > 0:
+        xmax = torch.max(coord) + 2.0 * rcut
+    else:
+        xmax = torch.zeros(1, dtype=coord.dtype, device=coord.device) + 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
-    coord1 = torch.where(is_vir[:, :, None], xmax, coord.view(-1, nall, 3)).view(
-        -1, nall * 3
-    )
+    coord1 = torch.where(
+        is_vir[:, :, None], xmax, coord.view(batch_size, nall, 3)
+    ).view(batch_size, nall * 3)
     if isinstance(sel, int):
         sel = [sel]
     nsel = sum(sel)
