@@ -473,6 +473,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
+  int *tag_array = atom->tag;
   int nlocal = atom->nlocal;
   int nghost = 0;
   if (do_ghost) {
@@ -494,6 +495,21 @@ void PairDeepMD::compute(int eflag, int vflag) {
       }
     }
   }
+  // make mapping array
+  int *mapping = new int[nall];
+  for (int i = 0; i < nall; ++i) {
+    mapping[i] = atom->map(tag_array[i]);
+  }
+  // write mapping
+  std::cout << "mapping.size(): " << nall << std::endl;
+  std::ofstream outfile_mapping("mapping_data.csv");
+  if (!outfile_mapping.is_open()) {
+    std::cerr << "Error opening file for writing" << std::endl;
+  }
+  for (size_t i = 0; i < nall; i += 1) {
+    outfile_mapping << mapping[i] << "\n";
+  }
+  outfile_mapping.close();
 
   vector<int> dtype(nall);
   for (int ii = 0; ii < nall; ++ii) {
@@ -1293,6 +1309,8 @@ void PairDeepMD::coeff(int narg, char **arg) {
 void PairDeepMD::init_style() {
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
+  atom->map_user = 2;
+  atom->map_init(1);
 #else
   int irequest = neighbor->request(this, instance_me);
   neighbor->requests[irequest]->half = 0;

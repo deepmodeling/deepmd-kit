@@ -112,7 +112,6 @@ class DPZBLModel(DPZBLModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
-            inference=True,
         )
 
         model_predict = {}

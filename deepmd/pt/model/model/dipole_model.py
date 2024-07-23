@@ -111,7 +111,6 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
-            inference=True,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

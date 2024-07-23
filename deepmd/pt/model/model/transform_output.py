@@ -73,7 +73,7 @@ def task_deriv_one(
     extended_coord: torch.Tensor,
     do_virial: bool = True,
     do_atomic_virial: bool = False,
-    inference: bool = False,
+    create_graph: bool = True,
 ):
     faked_grad = torch.ones_like(energy)
     lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
@@ -81,7 +81,7 @@ def task_deriv_one(
         [energy],
         [extended_coord],
         grad_outputs=lst,
-        create_graph=not inference,
+        create_graph=create_graph,
         retain_graph=True,
     )[0]
     assert extended_force is not None
@@ -123,7 +123,7 @@ def take_deriv(
     coord_ext: torch.Tensor,
     do_virial: bool = False,
     do_atomic_virial: bool = False,
-    inference: bool = False,
+    create_graph: bool = True,
 ):
     size = 1
     for ii in vdef.shape:
@@ -141,7 +141,7 @@ def take_deriv(
             coord_ext,
             do_virial=do_virial,
             do_atomic_virial=do_atomic_virial,
-            inference=inference,
+            create_graph=create_graph,
         )
         # nf x nloc x 1 x 3, nf x nloc x 1 x 9
         ffi = ffi.unsqueeze(-2)
@@ -165,7 +165,7 @@ def fit_output_to_model_output(
     fit_output_def: FittingOutputDef,
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
-    inference: bool = False,
+    create_graph: bool = True,
 ) -> Dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -189,7 +189,7 @@ def fit_output_to_model_output(
                     coord_ext,
                     do_virial=vdef.c_differentiable,
                     do_atomic_virial=do_atomic_virial,
-                    inference=inference,
+                    create_graph=create_graph,
                 )
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
