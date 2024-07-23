@@ -294,7 +294,7 @@ class ModelTestCase:
                         np.testing.assert_allclose(
                             subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
                         )
-        for kk in ret_lower[0].keys():
+        for kk in ret_lower[0]:
             subret = []
             for rr in ret_lower:
                 if rr is not None:
