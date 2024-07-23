@@ -2194,6 +2194,14 @@ class DescrptDPA1Compat(DescrptSeAtten):
         else:
             self.embd_input_dim = 1
 
+    def get_dim_out(self) -> int:
+        """Returns the output dimension of this descriptor."""
+        return (
+            super().get_dim_out() + self.tebd_dim
+            if self.concat_output_tebd
+            else super().get_dim_out()
+        )
+
     def build(
         self,
         coord_: tf.Tensor,
