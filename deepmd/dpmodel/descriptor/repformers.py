@@ -403,7 +403,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-        return True
+        return False
 
 
 # translated by GPT and modified

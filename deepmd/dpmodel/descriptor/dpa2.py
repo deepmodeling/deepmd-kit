@@ -555,12 +555,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
-        return any(
-            [
-                self.repinit.need_sorted_nlist_for_lower(),
-                self.repformers.need_sorted_nlist_for_lower(),
-            ]
-        )
+        return True
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
