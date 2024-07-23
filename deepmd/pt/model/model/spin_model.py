@@ -121,7 +121,12 @@ class SpinModel(torch.nn.Module):
         out_real, out_mag = torch.split(out_tensor, [nloc, nloc], dim=1)
         if add_mag:
             out_real = out_real + out_mag
-        out_mag = (out_mag.view([nframes, nloc, -1]) * atomic_mask).view(out_mag.shape)
+        shape2 = 1
+        for ss in out_real.shape[2:]:
+            shape2 *= ss
+        out_mag = (out_mag.view([nframes, nloc, shape2]) * atomic_mask).view(
+            out_mag.shape
+        )
         return out_real, out_mag, atomic_mask > 0.0
 
     def process_spin_output_lower(
@@ -162,8 +167,11 @@ class SpinModel(torch.nn.Module):
         )
         if add_mag:
             extended_out_real = extended_out_real + extended_out_mag
+        shape2 = 1
+        for ss in extended_out_tensor.shape[2:]:
+            shape2 *= ss
         extended_out_mag = (
-            extended_out_mag.view([nframes, nall, -1]) * atomic_mask
+            extended_out_mag.view([nframes, nall, shape2]) * atomic_mask
         ).view(extended_out_mag.shape)
         return extended_out_real, extended_out_mag, atomic_mask > 0.0
 

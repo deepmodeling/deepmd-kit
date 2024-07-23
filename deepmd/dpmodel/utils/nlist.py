@@ -95,12 +95,15 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    xmax = np.max(coord) + 2.0 * rcut
+    if coord.size > 0:
+        xmax = np.max(coord) + 2.0 * rcut
+    else:
+        xmax = 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
-    coord1 = np.where(is_vir[:, :, None], xmax, coord.reshape(-1, nall, 3)).reshape(
-        -1, nall * 3
-    )
+    coord1 = np.where(
+        is_vir[:, :, None], xmax, coord.reshape(batch_size, nall, 3)
+    ).reshape(batch_size, nall * 3)
     if isinstance(sel, int):
         sel = [sel]
     nsel = sum(sel)

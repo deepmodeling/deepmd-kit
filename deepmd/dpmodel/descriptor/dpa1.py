@@ -487,7 +487,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         )
         # nf x nloc x (ng x ng1 + tebd_dim)
         if self.concat_output_tebd:
-            grrg = np.concatenate([grrg, atype_embd.reshape(nf, nloc, -1)], axis=-1)
+            grrg = np.concatenate(
+                [grrg, atype_embd.reshape(nf, nloc, self.tebd_dim)], axis=-1
+            )
         return grrg, rot_mat, None, None, sw
 
     def serialize(self) -> dict:
@@ -834,7 +836,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         embedding_idx,
     ):
         nfnl, nnei = ss.shape[0:2]
-        ss = ss.reshape(nfnl, nnei, -1)
+        shape2 = np.prod(ss.shape[2:])
+        ss = ss.reshape(nfnl, nnei, shape2)
         # nfnl x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
@@ -846,7 +849,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
     ):
         assert self.embeddings_strip is not None
         nfnl, nnei = ss.shape[0:2]
-        ss = ss.reshape(nfnl, nnei, -1)
+        shape2 = np.prod(ss.shape[2:])
+        ss = ss.reshape(nfnl, nnei, shape2)
         # nfnl x nnei x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
         return gg
@@ -875,7 +879,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # nfnl x nnei x 1
         sw = sw.reshape(nf * nloc, nnei, 1)
         # nfnl x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :].reshape(nf * nloc, -1)
+        atype_embd = atype_embd_ext[:, :nloc, :].reshape(nf * nloc, self.tebd_dim)
         # nfnl x nnei x tebd_dim
         atype_embd_nnei = np.tile(atype_embd[:, np.newaxis, :], (1, nnei, 1))
         # nfnl x nnei
@@ -941,10 +945,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             GLOBAL_NP_FLOAT_PRECISION
         )
         return (
-            grrg.reshape(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
-            gg.reshape(-1, nloc, self.nnei, self.filter_neuron[-1]),
-            dmatrix.reshape(-1, nloc, self.nnei, 4)[..., 1:],
-            gr[..., 1:].reshape(-1, nloc, self.filter_neuron[-1], 3),
+            grrg.reshape(nf, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            gg.reshape(nf, nloc, self.nnei, self.filter_neuron[-1]),
+            dmatrix.reshape(nf, nloc, self.nnei, 4)[..., 1:],
+            gr[..., 1:].reshape(nf, nloc, self.filter_neuron[-1], 3),
             sw,
         )
 
