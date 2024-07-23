@@ -98,7 +98,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
-        return any(model.need_sorted_nlist_for_lower() for model in self.models)
+        return True
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""

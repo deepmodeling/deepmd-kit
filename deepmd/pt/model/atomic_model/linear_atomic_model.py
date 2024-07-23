@@ -110,7 +110,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
-        return any(model.need_sorted_nlist_for_lower() for model in self.models)
+        return True
 
     def get_out_bias(self) -> torch.Tensor:
         return self.out_bias
