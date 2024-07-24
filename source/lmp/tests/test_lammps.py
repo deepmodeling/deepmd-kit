@@ -77,7 +77,7 @@ expected_f2 = np.array(
     ]
 )
 
-expected_v = -np.array( # This minus sign comes from the definition of the compute centroid/stress/atom command in LAMMPS. See https://docs.lammps.org/compute_stress_atom.html
+expected_v = -np.array(  # This minus sign comes from the definition of the compute centroid/stress/atom command in LAMMPS. See https://docs.lammps.org/compute_stress_atom.html
     [
         -2.912234126853306959e-01,
         -3.800610846612756388e-02,
@@ -349,7 +349,9 @@ def test_pair_deepmd_virial(lammps):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         assert np.array(
             lammps.variables[f"pressure{jj}"].value
-        ) / constants.nktv2p == pytest.approx(- expected_v[idx_map, jj].sum(axis=0) / vol)
+        ) / constants.nktv2p == pytest.approx(
+            -expected_v[idx_map, jj].sum(axis=0) / vol
+        )
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
