@@ -308,7 +308,7 @@ class PolarFitting(GeneralFitting):
             bias = self.constant_matrix[atype]
             # (nframes, nloc, 1)
             bias = np.expand_dims(bias, axis=-1) * self.scale[atype]
-            eye = np.eye(3)
+            eye = np.eye(3)  # pylint: disable=no-explicit-dtype
             eye = np.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
             bias = np.expand_dims(bias, axis=-1) * eye

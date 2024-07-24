@@ -318,6 +318,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             [self.repinit.has_message_passing(), self.repformers.has_message_passing()]
         )
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return True
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         # the env_protection of repinit is the same as that of the repformer

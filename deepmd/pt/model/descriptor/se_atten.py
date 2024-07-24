@@ -407,8 +407,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -589,6 +589,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+        return False
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return False
 
 

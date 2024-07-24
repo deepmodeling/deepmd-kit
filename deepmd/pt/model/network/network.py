@@ -493,7 +493,7 @@ class MaskLMHead(nn.Module):
             ).weight
         self.weight = weight
         self.bias = nn.Parameter(
-            torch.zeros(output_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            torch.zeros(output_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)  # pylint: disable=no-explicit-dtype,no-explicit-device
         )
 
     def forward(self, features, masked_tokens: Optional[torch.Tensor] = None, **kwargs):
@@ -861,7 +861,7 @@ class GaussianKernel(nn.Module):
         std_width = std_width
         start = start
         stop = stop
-        mean = torch.linspace(start, stop, K, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+        mean = torch.linspace(start, stop, K, dtype=env.GLOBAL_PT_FLOAT_PRECISION)  # pylint: disable=no-explicit-device
         self.std = (std_width * (mean[1] - mean[0])).item()
         self.register_buffer("mean", mean)
         self.mul = Embedding(
@@ -2109,7 +2109,8 @@ class Evoformer3bEncoder(nn.Module):
         self.nnei = nnei
         if droppath_prob > 0:
             droppath_probs = [
-                x.item() for x in torch.linspace(0, droppath_prob, layer_num)
+                x.item()
+                for x in torch.linspace(0, droppath_prob, layer_num)  # pylint: disable=no-explicit-dtype,no-explicit-device
             ]
         else:
             droppath_probs = None

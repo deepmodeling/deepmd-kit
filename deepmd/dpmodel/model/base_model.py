@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import inspect
+import json
 from abc import (
     ABC,
     abstractmethod,
@@ -192,6 +193,30 @@ def make_base_model() -> Type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
+
+        @classmethod
+        def get_model(cls, model_params: dict) -> "BaseBaseModel":
+            """Get the model by the parameters.
+
+            By default, all the parameters are directly passed to the constructor.
+            If not, override this method.
+
+            Parameters
+            ----------
+            model_params : dict
+                The model parameters
+
+            Returns
+            -------
+            BaseBaseModel
+                The model
+            """
+            model_params_old = model_params.copy()
+            model_params = model_params.copy()
+            model_params.pop("type", None)
+            model = cls(**model_params)
+            model.model_def_script = json.dumps(model_params_old)
+            return model
 
     return BaseBaseModel
 

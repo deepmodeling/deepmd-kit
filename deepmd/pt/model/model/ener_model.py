@@ -115,6 +115,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
+            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

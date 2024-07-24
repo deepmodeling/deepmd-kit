@@ -160,6 +160,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns whether the descriptor has message passing."""
         return self.sea.has_message_passing()
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.sea.need_sorted_nlist_for_lower()
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.sea.get_env_protection()
@@ -578,8 +582,8 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -636,7 +640,7 @@ class DescrptBlockSeA(DescriptorBlock):
             dmatrix = dmatrix.view(
                 -1, self.ndescrpt
             )  # shape is [nframes*nall, self.ndescrpt]
-            xyz_scatter = torch.empty(
+            xyz_scatter = torch.empty(  # pylint: disable=no-explicit-dtype
                 1,
                 device=env.DEVICE,
             )
@@ -711,4 +715,8 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+        return False
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return False

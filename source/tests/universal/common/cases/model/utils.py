@@ -178,6 +178,11 @@ class ModelTestCase:
                 input_dict_lower["extended_spin"] = spin_ext
 
             ret_lower.append(module.forward_lower(**input_dict_lower))
+
+            # use shuffled nlist, simulating the lammps interface
+            rng.shuffle(input_dict_lower["nlist"], axis=-1)
+            ret_lower.append(module.forward_lower(**input_dict_lower))
+
         for kk in ret[0]:
             subret = []
             for rr in ret:

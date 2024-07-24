@@ -183,6 +183,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         """Returns whether the descriptor has message passing."""
         return False
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return False
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.env_protection
@@ -208,8 +212,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                     base_env.stats[kk] += self.get_stats()[kk]
                 mean, stddev = base_env()
                 if not base_class.set_davg_zero:
-                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
@@ -268,8 +272,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
