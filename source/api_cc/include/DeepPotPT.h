@@ -60,6 +60,7 @@ class DeepPotPT : public DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(ENERGYVTYPE& ener,
@@ -70,8 +71,9 @@ class DeepPotPT : public DeepPotBase {
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& fparam,
+               const std::vector<VALUETYPE>& aparam,
+               const bool atomic);
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -96,6 +98,7 @@ class DeepPotPT : public DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(ENERGYVTYPE& ener,
@@ -109,8 +112,9 @@ class DeepPotPT : public DeepPotBase {
                const int nghost,
                const InputNlist& lmp_list,
                const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& fparam,
+               const std::vector<VALUETYPE>& aparam,
+               const bool atomic);
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -132,18 +136,19 @@ class DeepPotPT : public DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_mixed_type(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      const int& nframes,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_mixed_type(ENERGYVTYPE& ener,
+                          std::vector<VALUETYPE>& force,
+                          std::vector<VALUETYPE>& virial,
+                          const int& nframes,
+                          const std::vector<VALUETYPE>& coord,
+                          const std::vector<int>& atype,
+                          const std::vector<VALUETYPE>& box,
+                          const std::vector<VALUETYPE>& fparam,
+                          const std::vector<VALUETYPE>& aparam,
+                          const bool atomic);
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -167,20 +172,21 @@ class DeepPotPT : public DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_mixed_type(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      std::vector<VALUETYPE>& atom_energy,
-      std::vector<VALUETYPE>& atom_virial,
-      const int& nframes,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_mixed_type(ENERGYVTYPE& ener,
+                          std::vector<VALUETYPE>& force,
+                          std::vector<VALUETYPE>& virial,
+                          std::vector<VALUETYPE>& atom_energy,
+                          std::vector<VALUETYPE>& atom_virial,
+                          const int& nframes,
+                          const std::vector<VALUETYPE>& coord,
+                          const std::vector<int>& atype,
+                          const std::vector<VALUETYPE>& box,
+                          const std::vector<VALUETYPE>& fparam,
+                          const std::vector<VALUETYPE>& aparam,
+                          const bool atomic);
 
  public:
   /**
@@ -248,8 +254,9 @@ class DeepPotPT : public DeepPotBase {
                 const std::vector<double>& coord,
                 const std::vector<int>& atype,
                 const std::vector<double>& box,
-                const std::vector<double>& fparam = std::vector<double>(),
-                const std::vector<double>& aparam = std::vector<double>());
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
@@ -258,8 +265,9 @@ class DeepPotPT : public DeepPotBase {
                 const std::vector<float>& coord,
                 const std::vector<int>& atype,
                 const std::vector<float>& box,
-                const std::vector<float>& fparam = std::vector<float>(),
-                const std::vector<float>& aparam = std::vector<float>());
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
@@ -271,8 +279,9 @@ class DeepPotPT : public DeepPotBase {
                 const int nghost,
                 const InputNlist& inlist,
                 const int& ago,
-                const std::vector<double>& fparam = std::vector<double>(),
-                const std::vector<double>& aparam = std::vector<double>());
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& virial,
@@ -284,32 +293,33 @@ class DeepPotPT : public DeepPotBase {
                 const int nghost,
                 const InputNlist& inlist,
                 const int& ago,
-                const std::vector<float>& fparam = std::vector<float>(),
-                const std::vector<float>& aparam = std::vector<float>());
-  void computew_mixed_type(
-      std::vector<double>& ener,
-      std::vector<double>& force,
-      std::vector<double>& virial,
-      std::vector<double>& atom_energy,
-      std::vector<double>& atom_virial,
-      const int& nframes,
-      const std::vector<double>& coord,
-      const std::vector<int>& atype,
-      const std::vector<double>& box,
-      const std::vector<double>& fparam = std::vector<double>(),
-      const std::vector<double>& aparam = std::vector<double>());
-  void computew_mixed_type(
-      std::vector<double>& ener,
-      std::vector<float>& force,
-      std::vector<float>& virial,
-      std::vector<float>& atom_energy,
-      std::vector<float>& atom_virial,
-      const int& nframes,
-      const std::vector<float>& coord,
-      const std::vector<int>& atype,
-      const std::vector<float>& box,
-      const std::vector<float>& fparam = std::vector<float>(),
-      const std::vector<float>& aparam = std::vector<float>());
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const bool atomic);
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<double>& force,
+                           std::vector<double>& virial,
+                           std::vector<double>& atom_energy,
+                           std::vector<double>& atom_virial,
+                           const int& nframes,
+                           const std::vector<double>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<double>& box,
+                           const std::vector<double>& fparam,
+                           const std::vector<double>& aparam,
+                           const bool atomic);
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<float>& force,
+                           std::vector<float>& virial,
+                           std::vector<float>& atom_energy,
+                           std::vector<float>& atom_virial,
+                           const int& nframes,
+                           const std::vector<float>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<float>& box,
+                           const std::vector<float>& fparam,
+                           const std::vector<float>& aparam,
+                           const bool atomic);
 
  private:
   int num_intra_nthreads, num_inter_nthreads;

@@ -581,7 +581,8 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
                         const std::vector<int>& datype_,
                         const std::vector<VALUETYPE>& dbox,
                         const std::vector<VALUETYPE>& fparam_,
-                        const std::vector<VALUETYPE>& aparam_) {
+                        const std::vector<VALUETYPE>& aparam_,
+                        const bool atomic) {
   // if datype.size is 0, not clear nframes; but 1 is just ok
   int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
@@ -598,14 +599,24 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
     int ret = session_input_tensors<double>(input_tensors, dcoord_, ntypes,
                                             datype_, dbox, cell_size, fparam,
                                             aparam, atommap, "", aparam_nall);
-    run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
-                      session, input_tensors, atommap, nframes);
+    if (atomic) {
+      run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                        session, input_tensors, atommap, nframes);
+    } else {
+      run_model<double>(dener, dforce_, dvirial, session, input_tensors,
+                        atommap, nframes);
+    }
   } else {
     int ret = session_input_tensors<float>(input_tensors, dcoord_, ntypes,
                                            datype_, dbox, cell_size, fparam,
                                            aparam, atommap, "", aparam_nall);
-    run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
-                     session, input_tensors, atommap, nframes);
+    if (atomic) {
+      run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                       session, input_tensors, atommap, nframes);
+    } else {
+      run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
+                       nframes);
+    }
   }
 }
 
@@ -619,7 +630,8 @@ template void DeepPotTF::compute<double, ENERGYTYPE>(
     const std::vector<int>& datype_,
     const std::vector<double>& dbox,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const bool atomic);
 
 template void DeepPotTF::compute<float, ENERGYTYPE>(
     ENERGYTYPE& dener,
@@ -631,7 +643,8 @@ template void DeepPotTF::compute<float, ENERGYTYPE>(
     const std::vector<int>& datype_,
     const std::vector<float>& dbox,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const bool atomic);
 
 template void DeepPotTF::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -643,7 +656,8 @@ template void DeepPotTF::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<int>& datype_,
     const std::vector<double>& dbox,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const bool atomic);
 
 template void DeepPotTF::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -655,7 +669,8 @@ template void DeepPotTF::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<int>& datype_,
     const std::vector<float>& dbox,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const bool atomic);
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotTF::compute(ENERGYVTYPE& dener,
@@ -670,7 +685,8 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
                         const InputNlist& lmp_list,
                         const int& ago,
                         const std::vector<VALUETYPE>& fparam_,
-                        const std::vector<VALUETYPE>& aparam__) {
+                        const std::vector<VALUETYPE>& aparam__,
+                        const bool atomic) {
   int nall = datype_.size();
   // if nall==0, unclear nframes, but 1 is ok
   int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
@@ -706,15 +722,25 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
         input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
         atommap, nghost_real, ago, "", aparam_nall);
     assert(nloc_real == ret);
-    run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
-                      session, input_tensors, atommap, nframes, nghost_real);
+    if (atomic) {
+      run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
+                        session, input_tensors, atommap, nframes, nghost_real);
+    } else {
+      run_model<double>(dener, dforce, dvirial, session, input_tensors, atommap,
+                        nframes, nghost_real);
+    }
   } else {
     int ret = session_input_tensors<float>(
         input_tensors, dcoord, ntypes, datype, dbox, nlist, fparam, aparam,
         atommap, nghost_real, ago, "", aparam_nall);
     assert(nloc_real == ret);
-    run_model<float>(dener, dforce, dvirial, datom_energy, datom_virial,
-                     session, input_tensors, atommap, nframes, nghost_real);
+    if (atomic) {
+      run_model<float>(dener, dforce, dvirial, datom_energy, datom_virial,
+                       session, input_tensors, atommap, nframes, nghost_real);
+    } else {
+      run_model<float>(dener, dforce, dvirial, session, input_tensors, atommap,
+                       nframes, nghost_real);
+    }
   }
 
   // bkw map
@@ -742,7 +768,8 @@ template void DeepPotTF::compute<double, ENERGYTYPE>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam_);
+    const std::vector<double>& aparam_,
+    const bool atomic);
 
 template void DeepPotTF::compute<float, ENERGYTYPE>(
     ENERGYTYPE& dener,
@@ -757,7 +784,8 @@ template void DeepPotTF::compute<float, ENERGYTYPE>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam_);
+    const std::vector<float>& aparam_,
+    const bool atomic);
 
 template void DeepPotTF::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -772,7 +800,8 @@ template void DeepPotTF::compute<double, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam_);
+    const std::vector<double>& aparam_,
+    const bool atomic);
 
 template void DeepPotTF::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -787,90 +816,10 @@ template void DeepPotTF::compute<float, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam_);
+    const std::vector<float>& aparam_,
+    const bool atomic);
 
 // mixed type
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPotTF::compute_mixed_type(ENERGYVTYPE& dener,
-                                   std::vector<VALUETYPE>& dforce_,
-                                   std::vector<VALUETYPE>& dvirial,
-                                   const int& nframes,
-                                   const std::vector<VALUETYPE>& dcoord_,
-                                   const std::vector<int>& datype_,
-                                   const std::vector<VALUETYPE>& dbox,
-                                   const std::vector<VALUETYPE>& fparam_,
-                                   const std::vector<VALUETYPE>& aparam_) {
-  int nloc = datype_.size() / nframes;
-  // here atommap only used to get nloc
-  atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
-  std::vector<VALUETYPE> fparam;
-  std::vector<VALUETYPE> aparam;
-  validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
-  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-  tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
-
-  std::vector<std::pair<std::string, Tensor>> input_tensors;
-
-  if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors_mixed_type<double>(
-        input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-        fparam, aparam, atommap, "", aparam_nall);
-    assert(ret == nloc);
-    run_model<double>(dener, dforce_, dvirial, session, input_tensors, atommap,
-                      nframes);
-  } else {
-    int ret = session_input_tensors_mixed_type<float>(
-        input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-        fparam, aparam, atommap, "", aparam_nall);
-    assert(ret == nloc);
-    run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
-                     nframes);
-  }
-}
-
-template void DeepPotTF::compute_mixed_type<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    const int& nframes,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
-
-template void DeepPotTF::compute_mixed_type<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    const int& nframes,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
-
-template void DeepPotTF::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    const int& nframes,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
-
-template void DeepPotTF::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    const int& nframes,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotTF::compute_mixed_type(ENERGYVTYPE& dener,
@@ -883,7 +832,8 @@ void DeepPotTF::compute_mixed_type(ENERGYVTYPE& dener,
                                    const std::vector<int>& datype_,
                                    const std::vector<VALUETYPE>& dbox,
                                    const std::vector<VALUETYPE>& fparam_,
-                                   const std::vector<VALUETYPE>& aparam_) {
+                                   const std::vector<VALUETYPE>& aparam_,
+                                   const bool atomic) {
   int nloc = datype_.size() / nframes;
   // here atommap only used to get nloc
   atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
@@ -899,14 +849,24 @@ void DeepPotTF::compute_mixed_type(ENERGYVTYPE& dener,
     int nloc = session_input_tensors_mixed_type<double>(
         input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
         fparam, aparam, atommap, "", aparam_nall);
-    run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
-                      session, input_tensors, atommap, nframes);
+    if (atomic) {
+      run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                        session, input_tensors, atommap, nframes);
+    } else {
+      run_model<double>(dener, dforce_, dvirial, session, input_tensors,
+                        atommap, nframes);
+    }
   } else {
     int nloc = session_input_tensors_mixed_type<float>(
         input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
         fparam, aparam, atommap, "", aparam_nall);
-    run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
-                     session, input_tensors, atommap, nframes);
+    if (atomic) {
+      run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_,
+                       session, input_tensors, atommap, nframes);
+    } else {
+      run_model<float>(dener, dforce_, dvirial, session, input_tensors, atommap,
+                       nframes);
+    }
   }
 }
 
@@ -921,7 +881,8 @@ template void DeepPotTF::compute_mixed_type<double, ENERGYTYPE>(
     const std::vector<int>& datype_,
     const std::vector<double>& dbox,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const bool atomic);
 
 template void DeepPotTF::compute_mixed_type<float, ENERGYTYPE>(
     ENERGYTYPE& dener,
@@ -934,7 +895,8 @@ template void DeepPotTF::compute_mixed_type<float, ENERGYTYPE>(
     const std::vector<int>& datype_,
     const std::vector<float>& dbox,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const bool atomic);
 
 template void DeepPotTF::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -947,7 +909,8 @@ template void DeepPotTF::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
     const std::vector<int>& datype_,
     const std::vector<double>& dbox,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const bool atomic);
 
 template void DeepPotTF::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -960,7 +923,8 @@ template void DeepPotTF::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
     const std::vector<int>& datype_,
     const std::vector<float>& dbox,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const bool atomic);
 
 void DeepPotTF::get_type_map(std::string& type_map) {
   type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
@@ -976,9 +940,10 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const std::vector<int>& atype,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
-                         const std::vector<double>& aparam) {
+                         const std::vector<double>& aparam,
+                         const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam);
+          fparam, aparam, atomic);
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -989,9 +954,10 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const std::vector<int>& atype,
                          const std::vector<float>& box,
                          const std::vector<float>& fparam,
-                         const std::vector<float>& aparam) {
+                         const std::vector<float>& aparam,
+                         const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          fparam, aparam);
+          fparam, aparam, atomic);
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<double>& force,
@@ -1005,9 +971,10 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const InputNlist& inlist,
                          const int& ago,
                          const std::vector<double>& fparam,
-                         const std::vector<double>& aparam) {
+                         const std::vector<double>& aparam,
+                         const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam);
+          nghost, inlist, ago, fparam, aparam, atomic);
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -1021,9 +988,10 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const InputNlist& inlist,
                          const int& ago,
                          const std::vector<float>& fparam,
-                         const std::vector<float>& aparam) {
+                         const std::vector<float>& aparam,
+                         const bool atomic) {
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-          nghost, inlist, ago, fparam, aparam);
+          nghost, inlist, ago, fparam, aparam, atomic);
 }
 void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<double>& force,
@@ -1035,9 +1003,10 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<int>& atype,
                                     const std::vector<double>& box,
                                     const std::vector<double>& fparam,
-                                    const std::vector<double>& aparam) {
+                                    const std::vector<double>& aparam,
+                                    const bool atomic) {
   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-                     coord, atype, box, fparam, aparam);
+                     coord, atype, box, fparam, aparam, atomic);
 }
 void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<float>& force,
@@ -1049,8 +1018,9 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<int>& atype,
                                     const std::vector<float>& box,
                                     const std::vector<float>& fparam,
-                                    const std::vector<float>& aparam) {
+                                    const std::vector<float>& aparam,
+                                    const bool atomic) {
   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-                     coord, atype, box, fparam, aparam);
+                     coord, atype, box, fparam, aparam, atomic);
 }
 #endif
