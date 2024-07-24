@@ -341,7 +341,9 @@ def test_pair_deepmd_virial(lammps):
             expected_f[lammps.atoms[ii].id - 1]
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
-    assert np.array(lammps.variables["eatom"].value) == pytest.approx(expected_ae[idx_map])
+    assert np.array(lammps.variables["eatom"].value) == pytest.approx(
+        expected_ae[idx_map]
+    )
     for ii in range(9):
         assert np.array(
             lammps.variables[f"pressure{ii}"].value
