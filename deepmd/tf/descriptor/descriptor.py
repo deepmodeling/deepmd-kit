@@ -443,7 +443,8 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         # assume the number of neighbors for each type is the same
         assert ndescrpt_per_neighbor * np.sum(sel) == ndescrpt
         atype_descrpt = np.repeat(
-            np.arange(ntypes), np.array(sel) * ndescrpt_per_neighbor
+            np.arange(ntypes),  # pylint: disable=no-explicit-dtype
+            np.array(sel) * ndescrpt_per_neighbor,
         )
         atype_descrpt = tf.convert_to_tensor(atype_descrpt, dtype=tf.int32)
         # (1, ndescrpt)

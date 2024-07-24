@@ -95,12 +95,15 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    xmax = np.max(coord) + 2.0 * rcut
+    if coord.size > 0:
+        xmax = np.max(coord) + 2.0 * rcut
+    else:
+        xmax = 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
-    coord1 = np.where(is_vir[:, :, None], xmax, coord.reshape(-1, nall, 3)).reshape(
-        -1, nall * 3
-    )
+    coord1 = np.where(
+        is_vir[:, :, None], xmax, coord.reshape(batch_size, nall, 3)
+    ).reshape(batch_size, nall * 3)
     if isinstance(sel, int):
         sel = [sel]
     nsel = sum(sel)
@@ -123,7 +126,8 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = np.concatenate(
-            [rr, np.ones([batch_size, nloc, nsel - nnei]) + rcut], axis=-1
+            [rr, np.ones([batch_size, nloc, nsel - nnei]) + rcut],  # pylint: disable=no-explicit-dtype
+            axis=-1,
         )
         nlist = np.concatenate(
             [nlist, np.ones([batch_size, nloc, nsel - nnei], dtype=nlist.dtype)],
@@ -262,7 +266,7 @@ def extend_coord_with_ghosts(
 
     """
     nf, nloc = atype.shape
-    aidx = np.tile(np.arange(nloc)[np.newaxis, :], (nf, 1))
+    aidx = np.tile(np.arange(nloc)[np.newaxis, :], (nf, 1))  # pylint: disable=no-explicit-dtype
     if cell is None:
         nall = nloc
         extend_coord = coord.copy()
@@ -274,9 +278,9 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = np.ceil(rcut / to_face).astype(int)
         nbuff = np.max(nbuff, axis=0)
-        xi = np.arange(-nbuff[0], nbuff[0] + 1, 1)
-        yi = np.arange(-nbuff[1], nbuff[1] + 1, 1)
-        zi = np.arange(-nbuff[2], nbuff[2] + 1, 1)
+        xi = np.arange(-nbuff[0], nbuff[0] + 1, 1)  # pylint: disable=no-explicit-dtype
+        yi = np.arange(-nbuff[1], nbuff[1] + 1, 1)  # pylint: disable=no-explicit-dtype
+        zi = np.arange(-nbuff[2], nbuff[2] + 1, 1)  # pylint: disable=no-explicit-dtype
         xyz = np.outer(xi, np.array([1, 0, 0]))[:, np.newaxis, np.newaxis, :]
         xyz = xyz + np.outer(yi, np.array([0, 1, 0]))[np.newaxis, :, np.newaxis, :]
         xyz = xyz + np.outer(zi, np.array([0, 0, 1]))[np.newaxis, np.newaxis, :, :]

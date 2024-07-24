@@ -212,8 +212,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                     base_env.stats[kk] += self.get_stats()[kk]
                 mean, stddev = base_env()
                 if not base_class.set_davg_zero:
-                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
@@ -272,8 +272,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -347,6 +347,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         """
         del mapping
+        nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -371,7 +372,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         )
 
         # nfnl x nnei
-        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
+        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, self.nnei)
         for ii, ll in enumerate(self.filter_layers.networks):
             # nfnl x nt
             mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
@@ -385,7 +386,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         res_rescale = 1.0 / 5.0
         result = xyz_scatter * res_rescale
-        result = result.view(-1, nloc, self.filter_neuron[-1])
+        result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,

@@ -99,12 +99,15 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    xmax = torch.max(coord) + 2.0 * rcut
+    if coord.numel() > 0:
+        xmax = torch.max(coord) + 2.0 * rcut
+    else:
+        xmax = torch.zeros(1, dtype=coord.dtype, device=coord.device) + 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
-    coord1 = torch.where(is_vir[:, :, None], xmax, coord.view(-1, nall, 3)).view(
-        -1, nall * 3
-    )
+    coord1 = torch.where(
+        is_vir[:, :, None], xmax, coord.view(batch_size, nall, 3)
+    ).view(batch_size, nall * 3)
     if isinstance(sel, int):
         sel = [sel]
     nsel = sum(sel)
@@ -130,7 +133,7 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = torch.cat(
-            [rr, torch.ones([batch_size, nloc, nsel - nnei], device=rr.device) + rcut],
+            [rr, torch.ones([batch_size, nloc, nsel - nnei], device=rr.device) + rcut],  # pylint: disable=no-explicit-dtype
             dim=-1,
         )
         nlist = torch.cat(
@@ -309,7 +312,7 @@ def extend_coord_with_ghosts(
     """
     device = coord.device
     nf, nloc = atype.shape
-    aidx = torch.tile(torch.arange(nloc, device=device).unsqueeze(0), [nf, 1])
+    aidx = torch.tile(torch.arange(nloc, device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()
@@ -328,9 +331,9 @@ def extend_coord_with_ghosts(
         # 3
         nbuff = torch.amax(nbuff, dim=0)  # faster than torch.max
         nbuff_cpu = nbuff.cpu()
-        xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu")
-        yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu")
-        zi = torch.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu")
+        xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
+        yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
+        zi = torch.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
         eye_3 = torch.eye(3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device="cpu")
         xyz = xi.view(-1, 1, 1, 1) * eye_3[0]
         xyz = xyz + yi.view(1, -1, 1, 1) * eye_3[1]

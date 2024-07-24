@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.5.2
+    rev: v0.5.4
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -144,5 +144,12 @@ repos:
         entry: DeepMD|DeepMd|Pytorch|Tensorflow|Numpy|Github|Lammps|I-Pi|I-PI|i-Pi
         # unclear why PairDeepMD is used instead of PairDeePMD
         exclude: .pre-commit-config.yaml|source/lmp
+  # customized pylint rules
+  - repo: https://github.com/pylint-dev/pylint/
+    rev: v3.2.6
+    hooks:
+      - id: pylint
+        entry: env PYTHONPATH=source/checker pylint
+        files: ^deepmd/
 ci:
   autoupdate_branch: devel

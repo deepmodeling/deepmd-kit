@@ -107,7 +107,7 @@ class DescrptGaussianLcc(torch.nn.Module, BaseDescriptor):
             sel = [sel]
 
         self.ntypes = ntypes
-        self.sec = torch.tensor(sel)
+        self.sec = torch.tensor(sel)  # pylint: disable=no-explicit-dtype,no-explicit-device
         self.nnei = sum(sel)
 
         if self.do_tag_embedding:
@@ -199,7 +199,7 @@ class DescrptGaussianLcc(torch.nn.Module, BaseDescriptor):
         nall = extended_coord.shape[1]
         nlist2 = torch.cat(
             [
-                torch.arange(0, nloc, device=nlist.device)
+                torch.arange(0, nloc, device=nlist.device)  # pylint: disable=no-explicit-dtype
                 .reshape(1, nloc, 1)
                 .expand(nframes, -1, -1),
                 nlist,
@@ -208,7 +208,7 @@ class DescrptGaussianLcc(torch.nn.Module, BaseDescriptor):
         )
         nlist_loc2 = torch.cat(
             [
-                torch.arange(0, nloc, device=nlist_loc.device)
+                torch.arange(0, nloc, device=nlist_loc.device)  # pylint: disable=no-explicit-dtype
                 .reshape(1, nloc, 1)
                 .expand(nframes, -1, -1),
                 nlist_loc,

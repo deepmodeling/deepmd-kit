@@ -609,8 +609,8 @@ class DescrptBlockSeT(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -669,6 +669,7 @@ class DescrptBlockSeT(DescriptorBlock):
 
         """
         del extended_atype_embd, mapping
+        nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -691,7 +692,7 @@ class DescrptBlockSeT(DescriptorBlock):
             device=extended_coord.device,
         )
         # nfnl x nnei
-        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
+        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             ti = embedding_idx % self.ntypes
             nei_type_j = self.sel[ti]
@@ -718,7 +719,7 @@ class DescrptBlockSeT(DescriptorBlock):
                 res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                 result += res_ij
         # xyz_scatter /= (self.nnei * self.nnei)
-        result = result.view(-1, nloc, self.filter_neuron[-1])
+        result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,

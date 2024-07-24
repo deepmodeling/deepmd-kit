@@ -252,7 +252,7 @@ class DipoleChargeModifier(DeepDipole):
         sel_idx_map = select_idx_map(atype, self.sel_type)
         nsel = len(sel_idx_map)
         # setup charge
-        charge = np.zeros([natoms])
+        charge = np.zeros([natoms])  # pylint: disable=no-explicit-dtype
         for ii in range(natoms):
             charge[ii] = self.sys_charge_map[atype[ii]]
         charge = np.tile(charge, [nframes, 1])
@@ -386,7 +386,7 @@ class DipoleChargeModifier(DeepDipole):
 
         wfcc_coord = ref_coord + dipole
         # wfcc_coord = dipole
-        wfcc_charge = np.zeros([nsel])
+        wfcc_charge = np.zeros([nsel])  # pylint: disable=no-explicit-dtype
         for ii in range(nsel):
             orig_idx = self.sel_type.index(atype[sel_idx_map[ii]])
             wfcc_charge[ii] = self.model_charge_map[orig_idx]

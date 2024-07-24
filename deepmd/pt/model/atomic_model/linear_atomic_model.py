@@ -90,7 +90,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.rcuts = torch.tensor(
             self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
         )
-        self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)
+        self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)  # pylint: disable=no-explicit-dtype
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -289,7 +289,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
-        mapping = torch.tensor(
+        mapping = torch.tensor(  # pylint: disable=no-explicit-dtype
             [type_2_idx[new_map[idx]] for idx in range(len(new_map))], device=env.DEVICE
         )
         return mapping

@@ -226,6 +226,109 @@ class ModelTestCase:
                 continue
             np.testing.assert_allclose(rr1, rr2, atol=aprec)
 
+    def test_zero_forward(self):
+        test_spin = getattr(self, "test_spin", False)
+        nf = 1
+        natoms = 0
+        aprec = (
+            0
+            if self.aprec_dict.get("test_forward", None) is None
+            else self.aprec_dict["test_forward"]
+        )
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coord = np.zeros((nf, 0, 3), dtype=np.float64)
+        atype = np.zeros([nf, 0], dtype=int)
+        spin = np.zeros([nf, 0], dtype=np.float64)
+        cell = 6.0 * np.eye(3, dtype=np.float64).reshape([nf, 9])
+        coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
+            coord,
+            atype,
+            self.expected_rcut + 1.0 if test_spin else self.expected_rcut,
+            self.expected_sel,
+            mixed_types=self.module.mixed_types(),
+            box=cell,
+        )
+        spin_ext = np.take_along_axis(
+            spin.reshape(nf, -1, 3),
+            np.repeat(np.expand_dims(mapping, axis=-1), 3, axis=-1),
+            axis=1,
+        )
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+        ret = []
+        ret_lower = []
+        for module in self.modules_to_test:
+            module = self.forward_wrapper(module)
+            input_dict = {
+                "coord": coord,
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict["spin"] = spin
+            ret.append(module(**input_dict))
+
+            input_dict_lower = {
+                "extended_coord": coord_ext,
+                "extended_atype": atype_ext,
+                "nlist": nlist,
+                "mapping": mapping,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict_lower["extended_spin"] = spin_ext
+
+            ret_lower.append(module.forward_lower(**input_dict_lower))
+        for kk in ret[0]:
+            subret = []
+            for rr in ret:
+                if rr is not None:
+                    subret.append(rr[kk])
+            if len(subret):
+                for ii, rr in enumerate(subret[1:]):
+                    if subret[0] is None:
+                        assert rr is None
+                    else:
+                        np.testing.assert_allclose(
+                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                        )
+        for kk in ret_lower[0]:
+            subret = []
+            for rr in ret_lower:
+                if rr is not None:
+                    subret.append(rr[kk])
+            if len(subret):
+                for ii, rr in enumerate(subret[1:]):
+                    if subret[0] is None:
+                        assert rr is None
+                    else:
+                        np.testing.assert_allclose(
+                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                        )
+        same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
+        self.assertTrue(same_keys)
+        for key in same_keys:
+            for rr in ret:
+                if rr[key] is not None:
+                    rr1 = rr[key]
+                    break
+            else:
+                continue
+            for rr in ret_lower:
+                if rr[key] is not None:
+                    rr2 = rr[key]
+                    break
+            else:
+                continue
+            np.testing.assert_allclose(rr1, rr2, atol=aprec)
+
     @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
     def test_permutation(self):
         """Test permutation."""

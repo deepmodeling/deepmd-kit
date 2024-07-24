@@ -147,8 +147,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
                         base_env.stats[kk] += self.get_stats()[kk]
                     mean, stddev = base_env()
                     if not base_class.set_davg_zero:
-                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
                 # must share, even if not do stat
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev

@@ -71,7 +71,7 @@ def get_spin_model(model_params):
     if not model_params["spin"]["use_spin"] or isinstance(
         model_params["spin"]["use_spin"][0], int
     ):
-        use_spin = np.full(len(model_params["type_map"]), False)
+        use_spin = np.full(len(model_params["type_map"]), False)  # pylint: disable=no-explicit-dtype
         use_spin[model_params["spin"]["use_spin"]] = True
         model_params["spin"]["use_spin"] = use_spin.tolist()
     # include virtual spin and placeholder types
@@ -197,12 +197,16 @@ def get_standard_model(model_params):
 
 
 def get_model(model_params):
-    if "spin" in model_params:
-        return get_spin_model(model_params)
-    elif "use_srtab" in model_params:
-        return get_zbl_model(model_params)
+    model_type = model_params.get("type", "standard")
+    if model_type == "standard":
+        if "spin" in model_params:
+            return get_spin_model(model_params)
+        elif "use_srtab" in model_params:
+            return get_zbl_model(model_params)
+        else:
+            return get_standard_model(model_params)
     else:
-        return get_standard_model(model_params)
+        return BaseModel.get_class_by_type(model_type).get_model(model_params)
 
 
 __all__ = [
