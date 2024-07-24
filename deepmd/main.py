@@ -258,7 +258,9 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "--use-pretrain-script",
         action="store_true",
-        help="Use model parameters from the script of the pretrained model instead of user input when doing finetuning. Note: This behavior is default and unchangeable in TensorFlow.",
+        help="When performing fine-tuning or init-model, "
+        "utilize the model parameters provided by the script of the pretrained model rather than relying on user input. "
+        "It is important to note that in TensorFlow, this behavior is the default and cannot be modified for fine-tuning. ",
     )
     parser_train.add_argument(
         "-o",
@@ -368,7 +370,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--datafile",
         default=None,
         type=str,
-        help="The path to file of test list.",
+        help="The path to the datafile, each line of which is a path to one data system.",
     )
     parser_tst.add_argument(
         "-S",
@@ -508,6 +510,11 @@ def main_parser() -> argparse.ArgumentParser:
         choices=["rst", "json", "json_schema"],
         type=str,
         help="The output type",
+    )
+    parsers_doc.add_argument(
+        "--multi-task",
+        action="store_true",
+        help="Print the documentation of multi-task training input parameters.",
     )
 
     # * make model deviation ***********************************************************
@@ -657,6 +664,79 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="treat all types as a single type. Used with se_atten descriptor.",
+    )
+
+    # change_bias
+    parser_change_bias = subparsers.add_parser(
+        "change-bias",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch) Change model out bias according to the input data.",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp change-bias model.pt -s data -n 10 -m change
+        """
+        ),
+    )
+    parser_change_bias.add_argument(
+        "INPUT", help="The input checkpoint file or frozen model file"
+    )
+    parser_change_bias_source = parser_change_bias.add_mutually_exclusive_group()
+    parser_change_bias_source.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_change_bias_source.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_change_bias_source.add_argument(
+        "-b",
+        "--bias-value",
+        default=None,
+        type=float,
+        nargs="+",
+        help="The user defined value for each type in the type_map of the model, split with spaces.\n"
+        "For example, '-93.57 -187.1' for energy bias of two elements. "
+        "Only supports energy bias changing.",
+    )
+    parser_change_bias.add_argument(
+        "-n",
+        "--numb-batch",
+        default=0,
+        type=int,
+        help="The number of frames for bias changing in one data system. 0 means all data.",
+    )
+    parser_change_bias.add_argument(
+        "-m",
+        "--mode",
+        type=str,
+        default="change",
+        choices=["change", "set"],
+        help="The mode for changing energy bias: \n"
+        "change (default) : perform predictions using input model on target dataset, "
+        "and do least square on the errors to obtain the target shift as bias.\n"
+        "set : directly use the statistic bias in the target dataset.",
+    )
+    parser_change_bias.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        type=str,
+        help="The model after changing bias.",
+    )
+    parser_change_bias.add_argument(
+        "--model-branch",
+        type=str,
+        default=None,
+        help="Model branch chosen for changing bias if multi-task model.",
     )
 
     # --version
@@ -831,6 +911,7 @@ def main():
         "convert-from",
         "train-nvnmd",
         "show",
+        "change-bias",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

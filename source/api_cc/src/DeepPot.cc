@@ -80,7 +80,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
   std::vector<ENERGYTYPE> dener_;
   std::vector<VALUETYPE> datom_energy_, datom_virial_;
   dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, fparam_, aparam_);
+               datype_, dbox, fparam_, aparam_, false);
   dener = dener_[0];
 }
 
@@ -95,7 +95,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                       const std::vector<VALUETYPE>& aparam_) {
   std::vector<VALUETYPE> datom_energy_, datom_virial_;
   dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, fparam_, aparam_);
+               datype_, dbox, fparam_, aparam_, false);
 }
 
 template void DeepPot::compute<double>(ENERGYTYPE& dener,
@@ -149,7 +149,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
   std::vector<ENERGYTYPE> dener_;
   std::vector<VALUETYPE> datom_energy_, datom_virial_;
   dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__, false);
   dener = dener_[0];
 }
 
@@ -167,7 +167,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                       const std::vector<VALUETYPE>& aparam__) {
   std::vector<VALUETYPE> datom_energy_, datom_virial_;
   dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__, false);
 }
 
 template void DeepPot::compute<double>(ENERGYTYPE& dener,
@@ -231,7 +231,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
                       const std::vector<VALUETYPE>& aparam_) {
   std::vector<ENERGYTYPE> dener_;
   dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, fparam_, aparam_);
+               datype_, dbox, fparam_, aparam_, true);
   dener = dener_[0];
 }
 template <typename VALUETYPE>
@@ -246,7 +246,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam_) {
   dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, fparam_, aparam_);
+               datype_, dbox, fparam_, aparam_, true);
 }
 
 template void DeepPot::compute<double>(ENERGYTYPE& dener,
@@ -309,7 +309,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
                       const std::vector<VALUETYPE>& aparam__) {
   std::vector<ENERGYTYPE> dener_;
   dp->computew(dener_, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__, true);
   dener = dener_[0];
 }
 template <typename VALUETYPE>
@@ -327,7 +327,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                       const std::vector<VALUETYPE>& fparam_,
                       const std::vector<VALUETYPE>& aparam__) {
   dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
-               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__);
+               datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__, true);
 }
 
 template void DeepPot::compute<double>(ENERGYTYPE& dener,
@@ -401,7 +401,7 @@ void DeepPot::compute_mixed_type(ENERGYTYPE& dener,
   std::vector<VALUETYPE> datom_energy_, datom_virial_;
   dp->computew_mixed_type(dener_, dforce_, dvirial, datom_energy_,
                           datom_virial_, nframes, dcoord_, datype_, dbox,
-                          fparam_, aparam_);
+                          fparam_, aparam_, false);
   dener = dener_[0];
 }
 template <typename VALUETYPE>
@@ -416,7 +416,8 @@ void DeepPot::compute_mixed_type(std::vector<ENERGYTYPE>& dener,
                                  const std::vector<VALUETYPE>& aparam_) {
   std::vector<VALUETYPE> datom_energy_, datom_virial_;
   dp->computew_mixed_type(dener, dforce_, dvirial, datom_energy_, datom_virial_,
-                          nframes, dcoord_, datype_, dbox, fparam_, aparam_);
+                          nframes, dcoord_, datype_, dbox, fparam_, aparam_,
+                          false);
 }
 
 template void DeepPot::compute_mixed_type<double>(
@@ -478,7 +479,7 @@ void DeepPot::compute_mixed_type(ENERGYTYPE& dener,
   std::vector<ENERGYTYPE> dener_;
   dp->computew_mixed_type(dener_, dforce_, dvirial, datom_energy_,
                           datom_virial_, nframes, dcoord_, datype_, dbox,
-                          fparam_, aparam_);
+                          fparam_, aparam_, true);
   dener = dener_[0];
 }
 template <typename VALUETYPE>
@@ -494,7 +495,8 @@ void DeepPot::compute_mixed_type(std::vector<ENERGYTYPE>& dener,
                                  const std::vector<VALUETYPE>& fparam_,
                                  const std::vector<VALUETYPE>& aparam_) {
   dp->computew_mixed_type(dener, dforce_, dvirial, datom_energy_, datom_virial_,
-                          nframes, dcoord_, datype_, dbox, fparam_, aparam_);
+                          nframes, dcoord_, datype_, dbox, fparam_, aparam_,
+                          true);
 }
 
 template void DeepPot::compute_mixed_type<double>(

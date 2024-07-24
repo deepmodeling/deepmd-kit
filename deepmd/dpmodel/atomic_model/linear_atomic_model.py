@@ -96,6 +96,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return any(model.has_message_passing() for model in self.models)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return True
+
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
@@ -196,11 +200,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         ]
         ener_list = []
         for i, model in enumerate(self.models):
-            mapping = self.mapping_list[i]
+            type_map_model = self.mapping_list[i]
             ener_list.append(
                 model.forward_atomic(
                     extended_coord,
-                    mapping[extended_atype],
+                    type_map_model[extended_atype],
                     nlists_[i],
                     mapping,
                     fparam,
@@ -285,7 +289,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
-        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]
+        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]  # pylint: disable=no-explicit-dtype
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -414,7 +418,12 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         )
 
         numerator = np.sum(
-            pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha), axis=-1
+            np.where(
+                nlist_larger != -1,
+                pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha),
+                np.zeros_like(nlist_larger),
+            ),
+            axis=-1,
         )  # masked nnei will be zero, no need to handle
         denominator = np.sum(
             np.where(
@@ -436,5 +445,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
         coef[mid_mask] = smooth[mid_mask]
         coef[right_mask] = 0
+        # to handle masked atoms
+        coef = np.where(sigma != 0, coef, np.zeros_like(coef))
         self.zbl_weight = coef
         return [1 - np.expand_dims(coef, -1), np.expand_dims(coef, -1)]

@@ -77,7 +77,7 @@ expected_f2 = np.array(
     ]
 )
 
-expected_v = -np.array(
+expected_v = -np.array(  # This minus sign comes from the definition of the compute centroid/stress/atom command in LAMMPS. See https://docs.lammps.org/compute_stress_atom.html
     [
         -2.912234126853306959e-01,
         -3.800610846612756388e-02,
@@ -321,7 +321,13 @@ def test_pair_deepmd(lammps):
 def test_pair_deepmd_virial(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
+    lammps.compute("peatom all pe/atom pair")
+    lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
+    lammps.variable("eatom atom c_peatom")
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps.variable(f"pressure{jj} equal c_pressure[{ii+1}]")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
@@ -335,6 +341,17 @@ def test_pair_deepmd_virial(lammps):
             expected_f[lammps.atoms[ii].id - 1]
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    assert np.array(lammps.variables["eatom"].value) == pytest.approx(
+        expected_ae[idx_map]
+    )
+    vol = box[1] * box[3] * box[5]
+    for ii in range(6):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        assert np.array(
+            lammps.variables[f"pressure{jj}"].value
+        ) / constants.nktv2p == pytest.approx(
+            -expected_v[idx_map, jj].sum(axis=0) / vol
+        )
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -372,7 +389,13 @@ def test_pair_deepmd_model_devi_virial(lammps):
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
     )
     lammps.pair_coeff("* *")
+    lammps.compute("peatom all pe/atom pair")
+    lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
+    lammps.variable("eatom atom c_peatom")
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps.variable(f"pressure{jj} equal c_pressure[{ii+1}]")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
@@ -386,6 +409,17 @@ def test_pair_deepmd_model_devi_virial(lammps):
             expected_f[lammps.atoms[ii].id - 1]
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    assert np.array(lammps.variables["eatom"].value) == pytest.approx(
+        expected_ae[idx_map]
+    )
+    vol = box[1] * box[3] * box[5]
+    for ii in range(6):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        assert np.array(
+            lammps.variables[f"pressure{jj}"].value
+        ) / constants.nktv2p == pytest.approx(
+            -expected_v[idx_map, jj].sum(axis=0) / vol
+        )
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value

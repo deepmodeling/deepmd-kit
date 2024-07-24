@@ -26,13 +26,6 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
 
     def setUp(self):
         TestCaseSingleFrameWithNlist.setUp(self)
-        self.input_dict = {
-            "ntypes": self.nt,
-            "rcut": self.rcut,
-            "rcut_smth": self.rcut_smth,
-            "sel": self.sel,
-            "type_map": ["O", "H"],
-        }
 
     def test_forward_consistency(self):
         ret = []

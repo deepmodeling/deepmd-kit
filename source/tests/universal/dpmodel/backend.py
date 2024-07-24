@@ -19,6 +19,9 @@ class DPTestCase(BackendTestCase):
     def forward_wrapper(self, x):
         return x
 
+    def forward_wrapper_cpu_ref(self, x):
+        return x
+
     @classmethod
     def convert_to_numpy(cls, xx: np.ndarray) -> np.ndarray:
         return xx

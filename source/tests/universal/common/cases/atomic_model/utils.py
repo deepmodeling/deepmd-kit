@@ -2,13 +2,19 @@
 from typing import (
     Any,
     Callable,
+    Dict,
     List,
+    Optional,
 )
 
 import numpy as np
 
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
+)
+
+from .....seed import (
+    GLOBAL_SEED,
 )
 
 
@@ -29,12 +35,20 @@ class AtomicModelTestCase:
     """Expected shape of atomic parameters."""
     expected_model_output_type: List[str]
     """Expected output type for the model."""
+    model_output_equivariant: List[str]
+    """Outputs that are equivariant to the input rotation."""
     expected_sel: List[int]
     """Expected number of neighbors."""
     expected_has_message_passing: bool
     """Expected whether having message passing."""
     forward_wrapper: Callable[[Any], Any]
     """Calss wrapper for forward method."""
+    aprec_dict: Dict[str, Optional[float]]
+    """Dictionary of absolute precision in each test."""
+    rprec_dict: Dict[str, Optional[float]]
+    """Dictionary of relative precision in each test."""
+    epsilon_dict: Dict[str, Optional[float]]
+    """Dictionary of epsilons in each test."""
 
     def test_get_type_map(self):
         """Test get_type_map."""
@@ -77,9 +91,17 @@ class AtomicModelTestCase:
         for module in self.modules_to_test:
             self.assertEqual(module.get_ntypes(), len(self.expected_type_map))
 
+    def test_has_message_passing(self):
+        """Test has_message_passing."""
+        for module in self.modules_to_test:
+            self.assertEqual(
+                module.has_message_passing(), self.expected_has_message_passing
+            )
+
     def test_forward(self):
         """Test forward."""
         nf = 1
+        rng = np.random.default_rng(GLOBAL_SEED)
         coord = np.array(
             [
                 [0, 0, 0],
@@ -95,14 +117,28 @@ class AtomicModelTestCase:
             atype,
             self.expected_rcut,
             self.expected_sel,
-            mixed_types=True,
+            mixed_types=self.module.mixed_types(),
             box=cell,
         )
         ret_lower = []
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, 3, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
         for module in self.modules_to_test:
             module = self.forward_wrapper(module)
-
-            ret_lower.append(module(coord_ext, atype_ext, nlist))
+            ret_lower.append(
+                module(
+                    coord_ext,
+                    atype_ext,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                )
+            )
         for kk in ret_lower[0].keys():
             subret = []
             for rr in ret_lower:
@@ -116,3 +152,6 @@ class AtomicModelTestCase:
                         np.testing.assert_allclose(
                             subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
                         )
+
+
+#  other properties are tested in the model level

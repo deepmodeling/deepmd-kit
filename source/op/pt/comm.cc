@@ -100,7 +100,11 @@ class Border : public torch::autograd::Function<Border> {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
+#ifdef NO_CUDA_AWARE
+        cuda_aware = 0;
+#else
         cuda_aware = MPIX_Query_cuda_support();
+#endif
       } else {
         cuda_aware = 0;
       }
@@ -197,7 +201,7 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor nlocal_tensor = saved_variables[6];
     torch::Tensor nghost_tensor = saved_variables[7];
 
-    torch::Tensor d_local_g1_tensor = grad_output[0];
+    torch::Tensor d_local_g1_tensor = grad_output[0].contiguous();
 #ifdef USE_MPI
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
@@ -215,7 +219,11 @@ class Border : public torch::autograd::Function<Border> {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
+#ifdef NO_CUDA_AWARE
+        cuda_aware = 0;
+#else
         cuda_aware = MPIX_Query_cuda_support();
+#endif
       } else {
         cuda_aware = 0;
       }

@@ -1,4 +1,10 @@
-# Create a model in PyTorch
+# Create a model in other backends {{ pytorch_icon }} {{ dpmodel_icon }}
+
+:::{note}
+**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+
+In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
+:::
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
@@ -162,8 +168,37 @@ allows one to use your new descriptor as below:
 
 The arguments here should be consistent with the class arguments of your new component.
 
+## Package new codes
+
+You may package new codes into a new Python package if you don't want to contribute it to the main DeePMD-kit repository.
+It's crucial to add your new component to `project.entry-points."deepmd.pt"` in `pyproject.toml`:
+
+```toml
+[project.entry-points."deepmd.pt"]
+some_descrpt = "deepmd_some_descrtpt:SomeDescript"
+```
+
+where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `from deepmd_some_descrtpt import SomeDescript`.
+
+If you place `SomeDescript` and `descrpt_some_args` into different modules, you are also expected to add `descrpt_some_args` to `entry_points`.
+
+After you install your new package, you can now use `dp train` to run your new model.
+
 ## Unit tests
 
-When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DP (Numpy) through the serialization/deserialization technique.
+### Universal tests
 
-During the development of new components within the PyTorch backend, it is necessary to provide a DP (Numpy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.
+The `source/tests/universal` directory provides universal test suites for different models and backends.
+The subdirectory `cases` defines fixtures for different test cases of models, atomic models, descriptors, and fitting networks.
+The subdirectory `dpmodel` and `pt` are backend-specific test fixtures and suites.
+Each test suite tests APIs and whether the serialized models give the same results as the original models.
+Specially, the test suite for models also tests whether the model is permutation, translation, and rotation invariant, whether the model is differentiable and smooth near the cutoff radius, and whether the force is the negative gradient of the energy.
+
+When adding a new model, add the fixture to the `cases` subdiretory and then apply the test fixture in the suite of different backends.
+When implementing an existing model in a new backend, directly apply the existing test fixture to the test suite of that backend.
+
+### Consistent tests
+
+When transferring features from another backend to the PyTorch backend, it is essential to include a regression test in `/source/tests/consistent` to validate the consistency of the PyTorch backend with other backends. Presently, the regression tests cover self-consistency and cross-backend consistency between TensorFlow, PyTorch, and DP (NumPy) through the serialization/deserialization technique.
+
+During the development of new components within the PyTorch backend, it is necessary to provide a DP (NumPy) implementation and incorporate corresponding regression tests. For PyTorch components, developers are also required to include a unit test using `torch.jit`.

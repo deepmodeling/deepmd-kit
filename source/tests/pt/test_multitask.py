@@ -21,6 +21,12 @@ from deepmd.pt.utils.finetune import (
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    update_deepmd_input,
+)
 
 from .model.test_permutation import (
     model_dpa1,
@@ -39,6 +45,8 @@ def setUpModule():
 class MultiTaskTrainTest:
     def test_multitask_train(self):
         # test multitask training
+        self.config = update_deepmd_input(self.config, warning=True)
+        self.config = normalize(self.config, multi_task=True)
         trainer = get_trainer(deepcopy(self.config), shared_links=self.shared_links)
         trainer.run()
         # check model keys
@@ -124,6 +132,8 @@ class MultiTaskTrainTest:
             finetune_model,
             self.origin_config["model"],
         )
+        self.origin_config = update_deepmd_input(self.origin_config, warning=True)
+        self.origin_config = normalize(self.origin_config, multi_task=True)
         trainer_finetune = get_trainer(
             deepcopy(self.origin_config),
             finetune_model=finetune_model,

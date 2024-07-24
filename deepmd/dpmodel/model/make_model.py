@@ -214,7 +214,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             nframes, nall = extended_atype.shape[:2]
             extended_coord = extended_coord.reshape(nframes, -1, 3)
-            nlist = self.format_nlist(extended_coord, extended_atype, nlist)
+            nlist = self.format_nlist(
+                extended_coord,
+                extended_atype,
+                nlist,
+                extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            )
             cc_ext, _, fp, ap, input_prec = self.input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
@@ -311,6 +316,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             extended_coord: np.ndarray,
             extended_atype: np.ndarray,
             nlist: np.ndarray,
+            extra_nlist_sort: bool = False,
         ):
             """Format the neighbor list.
 
@@ -336,6 +342,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 atomic type in extended region. nf x nall
             nlist
                 neighbor list. nf x nloc x nsel
+            extra_nlist_sort
+                whether to forcibly sort the nlist.
 
             Returns
             -------
@@ -345,7 +353,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             n_nf, n_nloc, n_nnei = nlist.shape
             mixed_types = self.mixed_types()
-            ret = self._format_nlist(extended_coord, nlist, sum(self.get_sel()))
+            ret = self._format_nlist(
+                extended_coord,
+                nlist,
+                sum(self.get_sel()),
+                extra_nlist_sort=extra_nlist_sort,
+            )
             if not mixed_types:
                 ret = nlist_distinguish_types(ret, extended_atype, self.get_sel())
             return ret
@@ -355,6 +368,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             extended_coord: np.ndarray,
             nlist: np.ndarray,
             nnei: int,
+            extra_nlist_sort: bool = False,
         ):
             n_nf, n_nloc, n_nnei = nlist.shape
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
@@ -370,7 +384,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                     ],
                     axis=-1,
                 )
-            elif n_nnei > nnei:
+
+            if n_nnei > nnei or extra_nlist_sort:
+                n_nf, n_nloc, n_nnei = nlist.shape
                 # make a copy before revise
                 m_real_nei = nlist >= 0
                 ret = np.where(m_real_nei, nlist, 0)
@@ -384,9 +400,11 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 ret = np.take_along_axis(ret, ret_mapping, axis=2)
                 ret = np.where(rr > rcut, -1, ret)
                 ret = ret[..., :nnei]
-            else:  # n_nnei == nnei:
-                # copy anyway...
+            # not extra_nlist_sort and n_nnei <= nnei:
+            elif n_nnei == nnei:
                 ret = nlist
+            else:
+                pass
             assert ret.shape[-1] == nnei
             return ret
 
@@ -482,6 +500,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def has_message_passing(self) -> bool:
             """Returns whether the model has message passing."""
             return self.atomic_model.has_message_passing()
+
+        def need_sorted_nlist_for_lower(self) -> bool:
+            """Returns whether the model needs sorted nlist when using `forward_lower`."""
+            return self.atomic_model.need_sorted_nlist_for_lower()
 
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""

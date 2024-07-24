@@ -278,10 +278,10 @@ class DescrptSeAtten(DescrptSeA):
         # descrpt config
         self.sel_all_a = [sel]
         self.sel_all_r = [0]
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         self.attention_layer_variables = None
@@ -563,9 +563,9 @@ class DescrptSeAtten(DescrptSeA):
             check_switch_range(davg, dstd)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
@@ -963,7 +963,7 @@ class DescrptSeAtten(DescrptSeA):
                 self.attn_weight_final[layer] = attn[0]  # atom 0
         if do_mask:
             nei = int(attn.shape[-1])
-            mask = tf.cast(tf.ones((nei, nei)) - tf.eye(nei), self.filter_precision)
+            mask = tf.cast(tf.ones((nei, nei)) - tf.eye(nei), self.filter_precision)  # pylint: disable=no-explicit-dtype
             attn *= mask
         output = tf.matmul(attn, V)
         return output
@@ -2079,6 +2079,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to concat type embedding at the output of the descriptor.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
@@ -2116,6 +2118,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
@@ -2167,6 +2170,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         )
         self.tebd_dim = tebd_dim
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2176,6 +2180,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             padding=True,
             activation_function="Linear",
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # precision=precision,
             seed=seed,
@@ -2303,7 +2308,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         if cls is not DescrptDPA1Compat:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -2325,6 +2330,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             )
         else:
             two_side_embeeding_net_variables = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables
@@ -2357,12 +2365,14 @@ class DescrptDPA1Compat(DescrptSeAtten):
         data.update(
             {
                 "type": "dpa1",
+                "@version": 2,
                 "tebd_dim": self.tebd_dim,
                 "scaling_factor": self.scaling_factor,
                 "normalize": self.normalize,
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
                 "use_econf_tebd": self.use_econf_tebd,
+                "use_tebd_bias": self.use_tebd_bias,
                 "type_embedding": self.type_embedding.serialize(suffix),
             }
         )

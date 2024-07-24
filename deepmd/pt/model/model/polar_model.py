@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from copy import (
+    deepcopy,
+)
 from typing import (
     Dict,
     Optional,
@@ -34,6 +37,16 @@ class PolarModel(DPModelCommon, DPDOSModel_):
     ):
         DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)
+
+    def translated_output_def(self):
+        out_def_data = self.model_output_def().get_data()
+        output_def = {
+            "polar": deepcopy(out_def_data["polarizability"]),
+            "global_polar": deepcopy(out_def_data["polarizability_redu"]),
+        }
+        if "mask" in out_def_data:
+            output_def["mask"] = deepcopy(out_def_data["mask"])
+        return output_def
 
     def forward(
         self,
@@ -82,6 +95,7 @@ class PolarModel(DPModelCommon, DPDOSModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

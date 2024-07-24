@@ -46,7 +46,6 @@ class EnergyFittingNet(InvarFitting):
         mixed_types: bool = False,
         exclude_types: List[int] = [],
         type_map: Optional[List[str]] = None,
-        # not used
         seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__(
@@ -70,6 +69,7 @@ class EnergyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             exclude_types=exclude_types,
             type_map=type_map,
+            seed=seed,
         )
 
     @classmethod

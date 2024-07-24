@@ -44,6 +44,7 @@ PRECISION_DICT = {
     "int32": torch.int32,
     "int64": torch.int64,
     "bfloat16": torch.bfloat16,
+    "bool": torch.bool,
 }
 GLOBAL_PT_FLOAT_PRECISION = PRECISION_DICT[np.dtype(GLOBAL_NP_FLOAT_PRECISION).name]
 GLOBAL_PT_ENER_FLOAT_PRECISION = PRECISION_DICT[
@@ -59,6 +60,7 @@ RESERVED_PRECISON_DICT = {
     torch.int32: "int32",
     torch.int64: "int64",
     torch.bfloat16: "bfloat16",
+    torch.bool: "bool",
 }
 assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISON_DICT.keys())
 DEFAULT_PRECISION = "float64"

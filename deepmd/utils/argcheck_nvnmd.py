@@ -4,7 +4,7 @@ from dargs import (
 )
 
 
-def nvnmd_args():
+def nvnmd_args(fold_subdoc: bool = False) -> Argument:
     doc_version = (
         "configuration the nvnmd version (0 | 1), 0 for 4 types, 1 for 32 types"
     )
@@ -67,4 +67,6 @@ def nvnmd_args():
     ]
 
     doc_nvnmd = "The nvnmd options."
-    return Argument("nvnmd", dict, args, [], optional=True, doc=doc_nvnmd)
+    return Argument(
+        "nvnmd", dict, args, [], optional=True, doc=doc_nvnmd, fold_subdoc=fold_subdoc
+    )

@@ -395,11 +395,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         h2g2 = _cal_hg(g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon)
         # (nf x nloc) x ng2 x 3
         rot_mat = np.transpose(h2g2, (0, 1, 3, 2))
-        return g1, g2, h2, rot_mat.reshape(-1, nloc, self.dim_emb, 3), sw
+        return g1, g2, h2, rot_mat.reshape(nf, nloc, self.dim_emb, 3), sw
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
         return True
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return False
 
 
 # translated by GPT and modified

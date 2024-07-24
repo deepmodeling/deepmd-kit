@@ -73,6 +73,7 @@ class TestModel(tf.test.TestCase):
             resnet_dt=typeebd_param["resnet_dt"],
             seed=typeebd_param["seed"],
             uniform_seed=True,
+            use_tebd_bias=True,
         )
         model = DipoleModel(descrpt, fitting, typeebd)
 

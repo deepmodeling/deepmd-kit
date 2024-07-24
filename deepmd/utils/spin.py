@@ -45,19 +45,19 @@ class Spin:
         self.ntypes_real_and_spin = self.ntypes_real + self.ntypes_spin
         self.ntypes_placeholder = self.ntypes_real - self.ntypes_spin
         self.ntypes_input = 2 * self.ntypes_real  # with placeholder for input types
-        self.real_type = np.arange(self.ntypes_real)
-        self.spin_type = np.arange(self.ntypes_real)[self.use_spin] + self.ntypes_real
+        self.real_type = np.arange(self.ntypes_real)  # pylint: disable=no-explicit-dtype
+        self.spin_type = np.arange(self.ntypes_real)[self.use_spin] + self.ntypes_real  # pylint: disable=no-explicit-dtype
         self.real_and_spin_type = np.concatenate([self.real_type, self.spin_type])
         self.placeholder_type = (
-            np.arange(self.ntypes_real)[~self.use_spin] + self.ntypes_real
+            np.arange(self.ntypes_real)[~self.use_spin] + self.ntypes_real  # pylint: disable=no-explicit-dtype
         )
-        self.spin_placeholder_type = np.arange(self.ntypes_real) + self.ntypes_real
-        self.input_type = np.arange(self.ntypes_real * 2)
+        self.spin_placeholder_type = np.arange(self.ntypes_real) + self.ntypes_real  # pylint: disable=no-explicit-dtype
+        self.input_type = np.arange(self.ntypes_real * 2)  # pylint: disable=no-explicit-dtype
         if isinstance(virtual_scale, list):
             if len(virtual_scale) == self.ntypes_real:
                 self.virtual_scale = virtual_scale
             elif len(virtual_scale) == self.ntypes_spin:
-                self.virtual_scale = np.zeros(self.ntypes_real)
+                self.virtual_scale = np.zeros(self.ntypes_real)  # pylint: disable=no-explicit-dtype
                 self.virtual_scale[self.use_spin] = virtual_scale
             else:
                 raise ValueError(

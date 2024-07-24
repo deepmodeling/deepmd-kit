@@ -223,6 +223,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return False
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return False
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.env_protection
@@ -341,7 +345,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
         res_rescale = 1.0 / 5.0
         res = xyz_scatter * res_rescale
-        res = res.reshape(nf, nloc, -1).astype(GLOBAL_NP_FLOAT_PRECISION)
+        res = res.reshape(nf, nloc, ng).astype(GLOBAL_NP_FLOAT_PRECISION)
         return res, None, None, None, ww
 
     def serialize(self) -> dict:

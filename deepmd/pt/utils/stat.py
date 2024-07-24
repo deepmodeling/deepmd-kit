@@ -53,7 +53,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
         sys_stat = {}
         with torch.device("cpu"):
             iterator = iter(dataloaders[i])
-            for _ in range(nbatches):
+            numb_batches = min(nbatches, len(dataloaders[i]))
+            for _ in range(numb_batches):
                 try:
                     stat_data = next(iterator)
                 except StopIteration:
@@ -312,7 +313,9 @@ def compute_output_stats(
 
         model_pred_g = (
             {
-                kk: [vv[idx] for idx in global_sampled_idx[kk]]
+                kk: [
+                    np.sum(vv[idx], axis=1) for idx in global_sampled_idx[kk]
+                ]  # sum atomic dim
                 for kk, vv in model_pred.items()
             }
             if model_pred
@@ -327,7 +330,7 @@ def compute_output_stats(
             else None
         )
 
-        # concat all frames within those systmes
+        # concat all frames within those systems
         model_pred_g = (
             {
                 kk: np.concatenate(model_pred_g[kk])
@@ -459,7 +462,6 @@ def compute_output_stats_global(
     else:
         # subtract the model bias and output the delta bias
 
-        model_pred = {kk: np.sum(model_pred[kk], axis=1) for kk in keys}
         stats_input = {
             kk: merged_output[kk] - model_pred[kk] for kk in keys if kk in merged_output
         }
@@ -568,7 +570,7 @@ def compute_output_stats_atomic(
             # correction for missing types
             missing_types = ntypes - merged_natoms[kk].max() - 1
             if missing_types > 0:
-                nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))
+                nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))  # pylint: disable=no-explicit-dtype
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
                 std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
