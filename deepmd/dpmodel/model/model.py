@@ -5,6 +5,9 @@ from deepmd.dpmodel.descriptor.se_e2_a import (
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
 )
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
+)
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
 )
@@ -93,7 +96,11 @@ def get_model(data: dict):
     data : dict
         The data to construct the model.
     """
-    if "spin" in data:
-        return get_spin_model(data)
+    model_type = data.get("type", "standard")
+    if model_type == "standard":
+        if "spin" in data:
+            return get_spin_model(data)
+        else:
+            return get_standard_model(data)
     else:
-        return get_standard_model(data)
+        return BaseModel.get_class_by_type(model_type).get_model(data)
