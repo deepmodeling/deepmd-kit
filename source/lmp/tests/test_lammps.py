@@ -321,8 +321,10 @@ def test_pair_deepmd(lammps):
 def test_pair_deepmd_virial(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
+    lammps.compute("peatom all pe/atom pair")
     lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
+    lammps.variable("eatom atom c_peatom")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"pressure{jj} c_pressure[{ii+1}]")
@@ -339,6 +341,7 @@ def test_pair_deepmd_virial(lammps):
             expected_f[lammps.atoms[ii].id - 1]
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    assert np.array(lammps.variables["eatom"].value) == pytest.approx(expected_ae[idx_map])
     for ii in range(9):
         assert np.array(
             lammps.variables[f"pressure{ii}"].value
