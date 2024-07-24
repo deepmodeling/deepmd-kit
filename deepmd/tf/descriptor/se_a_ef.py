@@ -362,10 +362,10 @@ class DescrptSeAEfLower(DescrptSeA):
         self.davg = None
 
         self.place_holders = {}
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         sub_graph = tf.Graph()
@@ -468,9 +468,9 @@ class DescrptSeAEfLower(DescrptSeA):
         dstd = self.dstd
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",

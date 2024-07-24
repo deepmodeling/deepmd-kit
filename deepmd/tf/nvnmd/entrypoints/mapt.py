@@ -194,7 +194,7 @@ class MapTable:
                     val_i = val[ii]
                     nr = np.shape(val_i)[0]
                     nc = np.shape(val_i)[1] // 4
-                    dat_i = np.zeros([n, nc])
+                    dat_i = np.zeros([n, nc])  # pylint: disable=no-explicit-dtype
                     for kk in range(n):
                         xk = x[kk]
                         for cfg in cfgs:
@@ -440,11 +440,11 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        u = N2 * np.reshape(np.arange(0, N + 1) / N, [-1, 1])
+        u = N2 * np.reshape(np.arange(0, N + 1) / N, [-1, 1])  # pylint: disable=no-explicit-dtype
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["u"]: u})
         res_dic = dict(zip(keys, res_lst))
 
-        u2 = N2 * np.reshape(np.arange(0, N * 16 + 1) / (N * 16), [-1, 1])
+        u2 = N2 * np.reshape(np.arange(0, N * 16 + 1) / (N * 16), [-1, 1])  # pylint: disable=no-explicit-dtype
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["u"]: u2})
         res_dic2 = dict(zip(keys, res_lst2))  # reference for commpare
 
@@ -537,11 +537,11 @@ class MapTable:
         keys = list(dic_ph.keys())
         vals = list(dic_ph.values())
 
-        s = N2 * np.reshape(np.arange(0, N + 1) / N, [-1, 1]) + smin_
+        s = N2 * np.reshape(np.arange(0, N + 1) / N, [-1, 1]) + smin_  # pylint: disable=no-explicit-dtype
         res_lst = run_sess(sess, vals, feed_dict={dic_ph["s"]: s})
         res_dic = dict(zip(keys, res_lst))
 
-        s2 = N2 * np.reshape(np.arange(0, N * 16 + 1) / (N * 16), [-1, 1]) + smin_
+        s2 = N2 * np.reshape(np.arange(0, N * 16 + 1) / (N * 16), [-1, 1]) + smin_  # pylint: disable=no-explicit-dtype
         res_lst2 = run_sess(sess, vals, feed_dict={dic_ph["s"]: s2})
         res_dic2 = dict(zip(keys, res_lst2))
 
@@ -566,7 +566,7 @@ class MapTable:
         dic_ph["t_one_hot"] = ebd_type
         wbs = [get_type_embedding_weight(nvnmd_cfg.weight, ll) for ll in range(1, 5)]
         ebd_type = self.build_embedding_net(dic_ph["t_one_hot"], wbs, None)
-        last_type = tf.cast(tf.zeros([1, ebd_type.shape[1]]), filter_precision)
+        last_type = tf.cast(tf.zeros([1, ebd_type.shape[1]]), filter_precision)  # pylint: disable=no-explicit-dtype
         ebd_type = tf.concat([ebd_type, last_type], 0)
         dic_ph["t_ebd"] = ebd_type
         # type_embedding of i, j atoms -> two_side_type_embedding

@@ -144,18 +144,18 @@ class GeneralFitting(NativeOP, BaseFitting):
         net_dim_out = self._net_out_dim()
         # init constants
         if bias_atom_e is None:
-            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])
+            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])  # pylint: disable=no-explicit-dtype
         else:
             assert bias_atom_e.shape == (self.ntypes, net_dim_out)
             self.bias_atom_e = bias_atom_e
         if self.numb_fparam > 0:
-            self.fparam_avg = np.zeros(self.numb_fparam)
-            self.fparam_inv_std = np.ones(self.numb_fparam)
+            self.fparam_avg = np.zeros(self.numb_fparam)  # pylint: disable=no-explicit-dtype
+            self.fparam_inv_std = np.ones(self.numb_fparam)  # pylint: disable=no-explicit-dtype
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
         if self.numb_aparam > 0:
-            self.aparam_avg = np.zeros(self.numb_aparam)
-            self.aparam_inv_std = np.ones(self.numb_aparam)
+            self.aparam_avg = np.zeros(self.numb_aparam)  # pylint: disable=no-explicit-dtype
+            self.aparam_inv_std = np.ones(self.numb_aparam)  # pylint: disable=no-explicit-dtype
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
         # init networks
@@ -405,7 +405,7 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         # calcualte the prediction
         if not self.mixed_types:
-            outs = np.zeros([nf, nloc, net_dim_out])
+            outs = np.zeros([nf, nloc, net_dim_out])  # pylint: disable=no-explicit-dtype
             for type_i in range(self.ntypes):
                 mask = np.tile(
                     (atype == type_i).reshape([nf, nloc, 1]), [1, 1, net_dim_out]

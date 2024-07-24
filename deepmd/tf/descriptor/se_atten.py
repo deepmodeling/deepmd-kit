@@ -278,10 +278,10 @@ class DescrptSeAtten(DescrptSeA):
         # descrpt config
         self.sel_all_a = [sel]
         self.sel_all_r = [0]
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         self.attention_layer_variables = None
@@ -563,9 +563,9 @@ class DescrptSeAtten(DescrptSeA):
             check_switch_range(davg, dstd)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
@@ -963,7 +963,7 @@ class DescrptSeAtten(DescrptSeA):
                 self.attn_weight_final[layer] = attn[0]  # atom 0
         if do_mask:
             nei = int(attn.shape[-1])
-            mask = tf.cast(tf.ones((nei, nei)) - tf.eye(nei), self.filter_precision)
+            mask = tf.cast(tf.ones((nei, nei)) - tf.eye(nei), self.filter_precision)  # pylint: disable=no-explicit-dtype
             attn *= mask
         output = tf.matmul(attn, V)
         return output

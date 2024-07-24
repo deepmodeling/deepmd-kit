@@ -200,7 +200,7 @@ class DeepTensor(DeepEval):
         nframes = coords.shape[0]
         if cells is None:
             pbc = False
-            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])
+            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])  # pylint: disable=no-explicit-dtype
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])
@@ -344,7 +344,7 @@ class DeepTensor(DeepEval):
         nframes = coords.shape[0]
         if cells is None:
             pbc = False
-            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])
+            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])  # pylint: disable=no-explicit-dtype
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])

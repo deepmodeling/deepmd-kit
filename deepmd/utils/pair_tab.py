@@ -169,8 +169,8 @@ class PairTab:
 
             # if table values decay to `0` before rcut, pad table with `0`s.
             elif self.rcut > self.rmax:
-                pad_zero = np.zeros((rcut_idx - upper_idx, self.ncol))
-                pad_zero[:, 0] = np.linspace(
+                pad_zero = np.zeros((rcut_idx - upper_idx, self.ncol))  # pylint: disable=no-explicit-dtype
+                pad_zero[:, 0] = np.linspace(  # pylint: disable=no-explicit-dtype
                     self.rmax + self.hh,
                     self.rmax + self.hh * (rcut_idx - upper_idx),
                     rcut_idx - upper_idx,
@@ -187,9 +187,9 @@ class PairTab:
                 log.warning(
                     "The rcut goes beyond table upper boundary, performing extrapolation."
                 )
-                pad_extrapolation = np.zeros((rcut_idx - upper_idx, self.ncol))
+                pad_extrapolation = np.zeros((rcut_idx - upper_idx, self.ncol))  # pylint: disable=no-explicit-dtype
 
-                pad_extrapolation[:, 0] = np.linspace(
+                pad_extrapolation[:, 0] = np.linspace(  # pylint: disable=no-explicit-dtype
                     self.rmax + self.hh,
                     self.rmax + self.hh * (rcut_idx - upper_idx),
                     rcut_idx - upper_idx,
@@ -253,7 +253,7 @@ class PairTab:
         return pad_extrapolation
 
     def _make_data(self):
-        data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])
+        data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])  # pylint: disable=no-explicit-dtype
         stride = 4 * self.nspline
         idx_iter = 0
         xx = self.vdata[:, 0]
@@ -263,7 +263,7 @@ class PairTab:
                 cs = CubicSpline(xx, vv, bc_type="clamped")
                 dd = cs(xx, 1)
                 dd *= self.hh
-                dtmp = np.zeros(stride)
+                dtmp = np.zeros(stride)  # pylint: disable=no-explicit-dtype
                 for ii in range(self.nspline):
                     dtmp[ii * 4 + 0] = 2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
                     dtmp[ii * 4 + 1] = (
