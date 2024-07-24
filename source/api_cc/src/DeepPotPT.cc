@@ -38,7 +38,12 @@ torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
     row_tensors.push_back(row_tensor);
   }
 
-  torch::Tensor tensor = torch::cat(row_tensors, 0).unsqueeze(0);
+  torch::Tensor tensor;
+  if (row_tensors.size() > 0) {
+    tensor = torch::cat(row_tensors, 0).unsqueeze(0);
+  } else {
+    tensor = torch::empty({0, 0}, torch::kInt32);
+  }
   return tensor;
 }
 DeepPotPT::DeepPotPT() : inited(false) {}
