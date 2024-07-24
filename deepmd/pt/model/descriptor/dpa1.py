@@ -364,6 +364,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns whether the descriptor has message passing."""
         return self.se_atten.has_message_passing()
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.se_atten.need_sorted_nlist_for_lower()
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()

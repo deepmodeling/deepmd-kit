@@ -96,6 +96,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return any(model.has_message_passing() for model in self.models)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return True
+
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
