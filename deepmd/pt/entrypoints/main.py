@@ -136,7 +136,7 @@ def get_trainer(
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
-        # avoid the same batch sequence among workers
+        # avoid the same batch sequence among devices
         rank_seed = (seed + rank) % (2**32) if seed is not None else None
         validation_data_single = (
             DpLoaderSet(
