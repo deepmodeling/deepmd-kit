@@ -324,10 +324,10 @@ def test_pair_deepmd_virial(lammps):
     lammps.compute("peatom all pe/atom pair")
     lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
-    lammps.variable("eatom atom c_peatom")
+    lammps.variable("eatom atom vector c_peatom")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"pressure{jj} c_pressure[{ii+1}]")
+        lammps.variable(f"pressure{jj} equal c_presure[{ii+1}]")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
