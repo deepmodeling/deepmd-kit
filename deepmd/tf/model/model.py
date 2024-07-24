@@ -857,8 +857,8 @@ class StandardModel(Model):
             "rcond": None,
             "preset_out_bias": None,
             "@variables": {
-                "out_bias": np.zeros([1, ntypes, dict_fit["dim_out"]]),
-                "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),
+                "out_bias": np.zeros([1, ntypes, dict_fit["dim_out"]]),  # pylint: disable=no-explicit-dtype
+                "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),  # pylint: disable=no-explicit-dtype
             },
         }
 

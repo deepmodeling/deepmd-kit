@@ -578,8 +578,8 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -636,7 +636,7 @@ class DescrptBlockSeA(DescriptorBlock):
             dmatrix = dmatrix.view(
                 -1, self.ndescrpt
             )  # shape is [nframes*nall, self.ndescrpt]
-            xyz_scatter = torch.empty(
+            xyz_scatter = torch.empty(  # pylint: disable=no-explicit-dtype
                 1,
                 device=env.DEVICE,
             )

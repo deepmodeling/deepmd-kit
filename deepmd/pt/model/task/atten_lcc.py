@@ -23,7 +23,7 @@ class FittingNetAttenLcc(Fitting):
         self.engergy_proj = EnergyHead(self.embedding_width, 1)
         self.energe_agg_factor = nn.Embedding(4, 1, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
         nn.init.normal_(self.energe_agg_factor.weight, 0, 0.01)
-        bias_atom_e = torch.tensor(bias_atom_e)
+        bias_atom_e = torch.tensor(bias_atom_e)  # pylint: disable=no-explicit-dtype,no-explicit-device
         self.register_buffer("bias_atom_e", bias_atom_e)
         self.pair_embed_dim = pair_embed_dim
         self.attention_heads = attention_heads

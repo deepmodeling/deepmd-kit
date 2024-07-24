@@ -485,8 +485,8 @@ class DescrptBlockRepformers(DescriptorBlock):
                     comm_dict["recv_num"],
                     g1,
                     comm_dict["communicator"],
-                    torch.tensor(nloc),
-                    torch.tensor(nall - nloc),
+                    torch.tensor(nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
+                    torch.tensor(nall - nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
                 )
                 g1_ext = ret[0].unsqueeze(0)
             g1, g2, h2 = ll.forward(
@@ -543,8 +543,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""

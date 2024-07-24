@@ -207,7 +207,7 @@ class TypeEmbedNet:
             )
         ebd_type = tf.reshape(ebd_type, [-1, self.neuron[-1]])  # ntypes * neuron[-1]
         if self.padding:
-            last_type = tf.cast(tf.zeros([1, self.neuron[-1]]), self.filter_precision)
+            last_type = tf.cast(tf.zeros([1, self.neuron[-1]]), self.filter_precision)  # pylint: disable=no-explicit-dtype
             ebd_type = tf.concat([ebd_type, last_type], 0)  # (ntypes + 1) * neuron[-1]
         self.ebd_type = tf.identity(ebd_type, name="t_typeebd" + suffix)
         return self.ebd_type

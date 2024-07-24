@@ -329,7 +329,7 @@ def calc_model_devi(
     forces = np.array(forces)
     virials = np.array(virials)
 
-    devi = [np.arange(coord.shape[0]) * frequency]
+    devi = [np.arange(coord.shape[0]) * frequency]  # pylint: disable=no-explicit-dtype
     if real_data is None:
         devi += list(calc_model_devi_v(virials, relative=relative_v))
         devi_f = list(calc_model_devi_f(forces, relative=relative, atomic=atomic))
@@ -503,7 +503,7 @@ def make_model_devi(
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)
-        devis[:, 0] = np.arange(nframes_tot) * frequency
+        devis[:, 0] = np.arange(nframes_tot) * frequency  # pylint: disable=no-explicit-dtype
         write_model_devi_out(devis, output, header=system, atomic=atomic)
         devis_coll.append(devis)
     return devis_coll

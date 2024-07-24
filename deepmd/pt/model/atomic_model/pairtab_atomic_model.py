@@ -267,7 +267,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
-            torch.arange(extended_atype.size(0), device=extended_coord.device)[
+            torch.arange(extended_atype.size(0), device=extended_coord.device)[  # pylint: disable=no-explicit-dtype
                 :, None, None
             ],
             masked_nlist,
