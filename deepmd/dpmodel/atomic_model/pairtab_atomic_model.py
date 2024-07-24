@@ -204,7 +204,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         # (nframes, nloc, nnei)
         j_type = extended_atype[
-            np.arange(extended_atype.shape[0])[:, None, None], masked_nlist
+            np.arange(extended_atype.shape[0])[:, None, None], masked_nlist  # pylint: disable=no-explicit-dtype
         ]
 
         raw_atomic_energy = self._pair_tabulated_inter(
@@ -301,7 +301,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         np.ndarray
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
-        batch_indices = np.arange(nlist.shape[0])[:, None, None]
+        batch_indices = np.arange(nlist.shape[0])[:, None, None]  # pylint: disable=no-explicit-dtype
         neighbor_atoms = coords[batch_indices, nlist]
         loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
