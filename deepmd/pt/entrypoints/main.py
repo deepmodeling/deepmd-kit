@@ -136,14 +136,14 @@ def get_trainer(
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
+        # avoid the same batch sequence among workers
+        rank_seed = (seed + rank) % (2**32) if seed is not None else None
         validation_data_single = (
             DpLoaderSet(
                 validation_systems,
                 validation_dataset_params["batch_size"],
                 model_params_single["type_map"],
-                seed=(seed + rank) % (2**32)
-                if seed is not None
-                else None,  # avoid the same batch sequence among workers
+                seed=rank_seed,
             )
             if validation_systems
             else None
@@ -152,9 +152,7 @@ def get_trainer(
             training_systems,
             training_dataset_params["batch_size"],
             model_params_single["type_map"],
-            seed=(seed + rank) % (2**32)
-            if seed is not None
-            else None,  # avoid the same batch sequence among workers
+            seed=rank_seed,
         )
         return (
             train_data_single,
