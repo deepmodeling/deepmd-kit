@@ -82,7 +82,6 @@ class Border : public torch::autograd::Function<Border> {
     int nghost = nghost_tensor.item<int>();
     int ntotal = nlocal + nghost;
     torch::Tensor recv_g1_tensor = g1;
-    printf("nlocal: %d, nghost: %d, lineno: %d\n", nlocal, nghost, __LINE__);
 
 #ifdef USE_MPI
     int mpi_init = 0;
@@ -121,9 +120,6 @@ class Border : public torch::autograd::Function<Border> {
     for (int iswap = 0; iswap < nswap; ++iswap) {
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
-      printf("me: %d, iswap: %d, nrecv: %d, nsend: %d, lineno: %d\n", me, iswap,
-             nrecv, nsend, __LINE__);
-
       torch::Tensor isendlist =
           torch::from_blob(sendlist[iswap], {nsend}, int32_options)
               .to(recv_g1_tensor.device());
@@ -218,7 +214,6 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Comm_size(world, &world_size);
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
-    printf("world_size: %d, rank: %d, lineno: %d\n", world_size, me, __LINE__);
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (world_size != 1) {
       int version, subversion;
@@ -270,8 +265,6 @@ class Border : public torch::autograd::Function<Border> {
     for (int iswap = nswap - 1; iswap >= 0; --iswap) {
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
-      printf("me: %d, iswap: %d, nrecv: %d, nsend: %d, lineno: %d\n", me, iswap,
-             nrecv, nsend, __LINE__);
 
       torch::Tensor irecvlist;
       if (nrecv) {
