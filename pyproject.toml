@@ -348,6 +348,8 @@ select = [
     "TID253", # banned-module-level-imports
     "T20", # ban print
     "B904", # raise-without-from-inside-except
+    "N804", # invalid-first-argument-name-for-class-method
+    "N805", # invalid-first-argument-name-for-method
 ]
 
 ignore = [

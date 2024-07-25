@@ -92,10 +92,10 @@ def setUpModule():
 
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -117,8 +117,8 @@ class TestDeepPotAPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -216,10 +216,10 @@ class TestDeepPotAPBC(unittest.TestCase):
 
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -241,8 +241,8 @@ class TestDeepPotANoPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = None
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = None
 
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(
@@ -324,10 +324,10 @@ class TestDeepPotANoPBC(unittest.TestCase):
 
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -349,8 +349,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(
@@ -432,15 +432,15 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         (
-            self.INPUT_ET,
-            self.FROZEN_MODEL_ET,
-            self.COMPRESSED_MODEL_ET,
+            cls.INPUT_ET,
+            cls.FROZEN_MODEL_ET,
+            cls.COMPRESSED_MODEL_ET,
         ) = _init_models_exclude_types()
-        self.dp_original = DeepPot(self.FROZEN_MODEL_ET)
-        self.dp_compressed = DeepPot(self.COMPRESSED_MODEL_ET)
-        self.coords = np.array(
+        cls.dp_original = DeepPot(cls.FROZEN_MODEL_ET)
+        cls.dp_compressed = DeepPot(cls.COMPRESSED_MODEL_ET)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -462,14 +462,14 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     @classmethod
-    def tearDownClass(self):
-        _file_delete(self.INPUT_ET)
-        _file_delete(self.FROZEN_MODEL_ET)
-        _file_delete(self.COMPRESSED_MODEL_ET)
+    def tearDownClass(cls):
+        _file_delete(cls.INPUT_ET)
+        _file_delete(cls.FROZEN_MODEL_ET)
+        _file_delete(cls.COMPRESSED_MODEL_ET)
         _file_delete("out.json")
         _file_delete("compress.json")
         _file_delete("checkpoint")

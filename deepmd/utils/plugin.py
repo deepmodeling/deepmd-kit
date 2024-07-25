@@ -75,9 +75,9 @@ class Plugin:
 
 
 class VariantMeta:
-    def __call__(cls, *args, **kwargs):
+    def __call__(self, *args, **kwargs):
         """Remove `type` and keys that starts with underline."""
-        obj = cls.__new__(cls, *args, **kwargs)
+        obj = self.__new__(self, *args, **kwargs)
         kwargs.pop("type", None)
         to_pop = []
         for kk in kwargs:
