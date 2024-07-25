@@ -54,7 +54,6 @@ jobs:
         DP_BUILD_TESTING: 1
       if: ${{ !matrix.check_memleak }}
     - run: sed -i "s/100/10000/g" /opt/hostedtoolcache/Python/3.11.9/x64/lib/python3.11/site-packages/lammps/core.py
-      if: ${{ !matrix.check_memleak }}
     - run: pytest -s --cov=deepmd source/lmp/tests
       env:
         OMP_NUM_THREADS: 1
