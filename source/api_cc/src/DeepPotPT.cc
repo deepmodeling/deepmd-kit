@@ -42,7 +42,7 @@ torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
   if (row_tensors.size() > 0) {
     tensor = torch::cat(row_tensors, 0).unsqueeze(0);
   } else {
-    tensor = torch::empty({0, 0}, torch::kInt32);
+    tensor = torch::empty({1, 0, 0}, torch::kInt32);
   }
   return tensor;
 }
