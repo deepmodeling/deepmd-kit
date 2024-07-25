@@ -583,7 +583,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
             deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
                              nghost, lmp_list, ago, fparam, daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
-            error->one(FLERR, e.what());
+            error->all(FLERR, e.what());
           }
         } else {
           dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
@@ -592,7 +592,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
                              ago, fparam, daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
-            error->one(FLERR, e.what());
+            error->all(FLERR, e.what());
           }
         }
       }
@@ -606,7 +606,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                              dtype, dbox, nghost, lmp_list, ago, fparam,
                              daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
-            error->one(FLERR, e.what());
+            error->all(FLERR, e.what());
           }
         } else {
           dforce.resize(static_cast<size_t>(extend_inum + extend_nghost) * 3);
@@ -615,7 +615,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                              extend_dtype, dbox, extend_nghost, extend_lmp_list,
                              ago, fparam, daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
-            error->one(FLERR, e.what());
+            error->all(FLERR, e.what());
           }
         }
         if (eflag_atom) {
@@ -668,7 +668,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                                       dtype, dbox, nghost, lmp_list, ago,
                                       fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
-          error->one(FLERR, e.what());
+          error->all(FLERR, e.what());
         }
       } else {
         try {
@@ -677,7 +677,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
                                       dtype, dbox, nghost, lmp_list, ago,
                                       fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
-          error->one(FLERR, e.what());
+          error->all(FLERR, e.what());
         }
       }
       // deep_pot_model_devi.compute_avg (dener, all_energy);
@@ -852,7 +852,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       try {
         deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
       } catch (deepmd_compat::deepmd_exception &e) {
-        error->one(FLERR, e.what());
+        error->all(FLERR, e.what());
       }
     } else {
       error->all(FLERR, "Serial version does not support model devi");
@@ -977,7 +977,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     try {
       deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
     } catch (deepmd_compat::deepmd_exception &e) {
-      error->one(FLERR, e.what());
+      error->all(FLERR, e.what());
     }
     cutoff = deep_pot.cutoff() * dist_unit_cvt_factor;
     numb_types = deep_pot.numb_types();
@@ -990,7 +990,7 @@ void PairDeepMD::settings(int narg, char **arg) {
       deep_pot_model_devi.init(models, get_node_rank(),
                                get_file_content(models));
     } catch (deepmd_compat::deepmd_exception &e) {
-      error->one(FLERR, e.what());
+      error->all(FLERR, e.what());
     }
     cutoff = deep_pot_model_devi.cutoff() * dist_unit_cvt_factor;
     numb_types = deep_pot_model_devi.numb_types();

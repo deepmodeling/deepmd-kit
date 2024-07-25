@@ -136,7 +136,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     dpt.init(model, 0, "dipole_charge");
     dtm.init(model, 0, "dipole_charge");
   } catch (deepmd_compat::deepmd_exception &e) {
-    error->one(FLERR, e.what());
+    error->all(FLERR, e.what());
   }
 
   pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
@@ -467,7 +467,7 @@ void FixDPLR::pre_force(int vflag) {
   try {
     dpt.compute(tensor, dcoord, dtype, dbox, nghost, lmp_list);
   } catch (deepmd_compat::deepmd_exception &e) {
-    error->one(FLERR, e.what());
+    error->all(FLERR, e.what());
   }
   // cout << "tensor of size " << tensor.size() << endl;
   // cout << "nghost " << nghost << endl;
@@ -648,7 +648,7 @@ void FixDPLR::post_force(int vflag) {
       dvcorr[ii] *= ener_unit_cvt_factor;
     }
   } catch (deepmd_compat::deepmd_exception &e) {
-    error->one(FLERR, e.what());
+    error->all(FLERR, e.what());
   }
   assert(dfcorr.size() == dcoord.size());
   assert(dfcorr.size() == nall * 3);
