@@ -77,7 +77,7 @@ class DpLoaderSet(Dataset):
         systems,
         batch_size,
         type_map,
-        seed=10,
+        seed=None,
         shuffle=True,
     ):
         if seed is not None:
