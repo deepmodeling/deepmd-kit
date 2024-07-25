@@ -61,6 +61,8 @@ jobs:
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
         LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
       if: ${{ !matrix.check_memleak }}
+    - run: if [[ -f log.lammps ]]; then cat log.lammps; fi
+      if: ${{ always() }}
     # test ipi
     - run: pytest --cov=deepmd source/ipi/tests
       env:
