@@ -111,6 +111,10 @@ class FrozenModel(BaseModel):
         """Returns whether the descriptor has message passing."""
         return self.model.has_message_passing()
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the model needs sorted nlist when using `forward_lower`."""
+        return self.model.need_sorted_nlist_for_lower()
+
     @torch.jit.export
     def forward(
         self,

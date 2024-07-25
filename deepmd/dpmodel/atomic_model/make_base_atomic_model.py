@@ -120,6 +120,10 @@ def make_base_atomic_model(
             """Returns whether the descriptor has message passing."""
 
         @abstractmethod
+        def need_sorted_nlist_for_lower(self) -> bool:
+            """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+
+        @abstractmethod
         def fwd(
             self,
             extended_coord: t_tensor,

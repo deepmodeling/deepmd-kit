@@ -344,7 +344,9 @@ def train(FLAGS):
 
 
 def freeze(FLAGS):
-    model = torch.jit.script(inference.Tester(FLAGS.model, head=FLAGS.head).model)
+    model = inference.Tester(FLAGS.model, head=FLAGS.head).model
+    model.eval()
+    model = torch.jit.script(model)
     extra_files = {}
     torch.jit.save(
         model,

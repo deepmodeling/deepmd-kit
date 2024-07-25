@@ -112,6 +112,7 @@ class DPZBLModel(DPZBLModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
 
         model_predict = {}
