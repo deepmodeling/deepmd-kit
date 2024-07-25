@@ -118,6 +118,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return self.descriptor.has_message_passing()
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return self.descriptor.need_sorted_nlist_for_lower()
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(

@@ -175,6 +175,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
 
+    @abstractmethod
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+
 
 def make_default_type_embedding(
     ntypes,

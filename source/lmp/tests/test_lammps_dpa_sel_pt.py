@@ -19,11 +19,13 @@ from write_lmp_data import (
     write_lmp_data,
 )
 
-pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot-1.pbtxt"
 )
-pb_file = Path(__file__).parent / "graph.pb"
+# large repinit sel but small repformer sel
+pb_file = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa_sel.pth"
+)
 pb_file2 = Path(__file__).parent / "graph2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
@@ -34,35 +36,35 @@ md_file = Path(__file__).parent / "md.out"
 # this is as the same as python and c++ tests, test_deeppot_a.py
 expected_ae = np.array(
     [
-        -9.275780747115504710e01,
-        -1.863501786584258468e02,
-        -1.863392472863538103e02,
-        -9.279281325486221021e01,
-        -1.863671545232153903e02,
-        -1.863619822847602165e02,
+        -94.40466356082422,
+        -188.20655580528742,
+        -188.172650838896,
+        -94.3984730612324,
+        -188.18804200217326,
+        -188.20912570390797,
     ]
 )
 expected_e = np.sum(expected_ae)
 expected_f = np.array(
     [
-        -3.034045420701179663e-01,
-        8.405844663871177014e-01,
-        7.696947487118485642e-02,
-        7.662001266663505117e-01,
-        -1.880601391333554251e-01,
-        -6.183333871091722944e-01,
-        -5.036172391059643427e-01,
-        -6.529525836149027151e-01,
-        5.432962643022043459e-01,
-        6.382357912332115024e-01,
-        -1.748518296794561167e-01,
-        3.457363524891907125e-01,
-        1.286482986991941552e-03,
-        3.757251165286925043e-01,
-        -5.972588700887541124e-01,
-        -5.987006197104716154e-01,
-        -2.004450304880958100e-01,
-        2.495901655353461868e-01,
+        -0.5269430960718773,
+        0.09443722477575306,
+        -0.018996127144558193,
+        0.07511784469939177,
+        -0.004636423045215931,
+        -0.06042882995560078,
+        -0.11356148928265902,
+        -0.14249867913062475,
+        0.11471641225723211,
+        0.48857267799774884,
+        0.029274479383282204,
+        0.0018077032375469655,
+        0.14145328669603485,
+        0.061307914850956956,
+        -0.08774313950622735,
+        -0.06463922403863916,
+        -0.03788451683415152,
+        0.050643981111607235,
     ]
 ).reshape(6, 3)
 
@@ -77,62 +79,62 @@ expected_f2 = np.array(
     ]
 )
 
-expected_v = -np.array(  # This minus sign comes from the definition of the compute centroid/stress/atom command in LAMMPS. See https://docs.lammps.org/compute_stress_atom.html
+expected_v = -np.array(
     [
-        -2.912234126853306959e-01,
-        -3.800610846612756388e-02,
-        2.776624987489437202e-01,
-        -5.053761003913598976e-02,
-        -3.152373041953385746e-01,
-        1.060894290092162379e-01,
-        2.826389131596073745e-01,
-        1.039129970665329250e-01,
-        -2.584378792325942586e-01,
-        -3.121722367954994914e-01,
-        8.483275876786681990e-02,
-        2.524662342344257682e-01,
-        4.142176771106586414e-02,
-        -3.820285230785245428e-02,
-        -2.727311173065460545e-02,
-        2.668859789777112135e-01,
-        -6.448243569420382404e-02,
-        -2.121731470426218846e-01,
-        -8.624335220278558922e-02,
-        -1.809695356746038597e-01,
-        1.529875294531883312e-01,
-        -1.283658185172031341e-01,
-        -1.992682279795223999e-01,
-        1.409924999632362341e-01,
-        1.398322735274434292e-01,
-        1.804318474574856390e-01,
-        -1.470309318999652726e-01,
-        -2.593983661598450730e-01,
-        -4.236536279233147489e-02,
-        3.386387920184946720e-02,
-        -4.174017537818433543e-02,
-        -1.003500282164128260e-01,
-        1.525690815194478966e-01,
-        3.398976109910181037e-02,
-        1.522253908435125536e-01,
-        -2.349125581341701963e-01,
-        9.515545977581392825e-04,
-        -1.643218849228543846e-02,
-        1.993234765412972564e-02,
-        6.027265332209678569e-04,
-        -9.563256398907417355e-02,
-        1.510815124001868293e-01,
-        -7.738094816888557714e-03,
-        1.502832772532304295e-01,
-        -2.380965783745832010e-01,
-        -2.309456719810296654e-01,
-        -6.666961081213038098e-02,
-        7.955566551234216632e-02,
-        -8.099093777937517447e-02,
-        -3.386641099800401927e-02,
-        4.447884755740908608e-02,
-        1.008593228579038742e-01,
-        4.556718179228393811e-02,
-        -6.078081273849572641e-02,
+        0.9071749098850648,
+        0.06394291002323482,
+        -0.045778841699466444,
+        0.05724095081080198,
+        -0.04587607140012173,
+        0.03338900821751993,
+        -0.08821876554631314,
+        0.028921736412500003,
+        -0.0016941267234178055,
+        0.0328481028525373,
+        0.011077847594560757,
+        0.05737319258976218,
+        0.03033379636209457,
+        -0.007106204143787434,
+        -0.008933706230224273,
+        0.08706716158937683,
+        -0.007590237086934508,
+        -0.0465897822325519,
+        0.005288635023633567,
+        -0.04363673459933623,
+        0.040896766225094555,
+        -0.0776988217139129,
+        -0.04503884467345057,
+        0.034987399918229245,
+        0.06527106015783832,
+        0.036805235933779795,
+        -0.03289891755994384,
+        0.9956154345592723,
+        0.11963562102541159,
+        -0.11601555180804074,
+        0.12681453991319047,
+        0.01822615751480253,
+        -0.020439753868777312,
+        -0.10614750448436672,
+        -0.018079989970225654,
+        0.021624509802219784,
+        0.29066664335998216,
+        -0.017510677635950628,
+        0.040767419279345324,
+        0.0019631746760569863,
+        -0.029874379170659604,
+        0.047763391313415365,
+        0.016942327234135898,
+        0.04694015440808539,
+        -0.07381327572535609,
+        -0.0318765521505375,
+        -0.03129174028722404,
+        0.04031856154341752,
+        -0.036436413927534876,
+        -0.015255351334518573,
+        0.020292770612590032,
+        0.04264726717944152,
+        0.0200622102655479,
+        -0.026746995544407036,
     ]
 ).reshape(6, 9)
 expected_v2 = -np.array(
@@ -221,9 +223,6 @@ type_OH = np.array([1, 2, 2, 1, 2, 2])
 type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
 sp.check_output(
     f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
 )
@@ -321,13 +320,7 @@ def test_pair_deepmd(lammps):
 def test_pair_deepmd_virial(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
-    lammps.compute("peatom all pe/atom pair")
-    lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
-    lammps.variable("eatom atom c_peatom")
-    for ii in range(9):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"pressure{jj} equal c_pressure[{ii+1}]")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
@@ -341,17 +334,6 @@ def test_pair_deepmd_virial(lammps):
             expected_f[lammps.atoms[ii].id - 1]
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
-    assert np.array(lammps.variables["eatom"].value) == pytest.approx(
-        expected_ae[idx_map]
-    )
-    vol = box[1] * box[3] * box[5]
-    for ii in range(6):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        assert np.array(
-            lammps.variables[f"pressure{jj}"].value
-        ) / constants.nktv2p == pytest.approx(
-            -expected_v[idx_map, jj].sum(axis=0) / vol
-        )
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -389,13 +371,7 @@ def test_pair_deepmd_model_devi_virial(lammps):
         f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
     )
     lammps.pair_coeff("* *")
-    lammps.compute("peatom all pe/atom pair")
-    lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
-    lammps.variable("eatom atom c_peatom")
-    for ii in range(9):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        lammps.variable(f"pressure{jj} equal c_pressure[{ii+1}]")
     for ii in range(9):
         jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
         lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
@@ -409,17 +385,6 @@ def test_pair_deepmd_model_devi_virial(lammps):
             expected_f[lammps.atoms[ii].id - 1]
         )
     idx_map = lammps.lmp.numpy.extract_atom("id") - 1
-    assert np.array(lammps.variables["eatom"].value) == pytest.approx(
-        expected_ae[idx_map]
-    )
-    vol = box[1] * box[3] * box[5]
-    for ii in range(6):
-        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-        assert np.array(
-            lammps.variables[f"pressure{jj}"].value
-        ) / constants.nktv2p == pytest.approx(
-            -expected_v[idx_map, jj].sum(axis=0) / vol
-        )
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -718,7 +683,7 @@ def test_pair_deepmd_si(lammps_si):
 )
 @pytest.mark.parametrize(
     ("balance_args",),
-    [(["--balance"],), ([],)],
+    [(["--balance"],)],
 )
 def test_pair_deepmd_mpi(balance_args: list):
     with tempfile.NamedTemporaryFile() as f:

@@ -105,6 +105,10 @@ def make_base_descriptor(
             """Returns whether the descriptor has message passing."""
 
         @abstractmethod
+        def need_sorted_nlist_for_lower(self) -> bool:
+            """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+
+        @abstractmethod
         def get_env_protection(self) -> float:
             """Returns the protection of building environment matrix."""
             pass
