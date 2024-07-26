@@ -199,14 +199,14 @@ class TestFinetuneSeAtten(unittest.TestCase):
         cls.VALID_DATAS = VALID_DATAS
 
     @classmethod
-    def tearDownClass(self):
-        for i in range(len(self.INPUT_PRES)):
-            _file_delete(self.INPUT_PRES[i])
-            _file_delete(self.INPUT_FINETUNES[i])
-            _file_delete(self.INPUT_FINETUNE_MIXS[i])
-            _file_delete(self.PRE_MODELS[i])
-            _file_delete(self.FINETUNED_MODELS[i])
-            _file_delete(self.FINETUNED_MODEL_MIXS[i])
+    def tearDownClass(cls):
+        for i in range(len(cls.INPUT_PRES)):
+            _file_delete(cls.INPUT_PRES[i])
+            _file_delete(cls.INPUT_FINETUNES[i])
+            _file_delete(cls.INPUT_FINETUNE_MIXS[i])
+            _file_delete(cls.PRE_MODELS[i])
+            _file_delete(cls.FINETUNED_MODELS[i])
+            _file_delete(cls.FINETUNED_MODEL_MIXS[i])
             _file_delete("out.json")
             _file_delete("model.ckpt.meta")
             _file_delete("model.ckpt.index")

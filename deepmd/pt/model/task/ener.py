@@ -181,7 +181,7 @@ class EnergyFittingNetDirect(Fitting):
     def serialize(self) -> dict:
         raise NotImplementedError
 
-    def deserialize(cls) -> "EnergyFittingNetDirect":
+    def deserialize(self) -> "EnergyFittingNetDirect":
         raise NotImplementedError
 
     def change_type_map(

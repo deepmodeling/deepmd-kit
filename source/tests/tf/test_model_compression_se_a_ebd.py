@@ -99,10 +99,10 @@ def setUpModule():
 
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -124,8 +124,8 @@ class TestDeepPotAPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)
@@ -223,10 +223,10 @@ class TestDeepPotAPBC(unittest.TestCase):
 
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -248,8 +248,8 @@ class TestDeepPotANoPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = None
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = None
 
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(
@@ -331,10 +331,10 @@ class TestDeepPotANoPBC(unittest.TestCase):
 
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -356,8 +356,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_1frame(self):
         ee0, ff0, vv0 = self.dp_original.eval(
@@ -439,10 +439,10 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_original = DeepPot(FROZEN_MODEL_ET)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL_ET)
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_original = DeepPot(FROZEN_MODEL_ET)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL_ET)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -464,11 +464,11 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
         _file_delete(INPUT_ET)
         _file_delete(FROZEN_MODEL_ET)
         _file_delete(COMPRESSED_MODEL_ET)

@@ -172,10 +172,10 @@ def setUpModule():
 )
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
+        cls.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -197,8 +197,8 @@ class TestDeepPotAPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_attrs(self):
         for i in range(len(tests)):
@@ -318,10 +318,10 @@ class TestDeepPotAPBC(unittest.TestCase):
 )
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
+        cls.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -343,8 +343,8 @@ class TestDeepPotANoPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = None
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = None
 
     def test_1frame(self):
         for i in range(len(tests)):
@@ -445,10 +445,10 @@ class TestDeepPotANoPBC(unittest.TestCase):
 )
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
-        self.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
-        self.coords = np.array(
+    def setUpClass(cls):
+        cls.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
+        cls.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -470,8 +470,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_1frame(self):
         for i in range(len(tests)):
@@ -575,12 +575,12 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 )
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(len(tests))]
-        self.dp_compresseds = [
+    def setUpClass(cls):
+        cls.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(len(tests))]
+        cls.dp_compresseds = [
             DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(len(tests))
         ]
-        self.coords = np.array(
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -602,11 +602,11 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
         for i in range(len(tests)):
             _file_delete(INPUTS_ET[i])
             _file_delete(FROZEN_MODELS_ET[i])
