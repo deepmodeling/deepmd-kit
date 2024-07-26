@@ -2,6 +2,7 @@
 import unittest
 
 import ase
+import dpdata
 import numpy as np
 
 from deepmd.infer.deep_eval import (
@@ -139,7 +140,10 @@ class TestDeepPot(unittest.TestCase):
     def test_2frame_atm(self):
         for ii, result in enumerate(self.case.results):
             coords2 = np.concatenate((result.coord, result.coord))
-            box2 = np.concatenate((result.box, result.box))
+            if result.box is not None:
+                box2 = np.concatenate((result.box, result.box))
+            else:
+                box2 = None
             ee, ff, vv, ae, av = self.dp.eval(coords2, box2, result.atype, atomic=True)
             # check shape of the returns
             nframes = 2
@@ -202,6 +206,46 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(ff.ravel(), 0, default_places)
             np.testing.assert_almost_equal(ee.ravel(), 0, default_places)
             np.testing.assert_almost_equal(vv.ravel(), 0, default_places)
+
+    def test_dpdata_driver(self):
+        for ii, result in enumerate(self.case.results):
+            nframes = 1
+            # infer atom_numbs from atype
+            atom_numbs = np.bincount(result.atype).tolist()
+            system = dpdata.System(
+                data={
+                    "coords": result.coord.reshape((nframes, result.nloc, 3)),
+                    "cells": np.zeros((nframes, 3, 3))
+                    if result.box is None
+                    else result.box.reshape((nframes, 3, 3)),
+                    "atom_types": np.array(result.atype),
+                    "orig": np.zeros((3,)),
+                    "atom_names": self.case.type_map,
+                    "atom_numbs": atom_numbs,
+                    "nopbc": result.box is None,
+                }
+            )
+            system_predicted = system.predict(self.dp, driver="dp")
+            np.testing.assert_almost_equal(
+                system_predicted["forces"].ravel(),
+                result.force.ravel(),
+                default_places,
+                err_msg=f"Result {ii} force",
+            )
+            expected_se = np.sum(result.energy.reshape([nframes, -1]), axis=1)
+            np.testing.assert_almost_equal(
+                system_predicted["energies"].ravel(),
+                expected_se.ravel(),
+                default_places,
+                err_msg=f"Result {ii} energy",
+            )
+            expected_sv = np.sum(result.virial.reshape([nframes, -1, 9]), axis=1)
+            np.testing.assert_almost_equal(
+                system_predicted["virials"].ravel(),
+                expected_sv.ravel(),
+                default_places,
+                err_msg=f"Result {ii} virial",
+            )
 
 
 @parameterized(

@@ -78,7 +78,10 @@ class Result:
         self.atype = np.array(data["atype"], dtype=np.int64)
         self.nloc = self.atype.size
         self.coord = np.array(data["coord"], dtype=np.float64).reshape(self.nloc, 3)
-        self.box = np.array(data["box"], dtype=np.float64).reshape(3, 3)
+        if data["box"] is not None:
+            self.box = np.array(data["box"], dtype=np.float64).reshape(3, 3)
+        else:
+            self.box = None
         if "atomic_energy" in data:
             self.atomic_energy = np.array(
                 data["atomic_energy"], dtype=np.float64

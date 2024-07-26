@@ -62,7 +62,7 @@ class DPDriver(dpdata.driver.Driver):
         atype = sorted_data["atom_types"]
 
         coord = data["coords"].reshape((nframes, natoms * 3))
-        if "nopbc" not in data:
+        if not data.get("nopbc", False):
             cell = data["cells"].reshape((nframes, 9))
         else:
             cell = None
