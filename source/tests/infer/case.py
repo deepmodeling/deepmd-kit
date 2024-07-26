@@ -5,6 +5,11 @@ For each model, a YAML file ending with `-testcase.yaml` must be given. It shoul
 
 - `key`: The key of the model.
 - `filename`: The path to the model file.
+- `ntypes`: The number of atomic types.
+- `rcut`: The cutoff radius.
+- `type_map`: The mapping between atomic types and atomic names.
+- `dim_fparam`: The number of frame parameters.
+- `dim_aparam`: The number of atomic parameters.
 - `results`: A list of results. Each result should contain the following keys:
     - `atype`: The atomic types.
     - `coord`: The atomic coordinates.
@@ -123,6 +128,11 @@ class Case:
         self.key = config["key"]
         self.filename = str(Path(filename).parent / config["filename"])
         self.results = [Result(data) for data in config["results"]]
+        self.ntypes = config["ntypes"]
+        self.rcut = config["rcut"]
+        self.type_map = config["type_map"]
+        self.dim_fparam = config["dim_fparam"]
+        self.dim_aparam = config["dim_aparam"]
 
     @lru_cache
     def get_model(self, suffix: str) -> str:

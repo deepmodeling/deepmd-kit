@@ -37,11 +37,13 @@ class TestDeepPot(unittest.TestCase):
         cls.dp = None
 
     def test_attrs(self):
-        self.assertEqual(self.dp.get_ntypes(), 2)
-        self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=default_places)
-        self.assertEqual(self.dp.get_type_map(), ["O", "H"])
-        self.assertEqual(self.dp.get_dim_fparam(), 0)
-        self.assertEqual(self.dp.get_dim_aparam(), 0)
+        self.assertEqual(self.dp.get_ntypes(), self.case.ntypes)
+        self.assertAlmostEqual(
+            self.dp.get_rcut(), self.case.rcut, places=default_places
+        )
+        self.assertEqual(self.dp.get_type_map(), self.case.type_map)
+        self.assertEqual(self.dp.get_dim_fparam(), self.case.dim_fparam)
+        self.assertEqual(self.dp.get_dim_aparam(), self.case.dim_aparam)
 
     def test_1frame(self):
         for ii, result in enumerate(self.case.results):
@@ -215,7 +217,7 @@ class TestDeepPotNeighborList(TestDeepPot):
         cls.dp = DeepEval(
             model_name,
             neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
-                cutoffs=6, bothways=True
+                cutoffs=cls.case.rcut, bothways=True
             ),
         )
 

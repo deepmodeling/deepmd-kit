@@ -1,6 +1,11 @@
 # se_e2_a + energy; types are O and H
 key: se_e2_a
 filename: deeppot.yaml
+ntypes: 2
+rcut: 6.0
+type_map: ["O", "H"]
+dim_fparam: 0
+dim_aparam: 0
 results:
   - coord:
       [
