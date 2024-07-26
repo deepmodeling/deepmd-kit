@@ -380,26 +380,28 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([-1, natoms, 3]),
+            coords.reshape([nframes, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
         type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([-1, 3, 3]),
+                cells.reshape([nframes, 3, 3]),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
         else:
             box_input = None
         if fparam is not None:
-            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
         else:
             fparam_input = None
         if aparam is not None:
             aparam_input = to_torch_tensor(
-                aparam.reshape(-1, natoms, self.get_dim_aparam())
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
             )
         else:
             aparam_input = None
@@ -451,31 +453,33 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([-1, natoms, 3]),
+            coords.reshape([nframes, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
         type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
         spin_input = torch.tensor(
-            spins.reshape([-1, natoms, 3]),
+            spins.reshape([nframes, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([-1, 3, 3]),
+                cells.reshape([nframes, 3, 3]),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
         else:
             box_input = None
         if fparam is not None:
-            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
         else:
             fparam_input = None
         if aparam is not None:
             aparam_input = to_torch_tensor(
-                aparam.reshape(-1, natoms, self.get_dim_aparam())
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
             )
         else:
             aparam_input = None
