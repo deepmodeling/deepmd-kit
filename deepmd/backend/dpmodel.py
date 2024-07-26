@@ -37,7 +37,7 @@ class DPModelBackend(Backend):
         Backend.Feature.DEEP_EVAL | Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = [".dp"]
+    suffixes: ClassVar[List[str]] = [".dp", ".yaml", ".yml"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
