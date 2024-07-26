@@ -199,8 +199,13 @@ inline void DP_DeepPotCompute_variant(DP_DeepPot* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    fparam_, aparam_));
+  if (atomic_energy || atomic_virial) {
+    DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                      fparam_, aparam_));
+  } else {
+    DP_REQUIRES_OK(
+        dp, dp->dp.compute(e, f, v, coord_, atype_, cell_, fparam_, aparam_));
+  }
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -286,8 +291,14 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl, ago, fparam_, aparam_));
+  if (atomic_energy || atomic_virial) {
+    DP_REQUIRES_OK(
+        dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_, nghost,
+                           nlist->nl, ago, fparam_, aparam_));
+  } else {
+    DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, coord_, atype_, cell_, nghost,
+                                      nlist->nl, ago, fparam_, aparam_));
+  }
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -468,8 +479,13 @@ void DP_DeepPotModelDeviCompute_variant(DP_DeepPotModelDevi* dp,
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    fparam_, aparam_));
+  if (atomic_energy || atomic_virial) {
+    DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
+                                      fparam_, aparam_));
+  } else {
+    DP_REQUIRES_OK(
+        dp, dp->dp.compute(e, f, v, coord_, atype_, cell_, fparam_, aparam_));
+  }
   // 2D vector to 2D array, flatten first
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -567,8 +583,14 @@ void DP_DeepPotModelDeviComputeNList_variant(DP_DeepPotModelDevi* dp,
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl, ago, fparam_, aparam_));
+  if (atomic_energy || atomic_virial) {
+    DP_REQUIRES_OK(
+        dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_, nghost,
+                           nlist->nl, ago, fparam_, aparam_));
+  } else {
+    DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, coord_, atype_, cell_, nghost,
+                                      nlist->nl, ago, fparam_, aparam_));
+  }
   // 2D vector to 2D array, flatten first
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -744,7 +766,11 @@ inline void DP_DeepTensorCompute_variant(DP_DeepTensor* dt,
   }
   std::vector<VALUETYPE> t, f, v, at, av;
 
-  DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_));
+  if (atomic_virial || atomic_tensor) {
+    DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_));
+  } else {
+    DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, coord_, atype_, cell_));
+  }
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (global_tensor) {
     std::copy(t.begin(), t.end(), global_tensor);
@@ -816,8 +842,13 @@ inline void DP_DeepTensorComputeNList_variant(DP_DeepTensor* dt,
   }
   std::vector<VALUETYPE> t, f, v, at, av;
 
-  DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_,
-                                    nghost, nlist->nl));
+  if (atomic_virial || atomic_tensor) {
+    DP_REQUIRES_OK(dt, dt->dt.compute(t, f, v, at, av, coord_, atype_, cell_,
+                                      nghost, nlist->nl));
+  } else {
+    DP_REQUIRES_OK(
+        dt, dt->dt.compute(t, f, v, coord_, atype_, cell_, nghost, nlist->nl));
+  }
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (global_tensor) {
     std::copy(t.begin(), t.end(), global_tensor);
