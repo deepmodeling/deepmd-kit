@@ -49,6 +49,8 @@ class DescriptorTest:
             {},
             suffix=suffix,
         )
+        # ensure get_dim_out gives the correct shape
+        t_des = tf.reshape(t_des, [1, natoms[0], obj.get_dim_out()])
         return [t_des], {
             t_coord: coords,
             t_type: atype,

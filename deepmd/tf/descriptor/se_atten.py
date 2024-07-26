@@ -765,7 +765,14 @@ class DescrptSeAtten(DescrptSeA):
             type_embedding=type_embedding,
             atype=atype,
         )
-        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
+        layer = tf.reshape(
+            layer,
+            [
+                tf.shape(inputs)[0],
+                natoms[0],
+                self.filter_neuron[-1] * self.n_axis_neuron,
+            ],
+        )
         qmat = tf.reshape(
             qmat, [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3]
         )
@@ -2193,6 +2200,14 @@ class DescrptDPA1Compat(DescrptSeAtten):
                 self.embd_input_dim = 1 + self.tebd_dim
         else:
             self.embd_input_dim = 1
+
+    def get_dim_out(self) -> int:
+        """Returns the output dimension of this descriptor."""
+        return (
+            super().get_dim_out() + self.tebd_dim
+            if self.concat_output_tebd
+            else super().get_dim_out()
+        )
 
     def build(
         self,
