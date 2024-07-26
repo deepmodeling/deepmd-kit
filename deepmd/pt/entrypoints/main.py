@@ -109,7 +109,9 @@ def get_trainer(
         assert dist.is_nccl_available()
         dist.init_process_group(backend="nccl")
 
-    def prepare_trainer_input_single(model_params_single, data_dict_single, rank=0):
+    def prepare_trainer_input_single(
+        model_params_single, data_dict_single, rank=0, seed=None
+    ):
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
@@ -134,11 +136,14 @@ def get_trainer(
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
         # validation and training data
+        # avoid the same batch sequence among devices
+        rank_seed = (seed + rank) % (2**32) if seed is not None else None
         validation_data_single = (
             DpLoaderSet(
                 validation_systems,
                 validation_dataset_params["batch_size"],
                 model_params_single["type_map"],
+                seed=rank_seed,
             )
             if validation_systems
             else None
@@ -147,6 +152,7 @@ def get_trainer(
             training_systems,
             training_dataset_params["batch_size"],
             model_params_single["type_map"],
+            seed=rank_seed,
         )
         return (
             train_data_single,
@@ -155,6 +161,7 @@ def get_trainer(
         )
 
     rank = dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
+    data_seed = config["training"].get("seed", None)
     if not multi_task:
         (
             train_data,
@@ -164,6 +171,7 @@ def get_trainer(
             config["model"],
             config["training"],
             rank=rank,
+            seed=data_seed,
         )
     else:
         train_data, validation_data, stat_file_path = {}, {}, {}
@@ -176,6 +184,7 @@ def get_trainer(
                 config["model"]["model_dict"][model_key],
                 config["training"]["data_dict"][model_key],
                 rank=rank,
+                seed=data_seed,
             )
 
     trainer = training.Trainer(

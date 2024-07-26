@@ -77,10 +77,11 @@ class DpLoaderSet(Dataset):
         systems,
         batch_size,
         type_map,
-        seed=10,
+        seed=None,
         shuffle=True,
     ):
-        setup_seed(seed)
+        if seed is not None:
+            setup_seed(seed)
         if isinstance(systems, str):
             with h5py.File(systems) as file:
                 systems = [os.path.join(systems, item) for item in file.keys()]

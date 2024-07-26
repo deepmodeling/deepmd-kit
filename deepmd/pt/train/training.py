@@ -274,10 +274,6 @@ class Trainer:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
         # Model
-        dp_random.seed(training_params["seed"])
-        if training_params["seed"] is not None:
-            torch.manual_seed(training_params["seed"])
-
         self.model = get_model_for_wrapper(model_params)
 
         # Loss
@@ -302,7 +298,6 @@ class Trainer:
                 )
 
         # Data
-        dp_random.seed(training_params["seed"])
         if not self.multi_task:
             self.get_sample_func = single_model_stat(
                 self.model,
