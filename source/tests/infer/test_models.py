@@ -25,12 +25,13 @@ default_places = 7
 @parameterized(
     (
         "se_e2_a",
+        "se_e2_r",
         "fparam_aparam",
     ),  # key
     (".pb", ".pth"),  # model extension
 )
 class TestDeepPot(unittest.TestCase):
-    # moved from tests/tf/test_deeppot_a,py
+    # moved from tests/tf/test_deeppot_a.py
 
     @classmethod
     def setUpClass(cls):
@@ -42,6 +43,13 @@ class TestDeepPot(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.dp = None
+
+    def setUp(self):
+        key, extension = self.param
+        if key == "se_e2_r" and extension == ".pth":
+            self.skipTest(
+                reason="se_e2_r type_one_side is not supported for PyTorch models"
+            )
 
     def test_attrs(self):
         assert isinstance(self.dp, DeepPot)
