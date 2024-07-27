@@ -190,7 +190,7 @@ class TestDeepPot(unittest.TestCase):
                 # TODO: needs to fix
                 self.skipTest("Segfault in GPUs")
         nframes = 1
-        for box in [np.eye(3, dtype=np.float64), None]:
+        for box in [np.eye(3, dtype=np.float64).reshape(1, 3, 3), None]:
             ee, ff, vv = self.dp.eval(
                 np.zeros([nframes, 0, 3], dtype=np.float64),
                 box,
