@@ -15,11 +15,6 @@ import deepmd
 from deepmd.pt.common import (
     ACTIVATION_FN_DICT,
 )
-from deepmd.pt.descriptor import (
-    Descriptor,
-)
-
-import deepmd
 
 import torch
 
@@ -42,10 +37,6 @@ class DPTabulate:
             Descriptor of the original model
     neuron
             Number of neurons in each hidden layers of the embedding net :math:`\\mathcal{N}`
-    graph : tf.Graph
-            The graph of the original model
-    graph_def : tf.GraphDef
-            The graph_def of the original model
     type_one_side
             Try to build N_types tables. Otherwise, building N_types^2 tables
     exclude_types : List[List[int]]
@@ -53,25 +44,21 @@ class DPTabulate:
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
             The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ACTIVATION_FN_DICT.
-    suffix : str, optional
-            The suffix of the scope
     """
 
     def __init__(
         self,
-        descrpt: Descriptor,
+        descrpt,
         neuron: List[int],
         type_one_side: bool = False,
         exclude_types: List[List[int]] = [],
         activation_fn: Callable[[torch.Tensor], torch.Tensor] = torch.tanh,
-        suffix: str = "",
     ) -> None:
         """Constructor."""
         self.descrpt = descrpt
         self.neuron = neuron
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
-        self.suffix = suffix
 
         # functype
         if activation_fn == ACTIVATION_FN_DICT["tanh"]:
@@ -94,34 +81,29 @@ class DPTabulate:
         self.activation_fn = activation_fn
 
         if isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeR):
-            self.sel_a = self.descrpt.sel_r
-            self.rcut = self.descrpt.rcut
-            self.rcut_smth = self.descrpt.rcut_smth
+            self.sel_a = self.descrpt.get_sel()
+            self.rcut = self.descrpt.get_rcut()
+            self.rcut_smth = self.descrpt.get_rcut_smth()
         elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeA):
-            self.sel_a = self.descrpt.sel_a
-            self.rcut = self.descrpt.rcut_r
-            self.rcut_smth = self.descrpt.rcut_r_smth
+            self.sel_a = self.descrpt.get_sel()
+            self.rcut = self.descrpt.get_rcut()
+            self.rcut_smth = self.descrpt.get_rcut_smth()
         elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeT):
-            self.sel_a = self.descrpt.sel_a
-            self.rcut = self.descrpt.rcut_r
-            self.rcut_smth = self.descrpt.rcut_r_smth
+            self.sel_a = self.descrpt.get_sel()
+            self.rcut = self.descrpt.get_rcut()
+            self.rcut_smth = self.descrpt.get_rcut_smth()
         else:
             raise RuntimeError("Unsupported descriptor")
 
-        self.davg = get_tensor_by_name_from_graph(
-            self.graph, f"descrpt_attr{self.suffix}/t_avg"
-        )
-        self.dstd = get_tensor_by_name_from_graph(
-            self.graph, f"descrpt_attr{self.suffix}/t_std"
-        )
-        self.ntypes = get_tensor_by_name_from_graph(self.graph, "descrpt_attr/ntypes")
+        self.davg = self.descrpt.serialize()["@variables"]["davg"]
+        self.dstd = self.descrpt.serialize()["@variables"]["dstd"]
+        self.ntypes = self.descrpt.get_ntypes()
 
-        self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(
-            self.graph_def, suffix=self.suffix
-        )
+        self.embedding_net_nodes = self.descrpt.serialize()["embeddings"]["layers"]
+
         for key in self.embedding_net_nodes.keys():
             assert (
-                key.find("bias") > 0 or key.find("matrix") > 0
+                key.find("@variables") > 0
             ), "currently, only support weight matrix and bias matrix at the tabulation op!"
 
         self.layer_size = self._get_layer_size()
@@ -201,6 +183,122 @@ class DPTabulate:
                     self._build_lower(
                         net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
                     )
+        elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeA):
+            for ii in range(self.table_size):
+                if (self.type_one_side and not self._all_excluded(ii)) or (
+                    not self.type_one_side
+                    and (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types
+                ):
+                    if self.type_one_side:
+                        net = "filter_-1_net_" + str(ii)
+                        # upper and lower should consider all types which are not excluded and sel>0
+                        idx = [
+                            (type_i, ii) not in self.exclude_types
+                            and self.sel_a[type_i] > 0
+                            for type_i in range(self.ntypes)
+                        ]
+                        uu = np.max(upper[idx])
+                        ll = np.min(lower[idx])
+                    else:
+                        ielement = ii // self.ntypes
+                        net = (
+                            "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
+                        )
+                        uu = upper[ielement]
+                        ll = lower[ielement]
+                    xx = np.arange(ll, uu, stride0, dtype=self.data_type)
+                    xx = np.append(
+                        xx,
+                        np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
+                    )
+                    xx = np.append(
+                        xx, np.array([extrapolate * uu], dtype=self.data_type)
+                    )
+                    nspline = (
+                        (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
+                    ).astype(int)
+                    self._build_lower(
+                        net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
+                    )
+        elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeT):
+            xx_all = []
+            for ii in range(self.ntypes):
+                xx = np.arange(
+                    extrapolate * lower[ii], lower[ii], stride1, dtype=self.data_type
+                )
+                xx = np.append(
+                    xx, np.arange(lower[ii], upper[ii], stride0, dtype=self.data_type)
+                )
+                xx = np.append(
+                    xx,
+                    np.arange(
+                        upper[ii],
+                        extrapolate * upper[ii],
+                        stride1,
+                        dtype=self.data_type,
+                    ),
+                )
+                xx = np.append(
+                    xx, np.array([extrapolate * upper[ii]], dtype=self.data_type)
+                )
+                xx_all.append(xx)
+            nspline = (
+                (upper - lower) / stride0
+                + 2 * ((extrapolate * upper - upper) / stride1)
+            ).astype(int)
+            idx = 0
+            for ii in range(self.ntypes):
+                for jj in range(ii, self.ntypes):
+                    net = "filter_" + str(ii) + "_net_" + str(jj)
+                    self._build_lower(
+                        net,
+                        xx_all[ii],
+                        idx,
+                        upper[ii],
+                        lower[ii],
+                        stride0,
+                        stride1,
+                        extrapolate,
+                        nspline[ii],
+                    )
+                    idx += 1
+        elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeR):
+            for ii in range(self.table_size):
+                if (self.type_one_side and not self._all_excluded(ii)) or (
+                    not self.type_one_side
+                    and (ii // self.ntypes, ii % self.ntypes) not in self.exclude_types
+                ):
+                    if self.type_one_side:
+                        net = "filter_-1_net_" + str(ii)
+                        # upper and lower should consider all types which are not excluded and sel>0
+                        idx = [
+                            (type_i, ii) not in self.exclude_types
+                            and self.sel_a[type_i] > 0
+                            for type_i in range(self.ntypes)
+                        ]
+                        uu = np.max(upper[idx])
+                        ll = np.min(lower[idx])
+                    else:
+                        ielement = ii // self.ntypes
+                        net = (
+                            "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
+                        )
+                        uu = upper[ielement]
+                        ll = lower[ielement]
+                    xx = np.arange(ll, uu, stride0, dtype=self.data_type)
+                    xx = np.append(
+                        xx,
+                        np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
+                    )
+                    xx = np.append(
+                        xx, np.array([extrapolate * uu], dtype=self.data_type)
+                    )
+                    nspline = (
+                        (uu - ll) / stride0 + (extrapolate * uu - uu) / stride1
+                    ).astype(int)
+                    self._build_lower(
+                        net, xx, ii, uu, ll, stride0, stride1, extrapolate, nspline
+                    )
         else:
             raise RuntimeError("Unsupported descriptor")
         self._convert_numpy_to_tensor()
@@ -217,6 +315,18 @@ class DPTabulate:
 
         # tt.shape: [nspline, self.last_layer_size]
         if isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeA):
+            tt = np.full((nspline, self.last_layer_size), stride1)
+            tt[: int((upper - lower) / stride0), :] = stride0
+        elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeT):
+            tt = np.full((nspline, self.last_layer_size), stride1)
+            tt[
+                int((lower - extrapolate * lower) / stride1) + 1 : (
+                    int((lower - extrapolate * lower) / stride1)
+                    + int((upper - lower) / stride0)
+                ),
+                :,
+            ] = stride0
+        elif isinstance(self.descrpt, deepmd.pt.descriptor.DescrptSeR):
             tt = np.full((nspline, self.last_layer_size), stride1)
             tt[: int((upper - lower) / stride0), :] = stride0
         else:
@@ -804,3 +914,24 @@ class DPTabulate:
             if len(item) != 0:
                 return item.shape[1]
         return 0
+    
+    def _convert_numpy_to_tensor(self):
+        """Convert self.data from np.ndarray to torch.Tensor."""
+        for ii in self.data:
+            self.data[ii] = torch.tensor(self.data[ii])
+
+    @lru_cache
+    def _all_excluded(self, ii: int) -> bool:
+        """Check if type ii excluds all types.
+
+        Parameters
+        ----------
+        ii : int
+            type index
+
+        Returns
+        -------
+        bool
+            if type ii excluds all types
+        """
+        return all((ii, type_i) in self.exclude_types for type_i in range(self.ntypes))
