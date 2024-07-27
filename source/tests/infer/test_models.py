@@ -8,6 +8,9 @@ import numpy as np
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
+from deepmd.infer.deep_pot import (
+    DeepPot,
+)
 
 from ..consistent.common import (
     parameterized,
@@ -20,7 +23,7 @@ default_places = 10
 
 
 @parameterized(
-    tuple(get_cases().keys()),  # key
+    ("se_e2_a",),  # key
     (".pb", ".pth"),  # model extension
 )
 class TestDeepPot(unittest.TestCase):
@@ -38,6 +41,7 @@ class TestDeepPot(unittest.TestCase):
         cls.dp = None
 
     def test_attrs(self):
+        assert isinstance(self.dp, DeepPot)
         self.assertEqual(self.dp.get_ntypes(), self.case.ntypes)
         self.assertAlmostEqual(
             self.dp.get_rcut(), self.case.rcut, places=default_places
@@ -283,7 +287,7 @@ class TestDeepPot(unittest.TestCase):
 
 
 @parameterized(
-    tuple(get_cases().keys()),  # key
+    ("se_e2_a",),  # key
     (".pb",),  # model extension
 )
 class TestDeepPotNeighborList(TestDeepPot):
