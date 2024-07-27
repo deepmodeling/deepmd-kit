@@ -83,6 +83,16 @@ class Result:
             self.box = np.array(data["box"], dtype=np.float64).reshape(3, 3)
         else:
             self.box = None
+        if "fparam" in data:
+            self.fparam = np.array(data["fparam"], dtype=np.float64).ravel()
+        else:
+            self.fparam = None
+        if "aparam" in data:
+            self.aparam = np.array(data["aparam"], dtype=np.float64).reshape(
+                self.nloc, -1
+            )
+        else:
+            self.aparam = None
         if "atomic_energy" in data:
             self.atomic_energy = np.array(
                 data["atomic_energy"], dtype=np.float64

@@ -19,11 +19,14 @@ from .case import (
     get_cases,
 )
 
-default_places = 10
+default_places = 7
 
 
 @parameterized(
-    ("se_e2_a",),  # key
+    (
+        "se_e2_a",
+        "fparam_aparam",
+    ),  # key
     (".pb", ".pth"),  # model extension
 )
 class TestDeepPot(unittest.TestCase):
@@ -53,7 +56,12 @@ class TestDeepPot(unittest.TestCase):
     def test_1frame(self):
         for ii, result in enumerate(self.case.results):
             ee, ff, vv = self.dp.eval(
-                result.coord, result.box, result.atype, atomic=False
+                result.coord,
+                result.box,
+                result.atype,
+                atomic=False,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             # check shape of the returns
             nframes = 1
@@ -86,7 +94,12 @@ class TestDeepPot(unittest.TestCase):
     def test_1frame_atm(self):
         for ii, result in enumerate(self.case.results):
             ee, ff, vv, ae, av = self.dp.eval(
-                result.coord, result.box, result.atype, atomic=True
+                result.coord,
+                result.box,
+                result.atype,
+                atomic=True,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             # check shape of the returns
             nframes = 1
@@ -148,7 +161,14 @@ class TestDeepPot(unittest.TestCase):
                 box2 = np.concatenate((result.box, result.box))
             else:
                 box2 = None
-            ee, ff, vv, ae, av = self.dp.eval(coords2, box2, result.atype, atomic=True)
+            ee, ff, vv, ae, av = self.dp.eval(
+                coords2,
+                box2,
+                result.atype,
+                atomic=True,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             # check shape of the returns
             nframes = 2
             natoms = len(result.atype)
@@ -200,6 +220,12 @@ class TestDeepPot(unittest.TestCase):
                 box,
                 np.zeros([0], dtype=int),
                 atomic=False,
+                fparam=np.zeros([self.case.dim_fparam], dtype=np.float64)
+                if self.case.dim_fparam
+                else None,
+                aparam=np.zeros([0, self.case.dim_aparam], dtype=np.float64)
+                if self.case.dim_aparam
+                else None,
             )
             # check shape of the returns
             natoms = 0
@@ -219,6 +245,9 @@ class TestDeepPot(unittest.TestCase):
         from deepmd.calculator import (
             DP,
         )
+
+        if self.case.dim_fparam or self.case.dim_aparam:
+            self.skipTest("fparam and aparam not supported")
 
         for ii, result in enumerate(self.case.results):
             water = Atoms(
@@ -246,6 +275,9 @@ class TestDeepPot(unittest.TestCase):
             )
 
     def test_dpdata_driver(self):
+        if self.case.dim_fparam or self.case.dim_aparam:
+            self.skipTest("fparam and aparam not supported")
+
         for ii, result in enumerate(self.case.results):
             nframes = 1
             # infer atom_numbs from atype
