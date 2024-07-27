@@ -30,8 +30,8 @@ class TestDeepPot(unittest.TestCase):
     def setUpClass(cls):
         key, extension = cls.param
         cls.case = get_cases()[key]
-        model_name = cls.case.get_model(extension)
-        cls.dp = DeepEval(model_name)
+        cls.model_name = cls.case.get_model(extension)
+        cls.dp = DeepEval(cls.model_name)
 
     @classmethod
     def tearDownClass(cls):
@@ -206,6 +206,40 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(ff.ravel(), 0, default_places)
             np.testing.assert_almost_equal(ee.ravel(), 0, default_places)
             np.testing.assert_almost_equal(vv.ravel(), 0, default_places)
+
+    def test_ase(self):
+        from ase import (
+            Atoms,
+        )
+
+        from deepmd.calculator import (
+            DP,
+        )
+
+        for ii, result in enumerate(self.case.results):
+            water = Atoms(
+                np.array(self.case.type_map)[result.atype].tolist(),
+                positions=result.coord.reshape((-1, 3)),
+                cell=result.box.reshape((3, 3)) if result.box is not None else None,
+                calculator=DP(self.model_name),
+                pbc=result.box is not None,
+            )
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
+            nframes = 1
+            np.testing.assert_almost_equal(
+                ff.ravel(),
+                result.force.ravel(),
+                default_places,
+                err_msg=f"Result {ii} force",
+            )
+            expected_se = np.sum(result.atomic_energy.reshape([nframes, -1]), axis=1)
+            np.testing.assert_almost_equal(
+                ee.ravel(),
+                expected_se.ravel(),
+                default_places,
+                err_msg=f"Result {ii} energy",
+            )
 
     def test_dpdata_driver(self):
         for ii, result in enumerate(self.case.results):
