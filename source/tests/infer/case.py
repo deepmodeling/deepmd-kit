@@ -28,6 +28,7 @@ from pathlib import (
 )
 from typing import (
     Dict,
+    Optional,
 )
 
 import numpy as np
@@ -138,13 +139,15 @@ class Case:
         self.dim_aparam = config["dim_aparam"]
 
     @lru_cache
-    def get_model(self, suffix: str) -> str:
+    def get_model(self, suffix: str, out_file: Optional[str] = None) -> str:
         """Get the model file with the specified suffix.
 
         Parameters
         ----------
         suffix : str
             The suffix of the model file.
+        out_file : str, optional
+            The path to the output model file. If not given, a temporary file will be created.
 
         Returns
         -------
@@ -152,11 +155,12 @@ class Case:
             The path to the model file.
         """
         # generate a temporary model file
-        out_file = tempfile.NamedTemporaryFile(
-            suffix=suffix, dir=tempdir.name, delete=False, prefix=self.key + "_"
-        )
-        convert_backend(INPUT=self.filename, OUTPUT=out_file.name)
-        return out_file.name
+        if out_file is None:
+            out_file = tempfile.NamedTemporaryFile(
+                suffix=suffix, dir=tempdir.name, delete=False, prefix=self.key + "_"
+            ).name
+        convert_backend(INPUT=self.filename, OUTPUT=out_file)
+        return out_file
 
 
 @lru_cache
