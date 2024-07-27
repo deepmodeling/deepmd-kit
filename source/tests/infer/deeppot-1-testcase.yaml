@@ -1,9 +1,0 @@
-# se_e2_a + energy (another case)
-key: se_e2_a_1
-filename: deeppot-1.yaml
-ntypes: 2
-rcut: 6.0
-type_map: ["O", "H"]
-dim_fparam: 0
-dim_aparam: 0
-results: []
