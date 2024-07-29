@@ -270,6 +270,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 self.atomic_output_def(),
                 cc_ext,
                 do_atomic_virial=do_atomic_virial,
+                create_graph=self.training,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
