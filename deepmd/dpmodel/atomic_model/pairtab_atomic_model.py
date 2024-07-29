@@ -177,6 +177,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return False
+
     def forward_atomic(
         self,
         extended_coord,

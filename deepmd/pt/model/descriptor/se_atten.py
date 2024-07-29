@@ -196,6 +196,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """
         return True
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return False
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""

@@ -164,6 +164,10 @@ class PairTabAtomicModel(torch.nn.Module, BaseAtomicModel):
         # to match DPA1 and DPA2.
         return True
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return False
+
     def serialize(self) -> dict:
         dd = BaseAtomicModel.serialize(self)
         dd.update(

@@ -140,6 +140,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return True
+
     def call(
         self,
         coord_ext,

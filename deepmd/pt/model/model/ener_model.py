@@ -69,7 +69,6 @@ class EnergyModel(DPModel):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-        extra_nlist_sort: bool = True,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -79,7 +78,7 @@ class EnergyModel(DPModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
-            extra_nlist_sort=extra_nlist_sort,
+            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
         )
         if self.get_fitting_net() is not None:
             model_predict = {}

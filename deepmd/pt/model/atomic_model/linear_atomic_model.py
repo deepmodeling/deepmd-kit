@@ -132,6 +132,10 @@ class LinearEnergyAtomicModel(torch.nn.Module, BaseAtomicModel):
         sorted_sels: List[int] = outer_sorted[:, 1].to(torch.int64).tolist()
         return sorted_rcuts, sorted_sels
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return True
+
     def forward_atomic(
         self,
         extended_coord: torch.Tensor,

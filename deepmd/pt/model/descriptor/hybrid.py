@@ -140,6 +140,10 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """
         return any(descrpt.mixed_types() for descrpt in self.descrpt_list)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return True
+
     def share_params(self, base_class, shared_level, resume=False):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.

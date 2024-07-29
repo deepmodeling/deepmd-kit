@@ -132,6 +132,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         return self.sea.mixed_types()
 
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.sea.need_sorted_nlist_for_lower()
+
     def share_params(self, base_class, shared_level, resume=False):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
@@ -431,6 +436,10 @@ class DescrptBlockSeA(DescriptorBlock):
         2. requires a neighbor list that distinguishes different atomic types.
 
         """
+        return False
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return False
 
     @property

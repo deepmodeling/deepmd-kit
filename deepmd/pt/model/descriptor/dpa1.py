@@ -150,6 +150,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """
         return self.se_atten.mixed_types()
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.se_atten.need_sorted_nlist_for_lower()
+
     def share_params(self, base_class, shared_level, resume=False):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.

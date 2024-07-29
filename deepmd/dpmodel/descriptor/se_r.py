@@ -232,6 +232,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         gg = self.embeddings[(ll,)].call(ss)
         return gg
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return False
+
     def call(
         self,
         coord_ext,
