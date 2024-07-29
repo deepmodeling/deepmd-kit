@@ -132,7 +132,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         return self.sea.mixed_types()
 
-
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return self.sea.need_sorted_nlist_for_lower()

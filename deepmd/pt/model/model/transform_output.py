@@ -33,15 +33,27 @@ def atomic_virial_corr(
     faked_grad = torch.ones_like(sumce0)
     lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
     extended_virial_corr0 = torch.autograd.grad(
-        [sumce0], [extended_coord], grad_outputs=lst, create_graph=False, retain_graph=True,
+        [sumce0],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=False,
+        retain_graph=True,
     )[0]
     assert extended_virial_corr0 is not None
     extended_virial_corr1 = torch.autograd.grad(
-        [sumce1], [extended_coord], grad_outputs=lst, create_graph=False, retain_graph=True,
+        [sumce1],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=False,
+        retain_graph=True,
     )[0]
     assert extended_virial_corr1 is not None
     extended_virial_corr2 = torch.autograd.grad(
-        [sumce2], [extended_coord], grad_outputs=lst, create_graph=False, retain_graph=True,
+        [sumce2],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=False,
+        retain_graph=True,
     )[0]
     assert extended_virial_corr2 is not None
     extended_virial_corr = torch.concat(
@@ -66,7 +78,11 @@ def task_deriv_one(
     faked_grad = torch.ones_like(energy)
     lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
     extended_force = torch.autograd.grad(
-        [energy], [extended_coord], grad_outputs=lst, create_graph=create_graph, retain_graph=True,
+        [energy],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=create_graph,
+        retain_graph=True,
     )[0]
     assert extended_force is not None
     extended_force = -extended_force
