@@ -373,6 +373,10 @@ class DescrptBlockHybrid(DescriptorBlock):
         """
         return all(descriptor.mixed_types() for descriptor in self.descriptor_list)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return True
+
     @property
     def dim_out(self):
         """Returns the output dimension of this descriptor."""
