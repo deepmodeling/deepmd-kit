@@ -54,8 +54,8 @@ lammps.pair_style(
 )
 lammps.pair_coeff("* *")
 lammps.run(0)
-pe = lammps.eval("pe")
 if rank == 0:
+    pe = lammps.eval("pe")
     arr = [pe]
     np.savetxt(output, np.array(arr))
 MPI.Finalize()
