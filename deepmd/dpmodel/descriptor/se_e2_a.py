@@ -283,6 +283,10 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return False
+
     def call(
         self,
         coord_ext,

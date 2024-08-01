@@ -111,6 +111,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return True
+
     def forward_atomic(
         self,
         extended_coord,

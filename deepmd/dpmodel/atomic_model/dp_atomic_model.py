@@ -104,6 +104,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Return the output bias of the atomic model."""
         return self.fitting["bias_atom_e"]
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
+        return self.descriptor.need_sorted_nlist_for_lower()
+
     def forward_atomic(
         self,
         extended_coord: np.ndarray,
