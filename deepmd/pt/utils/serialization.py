@@ -72,7 +72,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     model = BaseModel.deserialize(data["model"])
     # JIT will happy in this way...
     model.model_def_script = json.dumps(data["model_def_script"])
-    model = torch.jit.script(model)
     if "min_nbor_dist" in data.get("@variables", {}):
-        model.min_nbor_dist = data["@variables"]["min_nbor_dist"]
+        model.min_nbor_dist = float(data["@variables"]["min_nbor_dist"])
+    model = torch.jit.script(model)
     torch.jit.save(model, model_file)
