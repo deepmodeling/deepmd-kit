@@ -219,12 +219,8 @@ class AutoBatchSize(ABC):
                 results = [] if results is None else results
                 results = append_to_list(results, result)
             else:
-                results = (
-                    {kk: [] for kk in result} if results is None else results
-                )
-                results = {
-                    kk: append_to_list(results[kk], result[kk]) for kk in result
-                }
+                results = {kk: [] for kk in result} if results is None else results
+                results = {kk: append_to_list(results[kk], result[kk]) for kk in result}
         assert results is not None
         assert returned_dict is not None
 
