@@ -655,8 +655,8 @@ def main_parser() -> argparse.ArgumentParser:
         "--type-map",
         type=str,
         nargs="+",
-        required=True,
-        help="type map",
+        required=False,
+        help="Type map. If not provided, the type map of data will be used.",
     )
     parser_neighbor_stat.add_argument(
         "--mixed-type",
