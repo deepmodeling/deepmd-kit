@@ -36,7 +36,8 @@ classifiers = [
     "Environment :: Console",
 ]
 dependencies = [
-    'numpy',
+    # array-api-compat requires numpy>=1.21
+    'numpy>=1.21',
     'scipy',
     'pyyaml',
     'dargs >= 0.4.7',

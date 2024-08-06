@@ -40,7 +40,7 @@ pip install --upgrade pip
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
-The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.2 or later is supported.
+The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.7 or later is supported.
 
 ```bash
 pip install --upgrade tensorflow

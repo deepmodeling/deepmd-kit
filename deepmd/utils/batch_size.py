@@ -10,6 +10,7 @@ from typing import (
     Tuple,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.utils.errors import (
@@ -155,6 +156,8 @@ class AutoBatchSize(ABC):
     ) -> Tuple[np.ndarray]:
         """Excuate a method with all given data.
 
+        This method is compatible with Array API.
+
         Parameters
         ----------
         callable : Callable
@@ -177,16 +180,16 @@ class AutoBatchSize(ABC):
             return (end_index - start_index), callable(
                 *[
                     (
-                        vv[start_index:end_index]
-                        if isinstance(vv, np.ndarray) and vv.ndim > 1
+                        vv[start_index:end_index, ...]
+                        if array_api_compat.is_array_api_obj(vv) and vv.ndim > 1
                         else vv
                     )
                     for vv in args
                 ],
                 **{
                     kk: (
-                        vv[start_index:end_index]
-                        if isinstance(vv, np.ndarray) and vv.ndim > 1
+                        vv[start_index:end_index, ...]
+                        if array_api_compat.is_array_api_obj(vv) and vv.ndim > 1
                         else vv
                     )
                     for kk, vv in kwargs.items()
@@ -194,21 +197,49 @@ class AutoBatchSize(ABC):
             )
 
         index = 0
-        results = []
+        results = None
+        returned_dict = None
         while index < total_size:
             n_batch, result = self.execute(execute_with_batch_size, index, natoms)
-            if not isinstance(result, tuple):
-                result = (result,)
+            if n_batch == 0:
+                continue
+            returned_dict = (
+                isinstance(result, dict) if returned_dict is None else returned_dict
+            )
+            if not returned_dict:
+                result = (result,) if not isinstance(result, tuple) else result
             index += n_batch
-            if n_batch:
-                for rr in result:
-                    rr.reshape((n_batch, -1))
-                results.append(result)
 
-        r = tuple([np.concatenate(r, axis=0) for r in zip(*results)])
-        if len(r) == 1:
-            # avoid returning tuple if callable doesn't return tuple
-            r = r[0]
+            def append_to_list(res_list, res):
+                if n_batch:
+                    res_list.append(res)
+                return res_list
+
+            if not returned_dict:
+                results = [] if results is None else results
+                results = append_to_list(results, result)
+            else:
+                results = {kk: [] for kk in result} if results is None else results
+                results = {kk: append_to_list(results[kk], result[kk]) for kk in result}
+        assert results is not None
+        assert returned_dict is not None
+
+        def concate_result(r):
+            if array_api_compat.is_array_api_obj(r[0]):
+                xp = array_api_compat.array_namespace(r[0])
+                ret = xp.concat(r, axis=0)
+            else:
+                raise RuntimeError(f"Unexpected result type {type(r[0])}")
+            return ret
+
+        if not returned_dict:
+            r_list = [concate_result(r) for r in zip(*results)]
+            r = tuple(r_list)
+            if len(r) == 1:
+                # avoid returning tuple if callable doesn't return tuple
+                r = r[0]
+        else:
+            r = {kk: concate_result(vv) for kk, vv in results.items()}
         return r
 
     @abstractmethod
