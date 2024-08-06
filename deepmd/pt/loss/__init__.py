@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# PDX-License-Identifier: LGPL-3.0-or-later
 from .denoise import (
     DenoiseLoss,
 )
@@ -8,6 +8,9 @@ from .dos import (
 from .ener import (
     EnergyStdLoss,
 )
+from .ener_hess import(
+    EnergyHessianStdLoss,
+)  # anchor added
 from .ener_spin import (
     EnergySpinLoss,
 )
@@ -21,8 +24,10 @@ from .tensor import (
 __all__ = [
     "DenoiseLoss",
     "EnergyStdLoss",
+    "EnergyHessianStdLoss",  # anchor added
     "EnergySpinLoss",
     "TensorLoss",
     "TaskLoss",
     "DOSLoss",
 ]
+
