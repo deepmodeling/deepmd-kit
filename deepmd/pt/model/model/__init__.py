@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: LGPL-3.0-or-later
+# PDX-License-Identifier: LGPL-3.0-or-later
 """The model that takes the coordinates, cell and atom types as input
 and predicts some property. The models are automatically generated from
 atomic models by the `deepmd.dpmodel.make_model` method.
@@ -44,13 +44,17 @@ from .dp_zbl_model import (
 )
 from .ener_model import (
     EnergyModel,
+    # EnergyHessianModel,  # anchor added
+)
+from .ener_hess_model import (
+    EnergyHessianModel,  # anchor added
 )
 from .frozen import (
     FrozenModel,
 )
 from .make_hessian_model import (
     make_hessian_model,
-)
+)  # anchor added
 from .make_model import (
     make_model,
 )
@@ -71,7 +75,7 @@ def get_spin_model(model_params):
     if not model_params["spin"]["use_spin"] or isinstance(
         model_params["spin"]["use_spin"][0], int
     ):
-        use_spin = np.full(len(model_params["type_map"]), False)  # pylint: disable=no-explicit-dtype
+        use_spin = np.full(len(model_params["type_map"]), False)
         use_spin[model_params["spin"]["use_spin"]] = True
         model_params["spin"]["use_spin"] = use_spin.tolist()
     # include virtual spin and placeholder types
@@ -156,6 +160,10 @@ def get_standard_model(model_params):
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     descriptor = BaseDescriptor(**model_params["descriptor"])
+    # print(f"m_p[ds] in get_standard_model: {model_params['descriptor']}")  # anchor added
+    # print(f"len of ds.sl()[ebd][ntw] in get_standard_model: {len(descriptor.serialize()['embeddings']['networks'])}")  # anchor added
+    # print(f"type of descriptor in get_standard_model: {type(descriptor)}")  # anchor added
+    # print(f"descriptor in get_standard_model: {descriptor}")  # anchor added
     # fitting
     fitting_net = model_params.get("fitting_net", {})
     fitting_net["type"] = fitting_net.get("type", "ener")
@@ -182,6 +190,13 @@ def get_standard_model(model_params):
         modelcls = DOSModel
     elif fitting_net["type"] in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+        # print("model type is EnergyModel")  # anchor added
+        if model_params["hessian_mode"]:  # anchor added
+            modelcls = EnergyHessianModel
+            # print("model type is EnergyHessianModel in ener type")
+    # elif fitting_net["type"] == "ener_hess":  # anchor created
+    #     modelcls = EnergyHessianModel
+    #     print("model type is EnergyHessianModel")
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
 
@@ -192,21 +207,20 @@ def get_standard_model(model_params):
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+    # print(f"descriptor type in __init__: {type(descriptor)}")  # anchor added
+    # print(f"fitting type in __init__: {type(fitting)}")  # anchor added
+    # print(f"fitting content in __init__: {fitting}")  # anchor added
     model.model_def_script = json.dumps(model_params_old)
     return model
 
 
 def get_model(model_params):
-    model_type = model_params.get("type", "standard")
-    if model_type == "standard":
-        if "spin" in model_params:
-            return get_spin_model(model_params)
-        elif "use_srtab" in model_params:
-            return get_zbl_model(model_params)
-        else:
-            return get_standard_model(model_params)
+    if "spin" in model_params:
+        return get_spin_model(model_params)
+    elif "use_srtab" in model_params:
+        return get_zbl_model(model_params)
     else:
-        return BaseModel.get_class_by_type(model_type).get_model(model_params)
+        return get_standard_model(model_params)
 
 
 __all__ = [
@@ -214,6 +228,7 @@ __all__ = [
     "get_model",
     "DPModelCommon",
     "EnergyModel",
+    "EnergyHessianModel",  # anchor added
     "DipoleModel",
     "PolarModel",
     "DOSModel",
@@ -222,5 +237,6 @@ __all__ = [
     "SpinEnergyModel",
     "DPZBLModel",
     "make_model",
-    "make_hessian_model",
+    "make_hessian_model",  # anchor added
 ]
+
