@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    EnergyHessianStdLoss,  # anchor added
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -67,6 +68,9 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.pt.model.model import (
+    make_hessian_model
+)  # anchor added
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -115,6 +119,7 @@ class Trainer:
         resuming = resume_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
+        # print(f"keys of model_params: {model_params.keys()}")  # anchor added
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
@@ -184,7 +189,6 @@ class Trainer:
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
-                    collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
                 )
                 with torch.device("cpu"):
@@ -273,8 +277,20 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
+        # anchor added: loss_param_tmp for Hessian activation
+        loss_param_tmp = None
+        if not self.multi_task:
+            loss_param_tmp = config["loss"]
+        else:
+            for model_key in self.model_keys:
+                loss_param_tmp = config["loss_dict"][model_key]
+
         # Model
-        self.model = get_model_for_wrapper(model_params)
+        dp_random.seed(training_params["seed"])
+        if training_params["seed"] is not None:
+            torch.manual_seed(training_params["seed"])
+
+        self.model = get_model_for_wrapper(model_params, loss_param_tmp)
 
         # Loss
         if not self.multi_task:
@@ -298,6 +314,7 @@ class Trainer:
                 )
 
         # Data
+        dp_random.seed(training_params["seed"])
         if not self.multi_task:
             self.get_sample_func = single_model_stat(
                 self.model,
@@ -933,7 +950,7 @@ class Trainer:
                 continue
             if self.multi_task:
                 chosen_index_list = dp_random.choice(
-                    np.arange(self.num_model),  # pylint: disable=no-explicit-dtype
+                    np.arange(self.num_model),
                     p=np.array(self.model_prob),
                     size=self.world_size,
                     replace=True,
@@ -1089,7 +1106,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
-            if key == "sid" or key == "fid" or key == "box" or "find_" in key:
+            if key == "sid" or key == "fid" or key == "box":
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
@@ -1211,10 +1228,28 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
-def get_loss(loss_params, start_lr, _ntypes, _model):
+def whether_hessian(loss_params):  # anchor created
     loss_type = loss_params.get("type", "ener")
     if loss_type == "ener":
+        if loss_params["start_pref_h"] > 0.0:
+            # print("hessian mode is detected")
+            return True
+    else:
+        return False
+
+
+def get_loss(loss_params, start_lr, _ntypes, _model):
+    loss_type = loss_params.get("type", "ener")
+    # print(f"loss_type: {loss_type}")  # anchor added
+    # print(f"loss_params: {loss_params}")  # anchor added
+    # print(f"start_lr: {start_lr}")  # anchor added
+    if whether_hessian(loss_params):  # anchor added
         loss_params["starter_learning_rate"] = start_lr
+        # print(f"EnergyHessianStdLoss(**loss_params): {EnergyHessianStdLoss(**loss_params)}")
+        return EnergyHessianStdLoss(**loss_params)
+    elif loss_type == "ener":
+        loss_params["starter_learning_rate"] = start_lr
+        # print(f"EnergyStdLoss(**loss_params): {EnergyStdLoss(**loss_params)}")  # anchor added
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dos":
         loss_params["starter_learning_rate"] = start_lr
@@ -1253,7 +1288,15 @@ def get_single_model(
     return model
 
 
-def get_model_for_wrapper(_model_params):
+def get_model_for_wrapper(
+        _model_params,
+        _loss_params=None,  # anchor added
+):
+    if _loss_params is not None:  # anchor added
+        if whether_hessian(_loss_params):
+            # print("hessian model is utilized")
+            _model_params["hessian_mode"] = True
+            # print("hessian_mode(True) is added to model_params")
     if "model_dict" not in _model_params:
         _model = get_single_model(
             _model_params,
@@ -1265,7 +1308,14 @@ def get_model_for_wrapper(_model_params):
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
-    return _model
+    # if _loss_params is not None:  # anchor added
+    #     if whether_hessian(_loss_params):
+    #         print("hessian model is utilized")
+    #         # return make_hessian_model(_model)
+    #         return _model
+    # else:
+    #     return _model
+    return _model  # anchor noted: original return _model only
 
 
 def model_change_out_bias(
@@ -1287,3 +1337,4 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
+
