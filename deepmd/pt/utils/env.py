@@ -3,9 +3,15 @@ import os
 
 import numpy as np
 import torch
+import torch.nn.functional as F
+
+from typing import (
+    Callable,
+)
 
 from deepmd.common import (
     VALID_PRECISION,
+    VALID_ACTIVATION,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -33,6 +39,47 @@ else:
 JIT = False
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
+
+ACTIVATION_FN_DICT = {
+    "relu": F.relu,
+    "relu6": F.relu6,
+    "softplus": F.softplus,
+    "sigmoid": torch.sigmoid,
+    "tanh": torch.tanh,
+    "gelu": F.gelu,
+    # PyTorch has no gelu_tf
+    "gelu_tf": lambda x: x * 0.5 * (1.0 + torch.erf(x / 1.41421)),
+    "linear": lambda x: x,
+    "none": lambda x: x,
+}
+assert VALID_ACTIVATION.issubset(ACTIVATION_FN_DICT.keys())
+
+def get_activation_func(
+    activation_fn
+) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Get activation function callable based on string name.
+
+    Parameters
+    ----------
+    activation_fn : _ACTIVATION
+        One of the defined activation functions
+
+    Returns
+    -------
+    Callable[[torch.Tensor], torch.Tensor]
+        Corresponding PyTorch callable
+
+    Raises
+    ------
+    RuntimeError
+        If unknown activation function is specified
+    """
+    if activation_fn is None:
+        activation_fn = "none"
+    assert activation_fn is not None
+    if activation_fn.lower() not in ACTIVATION_FN_DICT:
+        raise RuntimeError(f"{activation_fn} is not a valid activation function")
+    return ACTIVATION_FN_DICT[activation_fn.lower()]
 
 PRECISION_DICT = {
     "float16": torch.float16,
@@ -79,6 +126,7 @@ __all__ = [
     "GLOBAL_PT_FLOAT_PRECISION",
     "GLOBAL_PT_ENER_FLOAT_PRECISION",
     "DEFAULT_PRECISION",
+    "ACTIVATION_FN_DICT",
     "PRECISION_DICT",
     "RESERVED_PRECISON_DICT",
     "SAMPLER_RECORD",
@@ -88,4 +136,5 @@ __all__ = [
     "CACHE_PER_SYS",
     "ENERGY_BIAS_TRAINABLE",
     "LOCAL_RANK",
+    "get_activation_func"
 ]

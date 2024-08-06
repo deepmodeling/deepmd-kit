@@ -630,56 +630,6 @@ class DescrptBlockSeA(DescriptorBlock):
             protection=self.env_protection,
         )
 
-        nlist_t = nlist.view(-1) + 1
-        atype_t = torch.cat([torch.tensor([self.ntypes]), atype.view(-1)], dim=0)
-        self.nei_type_vec = torch.nn.functional.embedding(nlist_t, atype_t)
-
-        # Assuming _identity_tensors and _pass_filter are defined elsewhere
-        self.descrpt_reshape = self.descrpt.view(-1, self.ndescrpt)
-
-        self.dout, self.qmat = self._pass_filter(
-            self.descrpt_reshape,
-            atype,
-            extended_atype_embd,
-        )
-        
-
-
-
-    def forward(
-        self,
-        nlist: torch.Tensor,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-    ):
-        """Calculate decoded embedding for each atom.
-
-        Args:
-        - coord: Tell atom coordinates with shape [nframes, natoms[1]*3].
-        - atype: Tell atom types with shape [nframes, natoms[1]].
-        - natoms: Tell atom count and element count. Its shape is [2+self.ntypes].
-        - box: Tell simulation box with shape [nframes, 9].
-
-        Returns
-        -------
-        - `torch.Tensor`: descriptor matrix with shape [nframes, natoms[0]*self.filter_neuron[-1]*self.axis_neuron].
-        """
-        del extended_atype_embd, mapping
-        nloc = nlist.shape[1]
-        atype = extended_atype[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat(
-            extended_coord,
-            nlist,
-            atype,
-            self.mean,
-            self.stddev,
-            self.rcut,
-            self.rcut_smth,
-            protection=self.env_protection,
-        )
-
         if self.old_impl:
             assert self.filter_layers_old is not None
             dmatrix = dmatrix.view(
