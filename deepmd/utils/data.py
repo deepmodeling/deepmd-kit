@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 class DeepmdData:
     """Class for a data system.
 
-    It loads data from hard disk, and mantains the data as a `data_dict`
+    It loads data from hard disk, and maintains the data as a `data_dict`
 
     Parameters
     ----------
@@ -267,7 +267,7 @@ class DeepmdData:
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
-        idx = np.arange(self.iterator, iterator_1)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(self.iterator, iterator_1)
         self.iterator += batch_size
         ret = self._get_subdata(self.batch_set, idx)
         return ret
@@ -291,7 +291,7 @@ class DeepmdData:
                 else self.test_set["type"].shape[0]
             )
             # print('ntest', self.test_set['type'].shape[0], ntests, ntests_)
-            idx = np.arange(ntests_)  # pylint: disable=no-explicit-dtype
+            idx = np.arange(ntests_)
         ret = self._get_subdata(self.test_set, idx=idx)
         if self.modifier is not None:
             self.modifier.modify_data(ret, self)
@@ -379,14 +379,14 @@ class DeepmdData:
                 new_types.append(ii)
         new_types = np.array(new_types, dtype=int)
         natoms = new_types.shape[0]
-        idx = np.arange(natoms)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(natoms)
         idx_map = np.lexsort((idx, new_types))
         return idx_map
 
     def _get_natoms_2(self, ntypes):
         sample_type = self.atom_type
         natoms = len(sample_type)
-        natoms_vec = np.zeros(ntypes).astype(int)  # pylint: disable=no-explicit-dtype
+        natoms_vec = np.zeros(ntypes).astype(int)
         for ii in range(ntypes):
             natoms_vec[ii] = np.count_nonzero(sample_type == ii)
         return natoms, natoms_vec
@@ -436,7 +436,7 @@ class DeepmdData:
     def _shuffle_data(self, data):
         ret = {}
         nframes = data["coord"].shape[0]
-        idx = np.arange(nframes)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(nframes)
         # the training times of each frame
         idx = np.repeat(idx, np.reshape(data["numb_copy"], (nframes,)))
         dp_random.shuffle(idx)
@@ -479,6 +479,12 @@ class DeepmdData:
                 pass
             else:
                 if kk in data and self.data_dict[kk]["atomic"]:
+                    # if kk == "hessian":  # anchor added
+                    #     print(
+                    #         f"{kk} original shape is {data[kk].shape}\n"
+                    #         f"{kk} is reformated to {data[kk].shape}\n"
+                    #         f"{data[kk][:5]}\n"
+                    #         )
                     data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
         data["atype"] = data["type"]
         if not self.pbc:
@@ -500,6 +506,9 @@ class DeepmdData:
         assert coord.shape[1] == self.data_dict["coord"]["ndof"] * self.natoms
         # load keys
         data = {}
+        # print(f"data_dict is {self.data_dict.keys()}")  # anchor added
+        # print(f"self.data_dict['hessian'] is {self.data_dict['hessian']}")  # anchor added
+        # print(f"self.data_dict['force'] is {self.data_dict['force']}")  # anchor added
         for kk in self.data_dict.keys():
             if self.data_dict[kk]["reduce"] is None:
                 data["find_" + kk], data[kk] = self._load_data(
@@ -609,6 +618,7 @@ class DeepmdData:
         path = set_name / (key + ".npy")
         if path.is_file():
             data = path.load_numpy().astype(dtype)
+            # print(f"{path} is loaded")  # anchor added
             try:  # YWolfeee: deal with data shape error
                 if atomic:
                     if type_sel is not None:
@@ -644,10 +654,29 @@ class DeepmdData:
                                 f"({nframes}, {natoms_sel}, {ndof_}) or"
                                 f"({nframes}, {natoms}, {ndof_})"
                             )
-                    data = data.reshape([nframes, natoms, -1])
-                    data = data[:, idx_map, :]
-                    data = data.reshape([nframes, -1])
+                    if key == "hessian":  # handle hessian data-I; anchor created
+                        data = data.reshape(nframes, 3 * natoms, 3 * natoms)
+                        # print(f"hessian reshape before idx_map: {data.shape}")
+                        # get idx_map for hessian
+                        num_chunks, chunk_size = len(idx_map), 3
+                        idx_map_hess = np.arange(num_chunks * chunk_size)
+                        idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
+                        idx_map_hess = idx_map_hess[idx_map]
+                        idx_map_hess = idx_map_hess.flatten()
+                        data = data[:, idx_map_hess, :]
+                        data = data[:, :, idx_map_hess]
+                        data = data.reshape([nframes, -1])
+                        # print(f"hessian reshape after idx_map: {data.shape}")
+                        ndof = 3 * ndof * 3 * ndof  # size of hessian is 3Natoms * 3Natoms
+                        # print(f"n_dof of hessian is {ndof}")
+                    else:
+                        data = data.reshape([nframes, natoms, -1])
+                        data = data[:, idx_map, :]
+                        data = data.reshape([nframes, -1])
                 data = np.reshape(data, [nframes, ndof])
+                # data = np.reshape(data, [nframes, -1])  # anchor modified
+                # if key == "hessian":  # anchor added
+                #     print(f"hessian out if_atomic: {data.shape}")
             except ValueError as err_message:
                 explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
                 log.error(str(err_message))
@@ -655,6 +684,8 @@ class DeepmdData:
                 raise ValueError(str(err_message) + ". " + explanation) from err_message
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
+            # if key == "hessian":  # anchor added
+            #     print(f"{key} in _load_data: {data.shape}\n")
             return np.float32(1.0), data
         elif must:
             raise RuntimeError(f"{path} not found!")
@@ -677,7 +708,7 @@ class DeepmdData:
 
     def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
-        idx = np.arange(natoms)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(natoms)
         if self.sort_atoms:
             idx_map = np.lexsort((idx, atom_type))
         else:
@@ -782,3 +813,4 @@ class DataRequirementItem:
 
     def __repr__(self) -> str:
         return f"DataRequirementItem({self.dict})"
+
