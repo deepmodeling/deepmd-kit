@@ -235,6 +235,7 @@ class OutputVariableDef:
     def get_intensive(self) -> bool:
         """Get whether the property is intensive."""
         return self.intensive
+
     def squeeze(self, dim):
         # squeeze the shape on given dimension
         if -len(self.shape) <= dim < len(self.shape) and self.shape[dim] == 1:
