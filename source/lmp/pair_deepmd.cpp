@@ -662,12 +662,23 @@ void PairDeepMD::compute(int eflag, int vflag) {
       vector<double> all_energy;
       vector<vector<double>> all_atom_energy;
       vector<vector<double>> all_atom_virial;
-      try {
-        deep_pot_model_devi.compute(
-            all_energy, all_force, all_virial, all_atom_energy, all_atom_virial,
-            dcoord, dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
-      } catch (deepmd_compat::deepmd_exception &e) {
-        error->one(FLERR, e.what());
+      if (!(eflag_atom || cvflag_atom)) {
+        try {
+          deep_pot_model_devi.compute(all_energy, all_force, all_virial, dcoord,
+                                      dtype, dbox, nghost, lmp_list, ago,
+                                      fparam, daparam);
+        } catch (deepmd_compat::deepmd_exception &e) {
+          error->one(FLERR, e.what());
+        }
+      } else {
+        try {
+          deep_pot_model_devi.compute(all_energy, all_force, all_virial,
+                                      all_atom_energy, all_atom_virial, dcoord,
+                                      dtype, dbox, nghost, lmp_list, ago,
+                                      fparam, daparam);
+        } catch (deepmd_compat::deepmd_exception &e) {
+          error->one(FLERR, e.what());
+        }
       }
       // deep_pot_model_devi.compute_avg (dener, all_energy);
       // deep_pot_model_devi.compute_avg (dforce, all_force);
@@ -677,9 +688,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
       dener = all_energy[0];
       dforce = all_force[0];
       dvirial = all_virial[0];
-      deatom = all_atom_energy[0];
-      dvatom = all_atom_virial[0];
       if (eflag_atom) {
+        deatom = all_atom_energy[0];
         for (int ii = 0; ii < nlocal; ++ii) {
           eatom[ii] += scale[1][1] * deatom[ii] * ener_unit_cvt_factor;
         }
@@ -688,6 +698,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
       // interface the atomic virial computed by DeepMD
       // with the one used in centroid atoms
       if (cvflag_atom) {
+        dvatom = all_atom_virial[0];
         for (int ii = 0; ii < nall; ++ii) {
           // vatom[ii][0] += 1.0 * dvatom[9*ii+0];
           // vatom[ii][1] += 1.0 * dvatom[9*ii+4];

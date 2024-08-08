@@ -103,6 +103,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.register_buffer("out_bias", out_bias_data)
         self.register_buffer("out_std", out_std_data)
 
+    def set_out_bias(self, out_bias: torch.Tensor) -> None:
+        self.out_bias = out_bias
+
     def __setitem__(self, key, value):
         if key in ["out_bias"]:
             self.out_bias = value
@@ -253,8 +256,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
         for kk in ret_dict.keys():
             out_shape = ret_dict[kk].shape
+            out_shape2 = 1
+            for ss in out_shape[2:]:
+                out_shape2 *= ss
             ret_dict[kk] = (
-                ret_dict[kk].reshape([out_shape[0], out_shape[1], -1])
+                ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
                 * atom_mask[:, :, None]
             ).view(out_shape)
         ret_dict["mask"] = atom_mask

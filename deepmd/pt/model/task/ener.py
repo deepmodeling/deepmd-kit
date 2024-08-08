@@ -128,10 +128,10 @@ class EnergyFittingNetDirect(Fitting):
         self.use_tebd = use_tebd
         self.out_dim = out_dim
         if bias_atom_e is None:
-            bias_atom_e = np.zeros([self.ntypes])
+            bias_atom_e = np.zeros([self.ntypes])  # pylint: disable=no-explicit-dtype
         if not use_tebd:
             assert self.ntypes == len(bias_atom_e), "Element count mismatches!"
-        bias_atom_e = torch.tensor(bias_atom_e, device=env.DEVICE)
+        bias_atom_e = torch.tensor(bias_atom_e, device=env.DEVICE)  # pylint: disable=no-explicit-dtype
         self.register_buffer("bias_atom_e", bias_atom_e)
 
         filter_layers_dipole = []
@@ -181,7 +181,7 @@ class EnergyFittingNetDirect(Fitting):
     def serialize(self) -> dict:
         raise NotImplementedError
 
-    def deserialize(cls) -> "EnergyFittingNetDirect":
+    def deserialize(self) -> "EnergyFittingNetDirect":
         raise NotImplementedError
 
     def change_type_map(

@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import os
+import shutil
+import tempfile
 import unittest
 from argparse import (
     Namespace,
@@ -21,12 +24,17 @@ from deepmd.pt.infer.deep_eval import (
     DeepPot,
 )
 
+from .common import (
+    run_dp,
+)
+
 
 class TestInitFrzModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             config = json.load(f)
+        config["model"]["descriptor"]["smooth_type_embedding"] = True
         config["training"]["numb_steps"] = 1
         config["training"]["save_freq"] = 1
         config["learning_rate"]["start_lr"] = 1.0
@@ -38,15 +46,30 @@ class TestInitFrzModel(unittest.TestCase):
         ]
 
         self.models = []
-        for imodel in range(2):
-            if imodel == 1:
-                config["training"]["numb_steps"] = 0
-                trainer = get_trainer(deepcopy(config), init_frz_model=self.models[-1])
-            else:
-                trainer = get_trainer(deepcopy(config))
-            trainer.run()
-
+        for imodel in range(3):
             frozen_model = f"frozen_model{imodel}.pth"
+            if imodel == 0:
+                temp_config = deepcopy(config)
+                trainer = get_trainer(temp_config)
+            elif imodel == 1:
+                temp_config = deepcopy(config)
+                temp_config["training"]["numb_steps"] = 0
+                trainer = get_trainer(temp_config, init_frz_model=self.models[-1])
+            else:
+                empty_config = deepcopy(config)
+                empty_config["model"]["descriptor"] = {}
+                empty_config["model"]["fitting_net"] = {}
+                empty_config["training"]["numb_steps"] = 0
+                tmp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+                with open(tmp_input.name, "w") as f:
+                    json.dump(empty_config, f, indent=4)
+                run_dp(
+                    f"dp --pt train {tmp_input.name} --init-frz-model {self.models[-1]} --use-pretrain-script --skip-neighbor-stat"
+                )
+                trainer = None
+
+            if imodel in [0, 1]:
+                trainer.run()
             ns = Namespace(
                 model="model.pt",
                 output=frozen_model,
@@ -58,6 +81,7 @@ class TestInitFrzModel(unittest.TestCase):
     def test_dp_test(self):
         dp1 = DeepPot(str(self.models[0]))
         dp2 = DeepPot(str(self.models[1]))
+        dp3 = DeepPot(str(self.models[2]))
         cell = np.array(
             [
                 5.122106549439247480e00,
@@ -96,8 +120,26 @@ class TestInitFrzModel(unittest.TestCase):
         e1, f1, v1, ae1, av1 = ret1[0], ret1[1], ret1[2], ret1[3], ret1[4]
         ret2 = dp2.eval(coord, cell, atype, atomic=True)
         e2, f2, v2, ae2, av2 = ret2[0], ret2[1], ret2[2], ret2[3], ret2[4]
+        ret3 = dp3.eval(coord, cell, atype, atomic=True)
+        e3, f3, v3, ae3, av3 = ret3[0], ret3[1], ret3[2], ret3[3], ret3[4]
         np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(e1, e3, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(f1, f3, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(v1, v3, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(ae1, ae2, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(ae1, ae3, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(av1, av2, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(av1, av3, rtol=1e-10, atol=1e-10)
+
+    def tearDown(self):
+        for f in os.listdir("."):
+            if f.startswith("frozen_model") and f.endswith(".pth"):
+                os.remove(f)
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f in ["lcurve.out"]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)

@@ -189,6 +189,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Random seed for parameter initialization.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
@@ -241,6 +243,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         stripped_type_embedding: Optional[bool] = None,
         seed: Optional[Union[int, List[int]]] = None,
         use_econf_tebd: bool = False,
+        use_tebd_bias: bool = False,
         type_map: Optional[List[str]] = None,
         # not implemented
         spin=None,
@@ -293,6 +296,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -300,6 +304,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             precision=precision,
             seed=child_seed(seed, 2),
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
         self.tebd_dim = tebd_dim
@@ -358,6 +363,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
         return self.se_atten.has_message_passing()
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.se_atten.need_sorted_nlist_for_lower()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -462,7 +471,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -487,6 +496,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": RESERVED_PRECISON_DICT[obj.prec],
@@ -510,7 +520,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -523,6 +533,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             embeddings_strip = data.pop("embeddings_strip")
         else:
             embeddings_strip = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
 
         def t_cvt(xx):

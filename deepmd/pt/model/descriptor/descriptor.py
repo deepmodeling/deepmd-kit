@@ -48,8 +48,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of DescriptorBlock should be set by `type`")
+            except KeyError as e:
+                raise KeyError(
+                    "the type of DescriptorBlock should be set by `type`"
+                ) from e
             cls = cls.get_class_by_type(descrpt_type)
         return super().__new__(cls)
 
@@ -145,8 +147,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
                         base_env.stats[kk] += self.get_stats()[kk]
                     mean, stddev = base_env()
                     if not base_class.set_davg_zero:
-                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
                 # must share, even if not do stat
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
@@ -172,6 +174,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
     @abstractmethod
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+
+    @abstractmethod
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
 
 
 def make_default_type_embedding(

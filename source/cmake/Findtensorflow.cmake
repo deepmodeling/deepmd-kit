@@ -3,7 +3,7 @@
 # Output: TensorFlow_FOUND TensorFlow_INCLUDE_DIRS TensorFlow_LIBRARY
 # TensorFlow_LIBRARY_PATH TensorFlowFramework_LIBRARY
 # TensorFlowFramework_LIBRARY_PATH TENSORFLOW_LINK_LIBPYTHON : whether
-# Tensorflow::tensorflow_cc links libpython
+# TensorFlow::tensorflow_cc links libpython
 #
 # Target: TensorFlow::tensorflow_framework TensorFlow::tensorflow_cc
 

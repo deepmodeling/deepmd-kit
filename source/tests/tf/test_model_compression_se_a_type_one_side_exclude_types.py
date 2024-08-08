@@ -56,12 +56,12 @@ def _init_models():
 
 class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
 
-        self.dp_original = DeepPot(FROZEN_MODEL)
-        self.dp_compressed = DeepPot(COMPRESSED_MODEL)
-        self.coords = np.array(
+        cls.dp_original = DeepPot(FROZEN_MODEL)
+        cls.dp_compressed = DeepPot(COMPRESSED_MODEL)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -83,8 +83,8 @@ class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     def test_attrs(self):
         self.assertEqual(self.dp_original.get_ntypes(), 2)

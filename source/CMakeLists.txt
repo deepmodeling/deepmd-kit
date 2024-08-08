@@ -9,6 +9,14 @@ set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
 
+set(CMAKE_CXX_STANDARD 11)
+macro(set_if_higher VARIABLE VALUE)
+  # ${VARIABLE} is a variable name, not a string
+  if(${VARIABLE} LESS "${VALUE}")
+    set(${VARIABLE} ${VALUE})
+  endif()
+endmacro()
+
 if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/coverage_config coverage_config)
@@ -176,13 +184,15 @@ if(BUILD_CPP_IF
         "Cannot determine PyTorch CMake prefix path, error code: $PYTORCH_CMAKE_PREFIX_PATH_RESULT_VAR}, error message: ${PYTORCH_CMAKE_PREFIX_PATH_ERROR_VAR}"
     )
   endif()
-  list(APPEND BACKEND_LIBRARY_PATH ${TensorFlow_LIBRARY_PATH})
-  if(Protobuf_LIBRARY_DIRECTORY)
-    list(APPEND BACKEND_LIBRARY_PATH ${Protobuf_LIBRARY_DIRECTORY})
-  endif()
+  list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_CMAKE_PREFIX_PATH})
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   find_package(Torch REQUIRED)
+  if(NOT Torch_VERSION VERSION_LESS "2.1.0")
+    set_if_higher(CMAKE_CXX_STANDARD 17)
+  elseif(NOT Torch_VERSION VERSION_LESS "1.5.0")
+    set_if_higher(CMAKE_CXX_STANDARD 14)
+  endif()
   string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)" CXXABI_PT_MATCH
                "${TORCH_CXX_FLAGS}")
   if(CXXABI_PT_MATCH)

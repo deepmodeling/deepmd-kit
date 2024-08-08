@@ -485,8 +485,8 @@ class DescrptBlockRepformers(DescriptorBlock):
                     comm_dict["recv_num"],
                     g1,
                     comm_dict["communicator"],
-                    torch.tensor(nloc),
-                    torch.tensor(nall - nloc),
+                    torch.tensor(nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
+                    torch.tensor(nall - nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
                 )
                 g1_ext = ret[0].unsqueeze(0)
             g1, g2, h2 = ll.forward(
@@ -505,7 +505,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         # (nb x nloc) x ng2 x 3
         rot_mat = torch.permute(h2g2, (0, 1, 3, 2))
 
-        return g1, g2, h2, rot_mat.view(-1, nloc, self.dim_emb, 3), sw
+        return g1, g2, h2, rot_mat.view(nframes, nloc, self.dim_emb, 3), sw
 
     def compute_input_stats(
         self,
@@ -543,8 +543,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
     def get_stats(self) -> Dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -557,3 +557,7 @@ class DescrptBlockRepformers(DescriptorBlock):
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
         return True
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return False

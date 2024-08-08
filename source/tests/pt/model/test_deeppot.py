@@ -24,10 +24,6 @@ from deepmd.pt.infer.deep_eval import (
     DeepPot,
 )
 
-from ...tf.test_deeppot_a import (
-    FparamAparamCommonTest,
-)
-
 
 class TestDeepPot(unittest.TestCase):
     def setUp(self):
@@ -136,19 +132,4 @@ class TestDeepPotFrozen(TestDeepPot):
         self.test_dp_test()
 
 
-class TestFparamAparamPT(FparamAparamCommonTest, unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.dp = DeepPot(
-            str(Path(__file__).parent.parent.parent / "infer/fparam_aparam.pth")
-        )
-
-    def setUp(self):
-        super().setUp()
-        # For unclear reason, the precision is only 1e-7
-        # not sure if it is expected...
-        self.places = 1e-7
-
-    @classmethod
-    def tearDownClass(cls):
-        pass
+# TestFparamAparamPT: moved to infer/test_models.py

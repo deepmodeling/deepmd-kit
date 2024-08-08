@@ -39,8 +39,10 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of DescriptorBlock should be set by `type`")
+            except KeyError as e:
+                raise KeyError(
+                    "the type of DescriptorBlock should be set by `type`"
+                ) from e
             cls = cls.get_class_by_type(descrpt_type)
         return super().__new__(cls)
 
@@ -129,6 +131,10 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     @abstractmethod
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+
+    @abstractmethod
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
 
 
 def extend_descrpt_stat(des, type_map, des_with_stat=None):

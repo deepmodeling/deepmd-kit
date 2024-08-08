@@ -392,26 +392,28 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([-1, natoms, 3]),
+            coords.reshape([nframes, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
         type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([-1, 3, 3]),
+                cells.reshape([nframes, 3, 3]),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
         else:
             box_input = None
         if fparam is not None:
-            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
         else:
             fparam_input = None
         if aparam is not None:
             aparam_input = to_torch_tensor(
-                aparam.reshape(-1, natoms, self.get_dim_aparam())
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
             )
         else:
             aparam_input = None
@@ -438,7 +440,9 @@ class DeepEval(DeepEvalBackend):
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
-                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
+                results.append(
+                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                )  # this is kinda hacky
         return tuple(results)
 
     def _eval_model_spin(
@@ -461,31 +465,33 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([-1, natoms, 3]),
+            coords.reshape([nframes, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
         type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
         spin_input = torch.tensor(
-            spins.reshape([-1, natoms, 3]),
+            spins.reshape([nframes, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([-1, 3, 3]),
+                cells.reshape([nframes, 3, 3]),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
         else:
             box_input = None
         if fparam is not None:
-            fparam_input = to_torch_tensor(fparam.reshape(-1, self.get_dim_fparam()))
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
         else:
             fparam_input = None
         if aparam is not None:
             aparam_input = to_torch_tensor(
-                aparam.reshape(-1, natoms, self.get_dim_aparam())
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
             )
         else:
             aparam_input = None
@@ -514,7 +520,9 @@ class DeepEval(DeepEvalBackend):
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
-                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
+                results.append(
+                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                )  # this is kinda hacky
         return tuple(results)
 
     def _get_output_shape(self, odef, nframes, natoms):
@@ -678,28 +686,28 @@ def eval_model(
                 logits_out.append(batch_output["logits"])
     if not return_tensor:
         energy_out = (
-            np.concatenate(energy_out) if energy_out else np.zeros([nframes, 1])
+            np.concatenate(energy_out) if energy_out else np.zeros([nframes, 1])  # pylint: disable=no-explicit-dtype
         )
         atomic_energy_out = (
             np.concatenate(atomic_energy_out)
             if atomic_energy_out
-            else np.zeros([nframes, natoms, 1])
+            else np.zeros([nframes, natoms, 1])  # pylint: disable=no-explicit-dtype
         )
         force_out = (
-            np.concatenate(force_out) if force_out else np.zeros([nframes, natoms, 3])
+            np.concatenate(force_out) if force_out else np.zeros([nframes, natoms, 3])  # pylint: disable=no-explicit-dtype
         )
         force_mag_out = (
             np.concatenate(force_mag_out)
             if force_mag_out
-            else np.zeros([nframes, natoms, 3])
+            else np.zeros([nframes, natoms, 3])  # pylint: disable=no-explicit-dtype
         )
         virial_out = (
-            np.concatenate(virial_out) if virial_out else np.zeros([nframes, 3, 3])
+            np.concatenate(virial_out) if virial_out else np.zeros([nframes, 3, 3])  # pylint: disable=no-explicit-dtype
         )
         atomic_virial_out = (
             np.concatenate(atomic_virial_out)
             if atomic_virial_out
-            else np.zeros([nframes, natoms, 3, 3])
+            else np.zeros([nframes, natoms, 3, 3])  # pylint: disable=no-explicit-dtype
         )
         updated_coord_out = (
             np.concatenate(updated_coord_out) if updated_coord_out else None

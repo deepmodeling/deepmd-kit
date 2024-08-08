@@ -6,6 +6,7 @@ from typing import (
     Callable,
     List,
     Optional,
+    Union,
 )
 
 from dargs import (
@@ -87,6 +88,7 @@ def type_embedding_args():
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
 
     return [
         Argument("neuron", List[int], optional=True, default=[8], doc=doc_neuron),
@@ -103,6 +105,13 @@ def type_embedding_args():
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
         Argument(
             "use_econf_tebd", bool, optional=True, default=False, doc=doc_use_econf_tebd
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
         ),
     ]
 
@@ -157,7 +166,10 @@ class ArgsPlugin:
 
     def register(
         self, name: str, alias: Optional[List[str]] = None, doc: str = ""
-    ) -> Callable[[], List[Argument]]:
+    ) -> Callable[
+        [Union[Callable[[], Argument], Callable[[], List[Argument]]]],
+        Union[Callable[[], Argument], Callable[[], List[Argument]]],
+    ]:
         """Register a descriptor argument plugin.
 
         Parameters
@@ -169,8 +181,8 @@ class ArgsPlugin:
 
         Returns
         -------
-        Callable[[], List[Argument]]
-            the registered descriptor argument method
+        Callable[[Union[Callable[[], Argument], Callable[[], List[Argument]]]], Union[Callable[[], Argument], Callable[[], List[Argument]]]]
+            decorator to return the registered descriptor argument method
 
         Examples
         --------
@@ -201,9 +213,17 @@ class ArgsPlugin:
         for (name, alias, doc), metd in self.__plugin.plugins.items():
             if exclude_hybrid and name == "hybrid":
                 continue
-            arguments.append(
-                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc)
-            )
+            args = metd()
+            if isinstance(args, Argument):
+                arguments.append(args)
+            elif isinstance(args, list):
+                arguments.append(
+                    Argument(
+                        name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc
+                    )
+                )
+            else:
+                raise ValueError(f"Invalid return type {type(args)}")
         return arguments
 
 
@@ -529,6 +549,7 @@ def descrpt_se_atten_args():
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
@@ -597,6 +618,13 @@ def descrpt_se_atten_args():
             doc=doc_only_pt_supported + doc_use_econf_tebd,
         ),
         Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
+        Argument(
             "tebd_input_mode",
             str,
             optional=True,
@@ -642,6 +670,7 @@ def descrpt_se_atten_v2_args():
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
@@ -678,6 +707,13 @@ def descrpt_se_atten_v2_args():
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
         ),
         Argument(
             "scaling_factor",
@@ -729,6 +765,7 @@ def descrpt_dpa2_args():
     doc_seed = "Random seed for parameter initialization."
     doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
     return [
         # repinit args
         Argument("repinit", dict, dpa2_repinit_args(), doc=doc_repinit),
@@ -774,6 +811,13 @@ def descrpt_dpa2_args():
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
         ),
     ]
 
@@ -1522,6 +1566,11 @@ def model_compression_type_args():
     )
 
 
+model_args_plugin = ArgsPlugin()
+# for models that require another model as input
+hybrid_model_args_plugin = ArgsPlugin()
+
+
 def model_args(exclude_hybrid=False):
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
@@ -1538,15 +1587,14 @@ def model_args(exclude_hybrid=False):
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+    doc_finetune_head = (
+        "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
+        "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
+    )
 
     hybrid_models = []
     if not exclude_hybrid:
-        hybrid_models.extend(
-            [
-                pairwise_dprc(),
-                linear_ener_model_args(),
-            ]
-        )
+        hybrid_models.extend(hybrid_model_args_plugin.get_all_argument())
     return Argument(
         "model",
         dict,
@@ -1634,14 +1682,18 @@ def model_args(exclude_hybrid=False):
                 fold_subdoc=True,
             ),
             Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
+            Argument(
+                "finetune_head",
+                str,
+                optional=True,
+                doc=doc_only_pt_supported + doc_finetune_head,
+            ),
         ],
         [
             Variant(
                 "type",
                 [
-                    standard_model_args(),
-                    frozen_model_args(),
-                    pairtab_model_args(),
+                    *model_args_plugin.get_all_argument(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -1651,6 +1703,7 @@ def model_args(exclude_hybrid=False):
     )
 
 
+@model_args_plugin.register("standard")
 def standard_model_args() -> Argument:
     doc_descrpt = "The descriptor of atomic environment."
     doc_fitting = "The fitting of physical properties."
@@ -1675,6 +1728,7 @@ def standard_model_args() -> Argument:
     return ca
 
 
+@hybrid_model_args_plugin.register("pairwise_dprc")
 def pairwise_dprc() -> Argument:
     qm_model_args = model_args(exclude_hybrid=True)
     qm_model_args.name = "qm_model"
@@ -1694,6 +1748,7 @@ def pairwise_dprc() -> Argument:
     return ca
 
 
+@model_args_plugin.register("frozen")
 def frozen_model_args() -> Argument:
     doc_model_file = "Path to the frozen model file."
     ca = Argument(
@@ -1706,6 +1761,7 @@ def frozen_model_args() -> Argument:
     return ca
 
 
+@model_args_plugin.register("pairtab")
 def pairtab_model_args() -> Argument:
     doc_tab_file = "Path to the tabulation file."
     doc_rcut = "The cut-off radius."
@@ -1726,6 +1782,7 @@ def pairtab_model_args() -> Argument:
     return ca
 
 
+@hybrid_model_args_plugin.register("linear_ener")
 def linear_ener_model_args() -> Argument:
     doc_weights = (
         "If the type is list of float, a list of weights for each model. "
@@ -1800,7 +1857,7 @@ def learning_rate_variant_type_args():
     )
 
 
-def learning_rate_args():
+def learning_rate_args(fold_subdoc: bool = False) -> Argument:
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definitio of learning rate"
     return Argument(
@@ -1818,6 +1875,7 @@ def learning_rate_args():
         [learning_rate_variant_type_args()],
         optional=True,
         doc=doc_lr,
+        fold_subdoc=fold_subdoc,
     )
 
 
@@ -2229,7 +2287,7 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
-- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for Tensorflow backend.\n\n\
+- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -2392,7 +2450,9 @@ def mixed_precision_args():  # ! added by Denghui.
     )
 
 
-def training_args():  # ! modified by Ziyao: data configuration isolated.
+def training_args(
+    multi_task=False,
+):  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = "Number of training batch. Each training uses one batch of data."
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
@@ -2403,6 +2463,11 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         "The maximum number of checkpoints to keep. "
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
+    )
+    doc_change_bias_after_training = (
+        "Whether to change the output bias after the last training step, "
+        "by performing predictions using trained model on training data and "
+        "doing least square on the errors to add the target shift on the bias."
     )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
@@ -2431,14 +2496,30 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."
+    doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
+    doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
     mixed_precision_data = mixed_precision_args()
 
-    args = [
+    data_args = [
         arg_training_data,
         arg_validation_data,
+        Argument(
+            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
+        ),
+    ]
+    args = (
+        data_args
+        if not multi_task
+        else [
+            Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
+            Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
+        ]
+    )
+
+    args += [
         mixed_precision_data,
         Argument(
             "numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]
@@ -2453,6 +2534,13 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "change_bias_after_training",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_change_bias_after_training,
+        ),
         Argument(
             "disp_training", bool, optional=True, default=True, doc=doc_disp_training
         ),
@@ -2505,9 +2593,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             optional=True,
             doc=doc_only_pt_supported + doc_gradient_max_norm,
         ),
-        Argument(
-            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
-        ),
     ]
     variants = [
         Variant(
@@ -2539,6 +2624,36 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     return Argument("training", dict, args, variants, doc=doc_training)
 
 
+def multi_model_args():
+    model_dict = model_args()
+    model_dict.name = "model_dict"
+    model_dict.repeat = True
+    model_dict.fold_subdoc = True
+    model_dict.doc = (
+        "The multiple definition of the model, used in the multi-task mode."
+    )
+    doc_shared_dict = "The definition of the shared parameters used in the `model_dict` within multi-task mode."
+    return Argument(
+        "model",
+        dict,
+        [
+            model_dict,
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
+            ),
+        ],
+    )
+
+
+def multi_loss_args():
+    loss_dict = loss_args()
+    loss_dict.name = "loss_dict"
+    loss_dict.repeat = True
+    loss_dict.fold_subdoc = True
+    loss_dict.doc = "The multiple definition of the loss, used in the multi-task mode."
+    return loss_dict
+
+
 def make_index(keys):
     ret = []
     for ii in keys:
@@ -2546,11 +2661,11 @@ def make_index(keys):
     return ", ".join(ret)
 
 
-def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
+def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> str:
     if make_link:
         make_anchor = True
     ptr = []
-    for ii in gen_args():
+    for ii in gen_args(multi_task=multi_task):
         ptr.append(ii.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
@@ -2562,24 +2677,43 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     return "\n\n".join(ptr)
 
 
-def gen_json(**kwargs):
+def gen_json(multi_task: bool = False, **kwargs) -> str:
     return json.dumps(
-        tuple(gen_args()),
+        tuple(gen_args(multi_task=multi_task)),
         cls=ArgumentEncoder,
     )
 
 
-def gen_args(**kwargs) -> List[Argument]:
-    return [
-        model_args(),
-        learning_rate_args(),
-        loss_args(),
-        training_args(),
-        nvnmd_args(),
-    ]
+def gen_args(multi_task: bool = False) -> List[Argument]:
+    if not multi_task:
+        return [
+            model_args(),
+            learning_rate_args(),
+            loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(),
+        ]
+    else:
+        return [
+            multi_model_args(),
+            learning_rate_args(fold_subdoc=True),
+            multi_loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(fold_subdoc=True),
+        ]
 
 
-def gen_json_schema() -> str:
+def gen_args_multi_task() -> Argument:
+    """Generate multi-task arguments."""
+    return Argument(
+        "multi-task",
+        dict,
+        sub_fields=gen_args(multi_task=True),
+        doc="Multi-task arguments.",
+    )
+
+
+def gen_json_schema(multi_task: bool = False) -> str:
     """Generate JSON schema.
 
     Returns
@@ -2587,12 +2721,17 @@ def gen_json_schema() -> str:
     str
         JSON schema.
     """
-    arg = Argument("DeePMD-kit", dict, gen_args(), doc=f"DeePMD-kit {__version__}")
+    arg = Argument(
+        "DeePMD-kit",
+        dict,
+        gen_args(multi_task=multi_task),
+        doc=f"DeePMD-kit {__version__}",
+    )
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data):
-    base = Argument("base", dict, gen_args())
+def normalize(data, multi_task: bool = False):
+    base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 

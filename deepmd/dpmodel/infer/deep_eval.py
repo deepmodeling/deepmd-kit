@@ -343,11 +343,13 @@ class DeepEval(DeepEvalBackend):
                 if batch_output[dp_name] is not None:
                     out = batch_output[dp_name].reshape(shape)
                 else:
-                    out = np.full(shape, np.nan)
+                    out = np.full(shape, np.nan)  # pylint: disable=no-explicit-dtype
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
-                results.append(np.full(np.abs(shape), np.nan))  # this is kinda hacky
+                results.append(
+                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                )  # this is kinda hacky
         return tuple(results)
 
     def _get_output_shape(self, odef, nframes, natoms):

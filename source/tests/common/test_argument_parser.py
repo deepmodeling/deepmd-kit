@@ -157,13 +157,13 @@ class TestParserOutput(unittest.TestCase):
         try:
             with redirect_stderr(buffer):
                 namespace = parse_args(cmd_args)
-        except SystemExit:
+        except SystemExit as e:
             raise SystemExit(
                 f"Encountered expection when parsing arguments ->\n\n"
                 f"{buffer.getvalue()}\n"
                 f"passed in arguments were: {cmd_args}\n"
                 f"built from dict {mapping}"
-            )
+            ) from e
         self.attr_and_type_check(namespace, mapping, command, test_value=True)
 
         # check for required arguments
@@ -174,7 +174,7 @@ class TestParserOutput(unittest.TestCase):
                     t = data["type"][0]
                 else:
                     t = data["type"]
-                if t == str:
+                if t is str:
                     required.append("STRING")
                 elif t in (int, float):
                     required.append("11111")
@@ -189,13 +189,13 @@ class TestParserOutput(unittest.TestCase):
         try:
             with redirect_stderr(buffer):
                 namespace = parse_args(cmd_args)
-        except SystemExit:
+        except SystemExit as e:
             raise SystemExit(
                 f"Encountered expection when parsing DEFAULT arguments ->\n\n"
                 f"{buffer.getvalue()}\n"
                 f"passed in arguments were: {cmd_args}\n"
                 f"built from dict {mapping}"
-            )
+            ) from e
         self.attr_and_type_check(namespace, mapping, command, test_value=False)
 
     def test_no_command(self):

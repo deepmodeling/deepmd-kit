@@ -15,6 +15,10 @@ from deepmd.utils.argcheck import (
     normalize,
 )
 
+from ..pt.test_multitask import (
+    preprocess_shared_params,
+)
+
 p_examples = Path(__file__).parent.parent.parent.parent / "examples"
 
 input_files = (
@@ -52,11 +56,18 @@ input_files = (
     p_examples / "property" / "train" / "input_torch.json",
 )
 
+input_files_multi = (
+    p_examples / "water_multi_task" / "pytorch_example" / "input_torch.json",
+)
+
 
 class TestExamples(unittest.TestCase):
     def test_arguments(self):
-        for fn in input_files:
+        for fn in input_files + input_files_multi:
+            multi_task = fn in input_files_multi
             fn = str(fn)
             with self.subTest(fn=fn):
                 jdata = j_loader(fn)
-                normalize(jdata)
+                if multi_task:
+                    jdata["model"], _ = preprocess_shared_params(jdata["model"])
+                normalize(jdata, multi_task=multi_task)

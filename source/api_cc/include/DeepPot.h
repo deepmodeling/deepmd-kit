@@ -61,30 +61,31 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Request atomic energy and virial if atomic is true.
    * @{
    **/
-  virtual void computew(
-      std::vector<double>& ener,
-      std::vector<double>& force,
-      std::vector<double>& virial,
-      std::vector<double>& atom_energy,
-      std::vector<double>& atom_virial,
-      const std::vector<double>& coord,
-      const std::vector<int>& atype,
-      const std::vector<double>& box,
-      const std::vector<double>& fparam = std::vector<double>(),
-      const std::vector<double>& aparam = std::vector<double>()) = 0;
-  virtual void computew(
-      std::vector<double>& ener,
-      std::vector<float>& force,
-      std::vector<float>& virial,
-      std::vector<float>& atom_energy,
-      std::vector<float>& atom_virial,
-      const std::vector<float>& coord,
-      const std::vector<int>& atype,
-      const std::vector<float>& box,
-      const std::vector<float>& fparam = std::vector<float>(),
-      const std::vector<float>& aparam = std::vector<float>()) = 0;
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<double>& force,
+                        std::vector<double>& virial,
+                        std::vector<double>& atom_energy,
+                        std::vector<double>& atom_virial,
+                        const std::vector<double>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<double>& box,
+                        const std::vector<double>& fparam,
+                        const std::vector<double>& aparam,
+                        const bool atomic) = 0;
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<float>& force,
+                        std::vector<float>& virial,
+                        std::vector<float>& atom_energy,
+                        std::vector<float>& atom_virial,
+                        const std::vector<float>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<float>& box,
+                        const std::vector<float>& fparam,
+                        const std::vector<float>& aparam,
+                        const bool atomic) = 0;
   /** @} */
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -111,36 +112,37 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Request atomic energy and virial if atomic is true.
    * @{
    **/
-  virtual void computew(
-      std::vector<double>& ener,
-      std::vector<double>& force,
-      std::vector<double>& virial,
-      std::vector<double>& atom_energy,
-      std::vector<double>& atom_virial,
-      const std::vector<double>& coord,
-      const std::vector<int>& atype,
-      const std::vector<double>& box,
-      const int nghost,
-      const InputNlist& inlist,
-      const int& ago,
-      const std::vector<double>& fparam = std::vector<double>(),
-      const std::vector<double>& aparam = std::vector<double>()) = 0;
-  virtual void computew(
-      std::vector<double>& ener,
-      std::vector<float>& force,
-      std::vector<float>& virial,
-      std::vector<float>& atom_energy,
-      std::vector<float>& atom_virial,
-      const std::vector<float>& coord,
-      const std::vector<int>& atype,
-      const std::vector<float>& box,
-      const int nghost,
-      const InputNlist& inlist,
-      const int& ago,
-      const std::vector<float>& fparam = std::vector<float>(),
-      const std::vector<float>& aparam = std::vector<float>()) = 0;
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<double>& force,
+                        std::vector<double>& virial,
+                        std::vector<double>& atom_energy,
+                        std::vector<double>& atom_virial,
+                        const std::vector<double>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<double>& box,
+                        const int nghost,
+                        const InputNlist& inlist,
+                        const int& ago,
+                        const std::vector<double>& fparam,
+                        const std::vector<double>& aparam,
+                        const bool atomic) = 0;
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<float>& force,
+                        std::vector<float>& virial,
+                        std::vector<float>& atom_energy,
+                        std::vector<float>& atom_virial,
+                        const std::vector<float>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<float>& box,
+                        const int nghost,
+                        const InputNlist& inlist,
+                        const int& ago,
+                        const std::vector<float>& fparam,
+                        const std::vector<float>& aparam,
+                        const bool atomic) = 0;
   /** @} */
 
   /**
@@ -167,32 +169,33 @@ class DeepPotBase {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] atomic Request atomic energy and virial if atomic is true.
    * @{
    **/
-  virtual void computew_mixed_type(
-      std::vector<double>& ener,
-      std::vector<double>& force,
-      std::vector<double>& virial,
-      std::vector<double>& atom_energy,
-      std::vector<double>& atom_virial,
-      const int& nframes,
-      const std::vector<double>& coord,
-      const std::vector<int>& atype,
-      const std::vector<double>& box,
-      const std::vector<double>& fparam = std::vector<double>(),
-      const std::vector<double>& aparam = std::vector<double>()) = 0;
-  virtual void computew_mixed_type(
-      std::vector<double>& ener,
-      std::vector<float>& force,
-      std::vector<float>& virial,
-      std::vector<float>& atom_energy,
-      std::vector<float>& atom_virial,
-      const int& nframes,
-      const std::vector<float>& coord,
-      const std::vector<int>& atype,
-      const std::vector<float>& box,
-      const std::vector<float>& fparam = std::vector<float>(),
-      const std::vector<float>& aparam = std::vector<float>()) = 0;
+  virtual void computew_mixed_type(std::vector<double>& ener,
+                                   std::vector<double>& force,
+                                   std::vector<double>& virial,
+                                   std::vector<double>& atom_energy,
+                                   std::vector<double>& atom_virial,
+                                   const int& nframes,
+                                   const std::vector<double>& coord,
+                                   const std::vector<int>& atype,
+                                   const std::vector<double>& box,
+                                   const std::vector<double>& fparam,
+                                   const std::vector<double>& aparam,
+                                   const bool atomic) = 0;
+  virtual void computew_mixed_type(std::vector<double>& ener,
+                                   std::vector<float>& force,
+                                   std::vector<float>& virial,
+                                   std::vector<float>& atom_energy,
+                                   std::vector<float>& atom_virial,
+                                   const int& nframes,
+                                   const std::vector<float>& coord,
+                                   const std::vector<int>& atype,
+                                   const std::vector<float>& box,
+                                   const std::vector<float>& fparam,
+                                   const std::vector<float>& aparam,
+                                   const bool atomic) = 0;
   /** @} */
   /**
    * @brief Get the cutoff radius.

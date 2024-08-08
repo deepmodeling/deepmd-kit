@@ -165,10 +165,10 @@ class DescrptSeR(DescrptSe):
         self.embedding_net_variables = None
 
         self.place_holders = {}
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         sub_graph = tf.Graph()
@@ -420,9 +420,9 @@ class DescrptSeR(DescrptSe):
         dstd = self.dstd
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 self.rcut, name="rcut", dtype=GLOBAL_TF_FLOAT_PRECISION
             )
@@ -512,10 +512,11 @@ class DescrptSeR(DescrptSe):
         """
         [net_deriv] = tf.gradients(atom_ener, self.descrpt_reshape)
         tf.summary.histogram("net_derivative", net_deriv)
+        nf = tf.shape(self.nlist)[0]
         net_deriv_reshape = tf.reshape(
             net_deriv,
             [
-                np.asarray(-1, dtype=np.int64),
+                nf,
                 natoms[0] * np.asarray(self.ndescrpt, dtype=np.int64),
             ],
         )

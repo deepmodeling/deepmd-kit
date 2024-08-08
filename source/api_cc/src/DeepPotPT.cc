@@ -38,7 +38,12 @@ torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
     row_tensors.push_back(row_tensor);
   }
 
-  torch::Tensor tensor = torch::cat(row_tensors, 0).unsqueeze(0);
+  torch::Tensor tensor;
+  if (row_tensors.size() > 0) {
+    tensor = torch::cat(row_tensors, 0).unsqueeze(0);
+  } else {
+    tensor = torch::empty({1, 0, 0}, torch::kInt32);
+  }
   return tensor;
 }
 DeepPotPT::DeepPotPT() : inited(false) {}
@@ -125,7 +130,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const InputNlist& lmp_list,
                         const int& ago,
                         const std::vector<VALUETYPE>& fparam,
-                        const std::vector<VALUETYPE>& aparam) {
+                        const std::vector<VALUETYPE>& aparam,
+                        const bool atomic) {
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -151,25 +157,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
   int nframes = 1;
-  // TODO: dpa2 model may need a fake communication op to deal with nloc == 0.
-  // this should be fixed after wrapping comm op as a pure c++ implementation.
-  if (nloc == 0) {
-    // no backward map needed
-    ener.resize(nframes);
-    // dforce of size nall * 3
-    force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
-    fill(force.begin(), force.end(), (VALUETYPE)0.0);
-    // dvirial of size 9
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
-    // datom_energy_ of size nall
-    atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
-    fill(atom_energy.begin(), atom_energy.end(), (VALUETYPE)0.0);
-    // datom_virial_ of size nall * 9
-    atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
-    fill(atom_virial.begin(), atom_virial.end(), (VALUETYPE)0.0);
-    return;
-  }
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, nall_real, 3}, options)
@@ -212,7 +199,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   }
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
-  bool do_atom_virial_tensor = true;
+  bool do_atom_virial_tensor = atomic;
   c10::optional<torch::Tensor> optional_tensor;
   c10::optional<torch::Tensor> fparam_tensor;
   if (!fparam.empty()) {
@@ -246,20 +233,10 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue virial_ = outputs.at("virial");
-  c10::IValue atom_virial_ = outputs.at("extended_virial");
-  c10::IValue atom_energy_ = outputs.at("atom_energy");
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
               cpu_energy_.data_ptr<ENERGYTYPE>() + cpu_energy_.numel());
-  torch::Tensor flat_atom_energy_ =
-      atom_energy_.toTensor().view({-1}).to(floatType);
-  torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
-  datom_energy.resize(nall_real,
-                      0.0);  // resize to nall to be consistenet with TF.
-  datom_energy.assign(
-      cpu_atom_energy_.data_ptr<VALUETYPE>(),
-      cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
   torch::Tensor flat_force_ = force_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   dforce.assign(cpu_force_.data_ptr<VALUETYPE>(),
@@ -268,22 +245,35 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
-  torch::Tensor flat_atom_virial_ =
-      atom_virial_.toTensor().view({-1}).to(floatType);
-  torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
-  datom_virial.assign(
-      cpu_atom_virial_.data_ptr<VALUETYPE>(),
-      cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+
   // bkw map
   force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
-  atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
-  atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
   select_map<VALUETYPE>(force, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
-  select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
-                        fwd_map.size(), nall_real);
-  select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
-                        fwd_map.size(), nall_real);
+  if (atomic) {
+    c10::IValue atom_virial_ = outputs.at("extended_virial");
+    c10::IValue atom_energy_ = outputs.at("atom_energy");
+    torch::Tensor flat_atom_energy_ =
+        atom_energy_.toTensor().view({-1}).to(floatType);
+    torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
+    datom_energy.resize(nall_real,
+                        0.0);  // resize to nall to be consistenet with TF.
+    datom_energy.assign(
+        cpu_atom_energy_.data_ptr<VALUETYPE>(),
+        cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
+    torch::Tensor flat_atom_virial_ =
+        atom_virial_.toTensor().view({-1}).to(floatType);
+    torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
+    datom_virial.assign(
+        cpu_atom_virial_.data_ptr<VALUETYPE>(),
+        cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+    atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
+    atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+    select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
+                          fwd_map.size(), nall_real);
+    select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
+                          fwd_map.size(), nall_real);
+  }
 }
 template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
@@ -298,7 +288,8 @@ template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const bool atomic);
 template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
@@ -312,7 +303,8 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const bool atomic);
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
@@ -323,7 +315,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                         const std::vector<int>& atype,
                         const std::vector<VALUETYPE>& box,
                         const std::vector<VALUETYPE>& fparam,
-                        const std::vector<VALUETYPE>& aparam) {
+                        const std::vector<VALUETYPE>& aparam,
+                        const bool atomic) {
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -338,23 +331,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   }
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
   int nframes = 1;
-  if (natoms == 0) {
-    // no backward map needed
-    ener.resize(nframes);
-    // dforce of size nall * 3
-    force.resize(static_cast<size_t>(nframes) * natoms * 3);
-    fill(force.begin(), force.end(), (VALUETYPE)0.0);
-    // dvirial of size 9
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    fill(virial.begin(), virial.end(), (VALUETYPE)0.0);
-    // datom_energy_ of size nall
-    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
-    fill(atom_energy.begin(), atom_energy.end(), (VALUETYPE)0.0);
-    // datom_virial_ of size nall * 9
-    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
-    fill(atom_virial.begin(), atom_virial.end(), (VALUETYPE)0.0);
-    return;
-  }
   std::vector<torch::jit::IValue> inputs;
   at::Tensor coord_wrapped_Tensor =
       torch::from_blob(coord_wrapped.data(), {1, natoms, 3}, options)
@@ -389,25 +365,17 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   inputs.push_back(aparam_tensor);
-  bool do_atom_virial_tensor = true;
+  bool do_atom_virial_tensor = atomic;
   inputs.push_back(do_atom_virial_tensor);
   c10::Dict<c10::IValue, c10::IValue> outputs =
       module.forward(inputs).toGenericDict();
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("force");
   c10::IValue virial_ = outputs.at("virial");
-  c10::IValue atom_virial_ = outputs.at("atom_virial");
-  c10::IValue atom_energy_ = outputs.at("atom_energy");
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
               cpu_energy_.data_ptr<ENERGYTYPE>() + cpu_energy_.numel());
-  torch::Tensor flat_atom_energy_ =
-      atom_energy_.toTensor().view({-1}).to(floatType);
-  torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
-  atom_energy.assign(
-      cpu_atom_energy_.data_ptr<VALUETYPE>(),
-      cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
   torch::Tensor flat_force_ = force_.toTensor().view({-1}).to(floatType);
   torch::Tensor cpu_force_ = flat_force_.to(torch::kCPU);
   force.assign(cpu_force_.data_ptr<VALUETYPE>(),
@@ -416,12 +384,22 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
-  torch::Tensor flat_atom_virial_ =
-      atom_virial_.toTensor().view({-1}).to(floatType);
-  torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
-  atom_virial.assign(
-      cpu_atom_virial_.data_ptr<VALUETYPE>(),
-      cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+  if (atomic) {
+    c10::IValue atom_virial_ = outputs.at("atom_virial");
+    c10::IValue atom_energy_ = outputs.at("atom_energy");
+    torch::Tensor flat_atom_energy_ =
+        atom_energy_.toTensor().view({-1}).to(floatType);
+    torch::Tensor cpu_atom_energy_ = flat_atom_energy_.to(torch::kCPU);
+    atom_energy.assign(
+        cpu_atom_energy_.data_ptr<VALUETYPE>(),
+        cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
+    torch::Tensor flat_atom_virial_ =
+        atom_virial_.toTensor().view({-1}).to(floatType);
+    torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
+    atom_virial.assign(
+        cpu_atom_virial_.data_ptr<VALUETYPE>(),
+        cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+  }
 }
 
 template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
@@ -434,7 +412,8 @@ template void DeepPotPT::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<int>& atype,
     const std::vector<double>& box,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const bool atomic);
 template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
     std::vector<float>& force,
@@ -445,7 +424,8 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<int>& atype,
     const std::vector<float>& box,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const bool atomic);
 void DeepPotPT::get_type_map(std::string& type_map) {
   auto ret = module.run_method("get_type_map").toList();
   for (const torch::IValue& element : ret) {
@@ -464,10 +444,11 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<int>& atype,
                          const std::vector<double>& box,
                          const std::vector<double>& fparam,
-                         const std::vector<double>& aparam) {
+                         const std::vector<double>& aparam,
+                         const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            fparam, aparam);
+            fparam, aparam, atomic);
   });
 }
 void DeepPotPT::computew(std::vector<double>& ener,
@@ -479,10 +460,11 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const std::vector<int>& atype,
                          const std::vector<float>& box,
                          const std::vector<float>& fparam,
-                         const std::vector<float>& aparam) {
+                         const std::vector<float>& aparam,
+                         const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            fparam, aparam);
+            fparam, aparam, atomic);
   });
 }
 void DeepPotPT::computew(std::vector<double>& ener,
@@ -497,10 +479,11 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const InputNlist& inlist,
                          const int& ago,
                          const std::vector<double>& fparam,
-                         const std::vector<double>& aparam) {
+                         const std::vector<double>& aparam,
+                         const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            nghost, inlist, ago, fparam, aparam);
+            nghost, inlist, ago, fparam, aparam, atomic);
   });
 }
 void DeepPotPT::computew(std::vector<double>& ener,
@@ -515,10 +498,11 @@ void DeepPotPT::computew(std::vector<double>& ener,
                          const InputNlist& inlist,
                          const int& ago,
                          const std::vector<float>& fparam,
-                         const std::vector<float>& aparam) {
+                         const std::vector<float>& aparam,
+                         const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            nghost, inlist, ago, fparam, aparam);
+            nghost, inlist, ago, fparam, aparam, atomic);
   });
 }
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
@@ -531,7 +515,8 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<int>& atype,
                                     const std::vector<double>& box,
                                     const std::vector<double>& fparam,
-                                    const std::vector<double>& aparam) {
+                                    const std::vector<double>& aparam,
+                                    const bool atomic) {
   throw deepmd::deepmd_exception("computew_mixed_type is not implemented");
 }
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
@@ -544,7 +529,8 @@ void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<int>& atype,
                                     const std::vector<float>& box,
                                     const std::vector<float>& fparam,
-                                    const std::vector<float>& aparam) {
+                                    const std::vector<float>& aparam,
+                                    const bool atomic) {
   throw deepmd::deepmd_exception("computew_mixed_type is not implemented");
 }
 #endif

@@ -33,28 +33,28 @@ def _file_delete(file):
 
 class TestTransform(unittest.TestCase):
     @classmethod
-    def setUpClass(self):
-        self.old_model = str(tests_path / "dp-old.pb")
-        self.raw_model = str(tests_path / "dp-raw.pb")
-        self.new_model = str(tests_path / "dp-new.pb")
+    def setUpClass(cls):
+        cls.old_model = str(tests_path / "dp-old.pb")
+        cls.raw_model = str(tests_path / "dp-raw.pb")
+        cls.new_model = str(tests_path / "dp-new.pb")
         convert_pbtxt_to_pb(
-            str(infer_path / os.path.join("deeppot.pbtxt")), self.old_model
+            str(infer_path / os.path.join("deeppot.pbtxt")), cls.old_model
         )
         convert_pbtxt_to_pb(
-            str(infer_path / os.path.join("deeppot-1.pbtxt")), self.raw_model
+            str(infer_path / os.path.join("deeppot-1.pbtxt")), cls.raw_model
         )
         ret = run_dp(
             "dp transfer -O "
-            + self.old_model
+            + cls.old_model
             + " -r "
-            + self.raw_model
+            + cls.raw_model
             + " -o "
-            + self.new_model
+            + cls.new_model
         )
         np.testing.assert_equal(ret, 0, "DP transfer failed!")
 
-        self.dp = DeepPot(self.new_model)
-        self.coords = np.array(
+        cls.dp = DeepPot(cls.new_model)
+        cls.coords = np.array(
             [
                 12.83,
                 2.56,
@@ -76,9 +76,9 @@ class TestTransform(unittest.TestCase):
                 1.56,
             ]
         )
-        self.atype = [0, 1, 1, 0, 1, 1]
-        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
-        self.expected_e = np.array(
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        cls.expected_e = np.array(
             [
                 -9.275780747115504710e01,
                 -1.863501786584258468e02,
@@ -88,7 +88,7 @@ class TestTransform(unittest.TestCase):
                 -1.863619822847602165e02,
             ]
         )
-        self.expected_f = np.array(
+        cls.expected_f = np.array(
             [
                 -3.034045420701179663e-01,
                 8.405844663871177014e-01,
@@ -110,7 +110,7 @@ class TestTransform(unittest.TestCase):
                 2.495901655353461868e-01,
             ]
         )
-        self.expected_v = np.array(
+        cls.expected_v = np.array(
             [
                 -2.912234126853306959e-01,
                 -3.800610846612756388e-02,
@@ -170,10 +170,10 @@ class TestTransform(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(self):
-        _file_delete(self.old_model)
-        _file_delete(self.raw_model)
-        _file_delete(self.new_model)
+    def tearDownClass(cls):
+        _file_delete(cls.old_model)
+        _file_delete(cls.raw_model)
+        _file_delete(cls.new_model)
 
     def test_attrs(self):
         self.assertEqual(self.dp.get_ntypes(), 2)

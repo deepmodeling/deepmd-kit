@@ -571,6 +571,8 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             Floating point precision for the model paramters.
         seed : int, optional
             Random seed.
+        bias : bool, Optional
+            Whether to use bias in the embedding layer.
         """
 
         def __init__(
@@ -581,6 +583,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             seed: Optional[Union[int, List[int]]] = None,
+            bias: bool = True,
         ):
             layers = []
             i_in = in_dim
@@ -590,7 +593,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                     T_NetworkLayer(
                         i_in,
                         i_ot,
-                        bias=True,
+                        bias=bias,
                         use_timestep=resnet_dt,
                         activation_function=activation_function,
                         resnet=True,
@@ -605,6 +608,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             self.activation_function = activation_function
             self.resnet_dt = resnet_dt
             self.precision = precision
+            self.bias = bias
 
         def serialize(self) -> dict:
             """Serialize the network to a dict.
@@ -616,11 +620,12 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             """
             return {
                 "@class": "EmbeddingNetwork",
-                "@version": 1,
+                "@version": 2,
                 "in_dim": self.in_dim,
                 "neuron": self.neuron.copy(),
                 "activation_function": self.activation_function,
                 "resnet_dt": self.resnet_dt,
+                "bias": self.bias,
                 # make deterministic
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
                 "layers": [layer.serialize() for layer in self.layers],
@@ -636,7 +641,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
                 The dict to deserialize from.
             """
             data = copy.deepcopy(data)
-            check_version_compatibility(data.pop("@version", 1), 1, 1)
+            check_version_compatibility(data.pop("@version", 1), 2, 1)
             data.pop("@class", None)
             layers = data.pop("layers")
             obj = cls(**data)
@@ -691,6 +696,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
                 activation_function=activation_function,
                 resnet_dt=resnet_dt,
                 precision=precision,
+                seed=seed,
             )
             i_in = neuron[-1] if len(neuron) > 0 else in_dim
             i_ot = out_dim

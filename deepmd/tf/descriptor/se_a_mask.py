@@ -179,13 +179,16 @@ class DescrptSeAMask(DescrptSeA):
         self.place_holders = {}
         nei_type = np.array([])
         for ii in range(self.ntypes):
-            nei_type = np.append(nei_type, ii * np.ones(self.sel_a[ii]))  # like a mask
+            nei_type = np.append(
+                nei_type,
+                ii * np.ones(self.sel_a[ii]),  # pylint: disable=no-explicit-dtype
+            )  # like a mask
         self.nei_type = tf.constant(nei_type, dtype=tf.int32)
 
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         sub_graph = tf.Graph()
@@ -311,16 +314,17 @@ class DescrptSeAMask(DescrptSeA):
         aparam[:, :] is the real/virtual sign for each atom.
         """
         aparam = input_dict["aparam"]
-        with tf.variable_scope("fitting_attr" + suffix, reuse=reuse):
-            t_aparam_nall = tf.constant(True, name="aparam_nall", dtype=tf.bool)
+        t_aparam_nall = tf.constant(
+            True, name=f"fitting_attr{suffix}/aparam_nall", dtype=tf.bool
+        )
         self.mask = tf.cast(aparam, tf.int32)
         self.mask = tf.reshape(self.mask, [-1, natoms[1]])
 
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 self.rcut,
                 name="rcut",

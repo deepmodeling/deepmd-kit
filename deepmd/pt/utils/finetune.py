@@ -30,9 +30,12 @@ def get_finetune_rule_single(
 
     if not from_multitask:
         single_config_chosen = deepcopy(_model_param_pretrained)
+        if model_branch_from == "RANDOM":
+            # not ["", "RANDOM"], because single-from-single finetune uses pretrained fitting in default
+            new_fitting = True
     else:
         model_dict_params = _model_param_pretrained["model_dict"]
-        if model_branch_from == "":
+        if model_branch_from in ["", "RANDOM"]:
             model_branch_chosen = next(iter(model_dict_params.keys()))
             new_fitting = True
             log.warning(
@@ -164,21 +167,27 @@ def get_finetune_rules(
             pretrained_keys = last_model_params["model_dict"].keys()
         for model_key in target_keys:
             resuming = False
-            if "finetune_head" in model_config["model_dict"][model_key]:
+            if (
+                "finetune_head" in model_config["model_dict"][model_key]
+                and model_config["model_dict"][model_key]["finetune_head"] != "RANDOM"
+            ):
                 pretrained_key = model_config["model_dict"][model_key]["finetune_head"]
                 assert pretrained_key in pretrained_keys, (
                     f"'{pretrained_key}' head chosen to finetune not exist in the pretrained model!"
                     f"Available heads are: {list(pretrained_keys)}"
                 )
                 model_branch_from = pretrained_key
-            elif model_key in pretrained_keys:
+            elif (
+                "finetune_head" not in model_config["model_dict"][model_key]
+                and model_key in pretrained_keys
+            ):
                 # not do anything if not defined "finetune_head" in heads that exist in the pretrained model
                 # this will just do resuming
                 model_branch_from = model_key
                 resuming = True
             else:
-                # if not defined "finetune_head" in new heads, the fitting net will bre randomly initialized
-                model_branch_from = ""
+                # if not defined "finetune_head" in new heads or "finetune_head" is "RANDOM", the fitting net will bre randomly initialized
+                model_branch_from = "RANDOM"
             model_config["model_dict"][model_key], finetune_rule = (
                 get_finetune_rule_single(
                     model_config["model_dict"][model_key],

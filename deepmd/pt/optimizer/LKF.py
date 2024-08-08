@@ -204,7 +204,7 @@ class LKFOptimizer(Optimizer):
             device = torch.device("cuda:" + str(self.rank))
             local_shape = [tensor.shape[0] for tensor in weights]
             shape_list = [
-                torch.zeros_like(torch.empty(1), dtype=torch.float64, device=device)
+                torch.zeros_like(torch.empty(1), dtype=torch.float64, device=device)  # pylint: disable=no-explicit-dtype,no-explicit-device
                 for _ in range(dist.get_world_size())
             ]
             dist.all_gather_object(shape_list, local_shape)

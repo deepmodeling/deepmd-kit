@@ -100,7 +100,11 @@ class Border : public torch::autograd::Function<Border> {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
+#ifdef NO_CUDA_AWARE
+        cuda_aware = 0;
+#else
         cuda_aware = MPIX_Query_cuda_support();
+#endif
       } else {
         cuda_aware = 0;
       }
@@ -215,7 +219,11 @@ class Border : public torch::autograd::Function<Border> {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
+#ifdef NO_CUDA_AWARE
+        cuda_aware = 0;
+#else
         cuda_aware = MPIX_Query_cuda_support();
+#endif
       } else {
         cuda_aware = 0;
       }

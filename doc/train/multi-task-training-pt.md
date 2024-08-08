@@ -16,7 +16,7 @@ For each dataset, a training task is defined as
     \min_{\boldsymbol \theta}   L^{(t)} (\boldsymbol x^{(t)}; \boldsymbol  \theta^{(t)}, \tau), \quad t=1, \dots, n_t.
 ```
 
-In the Pytorch implementation, during the multi-task training process, all tasks can share any portion of the model parameters.
+In the PyTorch implementation, during the multi-task training process, all tasks can share any portion of the model parameters.
 A typical scenario is that each task shares the same descriptor with trainable parameters $\boldsymbol{\theta}_ {d}$, while each has its own fitting network with trainable parameters $\boldsymbol{\theta}_ f^{(t)}$, thus
 $\boldsymbol{\theta}^{(t)} = \{ \boldsymbol{\theta}_ {d} , \boldsymbol{\theta}_ {f}^{(t)} \}$.
 At each training step, a task will be randomly selected from ${1, \dots, n_t}$ according to the user-specified probability,
@@ -78,3 +78,15 @@ An example input for multi-task training two models in water system is shown as 
 
 To finetune based on the checkpoint `model.pt` after the multi-task pre-training is completed,
 users can refer to [this section](./finetuning.md#fine-tuning-from-a-multi-task-pre-trained-model).
+
+## Multi-task specific parameters
+
+:::{note}
+Details of some parameters that are the same as [the regular parameters](./train-input.rst) are not shown below.
+:::
+
+```{eval-rst}
+.. dargs::
+   :module: deepmd.utils.argcheck
+   :func: gen_args_multi_task
+```

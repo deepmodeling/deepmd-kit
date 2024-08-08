@@ -235,6 +235,10 @@ class OutputVariableDef:
     def get_intensive(self) -> bool:
         """Get whether the property is intensive."""
         return self.intensive
+    def squeeze(self, dim):
+        # squeeze the shape on given dimension
+        if -len(self.shape) <= dim < len(self.shape) and self.shape[dim] == 1:
+            self.shape.pop(dim)
 
 
 class FittingOutputDef:
@@ -314,7 +318,6 @@ class ModelOutputDef:
 
     def get_data(
         self,
-        key: str,
     ) -> Dict[str, OutputVariableDef]:
         return self.var_defs
 
@@ -408,6 +411,16 @@ def check_operation_applied(
         True if the operation has been applied, False otherwise.
     """
     return var_def.category & op.value == op.value
+
+
+def check_deriv(var_def: OutputVariableDef) -> bool:
+    """Check if a variable is obtained by derivative."""
+    deriv = (
+        check_operation_applied(var_def, OutputVariableOperation.DERV_R)
+        or check_operation_applied(var_def, OutputVariableOperation._SEC_DERV_R)
+        or check_operation_applied(var_def, OutputVariableOperation.DERV_C)
+    )
+    return deriv
 
 
 def do_reduce(
