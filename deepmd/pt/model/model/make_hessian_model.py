@@ -29,7 +29,7 @@ def compute_hessian(func, inputs):  # anchor created
     n = len(inputs)
     hessian = torch.zeros(n, n, device=device)
     for i in range(n):
-        grad2 = torch.autograd.grad(grads[i], inputs, retain_graph=True)[0]
+        grad2 = torch.autograd.grad(grads[i], inputs, retain_graph=True, create_graph=True)[0]
         # print(f"{i} grad2: {grad2}")
         # for j in range(len(inputs)):
         #     grad_ij = torch.autograd.grad(grads[i], inputs[j], retain_graph=True, allow_unused=True)[0]
