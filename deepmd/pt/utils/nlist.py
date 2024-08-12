@@ -132,13 +132,13 @@ def build_neighbor_list(
 
 
 def _trim_mask_distinguish_nlist(
-    is_vir_cntl,
-    atype_neig,
-    rr,
-    nlist,
-    rcut,
-    sel,
-    distinguish_types,
+    is_vir_cntl: torch.Tensor,
+    atype_neig: torch.Tensor,
+    rr: torch.Tensor,
+    nlist: torch.Tensor,
+    rcut: float,
+    sel: List[int],
+    distinguish_types: bool,
 ):
     """Trim the size of nlist, mask if any central atom is virtual, distinguish types if necessary."""
     nsel = sum(sel)
