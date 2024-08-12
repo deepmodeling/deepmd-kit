@@ -253,7 +253,6 @@ def build_directional_neighbor_list(
     # nsel
     if isinstance(sel, int):
         sel = [sel]
-    nsel = sum(sel)
     # nloc x nall x 3
     diff = coord_neig[:, None, :, :] - coord_cntl[:, :, None, :]
     assert list(diff.shape) == [batch_size, nloc_cntl, nall_neig, 3]
