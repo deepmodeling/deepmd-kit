@@ -186,7 +186,7 @@ def build_directional_neighbor_list(
     With each central atom, all the neighbor atoms in the cut-off radius will
     be recorded in the neighbor list. The maximum neighbors is nsel. If the real
     number of neighbors is larger than nsel, the neighbors will be sorted with the
-    distance and the first nsel neighbors are kept. Atom types are not distinguished.
+    distance and the first nsel neighbors are kept.
 
     Important: the central and neighboring atoms are assume to be different atoms.
 
