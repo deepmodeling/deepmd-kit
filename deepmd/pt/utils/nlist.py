@@ -139,7 +139,7 @@ def _trim_mask_distinguish_nlist(
     rcut: float,
     sel: List[int],
     distinguish_types: bool,
-):
+) -> torch.Tensor:
     """Trim the size of nlist, mask if any central atom is virtual, distinguish types if necessary."""
     nsel = sum(sel)
     # nloc x nsel
