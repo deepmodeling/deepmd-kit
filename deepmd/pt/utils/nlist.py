@@ -144,7 +144,7 @@ def _trim_mask_distinguish_nlist(
     nsel = sum(sel)
     # nloc x nsel
     batch_size, nloc, nnei = rr.shape
-    assert batch_size, nloc == is_vir_cntl.shape
+    assert (batch_size, nloc) == is_vir_cntl.shape
     if nsel <= nnei:
         rr = rr[:, :, :nsel]
         nlist = nlist[:, :, :nsel]
