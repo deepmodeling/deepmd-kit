@@ -119,7 +119,6 @@ class Trainer:
         resuming = resume_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
-        # print(f"keys of model_params: {model_params.keys()}")  # anchor added
         training_params = config["training"]
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
@@ -1232,7 +1231,6 @@ def whether_hessian(loss_params):  # anchor created
     loss_type = loss_params.get("type", "ener")
     if loss_type == "ener":
         if loss_params["start_pref_h"] > 0.0:
-            # print("hessian mode is detected")
             return True
     else:
         return False
@@ -1240,16 +1238,11 @@ def whether_hessian(loss_params):  # anchor created
 
 def get_loss(loss_params, start_lr, _ntypes, _model):
     loss_type = loss_params.get("type", "ener")
-    # print(f"loss_type: {loss_type}")  # anchor added
-    # print(f"loss_params: {loss_params}")  # anchor added
-    # print(f"start_lr: {start_lr}")  # anchor added
     if whether_hessian(loss_params):  # anchor added
         loss_params["starter_learning_rate"] = start_lr
-        # print(f"EnergyHessianStdLoss(**loss_params): {EnergyHessianStdLoss(**loss_params)}")
         return EnergyHessianStdLoss(**loss_params)
     elif loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
-        # print(f"EnergyStdLoss(**loss_params): {EnergyStdLoss(**loss_params)}")  # anchor added
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dos":
         loss_params["starter_learning_rate"] = start_lr
@@ -1294,9 +1287,7 @@ def get_model_for_wrapper(
 ):
     if _loss_params is not None:  # anchor added
         if whether_hessian(_loss_params):
-            # print("hessian model is utilized")
             _model_params["hessian_mode"] = True
-            # print("hessian_mode(True) is added to model_params")
     if "model_dict" not in _model_params:
         _model = get_single_model(
             _model_params,
@@ -1308,13 +1299,6 @@ def get_model_for_wrapper(
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
-    # if _loss_params is not None:  # anchor added
-    #     if whether_hessian(_loss_params):
-    #         print("hessian model is utilized")
-    #         # return make_hessian_model(_model)
-    #         return _model
-    # else:
-    #     return _model
     return _model  # anchor noted: original return _model only
 
 
