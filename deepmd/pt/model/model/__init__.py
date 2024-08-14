@@ -191,8 +191,9 @@ def get_standard_model(model_params):
     elif fitting_net["type"] in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
         # print("model type is EnergyModel")  # anchor added
-        if model_params["hessian_mode"]:  # anchor added
-            modelcls = EnergyHessianModel
+        if "hessian_mode" in model_params.keys():  # anchor added
+            if model_params["hessian_mode"]:  # anchor added
+                modelcls = EnergyHessianModel
             # print("model type is EnergyHessianModel in ener type")
     # elif fitting_net["type"] == "ener_hess":  # anchor created
     #     modelcls = EnergyHessianModel
