@@ -173,8 +173,6 @@ class ModelWrapper(torch.nn.Module):
             model_pred = self.model[task_key](**input_dict)
             return model_pred, None, None
         else:
-            # torch.save(self.model[task_key].state_dict(), 'b.pt')  # anchor added
-            # self.model[task_key].load_state_dict(torch.load('./b.pt'))  # anchor added
             natoms = atype.shape[-1]
             model_pred, loss, more_loss = self.loss[task_key](
                 input_dict,
