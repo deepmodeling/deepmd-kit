@@ -155,15 +155,6 @@ class EnergyHessianStdLoss(TaskLoss):
             Other losses for display.
         """
         model_pred = model(**input_dict)
-        # print(f"keys of input_dict: {input_dict.keys()}")  # anchor added
-        # print(f"keys of model_pred: {model_pred.keys()}")  # anchor added
-        # print(f"keys of label: {label.keys()}")  # anchor added
-        # print(f"label['find_hessian']: {label['hessian'].size()}, {label['find_hessian']}")  # anchor added
-        # na3 = int(label['hessian'].cpu().detach().numpy().shape[1] ** 0.5)  # hess size is [1,na3*na3,1]; anchor added
-        # print(f"label['hessian']: {label['hessian'].cpu().detach().numpy().reshape(na3, -1)[:5,:5]}")  # anchor added
-        # print(f"label['find_force']: {label['force'].size()}, {label['find_force']}")  # anchor added
-        # print(f"label['find_energy']: {label['energy'].size()}, {label['find_energy']}")  # anchor added
-        # print(f"model: {type(model)}")  # anchor added
         coef = learning_rate / self.starter_learning_rate
         pref_e = self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * coef
         pref_f = self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * coef
@@ -179,7 +170,6 @@ class EnergyHessianStdLoss(TaskLoss):
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
         if self.has_e and "energy" in model_pred and "energy" in label:
-            # print("{if self.has_e and 'energy' in model_pred and 'energy' in label} is valid")  # anchor added
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
             if self.enable_atom_ener_coeff and "atom_energy" in model_pred:
@@ -238,7 +228,6 @@ class EnergyHessianStdLoss(TaskLoss):
             and "force" in model_pred
             and "force" in label
         ):
-            # print("{if self.has_f and 'force' in model_pred and 'force' in label} is valid")  # anchor added
             find_force = label.get("find_force", 0.0)
             pref_f = pref_f * find_force
             force_pred = model_pred["force"]
@@ -319,7 +308,6 @@ class EnergyHessianStdLoss(TaskLoss):
                 )
 
         if self.has_v and "virial" in model_pred and "virial" in label:
-            # print("{if self.has_v and 'virial' in model_pred and 'virial' in label} is valid")  # anchor added
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
@@ -336,27 +324,16 @@ class EnergyHessianStdLoss(TaskLoss):
                 more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
 
         if self.has_h and "hessian" in model_pred and "hessian" in label:  # anchor added; sth to be corrected
-            # print("{if self.has_h and 'hessian' in model_pred and 'hessian' in label} is valid")
             find_hessian = label.get("find_hessian", 0.0)
             pref_h = pref_h * find_hessian
-            # print(f"label['hessian']: {type(label['hessian'])}, size from {label['hessian'].size()} "
-            #       f"to {label['hessian'].reshape(-1,).size()}")  # anchor added
-            # print(f"model_pred['hessian']: {type(model_pred['hessian'])}, size from {model_pred['hessian'].size()}"
-            #       f"to {model_pred['hessian'].reshape(-1,).size()}")  # anchor added
-            # print(f"label_hess has nan of {np.sum(np.isnan(label['hessian'].reshape(-1,).cpu().detach().numpy()))}")
-            # print(f"model_pred_hess has nan of {np.sum(np.isnan(model_pred['hessian'].reshape(-1,).cpu().detach().numpy()))}")
             diff_h = label["hessian"].reshape(-1,) - model_pred["hessian"].reshape(-1,)  # tbd
-            # print(f"diff_h: {diff_h.size()}")
-            # print(f"diff_h has nan of {np.sum(np.isnan(diff_h.cpu().detach().numpy()))}")
             l2_hessian_loss = torch.mean(torch.square(diff_h))
-            # print(f"l2_hessian_loss: {l2_hessian_loss:.8f}")
             if not self.inference:
                 more_loss["l2_hessian_loss"] = self.display_if_exist(
                     l2_hessian_loss.detach(), find_hessian
                 )
             loss += (pref_h * l2_hessian_loss)  # tbd
             rmse_h = l2_hessian_loss.sqrt()  # tbd
-            # print(f"rmse_h: {rmse_h:.8f}")
             more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
             if mae:
                 mae_h = torch.mean(torch.abs(diff_h))  # tbd
