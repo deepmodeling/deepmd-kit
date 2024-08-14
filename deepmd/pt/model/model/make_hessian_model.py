@@ -16,24 +16,15 @@ from deepmd.dpmodel import (
 
 
 def compute_hessian(func, inputs):  # anchor created
-    # print(f"func in compute_hessian of {type(func)}: {func}")
-    # print(f"inputs in compute_hessian of {type(inputs)}: {inputs}")
     device = torch.device('cuda:0')
     inputs.to(device)
     inputs = inputs.requires_grad_(True)
     y = func(inputs)
     grads = torch.autograd.grad(y, inputs, create_graph=True)[0]
-    # for j in range(len(inputs)):
-    #     grad_j = torch.autograd.grad(y, inputs[j], retain_graph=True, allow_unused=True)[0]
-    #     print(f"{j} grad: {grad_j}")
     n = len(inputs)
     hessian = torch.zeros(n, n, device=device)
     for i in range(n):
         grad2 = torch.autograd.grad(grads[i], inputs, retain_graph=True, create_graph=True)[0]
-        # print(f"{i} grad2: {grad2}")
-        # for j in range(len(inputs)):
-        #     grad_ij = torch.autograd.grad(grads[i], inputs[j], retain_graph=True, allow_unused=True)[0]
-        #     print(f"{i}{j} grad2: {grad_ij}")
         hessian[i] = grad2
     return hessian
 
@@ -152,8 +143,6 @@ def make_hessian_model(T_Model):
             fparam = fparam.view([nf, -1]) if fparam is not None else None
             aparam = aparam.view([nf, nloc, -1]) if aparam is not None else None
             fdef = self.atomic_output_def()
-            # print(f"fdef in _cal_hessian_all: {fdef}")  # anchor added
-            # print(f"keys of fdef in _cal_hessian_all: {fdef.keys()}")  # anchor added ['energy', 'mask']
             # keys of values that require hessian
             hess_keys: List[str] = []
             for kk in fdef.keys():
@@ -166,7 +155,6 @@ def make_hessian_model(T_Model):
                 vdef = fdef[kk]
                 vshape = vdef.shape
                 vsize = math.prod(vdef.shape)
-                # print(f"vdef is {vdef}, vshape is {vshape}, vsize is {vsize}")  # anchor added
                 # loop over frames
                 for ii in range(nf):
                     icoord = coord[ii]
@@ -199,45 +187,14 @@ def make_hessian_model(T_Model):
             # box: Optional[torch.Tensor] = None,     # 9
             # fparam: Optional[torch.Tensor] = None,  # nfp
             # aparam: Optional[torch.Tensor] = None,  # (nloc x nap)
-            # print(f"coord in _cal_hessian_one_component: {coord}")  # anchor added
-            # print(f"atype in _cal_hessian_one_component: {atype}")  # anchor added
-            # print(f"box in _cal_hessian_one_component: {box}")  # anchor added
             wc = wrapper_class_forward_energy(self, ci, atype, box, fparam, aparam)
-
-            # def energy_func(x):  # anchor trying: success
-            #     return (x ** 2).sum()
-            # def energy_func(x):  # anchor trying: success
-            #     return (2*x.pow(2)+3*x.pow(2)+x.pow(3)).sum()
-            # def energy_func(x):  # anchor trying: success
-            #     return ((x[0].pow(3))+5*(x[1].pow(2))+2*(x[0].pow(2))*(x[2].pow(5)))
-            # wc = energy_func
-            # print(f"wrapper_class in _cal_hessian_one_component: {type(wc)}")  # anchor added
-            # print(f"wc in _cal_hessian_one_component: {wc}")  # anchor added
-
             # hess = torch.autograd.functional.hessian(
             #     wc,
             #     coord,
             #     create_graph=False,
-            #     # create_graph=True,  # anchor changed to: FloatingPointError: gradients are Nan/Inf
+            #     # create_graph=True,  # anchor changed to: FloatingPointError when nopbc
             # )
-            # jacobian = torch.autograd.functional.jacobian(  # anchor trying
-            #     wc,
-            #     coord,
-            #     create_graph=True,
-            # )
-            # print(f"jacobian in _cal_hessian_one_component: {jacobian}")  # anchor added
-            # jacobian.backward(torch.ones_like(coord))
-            # tmp = torch.autograd.grad(jacobian[0], coord[0], create_graph=False, allow_unused=True)  # anchor added
-            # er_from_wc = wc.__call__(coord)  # anchor added
-            # print(f"er_from_wc in _cal_hessian_one_component: {er_from_wc}")  # anchor added
-            # coord = torch.tensor(coord, requires_grad=True)  # anchor trying
-            # tmp = torch.autograd.grad(er_from_wc, coord[3], create_graph=False, allow_unused=True)  # anchor added
-            # print(f"tmp in _cal_hessian_one_component: {tmp}")  # anchor added
-            # coord = torch.tensor(coord, requires_grad=True)  # anchor trying
-            # print(f"len of coord is {len(coord)}")  # anchor
             hess = compute_hessian(wc, coord)  # anchor trying: identical to t.ag.f.hessian
-            # hess = torch.func.hessian(wc)(coord)  # anchor tried
-            # print(f"hessian in _cal_hessian_one_component: {hess}")  # anchor added
             return hess
 
     class wrapper_class_forward_energy:
@@ -270,15 +227,6 @@ def make_hessian_model(T_Model):
                 do_atomic_virial=False,
             )
             er = res["energy_redu"][0].view([-1])[ci]
-            # def energy_func(x):  # anchor trying: success
-            #     return (x ** 2).sum()
-            # res = energy_func(xx)  # anchor added
-            # er = res  # anchor added
-            # print(f"obj in wrapper_class_forward_energy: {self.obj}")  # anchor added
-            # print(f"res in wrapper_class_forward_energy: {res}")  # anchor added
-            # print(f"er in wrapper_class_forward_energy: {er}")  # anchor added
-            # print(f"er grad_fn in wrapper_class_forward_energy: {er.grad_fn}")  # anchor added
             return er
 
     return CM
-
