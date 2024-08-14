@@ -95,30 +95,12 @@ class DeepEval(DeepEvalBackend):
         **kwargs: Any,
     ):
         self.output_def = output_def
-        # print(f"--output_def.keys in __init__ in pt/deep_eval.py: {self.output_def.var_defs.keys()}")  # anchor added
-        # if "energy" in list(self.output_def.var_defs.keys()):  # anchor added
-        #     self.output_def.var_defs["energy"].r_hessian = True  # if model type is EHM: useless
-        #     print(f"--output_def.var_defs['energy'].r_hessian is set to True in __init__ in pt/deep_eval.py")
-        #     print(f"--output_def.keys in __init__ in pt/deep_eval.py with r_h True: {self.output_def.var_defs.keys()}")
-        # print(f"--output_def.values in __init__ in pt/deep_eval.py: "
-        #       f"{type(list(self.output_def.var_defs.values())[0])}")  # anchor added: OutputVariableDef
-        # print(f"--output_def.def_outp in __init__ in pt/deep_eval.py of {type(self.output_def.def_outp)}: "
-        #       f"{self.output_def.def_outp}")  # anchor added: FittingOutputDef
-        # print(f"--output_def.def_derv_r in __init__ in pt/deep_eval.py of {type(self.output_def.def_derv_r)}: "
-        #       f"{self.output_def.def_derv_r}")  # anchor added: dict: {energy_derv_r: OutputVariableDef}
-        # print(f"--output_def.def_hess_r in __init__ in pt/deep_eval.py of {type(self.output_def.def_hess_r)}: "
-        #       f"{self.output_def.def_hess_r}")  # anchor added: dict: {}
         self.model_path = model_file
         if str(self.model_path).endswith(".pt"):
             state_dict = torch.load(model_file, map_location=env.DEVICE)
-            # print(f"--state_dict of {type(state_dict)} in pt/deep_eval.py: {state_dict.keys()}")  # anchor added
             if "model" in state_dict:
                 state_dict = state_dict["model"]
-                # print(f"--state_dict['model'] of {type(state_dict)} in pt/deep_eval.py: {state_dict.keys()}")  # anchor added
             self.input_param = state_dict["_extra_state"]["model_params"]
-            # print(f"--input param of {type(state_dict)} in pt/deep_eval.py: {self.input_param.keys()}")  # anchor added
-            # print(f"--state_dict['_extra_state'] of {type(state_dict['_extra_state'])} in pt/deep_eval.py: "
-            #       f"{state_dict['_extra_state'].keys()}")  # anchor added
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:
                 model_keys = list(self.input_param["model_dict"].keys())
@@ -137,15 +119,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            print(f"--type of model in __init__ in pt/deep_eval: {type(model)}")  # anchor added -- EHM
-            # model = torch.jit.script(model)  # anchor commented out
-            # print(f"--type of model in pt/infer/deep_eval after torch.jit: {type(model)}")  # anchor added
             self.dp = ModelWrapper(model)
-            # print(f"--dp in pt/infer/deep_eval of {type(self.dp)}: {self.dp}")  # anchor added
             self.dp.load_state_dict(state_dict)
-            # print(f"--dp in pt/infer/deep_eval after load of {type(self.dp)}: {self.dp}")  # anchor added
-            print(f"--dp.model in pt/deep_eval.py of {type(self.dp.model)}: {self.dp.model.keys()}")  # anchor added
-            print(f"--dp.model.default in pt/deep_eval.py of {type(self.dp.model['Default'])}")  # anchor added -- EHM
         elif str(self.model_path).endswith(".pth"):
             model = torch.jit.load(model_file, map_location=env.DEVICE)
             self.dp = ModelWrapper(model)
@@ -167,7 +142,6 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
-        print(f"--class DeepEval in pt/deep_eval.py is activated")  # anchor added
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -193,10 +167,7 @@ class DeepEval(DeepEvalBackend):
     def model_type(self) -> Type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model["Default"].model_output_type()
-        print(f"--model_output_type in model_type in pt/deep_eval.py of {type(model_output_type)}: "
-              f"{model_output_type} of {type(model_output_type[0])}")  # anchor added -- list ['energy', 'mask'] str
         if "energy" in model_output_type:
-            print(f"--model_output_type of DeepPot is returned in model_type_in pt/deep_eval.py")  # anchor added
             return DeepPot
         elif "dos" in model_output_type:
             return DeepDOS
@@ -283,7 +254,6 @@ class DeepEval(DeepEvalBackend):
             variables, and the values are the corresponding output arrays.
         """
         # convert all of the input to numpy array
-        print(f"--eval in pt/deep_eval.py is activated")  # anchor added
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
         if cells is not None:
@@ -292,9 +262,7 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        print(f"--request_defs via _get_request_defs in eval in pt/deep_eval.py: {len(request_defs)} {type(request_defs[0])}")  # anchor added
         if "spin" not in kwargs or kwargs["spin"] is None:
-            print(f"--type of _eval_model in eval in pt/deep_eval.py: {type(self._eval_model)}")  # anchor added -- <class 'method'>
             out = self._eval_func(self._eval_model, numb_test, natoms)(
                 coords, cells, atom_types, fparam, aparam, request_defs
             )
@@ -308,10 +276,6 @@ class DeepEval(DeepEvalBackend):
                 aparam,
                 request_defs,
             )
-        # anchor noted: out here are only of 5 contents without 'energy_derv_c_derv_c'
-        print(f"--request_defs in eval in pt/deep_eval.py: {[x.name for x in request_defs]}")  # anchor added
-        print(f"--out in eval in pt/deep_eval.py: {[o.shape for o in out]}")  # anchor added
-        # anchor noted: request_defs: ['energy', 'energy_redu', 'energy_derv_r', 'energy_derv_c_redu', 'mask']
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -336,15 +300,9 @@ class DeepEval(DeepEvalBackend):
         list[OutputVariableDef]
             The requested output definitions.
         """
-        print(f"--output_def in _get_request_defs in pt/deep_eval.py: {self.output_def.var_defs.keys()}")  # anchor added
         if atomic:
-            print(f"--atomic in _get_request_defs in pt/deep_eval.py is called")  # anchor added
             return list(self.output_def.var_defs.values())
         else:
-            print(f"--atomic in _get_request_defs in pt/deep_eval.py is not called")  # anchor added
-            print(f"--self.output_def.var_defs.keys in _get_request_defs in pt/deep_eval.py: {self.output_def.var_defs.keys()}")  # anchor added
-            print(f"--self.output_def.var_defs.value.category in _get_request_defs in pt/deep_eval.py: {[x.category for x in self.output_def.var_defs.values()]}")  # anchor added
-            # print(f"--self.output_def.var_defs.values in _get_request_defs in pt/deep_eval.py: {self.output_def.var_defs.values()}")  # anchor added
             return [
                 x
                 for x in self.output_def.var_defs.values()
@@ -384,7 +342,6 @@ class DeepEval(DeepEvalBackend):
 
         else:
             eval_func = inner_func
-        print(f"--type of eval_func in _eval_func in pt/deep_eval.py: {type(eval_func)}")  # anchor added -- <class 'function'>
         return eval_func
 
     def _get_natoms_and_nframes(
@@ -459,17 +416,12 @@ class DeepEval(DeepEvalBackend):
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
-        print(f"--batch_output in _eval_model in pt/deep_eval.py of {type(batch_output)}: "
-              f"{batch_output.keys()}")  # anchor added: dict with hessian in
 
         results = []
-        print(f"--request_defs in _eval_model in pt/deep_eval.py of {type(request_defs)}: {request_defs}")  # anchor added
         for odef in request_defs:
             pt_name = self._OUTDEF_DP2BACKEND[odef.name]
-            # print(f"--pt_name in _eval_model in pt/deep_eval.py: {pt_name}")  # anchor added
             if pt_name in batch_output:
                 shape = self._get_output_shape(odef, nframes, natoms)
-                print(f"--pt {pt_name} in _eval_model in pt/deep_eval.py shape: {shape}, odef: {odef}")  # anchor added
                 out = batch_output[pt_name].reshape(shape).detach().cpu().numpy()
                 results.append(out)
             else:
