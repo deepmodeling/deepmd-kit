@@ -79,6 +79,7 @@ class DeepEvalBackend(ABC):
         # old models in v1
         "global_polar": "global_polar",
         "wfc": "wfc",
+        "energy_derv_r_derv_r": "hessian",  # anchor added
     }
 
     @abstractmethod
@@ -313,7 +314,10 @@ class DeepEval(ABC):
                 ModelOutputDef(FittingOutputDef([])),
                 *args,
                 **kwargs,
-            )
+            )  # anchor noted: class DeepEval in pt/deep_eval.py is activated
+            print(f"--DeepEval __new__ in deep_eval.py is activated")  # anchor added
+            print(f"--output_def in new in deep_eval.py of {type(ModelOutputDef(FittingOutputDef([])))}: "
+                  f"{ModelOutputDef(FittingOutputDef([])).var_defs.keys()}")  # anchor added: ['mask']
             return super().__new__(deep_eval.model_type)
         return super().__new__(cls)
 
@@ -333,6 +337,9 @@ class DeepEval(ABC):
             neighbor_list=neighbor_list,
             **kwargs,
         )
+        print(f"--DeepEval __init__ in deep_eval.py is activated")  # anchor added
+        # print(f"--output_def in __init__ in deep_eval.py of {type(self.output_def)}: "
+        #       f"{self.output_def.var_defs.keys()}")  # anchor added: no hessian yet
         if self.deep_eval.get_has_spin() and hasattr(self, "output_def_mag"):
             self.deep_eval.output_def = self.output_def_mag
 
