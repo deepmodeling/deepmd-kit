@@ -26,7 +26,6 @@ from deepmd.pt.model.model import (
 
 
 class DeepPot(DeepEval):
-    print(f"--class DeepPot is called")  # anchor added: firstly
     def __init__(self, *args, **kwargs):  # anchor added
         super().__init__(*args, **kwargs)
     """Potential energy model.
@@ -62,43 +61,21 @@ class DeepPot(DeepEval):
     @property
     def output_def(self) -> ModelOutputDef:
         """Get the output definition of this model."""
-        print(f"--self of DeepPot in deep_pot.py of {type(self)}: {self.__dict__.keys()}, {dir(self)}")  # anchor added
-        # print(f"--self.deep_eval type in output_def in deep_pot.py: {type(self.deep_eval)}")  # anchor added
-        if "deep_eval" in list(self.__dict__.keys()):  # anchor added
-            model_type = type(get_model(self.deep_eval.input_param))
-            if "Hessian" in str(model_type):
-                print(f"--model_type in output_def in deep_pot.py: {model_type}")
-                return ModelOutputDef(
-                    FittingOutputDef(
-                        [
-                            OutputVariableDef(
-                                "energy",
-                                shape=[1],
-                                reducible=True,
-                                r_differentiable=True,
-                                c_differentiable=True,
-                                atomic=True,
-                                r_hessian=True,  # anchor added: if type of model is EHM
-                            ),
-                        ]
-                    )
-                )
-        else:
-            return ModelOutputDef(
-                FittingOutputDef(
-                    [
-                        OutputVariableDef(
-                            "energy",
-                            shape=[1],
-                            reducible=True,
-                            r_differentiable=True,
-                            c_differentiable=True,
-                            atomic=True,
-                            r_hessian=True,  # anchor added: if type of model is EHM
-                        ),
-                    ]
-                )
+        return ModelOutputDef(
+            FittingOutputDef(
+                [
+                    OutputVariableDef(
+                        "energy",
+                        shape=[1],
+                        reducible=True,
+                        r_differentiable=True,
+                        c_differentiable=True,
+                        atomic=True,
+                        r_hessian=True,  # anchor added: if type of model is EHM
+                    ),
+                ]
             )
+        )
 
     @property
     def output_def_mag(self) -> ModelOutputDef:
@@ -236,8 +213,6 @@ class DeepPot(DeepEval):
             aparam=aparam,
             **kwargs,
         )
-        print(f"--results.keys in eval in deep_pot.py of {type(results)}: {results.keys()}")  # anchor added: no hessian yet
-        print(f"--results.values in eval in deep_pot.py: {[type(v) for v in results.values()]}")  # anchor added: ndarray
         energy = results["energy_redu"].reshape(nframes, 1)
         force = results["energy_derv_r"].reshape(nframes, natoms, 3)
         virial = results["energy_derv_c_redu"].reshape(nframes, 9)
@@ -278,7 +253,6 @@ class DeepPot(DeepEval):
         if "energy_derv_r_derv_r" in list(results.keys()):  # anchor added
             hessian = results["energy_derv_r_derv_r"].reshape(nframes, 3 * natoms, 3 * natoms)
             result += (hessian, )
-            print(f"--hessian is added to the tail of result in eval in deep_pot.py")
         return result
 
 
