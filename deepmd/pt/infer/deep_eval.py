@@ -119,7 +119,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            # model = torch.jit.script(model)  # anchor commented out
+            if "Hessian" not in str(type(model)):  # anchor added: make_hessian_model is not jitable
+                model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
