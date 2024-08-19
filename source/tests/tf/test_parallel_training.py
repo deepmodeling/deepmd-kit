@@ -40,12 +40,14 @@ class TestSingleMachine(unittest.TestCase):
             stdout=sp.PIPE,
             stderr=sp.STDOUT,
         )
+        lines = []
         for line in iter(popen.stdout.readline, b""):
             if hasattr(line, "decode"):
                 line = line.decode("utf-8")
             line = line.rstrip()
+            lines.append(line)
         popen.wait()
-        self.assertEqual(0, popen.returncode, "Parallel training failed!")
+        self.assertEqual(0, popen.returncode, f"Parallel training failed!\n{''.join(lines)}")
 
 
 if __name__ == "__main__":
