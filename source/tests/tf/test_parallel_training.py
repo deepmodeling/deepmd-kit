@@ -47,7 +47,9 @@ class TestSingleMachine(unittest.TestCase):
             line = line.rstrip()
             lines.append(line)
         popen.wait()
-        self.assertEqual(0, popen.returncode, f"Parallel training failed!\n{''.join(lines)}")
+        self.assertEqual(
+            0, popen.returncode, f"Parallel training failed!\n{''.join(lines)}"
+        )
 
 
 if __name__ == "__main__":
