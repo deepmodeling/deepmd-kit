@@ -45,14 +45,14 @@ Control high (double) or low (float) precision of training.
 
 **Choices**: `0`, `1`; **Default**: `0`
 
-Enable auto parallelization for CPU operators.
+{{ tensorflow_icon }} Enable auto parallelization for CPU operators.
 :::
 
 :::{envvar} DP_JIT
 
 **Choices**: `0`, `1`; **Default**: `0`
 
-Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow supports JIT.
+{{ tensorflow_icon }} Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow to support JIT.
 :::
 
 :::{envvar} DP_INFER_BATCH_SIZE

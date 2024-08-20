@@ -161,7 +161,7 @@ The path to the ROCM toolkit directory.
 
 **Choices**: `0`, `1`; **Default**: `1`
 
-{{ tensorflow_icon }} Enable the TensorFlow
+{{ tensorflow_icon }} Enable the TensorFlow backend.
 :::
 
 :::{envvar} DP_ENABLE_PYTORCH
@@ -199,11 +199,13 @@ Enable compilation optimization for the native machine's CPU type. Do not enable
 Control high (double) or low (float) precision of training.
 :::
 
-:::{envvar} &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`)
+:::{envvar} <LANG>FLAGS
+
+`<LANG>`=`CXX`, `CUDA` or `HIP`
 
 **Type**: string
 
-Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).
+Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html) for details.
 :::
 
 Other [CMake environment variables](https://cmake.org/cmake/help/latest/manual/cmake-env-variables.7.html) may also be critical.
