@@ -14,6 +14,7 @@ from deepmd.pt.model.descriptor import (
     DescrptSeA,
     DescrptSeR,
     DescrptSeT,
+    DescrptSeTTebd,
 )
 from deepmd.pt.model.model import (
     DipoleModel,
@@ -57,6 +58,8 @@ from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamSeRList,
     DescriptorParamSeT,
     DescriptorParamSeTList,
+    DescriptorParamSeTTebd,
+    DescriptorParamSeTTebdList,
 )
 from ...dpmodel.fitting.test_fitting import (
     FittingParamDipole,
@@ -79,6 +82,7 @@ defalut_des_param = [
     DescriptorParamSeA,
     DescriptorParamSeR,
     DescriptorParamSeT,
+    DescriptorParamSeTTebd,
     DescriptorParamDPA1,
     DescriptorParamDPA2,
     DescriptorParamHybrid,
@@ -98,6 +102,7 @@ defalut_fit_param = [
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+            *[(param_func, DescrptSeTTebd) for param_func in DescriptorParamSeTTebdList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
@@ -110,6 +115,7 @@ defalut_fit_param = [
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamSeR, DescrptSeR),
             (DescriptorParamSeT, DescrptSeT),
+            (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
@@ -140,7 +146,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2]:
             cls.epsilon_dict["test_smooth"] = 1e-8
-        if Descrpt in [DescrptSeT]:
+        if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
             cls.expected_sel = [i // 4 for i in cls.expected_sel]
             cls.expected_rcut = cls.expected_rcut / 2
@@ -194,6 +200,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+            *[(param_func, DescrptSeTTebd) for param_func in DescriptorParamSeTTebdList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
@@ -206,6 +213,7 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamSeR, DescrptSeR),
             (DescriptorParamSeT, DescrptSeT),
+            (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
@@ -237,7 +245,7 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
         cls.aprec_dict["test_smooth"] = 1e-4
         if Descrpt in [DescrptDPA2]:
             cls.epsilon_dict["test_smooth"] = 1e-8
-        if Descrpt in [DescrptSeT]:
+        if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
             cls.expected_sel = [i // 4 for i in cls.expected_sel]
             cls.expected_rcut = cls.expected_rcut / 2
@@ -571,6 +579,7 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+            *[(param_func, DescrptSeTTebd) for param_func in DescriptorParamSeTTebdList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             # (DescriptorParamHybrid, DescrptHybrid),
@@ -584,6 +593,7 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamSeR, DescrptSeR),
             (DescriptorParamSeT, DescrptSeT),
+            (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
@@ -616,7 +626,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
-        if Descrpt in [DescrptSeT]:
+        if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
             cls.expected_sel = [i // 4 for i in cls.expected_sel]
             cls.expected_rcut = cls.expected_rcut / 2
