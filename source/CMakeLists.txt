@@ -16,7 +16,7 @@ macro(set_if_higher VARIABLE VALUE)
     set(${VARIABLE} ${VALUE})
   endif()
 endmacro()
-if (NOT DEEPMD_C_ROOT)
+if(NOT DEEPMD_C_ROOT)
   # we can still allow C++ 11 for programs linked to the C library
   set_if_higher(CMAKE_CXX_STANDARD 14)
 endif()

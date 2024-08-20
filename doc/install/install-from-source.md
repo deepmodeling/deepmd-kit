@@ -109,7 +109,7 @@ gcc --version
 ```
 
 By default, DeePMD-kit uses C++ 14, so the compiler needs to support C++ 14 (GCC 5 or later).
-The backend package may use a higher C++ standard version, and thus require a higher compiler version (for example, GCC 7 for C++ 17). 
+The backend package may use a higher C++ standard version, and thus require a higher compiler version (for example, GCC 7 for C++ 17).
 
 ::::{tab-set}
 
