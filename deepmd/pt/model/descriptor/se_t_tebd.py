@@ -125,6 +125,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             The old implementation of deepspin.
 
     """
+
     def __init__(
         self,
         rcut: float,
@@ -842,7 +843,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # nfnl x nt_i x nt_j x ng
             gg_t = self.filter_layers_strip.networks[0](tt)
             if self.smooth:
-                gg_t = gg_t * sw.reshape(-1, self.nnei, 1, 1) * sw.reshape(-1, 1, self.nnei, 1)
+                gg_t = (
+                    gg_t
+                    * sw.reshape(-1, self.nnei, 1, 1)
+                    * sw.reshape(-1, 1, self.nnei, 1)
+                )
             # nfnl x nt_i x nt_j x ng
             gg = gg_s * gg_t + gg_s
         else:

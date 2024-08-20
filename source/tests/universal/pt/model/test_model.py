@@ -102,7 +102,10 @@ defalut_fit_param = [
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[(param_func, DescrptSeTTebd) for param_func in DescriptorParamSeTTebdList],
+            *[
+                (param_func, DescrptSeTTebd)
+                for param_func in DescriptorParamSeTTebdList
+            ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
@@ -200,7 +203,10 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[(param_func, DescrptSeTTebd) for param_func in DescriptorParamSeTTebdList],
+            *[
+                (param_func, DescrptSeTTebd)
+                for param_func in DescriptorParamSeTTebdList
+            ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
@@ -579,7 +585,10 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[(param_func, DescrptSeTTebd) for param_func in DescriptorParamSeTTebdList],
+            *[
+                (param_func, DescrptSeTTebd)
+                for param_func in DescriptorParamSeTTebdList
+            ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             # (DescriptorParamHybrid, DescrptHybrid),

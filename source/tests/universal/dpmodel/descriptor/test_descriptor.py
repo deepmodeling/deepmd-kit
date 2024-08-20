@@ -466,7 +466,9 @@ def DescriptorParamHybridMixed(ntypes, rcut, rcut_smth, sel, type_map, **kwargs)
     }
     ddsub1 = {
         "type": "se_e3_tebd",
-        **DescriptorParamSeTTebd(ntypes, rcut / 2, rcut_smth / 2, min(sum(sel) // 2, 10), type_map, **kwargs),
+        **DescriptorParamSeTTebd(
+            ntypes, rcut / 2, rcut_smth / 2, min(sum(sel) // 2, 10), type_map, **kwargs
+        ),
     }  # use a small sel for efficiency
     input_dict = {
         "list": [ddsub0, ddsub1],

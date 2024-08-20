@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
     Callable,
     List,
     Optional,
@@ -11,7 +10,6 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel import (
-    DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
 )
@@ -54,6 +52,7 @@ from .descriptor import (
     DescriptorBlock,
     extend_descrpt_stat,
 )
+
 
 @BaseDescriptor.register("se_e3_tebd")
 class DescrptSeTTebd(NativeOP, BaseDescriptor):
@@ -702,8 +701,12 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             nf * nloc, nnei, self.tebd_dim
         )
         # nfnl x nt_i x nt_j x tebd_dim
-        nlist_tebd_i = np.tile(np.expand_dims(atype_embd_nlist, axis=2), [1, 1, self.nnei, 1])
-        nlist_tebd_j = np.tile(np.expand_dims(atype_embd_nlist, axis=1), [1, self.nnei, 1, 1])
+        nlist_tebd_i = np.tile(
+            np.expand_dims(atype_embd_nlist, axis=2), [1, 1, self.nnei, 1]
+        )
+        nlist_tebd_j = np.tile(
+            np.expand_dims(atype_embd_nlist, axis=1), [1, self.nnei, 1, 1]
+        )
         ng = self.neuron[-1]
 
         if self.tebd_input_mode in ["concat"]:
@@ -720,7 +723,11 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             # nfnl x nt_i x nt_j x ng
             gg_t = self.cal_g_strip(tt, 0)
             if self.smooth:
-                gg_t = gg_t * sw.reshape(-1, self.nnei, 1, 1) * sw.reshape(-1, 1, self.nnei, 1)
+                gg_t = (
+                    gg_t
+                    * sw.reshape(-1, self.nnei, 1, 1)
+                    * sw.reshape(-1, 1, self.nnei, 1)
+                )
             # nfnl x nt_i x nt_j x ng
             gg = gg_s * gg_t + gg_s
         else:

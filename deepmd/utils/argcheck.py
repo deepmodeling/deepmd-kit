@@ -677,7 +677,7 @@ def descrpt_se_e3_tebd_args():
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
-    doc_smooth = f"Whether to use smooth process in calculation when using stripped type embedding. Whether to dot smooth factor (both neighbors j and k) on the network output (out_jk) of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_smooth = "Whether to use smooth process in calculation when using stripped type embedding. Whether to dot smooth factor (both neighbors j and k) on the network output (out_jk) of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
@@ -690,7 +690,7 @@ def descrpt_se_e3_tebd_args():
         "The input is `input_jk = concat([angle_jk, tebd_j, tebd_k])`. "
         "The output is `out_jk = embeding(input_jk)` for the three-body representation of atom i with neighbors j and k."
         "- 'strip': Use a separated embedding network for the type embedding and combine the output with the angular embedding network output. "
-        f"The input is `input_t = concat([tebd_j, tebd_k])`."
+        "The input is `input_t = concat([tebd_j, tebd_k])`."
         "The output is `out_jk = embeding_t(input_t) * embeding_s(angle_jk) + embeding_s(angle_jk)` for the three-body representation of atom i with neighbors j and k."
     )
 
