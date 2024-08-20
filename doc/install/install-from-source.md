@@ -136,18 +136,77 @@ pip install .
 
 One may set the following environment variables before executing `pip`:
 
-| Environment variables                               | Allowed value         | Default value          | Usage                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DP_VARIANT                                          | `cpu`, `cuda`, `rocm` | `cpu`                  | Build CPU variant or GPU variant with CUDA or ROCM support.                                                                                                                                                                                                                                                                                                                                                                                         |
-| CUDAToolkit_ROOT                                    | Path                  | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                                                                                                                                                                                                                                                                           |
-| ROCM_ROOT                                           | Path                  | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| DP_ENABLE_TENSORFLOW                                | 0, 1                  | 1                      | {{ tensorflow_icon }} Enable the TensorFlow backend.                                                                                                                                                                                                                                                                                                                                                                                                |
-| DP_ENABLE_PYTORCH                                   | 0, 1                  | 0                      | {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.                                                                                                                                                                                                                                                                                               |
-| TENSORFLOW_ROOT                                     | Path                  | Detected automatically | {{ tensorflow_icon }} The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against. |
-| PYTORCH_ROOT                                        | Path                  | Detected automatically | {{ pytorch_icon }} The path to PyTorch Python library. By default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.   |
-| DP_ENABLE_NATIVE_OPTIMIZATION                       | 0, 1                  | 0                      | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                                                                                                                                                                                                                                                                   |
-| CMAKE_ARGS                                          | str                   | -                      | Additional CMake arguments                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str                   | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                                                                                                                                                                                                                                                                  |
+:::{envvar} DP_VARIANT
+
+**Choices**: `cpu`, `cuda`, `rocm`; **Default**: `cpu`
+
+Build CPU variant or GPU variant with CUDA or ROCM support.
+:::
+
+:::{envvar} CUDAToolkit_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+:::
+
+:::{envvar} ROCM_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+The path to the ROCM toolkit directory.
+:::
+
+:::{envvar} DP_ENABLE_TENSORFLOW
+
+**Choices**: `0`, `1`; **Default**: `1`
+
+{{ tensorflow_icon }} Enable the TensorFlow
+:::
+
+:::{envvar} DP_ENABLE_PYTORCH
+
+**Choices**: `0`, `1`; **Default**: `1`
+
+{{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
+:::
+
+:::{envvar} TENSORFLOW_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+{{ tensorflow_icon }} The path to TensorFlow Python library. If not given, by default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.
+:::
+
+:::{envvar} PYTORCH_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+{{ pytorch_icon }} The path to PyTorch Python library. If not given, by default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.
+:::
+
+:::{envvar} DP_ENABLE_NATIVE_OPTIMIZATION
+
+**Choices**: `0`, `1`; **Default**: `0`
+
+Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.
+:::
+
+:::{envvar} CMAKE_ARGS
+
+**Type**: string
+
+Control high (double) or low (float) precision of training.
+:::
+
+:::{envvar} &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`)
+
+**Type**: string
+
+Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).
+:::
+
+Other [CMake environment variables](https://cmake.org/cmake/help/latest/manual/cmake-env-variables.7.html) may also be critical.
 
 To test the installation, one should first jump out of the source directory
 
