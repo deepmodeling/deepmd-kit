@@ -15,4 +15,5 @@ $ dp test --help
 An explanation will be provided
 
 ```{program-output} dp test -h
+
 ```

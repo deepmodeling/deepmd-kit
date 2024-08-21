@@ -164,6 +164,7 @@ dp -h
 It will print the help information like
 
 ```{program-output} dp -h
+
 ```
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}

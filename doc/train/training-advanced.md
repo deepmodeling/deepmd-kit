@@ -136,6 +136,7 @@ $ dp train --help
 An explanation will be provided
 
 ```{program-output} dp train -h
+
 ```
 
 **`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the path prefix of checkpoint files `model.ckpt`, the network architectures should match.

@@ -77,6 +77,7 @@ $ dp compress --help
 An explanation will be provided
 
 ```{program-output} dp compress --help
+
 ```
 
 **Parameter explanation**
