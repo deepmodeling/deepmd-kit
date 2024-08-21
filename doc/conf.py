@@ -7,15 +7,14 @@
 
 # -- Path setup --------------------------------------------------------------
 
+import datetime
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
 import sys
-from datetime import (
-    date,
-)
 
 from deepmd.utils.argcheck import (
     ACTIVATION_FN_DICT,
@@ -29,7 +28,9 @@ import sphinx_contrib_exhale_multiproject  # noqa: F401
 # -- Project information -----------------------------------------------------
 
 project = "DeePMD-kit"
-copyright = "2017-%d, DeepModeling" % date.today().year
+copyright = (
+    "2017-%d, DeepModeling" % datetime.datetime.now(tz=datetime.timezone.utc).year
+)
 author = "DeepModeling"
 
 autoapi_dirs = ["../deepmd"]

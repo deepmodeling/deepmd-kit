@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import json
-from datetime import (
-    datetime,
-)
 from pathlib import (
     Path,
 )
@@ -90,7 +88,7 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
         "software": "deepmd-kit",
         "version": __version__,
         # use UTC+0 time
-        "time": str(datetime.utcnow()),
+        "time": str(datetime.datetime.now(tz=datetime.timezone.utc)),
     }
     if filename_extension == ".dp":
         variable_counter = Counter()
