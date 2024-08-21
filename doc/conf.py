@@ -144,6 +144,10 @@ intersphinx_mapping = {
         "https://github.com/mr-ubik/tensorflow-intersphinx/raw/master/tf2_py_objects.inv",
     ),
     "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+    "torch": ("https://pytorch.org/docs/master/", None),
+    "dargs": ("https://docs.deepmodeling.com/projects/dargs/en/stable/", None),
+    "h5py": ("https://docs.h5py.org/en/latest/", None),
+    "array_api_compat": ("https://data-apis.org/array-api-compat/", None),
 }
 numpydoc_xref_param_type = True
 
