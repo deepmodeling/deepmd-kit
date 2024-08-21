@@ -417,10 +417,10 @@ void deepmd::load_op_library() {
 #endif
     std::string plugin_path(env_customized_plugins);
     std::vector<std::string> plugin_paths = split(plugin_path, pathvarsep);
-    for (const auto& plugin_path : plugin_paths) {
+    for (const auto& plugin : plugin_paths) {
       std::cerr << "Loading customized plugin defined in DP_PLUGIN_PATH: "
-                << plugin_path << std::endl;
-      _load_library_path(plugin_path);
+                << plugin << std::endl;
+      _load_library_path(plugin);
     }
   }
 }
