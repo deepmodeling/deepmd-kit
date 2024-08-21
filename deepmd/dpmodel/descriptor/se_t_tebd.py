@@ -725,8 +725,8 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             if self.smooth:
                 gg_t = (
                     gg_t
-                    * sw.reshape(-1, self.nnei, 1, 1)
-                    * sw.reshape(-1, 1, self.nnei, 1)
+                    * sw.reshape(nf * nloc, self.nnei, 1, 1)
+                    * sw.reshape(nf * nloc, 1, self.nnei, 1)
                 )
             # nfnl x nt_i x nt_j x ng
             gg = gg_s * gg_t + gg_s
@@ -737,7 +737,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         res_ij = np.einsum("ijk,ijkm->im", env_ij, gg)
         res_ij = res_ij * (1.0 / float(self.nnei) / float(self.nnei))
         # nf x nl x ng
-        result = res_ij.reshape(-1, nloc, self.filter_neuron[-1]).astype(
+        result = res_ij.reshape(nf, nloc, self.filter_neuron[-1]).astype(
             GLOBAL_NP_FLOAT_PRECISION
         )
         return (

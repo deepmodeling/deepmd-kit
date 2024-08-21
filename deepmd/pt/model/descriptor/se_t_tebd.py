@@ -845,8 +845,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             if self.smooth:
                 gg_t = (
                     gg_t
-                    * sw.reshape(-1, self.nnei, 1, 1)
-                    * sw.reshape(-1, 1, self.nnei, 1)
+                    * sw.reshape(nfnl, self.nnei, 1, 1)
+                    * sw.reshape(nfnl, 1, self.nnei, 1)
                 )
             # nfnl x nt_i x nt_j x ng
             gg = gg_s * gg_t + gg_s
@@ -857,7 +857,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
         res_ij = res_ij * (1.0 / float(self.nnei) / float(self.nnei))
         # nf x nl x ng
-        result = res_ij.view(-1, nloc, self.filter_neuron[-1])
+        result = res_ij.view(nframes, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,
