@@ -1,5 +1,9 @@
 # Run MD with LAMMPS
 
+:::{note}
+See [Environment variables](../env.md) for the runtime environment variables.
+:::
+
 ## units
 
 All units in LAMMPS except `lj` are supported. `lj` is not supported.

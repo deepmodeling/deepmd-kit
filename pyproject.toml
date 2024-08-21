@@ -351,6 +351,7 @@ select = [
     "B904", # raise-without-from-inside-except
     "N804", # invalid-first-argument-name-for-class-method
     "N805", # invalid-first-argument-name-for-method
+    "DTZ", # datetime
 ]
 
 ignore = [
