@@ -77,3 +77,15 @@ Default backend.
 See [PyTorch documentation](https://pytorch.org/docs/stable/data.html) for details.
 
 :::
+
+## C++ interface only
+
+These environment variables also apply to third-party programs using the C++ interface, such as [LAMMPS](./third-party/lammps-command.md).
+
+:::{envvar} DP_PLUGIN_PATH
+
+**Type**: List of paths, split by `:` on Unix and `;` on Windows
+
+List of customized OP plugin libraries to load, such as `/path/to/plugin1.so:/path/to/plugin2.so` on Linux and `/path/to/plugin1.dll;/path/to/plugin2.dll` on Windows.
+
+:::
