@@ -14,24 +14,6 @@ $ dp test --help
 
 An explanation will be provided
 
-```
-usage: dp test [-h] [-m MODEL] [-s SYSTEM] [-S SET_PREFIX] [-n NUMB_TEST]
-               [-r RAND_SEED] [--shuffle-test] [-d DETAIL_FILE]
+```{program-output} dp test -h
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -m MODEL, --model MODEL
-                        Frozen model file to import
-  -s SYSTEM, --system SYSTEM
-                        The system dir
-  -S SET_PREFIX, --set-prefix SET_PREFIX
-                        The set prefix
-  -n NUMB_TEST, --numb-test NUMB_TEST
-                        The number of data for test
-  -r RAND_SEED, --rand-seed RAND_SEED
-                        The random seed
-  --shuffle-test        Shuffle test data
-  -d DETAIL_FILE, --detail-file DETAIL_FILE
-                        The prefix to files where details of energy, force and virial accuracy/accuracy per atom will be written
-  -a, --atomic          Test the accuracy of atomic label, i.e. energy / tensor (dipole, polar)
 ```

@@ -135,21 +135,8 @@ $ dp train --help
 
 An explanation will be provided
 
-```
-positional arguments:
-  INPUT                 the input json database
+```{program-output} dp train -h
 
-optional arguments:
-  -h, --help            show this help message and exit
-
-  --init-model INIT_MODEL
-                        Initialize a model by the provided checkpoint
-
-  --restart RESTART     Restart the training from the provided checkpoint
-
-  --init-frz-model INIT_FRZ_MODEL
-                        Initialize the training from the frozen model.
-  --skip-neighbor-stat  Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled. (default: False)
 ```
 
 **`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the path prefix of checkpoint files `model.ckpt`, the network architectures should match.
