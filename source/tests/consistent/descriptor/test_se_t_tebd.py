@@ -47,7 +47,7 @@ from deepmd.utils.argcheck import (
     (True, False),  # use_econf_tebd
     (False, True),  # use_tebd_bias
 )
-class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
+class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (

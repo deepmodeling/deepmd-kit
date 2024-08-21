@@ -4,7 +4,7 @@
 **Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
-The notation of `se_e3_tebd` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations.
+The notation of `se_e3_tebd` is short for the three-body descriptor with type embeddings, where the notation `se` denotes the Deep Potential Smooth Edition (DeepPot-SE).
 The embedding takes bond angles between a central atom and its two neighboring atoms (denoted by `e3`) and their type embeddings (denoted by `tebd`) as input.
 
 ## Theory
@@ -28,12 +28,14 @@ $\mathcal{R}^i$ is constructed as
     \},
 ```
 
+where $s(r_{ij})$ is the switch function between central atom $i$ and neighbor atom $j$, which is the same as that in `se_e2_a`.
+
 Currently, only the full information case of $\mathcal{R}^i$ is supported by the three-body embedding.
 Each element of $\mathcal{G}^i \in \mathbb{R}^{N_c \times N_c \times M}$ comes from $M$ nodes from the output layer of an NN function $\mathcal{N}_{e,3}$.
 If `tebd_input_mode` is set to `concat`, the formulation is:
 
 ```math
-    (\mathcal{G}^i)_{jk}=\mathcal{N}_{e,3}((\theta_i)_{jk}, \mathcal{A}^j, \mathcal{A}^k) \quad \mathrm{or}
+    (\mathcal{G}^i)_{jk}=\mathcal{N}_{e,3}((\theta_i)_{jk}, \mathcal{A}^j, \mathcal{A}^k)
 ```
 
 Otherwise, if `tebd_input_mode` is set to `strip`, the angular and type information will be taken into two separate NNs $\mathcal{N}_{e,3}^{s}$ and $\mathcal{N}_{e,3}^{t}$. The formulation is:
@@ -54,7 +56,7 @@ A complete training input script of this example can be found in the directory
 $deepmd_source_dir/examples/water/se_e3_tebd/input.json
 ```
 
-The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md). The only difference lies in the `descriptor <model/descriptor>` section
+The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md). The only difference lies in the {ref}`descriptor <model/descriptor>` section
 
 ```json
 	"descriptor": {

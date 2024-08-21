@@ -64,8 +64,9 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             The cut-off radius
     rcut_smth
             From where the environment matrix should be smoothed
-    sel : list[int]
-            sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+    sel : Union[List[int], int]
+            list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
+            int: the total maxmum number of atoms in the cut-off radius
     ntypes : int
             Number of element types
     neuron : list[int]
@@ -85,7 +86,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    exclude_types : List[List[int]]
+    exclude_types : List[Tuple[int, int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     precision
@@ -104,10 +105,6 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             Whether to use bias in the type embedding layer.
     smooth: bool
             Whether to use smooth process in calculation.
-    spin
-            (Only support None to keep consistent with other backend references.)
-            (Not used in this version. Not-none option is not implemented.)
-            The old implementation of deepspin.
 
     """
 
@@ -133,13 +130,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         use_econf_tebd: bool = False,
         use_tebd_bias=False,
         smooth: bool = True,
-        # not implemented
-        spin=None,
     ) -> None:
-        if spin is not None:
-            raise NotImplementedError("old implementation of spin is not supported.")
-
-        del spin
         self.se_ttebd = DescrptBlockSeTTebd(
             rcut,
             rcut_smth,
@@ -383,7 +374,6 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
                 "dstd": obj["dstd"],
             },
             "trainable": self.trainable,
-            "spin": None,
         }
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
