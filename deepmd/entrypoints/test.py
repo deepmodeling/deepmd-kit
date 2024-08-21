@@ -157,7 +157,7 @@ def test(
                 append_detail=(cc != 0),
             )
         elif isinstance(dp, DeepDipole):
-            err = test_dipole(dp, data, numb_test, detail_file, atomic)
+            err = test_dipole(dp, data, system, numb_test, detail_file, atomic, append_detail=(cc != 0))  # anchor added
         elif isinstance(dp, DeepPolar):
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
         elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
@@ -815,9 +815,13 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: Deepmd
     else:
         box = None
     atype = test_data["type"][0]
-    prediction = dp.eval(coord, box, atype)
-
-    return prediction.reshape([numb_test, -1]), numb_test, atype
+    # print(f"test_data in run_test in test.py: {test_data.keys()}")  # anchor added
+    if "find_dipole_force" in test_data.keys():
+        if test_data["find_dipole_force"]:
+            prediction = dp.eval_full(coord, box, atype)
+    else:
+        prediction = dp.eval(coord, box, atype).reshape([numb_test, -1])
+    return prediction, numb_test, atype
 
 
 def test_wfc(
@@ -1027,9 +1031,11 @@ def print_polar_sys_avg(avg):
 def test_dipole(
     dp: "DeepDipole",
     data: DeepmdData,
+    system: str,  # anchor added
     numb_test: int,
     detail_file: Optional[str],
     atomic: bool,
+    append_detail: bool = False,  # anchor added
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
 
@@ -1059,8 +1065,27 @@ def test_dipole(
         high_prec=False,
         type_sel=dp.get_sel_type(),
     )
+    data.add(
+        "dipole_force",
+        9,
+        atomic=True,
+        must=False,
+        high_prec=False,
+        type_sel=dp.get_sel_type(),
+    )  # anchor added
     test_data = data.get_test()
-    dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
+
+    preds, numb_test, atype = run_test(dp, test_data, numb_test, data)  # anchor: dipole --> preds
+    if "find_dipole_force" in test_data.keys():  # anchor added
+        if test_data["find_dipole_force"]:
+            if atomic:
+                dipole, dipole_force, dipole_virial, atomic_dipole, atomic_dipole_virial = preds
+            else:
+                dipole, dipole_force, dipole_virial = preds
+            rmse_t_f = rmse(dipole_force.reshape(dipole.shape[0], -1) - test_data["dipole_force"][:numb_test])
+    else:
+        dipole = preds
+        rmse_t_f = None
 
     sel_type = dp.get_sel_type()
     sel_natoms = 0
@@ -1085,6 +1110,8 @@ def test_dipole(
     if not atomic:
         log.info(f"Dipole  RMSE/sqrtN : {rmse_fs:e}")
         log.info(f"Dipole  RMSE/N     : {rmse_fa:e}")
+    if rmse_t_f:  # anchor added
+        log.info(f"Dipole Derivative RMSE : {rmse_t_f:e}")
     log.info("The unit of error is the same as the unit of provided label.")
 
     if detail_file is not None:
@@ -1097,7 +1124,7 @@ def test_dipole(
                 ),
                 axis=1,
             )
-            header_text = "data_x data_y data_z pred_x pred_y pred_z"
+            header_text = f"{system}: data_x data_y data_z pred_x pred_y pred_z"  # anchor inserted system
         else:
             pe = np.concatenate(
                 (
@@ -1109,22 +1136,49 @@ def test_dipole(
                 axis=1,
             )
             header_text = [
-                f"{letter}{number}"
+                f"{system}: {letter}{number}"  # anchor inserted system
                 for number in range(1, sel_natoms + 1)
                 for letter in ["data_x", "data_y", "data_z"]
             ] + [
-                f"{letter}{number}"
+                f"{system}: {letter}{number}"  # anchor inserted system
                 for number in range(1, sel_natoms + 1)
                 for letter in ["pred_x", "pred_y", "pred_z"]
             ]
             header_text = " ".join(header_text)
 
-        np.savetxt(
+        # np.savetxt(
+        #     detail_path.with_suffix(".out"),
+        #     pe,
+        #     header=header_text,
+        # )  # anchor commented out
+        save_txt_file(
             detail_path.with_suffix(".out"),
             pe,
             header=header_text,
-        )
-    return {"rmse": (rmse_f, dipole.size)}
+            append=append_detail,
+        )  # anchor changed np.davetxt to
+        dict_to_return = {"rmse": (rmse_f, dipole.size)}
+        if "find_dipole_force" in test_data.keys():  # anchor added
+            if test_data["find_dipole_force"]:
+                pf = np.concatenate(
+                    (
+                        np.reshape(test_data["dipole_force"][:numb_test], [-1, 9]),
+                        np.reshape(dipole_force, [-1, 9])
+                    ),
+                    axis=1,
+                )
+                save_txt_file(
+                    detail_path.with_suffix(".f.out"),
+                    pf,
+                    header=f"{system}: "
+                           f"data_fxx data_fxy data_fxz data_fyx data_fyy data_fyz "
+                           f"data_fzx data_fzy data_fzz pred_fxx pred_fxy pred_fxz "
+                           f"pred_fyx pred_fyy pred_fyz pred_fzx pred_fzy pred_fzz",
+                    append=append_detail,
+                )
+                dict_to_return["rmse_t_f"] = (rmse_t_f, dipole_force.size)
+
+    return dict_to_return
 
 
 def print_dipole_sys_avg(avg):
@@ -1135,5 +1189,7 @@ def print_dipole_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  RMSE         : {avg['rmse']:e} eV/A")
+    log.info(f"Dipole  RMSE         : {avg['rmse']:e}")  # anchor del eV/A
+    if "rmse_t_f" in avg.keys():
+        log.info(f"Dipole Derivative RMSE : {avg['rmse_t_f']:e}")
 
