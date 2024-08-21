@@ -2336,6 +2336,13 @@ def loss_tensor():
             default=None,
             doc=doc_local_weight,
         ),
+        Argument(
+            "pref_t_f",
+            [float, int],
+            optional=True,
+            default=None,
+            doc=doc_global_weight,
+        )  # anchor added: pref_t_f stands for first-order derivative of tensor
     ]
 
 
