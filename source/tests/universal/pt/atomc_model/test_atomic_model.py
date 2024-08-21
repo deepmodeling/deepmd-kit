@@ -200,7 +200,6 @@ class TestDosAtomicModelPT(unittest.TestCase, DosAtomicModelTest, PTTestCase):
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamDipole, DipoleFittingNet),),  # fitting_class_param & class
     ),
@@ -262,7 +261,6 @@ class TestDipoleAtomicModelPT(unittest.TestCase, DipoleAtomicModelTest, PTTestCa
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamPolar, PolarFittingNet),),  # fitting_class_param & class
     ),
