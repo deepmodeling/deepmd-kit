@@ -1,5 +1,9 @@
 # C/C++ interface
 
+:::{note}
+See [Environment variables](../env.md) for the runtime environment variables.
+:::
+
 ## C++ interface
 
 The C++ interface of DeePMD-kit is also available for the model interface, which is considered faster than the Python interface. An example `infer_water.cpp` is given below:
