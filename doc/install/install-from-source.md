@@ -163,20 +163,7 @@ dp -h
 
 It will print the help information like
 
-```text
-usage: dp [-h] {train,freeze,test} ...
-
-DeePMD-kit: A deep learning package for many-body potential energy
-representation and molecular dynamics
-
-optional arguments:
-  -h, --help           show this help message and exit
-
-Valid subcommands:
-  {train,freeze,test}
-    train              train a model
-    freeze             freeze the model
-    test               test the model
+```{program-output} dp -h
 ```
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}

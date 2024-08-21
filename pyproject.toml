@@ -100,6 +100,7 @@ docs = [
     "pygments-lammps",
     "sphinxcontrib-bibtex",
     "sphinx-autoapi>=3.0.0",
+    "sphinxcontrib-programoutput",
 ]
 lmp = [
     "lammps~=2023.8.2.3.0",

@@ -67,6 +67,7 @@ extensions = [
     "sphinxcontrib.bibtex",
     "sphinx_design",
     "autoapi.extension",
+    "sphinxcontrib.programoutput",
 ]
 
 # breathe_domain_by_extension = {
