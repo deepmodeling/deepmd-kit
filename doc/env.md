@@ -68,3 +68,12 @@ Inference batch size, calculated by multiplying the number of frames with the nu
 
 Default backend.
 :::
+
+:::{envvar} NUM_WORKERS
+
+**Default**: 8 or the number of cores (whichever is smaller)
+
+{{ pytorch_icon }} Number of subprocesses to use for data loading in the PyTorch backend.
+See [PyTorch documentation](https://pytorch.org/docs/stable/data.html) for details. 
+
+:::

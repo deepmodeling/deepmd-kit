@@ -33,7 +33,7 @@ export DP_INTER_OP_PARALLELISM_THREADS=3
 However, for GPU devices, TensorFlow and PyTorch use only one compute stream and multiple copy streams.
 Note that some of DeePMD-kit OPs do not have GPU support, so it is still encouraged to set environment variables even if one has a GPU.
 
-## Parallelism within an individual operators
+## Parallelism within individual operators
 
 For CPU devices, {envvar}`DP_INTRA_OP_PARALLELISM_THREADS` controls parallelism within TensorFlow (when TensorFlow is built against Eigen) and PyTorch native OPs.
 
