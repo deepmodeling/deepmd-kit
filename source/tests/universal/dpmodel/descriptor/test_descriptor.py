@@ -465,6 +465,21 @@ def DescriptorParamHybridMixed(ntypes, rcut, rcut_smth, sel, type_map, **kwargs)
         **DescriptorParamDPA1(ntypes, rcut, rcut_smth, sum(sel), type_map, **kwargs),
     }
     ddsub1 = {
+        "type": "dpa1",
+        **DescriptorParamDPA1(ntypes, rcut, rcut_smth, sum(sel), type_map, **kwargs),
+    }
+    input_dict = {
+        "list": [ddsub0, ddsub1],
+    }
+    return input_dict
+
+
+def DescriptorParamHybridMixedTTebd(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
+    ddsub0 = {
+        "type": "dpa1",
+        **DescriptorParamDPA1(ntypes, rcut, rcut_smth, sum(sel), type_map, **kwargs),
+    }
+    ddsub1 = {
         "type": "se_e3_tebd",
         **DescriptorParamSeTTebd(
             ntypes, rcut / 2, rcut_smth / 2, min(sum(sel) // 2, 10), type_map, **kwargs
@@ -486,6 +501,7 @@ def DescriptorParamHybridMixed(ntypes, rcut, rcut_smth, sel, type_map, **kwargs)
         (DescriptorParamDPA2, DescrptDPA2),
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
+        (DescriptorParamHybridMixedTTebd, DescrptHybrid),
     )  # class_param & class
 )
 @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")

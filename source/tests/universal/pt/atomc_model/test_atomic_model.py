@@ -38,6 +38,7 @@ from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA2List,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
+    DescriptorParamHybridMixedTTebd,
     DescriptorParamSeA,
     DescriptorParamSeAList,
     DescriptorParamSeR,
@@ -73,6 +74,7 @@ from ..backend import (
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
@@ -138,6 +140,7 @@ class TestEnergyAtomicModelPT(unittest.TestCase, EnerAtomicModelTest, PTTestCase
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamDos, DOSFittingNet),),  # fitting_class_param & class
     ),
@@ -200,6 +203,7 @@ class TestDosAtomicModelPT(unittest.TestCase, DosAtomicModelTest, PTTestCase):
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
+            (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamDipole, DipoleFittingNet),),  # fitting_class_param & class
     ),
@@ -261,6 +265,7 @@ class TestDipoleAtomicModelPT(unittest.TestCase, DipoleAtomicModelTest, PTTestCa
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
+            (DescriptorParamHybridMixed, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamPolar, PolarFittingNet),),  # fitting_class_param & class
     ),
@@ -321,6 +326,7 @@ class TestPolarAtomicModelPT(unittest.TestCase, PolarAtomicModelTest, PTTestCase
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),

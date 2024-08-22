@@ -41,6 +41,7 @@ from ..descriptor.test_descriptor import (
     DescriptorParamDPA2List,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
+    DescriptorParamHybridMixedTTebd,
     DescriptorParamSeA,
     DescriptorParamSeAList,
     DescriptorParamSeR,
@@ -93,6 +94,7 @@ def skip_model_tests(test_obj):
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
@@ -180,6 +182,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             # (DescriptorParamHybrid, DescrptHybrid),
             # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
