@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.6.1
+    rev: v0.6.2
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -66,7 +66,7 @@ repos:
         exclude: ^(source/3rdparty|\.github/workflows|\.clang-format)
   # Shell
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.8.0-1
+    rev: v3.9.0-1
     hooks:
       - id: shfmt
   # CMake
