@@ -460,7 +460,8 @@ Do not enable it if generated code will run on different CPUs.
 
 :::
 
-:::{cmake:variable} CMAKE\_<LANG>\_FLAGS
+<!-- prettier-ignore -->
+:::{cmake:variable} CMAKE_<LANG>_FLAGS
 
 (`<LANG>`=`CXX`, `CUDA` or `HIP`)
 
