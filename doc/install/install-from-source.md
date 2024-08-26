@@ -353,23 +353,124 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 
 ::::
 
-One may add the following arguments to `cmake`:
+One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
 
-| CMake Aurgements                                                             | Allowed value     | Default value          | Usage                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------- | ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -DENABLE_TENSORFLOW=&lt;value&gt;                                            | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} Whether building the TensorFlow backend.                                                                                                                                    |
-| -DENABLE_PYTORCH=&lt;value&gt;                                               | `TRUE` or `FALSE` | `FALSE`                | {{ pytorch_icon }} Whether building the PyTorch backend.                                                                                                                                          |
-| -DTENSORFLOW_ROOT=&lt;value&gt;                                              | Path              | -                      | {{ tensorflow_icon }} The Path to TensorFlow's C++ interface.                                                                                                                                     |
-| -DCMAKE_INSTALL_PREFIX=&lt;value&gt;                                         | Path              | -                      | The Path where DeePMD-kit will be installed.                                                                                                                                                      |
-| -DUSE_CUDA_TOOLKIT=&lt;value&gt;                                             | `TRUE` or `FALSE` | `FALSE`                | If `TRUE`, Build GPU support with CUDA toolkit.                                                                                                                                                   |
-| -DCUDAToolkit_ROOT=&lt;value&gt;                                             | Path              | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                         |
-| -DUSE_ROCM_TOOLKIT=&lt;value&gt;                                             | `TRUE` or `FALSE` | `FALSE`                | If `TRUE`, Build GPU support with ROCM toolkit.                                                                                                                                                   |
-| -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt;                                 | Path              | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                           |
-| -DLAMMPS_SOURCE_ROOT=&lt;value&gt;                                           | Path              | -                      | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled.     |
-| -DUSE_TF_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface. |
-| -DUSE_PT_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required). And there's no need for downloading PyTorch's C++ libraries.          |
-| -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;                                   | `TRUE` or `FALSE` | `FALSE`                | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                 |
-| -DCMAKE\_&lt;LANG&gt;\_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str               | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                |
+:::{cmake:variable} ENABLE_TENSORFLOW
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ tensorflow_icon }} Whether building the TensorFlow backend.
+
+:::
+
+:::{cmake:variable} ENABLE_PYTORCH
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} Whether building the PyTorch backend.
+
+:::
+
+:::{cmake:variable} TENSORFLOW_ROOT
+
+**Type**: `PATH`
+
+{{ tensorflow_icon }} The Path to TensorFlow's C++ interface.
+
+:::
+
+:::{cmake:variable} CMAKE_INSTALL_PREFIX
+
+**Type**: `PATH`
+
+The Path where DeePMD-kit will be installed.
+See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html).
+
+:::
+
+:::{cmake:variable} USE_CUDA_TOOLKIT
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+If `TRUE`, Build GPU support with CUDA toolkit.
+
+:::
+
+:::{cmake:variable} CUDAToolkit_ROOT
+
+**Type**: `PATH`, **Default**: [Search automatically](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html)
+
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html).
+
+:::
+
+:::{cmake:variable} USE_ROCM_TOOLKIT
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+If `TRUE`, Build GPU support with ROCM toolkit.
+
+:::
+
+:::{cmake:variable} CMAKE_HIP_COMPILER_ROCM_ROOT
+
+**Type**: `PATH`, **Default**: [Search automatically](https://rocm.docs.amd.com/en/latest/conceptual/cmake-packages.html)
+
+The path to the ROCM toolkit directory.
+See also [ROCm documentation](https://rocm.docs.amd.com/en/latest/conceptual/cmake-packages.html).
+
+:::
+
+:::{cmake:variable} LAMMPS_SOURCE_ROOT
+
+**Type**: `PATH`
+
+Only neccessary for using [LAMMPS plugin mode](./install-lammps.md#install-lammps-plugin-mode).
+The path to the [LAMMPS source code](install-lammps.md).
+LAMMPS 8Apr2021 or later is supported.
+If not assigned, the plugin mode will not be enabled.
+
+:::
+
+:::{cmake:variable} USE_TF_PYTHON_LIBS
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required).
+There's no need for building TensorFlow's C++ interface.
+
+:::
+
+:::{cmake:variable} USE_PT_PYTHON_LIBS
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required).
+There's no need for downloading PyTorch's C++ libraries.
+
+:::
+
+:::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+Enable compilation optimization for the native machine's CPU type.
+Do not enable it if generated code will run on different CPUs.
+
+:::
+
+:::{cmake:variable} CMAKE\_<LANG>\_FLAGS
+
+(`<LANG>`=`CXX`, `CUDA` or `HIP`)
+
+**Type**: `STRING`
+
+Default compilation flags to be used when compiling `<LANG>` files.
+
+See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).
+
+::: |
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
 
