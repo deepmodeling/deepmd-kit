@@ -467,10 +467,11 @@ Do not enable it if generated code will run on different CPUs.
 **Type**: `STRING`
 
 Default compilation flags to be used when compiling `<LANG>` files.
-
 See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).
 
-::: |
+:::
+
+---
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
 
