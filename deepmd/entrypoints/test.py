@@ -1114,6 +1114,10 @@ def test_dipole(
         log.info(f"Dipole Derivative RMSE : {rmse_t_f:e}")
     log.info("The unit of error is the same as the unit of provided label.")
 
+    dict_to_return = {"rmse": (rmse_f, dipole.size)}
+    if "find_dipole_force" in test_data.keys():  # anchor added
+        if test_data["find_dipole_force"]:
+            dict_to_return["rmse_t_f"] = (rmse_t_f, dipole_force.size)
     if detail_file is not None:
         detail_path = Path(detail_file)
         if not atomic:
@@ -1157,7 +1161,7 @@ def test_dipole(
             header=header_text,
             append=append_detail,
         )  # anchor changed np.davetxt to
-        dict_to_return = {"rmse": (rmse_f, dipole.size)}
+        # dict_to_return = {"rmse": (rmse_f, dipole.size)}
         if "find_dipole_force" in test_data.keys():  # anchor added
             if test_data["find_dipole_force"]:
                 pf = np.concatenate(
@@ -1176,7 +1180,6 @@ def test_dipole(
                            f"pred_fyx pred_fyy pred_fyz pred_fzx pred_fzy pred_fzz",
                     append=append_detail,
                 )
-                dict_to_return["rmse_t_f"] = (rmse_t_f, dipole_force.size)
 
     return dict_to_return
 
