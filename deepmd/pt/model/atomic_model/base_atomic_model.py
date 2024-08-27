@@ -576,7 +576,3 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 [ntypes] + list(self.atomic_output_def()[kk].shape)  # noqa: RUF005
             )
         return ret_bias, ret_std
-
-    def get_intensive(self) -> bool:
-        """Get whether the property is intensive."""
-        return False
