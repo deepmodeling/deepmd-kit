@@ -14,6 +14,9 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+)
 from deepmd.pt.utils import (
     AtomExcludeMask,
 )
@@ -31,9 +34,6 @@ from deepmd.utils.out_stat import (
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
 )
 
 log = logging.getLogger(__name__)
