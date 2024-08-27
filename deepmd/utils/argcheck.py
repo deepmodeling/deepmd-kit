@@ -1510,7 +1510,9 @@ def fitting_property():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
-        Argument("bias_method", str, optional=True, default="normal", doc=doc_bias_method),
+        Argument(
+            "bias_method", str, optional=True, default="normal", doc=doc_bias_method
+        ),
     ]
 
 

@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import Dict
+from typing import (
+    Dict,
+)
+
 import torch
+
 from deepmd.pt.model.task.property import (
     PropertyFittingNet,
 )
@@ -40,4 +44,6 @@ class DPPropertyAtomicModel(DPAtomicModel):
         elif self.fitting_net.get_bias_method() == "no_bias":
             return ret
         else:
-            raise NotImplementedError("Only 'normal' and 'no_bias' is supported for parameter 'bias_method'.")
+            raise NotImplementedError(
+                "Only 'normal' and 'no_bias' is supported for parameter 'bias_method'."
+            )
