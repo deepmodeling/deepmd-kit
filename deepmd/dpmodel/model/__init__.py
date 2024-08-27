@@ -18,11 +18,11 @@ from .dp_model import (
 from .ener_model import (
     EnergyModel,
 )
-from .property_model import (
-    PropertyModel,
-)
 from .make_model import (
     make_model,
+)
+from .property_model import (
+    PropertyModel,
 )
 from .spin_model import (
     SpinModel,
