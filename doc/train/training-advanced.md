@@ -135,21 +135,8 @@ $ dp train --help
 
 An explanation will be provided
 
-```
-positional arguments:
-  INPUT                 the input json database
+```{program-output} dp train -h
 
-optional arguments:
-  -h, --help            show this help message and exit
-
-  --init-model INIT_MODEL
-                        Initialize a model by the provided checkpoint
-
-  --restart RESTART     Restart the training from the provided checkpoint
-
-  --init-frz-model INIT_FRZ_MODEL
-                        Initialize the training from the frozen model.
-  --skip-neighbor-stat  Skip calculating neighbor statistics. Sel checking, automatic sel, and model compression will be disabled. (default: False)
 ```
 
 **`--init-model model.ckpt`**, initializes the model training with an existing model that is stored in the path prefix of checkpoint files `model.ckpt`, the network architectures should match.
@@ -161,14 +148,7 @@ optional arguments:
 **`--skip-neighbor-stat`** will skip calculating neighbor statistics if one is concerned about performance. Some features will be disabled.
 
 To maximize the performance, one should follow [FAQ: How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) to control the number of threads.
-
-One can set other environmental variables:
-
-| Environment variables   | Allowed value | Default value | Usage                                                                                                               |
-| ----------------------- | ------------- | ------------- | ------------------------------------------------------------------------------------------------------------------- |
-| DP_INTERFACE_PREC       | `high`, `low` | `high`        | Control high (double) or low (float) precision of training.                                                         |
-| DP_AUTO_PARALLELIZATION | 0, 1          | 0             | Enable auto parallelization for CPU operators.                                                                      |
-| DP_JIT                  | 0, 1          | 0             | Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow supports JIT. |
+See [Runtime environment variables](../env.md) for all runtime environment variables.
 
 ## Adjust `sel` of a frozen model {{ tensorflow_icon }}
 

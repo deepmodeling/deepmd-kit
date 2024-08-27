@@ -100,6 +100,8 @@ docs = [
     "pygments-lammps",
     "sphinxcontrib-bibtex",
     "sphinx-autoapi>=3.0.0",
+    "sphinxcontrib-programoutput",
+    "sphinxcontrib-moderncmakedomain",
 ]
 lmp = [
     "lammps~=2023.8.2.3.0",
@@ -351,6 +353,7 @@ select = [
     "B904", # raise-without-from-inside-except
     "N804", # invalid-first-argument-name-for-class-method
     "N805", # invalid-first-argument-name-for-method
+    "DTZ", # datetime
 ]
 
 ignore = [

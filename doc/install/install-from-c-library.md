@@ -16,7 +16,7 @@ The library is built in Linux (GLIBC 2.17) with CUDA 12.2 (`libdeepmd_c.tar.gz`)
 
 ## Use Pre-compiled C Library to build the LAMMPS plugin, i-PI driver, and GROMACS patch
 
-When one [installs DeePMD-kit's C++ interface](./install-from-source.md#install-deepmd-kits-c-interface), one can use the CMake argument `DEEPMD_C_ROOT` to the path `libdeepmd_c`.
+When one [installs DeePMD-kit's C++ interface](./install-from-source.md#install-deepmd-kits-c-interface), one can use the CMake argument {cmake:variable}`DEEPMD_C_ROOT` to the path `libdeepmd_c`.
 
 ```bash
 cd $deepmd_source_dir/source
@@ -29,3 +29,11 @@ make install
 
 Then the i-PI driver `dp_ipi` will be built and installed.
 One can also follow the manual [Install LAMMPS](./install-lammps.md) and/or [Install GROMACS](./install-gromacs.md).
+
+:::{cmake:variable} DEEPMD_C_ROOT
+
+**Type**: `Path`
+
+Prefix to the pre-compiled C library.
+
+:::

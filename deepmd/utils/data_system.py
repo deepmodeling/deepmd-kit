@@ -613,7 +613,11 @@ class DeepmdDataSystem:
                 min_len = min([len(ii), len(ret)])
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
-                        raise RuntimeError(f"inconsistent type map: {ret!s} {ii!s}")
+                        raise RuntimeError(
+                            f"Inconsistent type map: {ret!s} {ii!s} in different data systems. "
+                            "If you didn't set model/type_map, please set it, "
+                            "since the type map of the model cannot be decided by data."
+                        )
                 if len(ii) > len(ret):
                     ret = ii
         return ret

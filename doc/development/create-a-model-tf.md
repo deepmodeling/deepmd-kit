@@ -71,3 +71,12 @@ where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `f
 If you place `SomeDescript` and `descrpt_some_args` into different modules, you are also expected to add `descrpt_some_args` to `entry_points`.
 
 After you install your new package, you can now use `dp train` to run your new model.
+
+### Package customized C++ OPs
+
+You may need to use customized TensorFlow C++ OPs in the new model.
+Follow [TensorFlow documentation](https://www.tensorflow.org/guide/create_op) to create one library.
+
+When using your customized C++ OPs in the Python interface, use {py:meth}`tf.load_op_library` to load the OP library in the module defined in `entry_points`.
+
+When using your customized C++ OPs in the C++ library, define the environment variable {envvar}`DP_PLUGIN_PATH` to load the OP library.

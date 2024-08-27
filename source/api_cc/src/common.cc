@@ -377,12 +377,10 @@ void deepmd::get_env_nthreads(int& num_intra_nthreads,
   }
 }
 
-static inline void _load_single_op_library(std::string library_name) {
+static inline void _load_library_path(std::string dso_path) {
 #if defined(_WIN32)
-  std::string dso_path = library_name + ".dll";
   void* dso_handle = LoadLibrary(dso_path.c_str());
 #else
-  std::string dso_path = "lib" + library_name + ".so";
   void* dso_handle = dlopen(dso_path.c_str(), RTLD_NOW | RTLD_LOCAL);
 #endif
   if (!dso_handle) {
@@ -392,6 +390,15 @@ static inline void _load_single_op_library(std::string library_name) {
   }
 }
 
+static inline void _load_single_op_library(std::string library_name) {
+#if defined(_WIN32)
+  std::string dso_path = library_name + ".dll";
+#else
+  std::string dso_path = "lib" + library_name + ".so";
+#endif
+  _load_library_path(dso_path);
+}
+
 void deepmd::load_op_library() {
 #ifdef BUILD_TENSORFLOW
   _load_single_op_library("deepmd_op");
@@ -399,6 +406,23 @@ void deepmd::load_op_library() {
 #ifdef BUILD_PYTORCH
   _load_single_op_library("deepmd_op_pt");
 #endif
+  // load customized plugins
+  const char* env_customized_plugins = std::getenv("DP_PLUGIN_PATH");
+  if (env_customized_plugins) {
+#if !defined(_WIN32)
+    // note: ":" is a string and ':' is a char
+    std::string pathvarsep = ":";
+#else
+    std::string pathvarsep = ";";
+#endif
+    std::string plugin_path(env_customized_plugins);
+    std::vector<std::string> plugin_paths = split(plugin_path, pathvarsep);
+    for (const auto& plugin : plugin_paths) {
+      std::cerr << "Loading customized plugin defined in DP_PLUGIN_PATH: "
+                << plugin << std::endl;
+      _load_library_path(plugin);
+    }
+  }
 }
 
 std::string deepmd::name_prefix(const std::string& scope) {
