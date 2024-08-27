@@ -31,6 +31,7 @@ class PropertyFittingNet(InvarFitting):
         rcond: Optional[float] = None,
         trainable: Union[bool, List[bool]] = True,
         intensive: bool = False,
+        bias_method: str = "normal",
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -44,6 +45,7 @@ class PropertyFittingNet(InvarFitting):
     ):
         self.task_dim = task_dim
         self.intensive = intensive
+        self.bias_method = bias_method
         super().__init__(
             var_name="property",
             ntypes=ntypes,
