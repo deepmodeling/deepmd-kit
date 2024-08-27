@@ -18,6 +18,9 @@ from .dp_model import (
 from .ener_model import (
     EnergyModel,
 )
+from .property_model import (
+    PropertyModel,
+)
 from .make_model import (
     make_model,
 )
@@ -27,6 +30,7 @@ from .spin_model import (
 
 __all__ = [
     "EnergyModel",
+    "PropertyModel",
     "DPModelCommon",
     "SpinModel",
     "make_model",

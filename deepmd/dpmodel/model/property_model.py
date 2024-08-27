@@ -17,7 +17,7 @@ DPPropertyModel_ = make_model(DPAtomicModel)
 
 
 @BaseModel.register("property")
-class EnergyModel(DPModelCommon, DPPropertyModel_):
+class PropertyModel(DPModelCommon, DPPropertyModel_):
     def __init__(
         self,
         *args,

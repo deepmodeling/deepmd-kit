@@ -27,7 +27,6 @@ class PropertyLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
         beta: float = 1.00,
-        intensive: bool = False,
         **kwargs,
     ):
         r"""Construct a layer to compute loss on property.
@@ -48,7 +47,6 @@ class PropertyLoss(TaskLoss):
         self.loss_func = loss_func
         self.metric = metric
         self.beta = beta
-        self.intensive = intensive
 
     def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
         """Return loss on properties .
@@ -78,10 +76,6 @@ class PropertyLoss(TaskLoss):
         assert model_pred["property"].shape[-1] == self.task_dim
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
-
-        if not self.intensive:
-            label["property"] = label["property"] / natoms
-            model_pred["property"] = model_pred["property"] / natoms
 
         # loss
         if self.loss_func == "smooth_mae":

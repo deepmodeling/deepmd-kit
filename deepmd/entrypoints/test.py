@@ -847,12 +847,12 @@ def test_property(
 
     log.info(f"# number of test data : {numb_test:d} ")
 
-    log.info(f"PROPERTY MAE            : {mae_property:e} Occupation/eV")
-    log.info(f"PROPERTY RMSE           : {rmse_property:e} Occupation/eV")
+    log.info(f"PROPERTY MAE            : {mae_property:e} units")
+    log.info(f"PROPERTY RMSE           : {rmse_property:e} units")
 
     if has_atom_property:
-        log.info(f"Atomic PROPERTY MAE     : {mae_aproperty:e} Occupation/eV")
-        log.info(f"Atomic PROPERTY RMSE    : {rmse_aproperty:e} Occupation/eV")
+        log.info(f"Atomic PROPERTY MAE     : {mae_aproperty:e} units")
+        log.info(f"Atomic PROPERTY RMSE    : {rmse_aproperty:e} units")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -898,8 +898,8 @@ def print_property_sys_avg(avg: Dict[str, float]):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"PROPERTY MAE            : {avg['mae_property']:e} Occupation/eV")
-    log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} Occupation/eV")
+    log.info(f"PROPERTY MAE            : {avg['mae_property']:e} units")
+    log.info(f"PROPERTY RMSE           : {avg['rmse_property']:e} units")
 
 
 def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: DeepmdData):
