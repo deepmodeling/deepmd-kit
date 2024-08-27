@@ -218,6 +218,8 @@ class OutputVariableDef:
             raise ValueError("c differentiable requires r_differentiable")
         if self.reducible and not self.atomic:
             raise ValueError("a reducible variable should be atomic")
+        if self.intensive and not self.reducible:
+            raise ValueError("an intensive variable should be reducible")
         self.category = category
         self.r_hessian = r_hessian
         self.magnetic = magnetic
