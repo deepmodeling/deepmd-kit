@@ -32,6 +32,9 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+)
 
 log = logging.getLogger(__name__)
 
@@ -241,7 +244,7 @@ def compute_output_stats(
     rcond: Optional[float] = None,
     preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
-    intensive: bool = False,
+    atomic_output: Optional[FittingOutputDef] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -271,9 +274,8 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
-    intensive : bool, optional
-        This parameter is only useful when fitting properties.
-        It indicates whether the fitting property is intensive or extensive.
+    atomic_output : FittingOutputDef, optional
+        The output of atomic model.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -362,7 +364,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
-            intensive,
+            atomic_output,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -405,7 +407,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
     model_pred: Optional[Dict[str, np.ndarray]] = None,
-    intensive: bool = False,
+    atomic_output: Optional[FittingOutputDef] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
@@ -476,7 +478,7 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if intensive and kk == "property":
+            if atomic_output.get_data()[kk].intensive:
                 task_dim = stats_input[kk].shape[1]
                 assert merged_natoms[kk].shape == (nf[kk], ntypes)
                 stats_input[kk] = (
