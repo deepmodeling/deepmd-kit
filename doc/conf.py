@@ -69,6 +69,7 @@ extensions = [
     "sphinx_design",
     "autoapi.extension",
     "sphinxcontrib.programoutput",
+    "sphinxcontrib.moderncmakedomain",
 ]
 
 # breathe_domain_by_extension = {
