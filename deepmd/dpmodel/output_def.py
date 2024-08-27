@@ -214,6 +214,7 @@ class OutputVariableDef:
         self.reducible = reducible
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
+        self.intensive = intensive
         if self.c_differentiable and not self.r_differentiable:
             raise ValueError("c differentiable requires r_differentiable")
         if self.reducible and not self.atomic:
