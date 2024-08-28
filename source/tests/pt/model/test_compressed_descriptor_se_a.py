@@ -1,170 +1,127 @@
-import itertools
 import unittest
-
 import numpy as np
 import torch
 
-from deepmd.pt.utils.tabulate import (
-    DPTabulate,
+from typing import (
+    Any,
 )
-
-class TestCaseSingleFrameWithNlist:
-    def setUp(self):
-        # nloc == 3, nall == 4
-        self.nloc = 3
-        self.nall = 4
-        self.nf, self.nt = 2, 2
-        self.coord_ext = np.array(
-            [
-                [0, 0, 0],
-                [0, 1, 0],
-                [0, 0, 1],
-                [0, -2, 0],
-            ],
-            dtype=np.float64,
-        ).reshape([1, self.nall, 3])
-        self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
-        self.mapping = np.array([0, 1, 2, 0], dtype=int).reshape([1, self.nall])
-        # sel = [5, 2]
-        self.sel = [5, 2]
-        self.sel_mix = [7]
-        self.natoms = [3, 3, 2, 1]
-        self.nlist = np.array(
-            [
-                [1, 3, -1, -1, -1, 2, -1],
-                [0, -1, -1, -1, -1, 2, -1],
-                [0, 1, -1, -1, -1, -1, -1],
-            ],
-            dtype=int,
-        ).reshape([1, self.nloc, sum(self.sel)])
-        self.rcut = 2.2
-        self.rcut_smth = 0.4
-        # permutations
-        self.perm = np.array([2, 0, 1, 3], dtype=np.int32)
-        inv_perm = np.array([1, 2, 0, 3], dtype=np.int32)
-        # permute the coord and atype
-        self.coord_ext = np.concatenate(
-            [self.coord_ext, self.coord_ext[:, self.perm, :]], axis=0
-        ).reshape(self.nf, self.nall * 3)
-        self.atype_ext = np.concatenate(
-            [self.atype_ext, self.atype_ext[:, self.perm]], axis=0
-        )
-        self.mapping = np.concatenate(
-            [self.mapping, self.mapping[:, self.perm]], axis=0
-        )
-
-        # permute the nlist
-        nlist1 = self.nlist[:, self.perm[: self.nloc], :]
-        mask = nlist1 == -1
-        nlist1 = inv_perm[nlist1]
-        nlist1 = np.where(mask, -1, nlist1)
-        self.nlist = np.concatenate([self.nlist, nlist1], axis=0)
-        self.atol = 1e-12
-
+from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 from deepmd.pt.model.descriptor.se_a import(
     DescrptSeA,
 )
-from deepmd.pt.utils.env import (
-    PRECISION_DICT,
+from deepmd.pt.utils.nlist import build_neighbor_list as build_neighbor_list_pt
+from deepmd.pt.utils.nlist import (
+    extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
 )
-from test_mlp import (
-    get_tols,
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 
-class TestDescriptorSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
+def eval_pt_descriptor(
+    pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+) -> Any:
+    ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
+        torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
+        torch.from_numpy(atype).to(PT_DEVICE).reshape(1, -1),
+        torch.from_numpy(box).to(PT_DEVICE).reshape(1, 3, 3),
+        pt_obj.get_rcut(),
+    )
+    nlist = build_neighbor_list_pt(
+        ext_coords,
+        ext_atype,
+        natoms[0],
+        pt_obj.get_rcut(),
+        pt_obj.get_sel(),
+        distinguish_types=(not mixed_types),
+    )
+    result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, natoms=natoms, mapping=mapping)
+    return result
+
+class TestDescriptorSeA(unittest.TestCase):
     def setUp(self):
-        self.device = "cpu"
-        TestCaseSingleFrameWithNlist.setUp(self)
-    
-    def test_compression(self,):
-        print(self.coord_ext)
-        return
-        rng = np.random.default_rng(21)
-        _, _, nnei = self.nlist.shape
-        davg = rng.normal(size=(self.nt, nnei, 1))
-        dstd = rng.normal(size=(self.nt, nnei, 1))
-        dstd = 0.1 + np.abs(dstd)
+        self.dytpe = "float32"
+        if self.dytpe == "float32":
+            self.atol = 1e-5
+        elif self.dytpe == "float64":
+            self.atol = 1e-10
+        self.seed = 21
+        self.sel = [9, 10]
+        self.rcut_smth = 5.80
+        self.rcut = 6.00
+        self.neuron = [6, 12, 24]
+        self.axis_neuron = 3
+        self.ntypes = 2
+        self.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                00.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        )
+        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
+        self.box = np.array(
+            [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        )
+        self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
-        for idt, prec, em in itertools.product(
-            [False, True],
-            ["float64", "float32"],
-            [[], [[0, 1]], [[1, 1]]],
-        ):
-            dtype = PRECISION_DICT[prec]
-            rtol, atol = get_tols(prec)
-            err_msg = f"idt={idt} prec={prec}"
-            # sea new impl
-            dd0 = DescrptSeA(
-                self.rcut,
-                self.rcut_smth,
-                self.sel,
-                precision=prec,
-                resnet_dt=idt,
-                old_impl=False,
-                exclude_types=em,
-            ).to(self.device)
-            dd0.mean = torch.tensor(davg, dtype=dtype, device=self.device)
-            dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        self.se_a = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.neuron,
+            self.axis_neuron,
+            type_one_side=False,
+            seed=21,
+            precision=self.dytpe,
+        )
 
-            n_result_0, _, _, _, _ = dd0(
-                torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
-                torch.tensor(self.atype_ext, dtype=int, device=self.device),
-                torch.tensor(self.nlist, dtype=int, device=self.device),
-            )
-            print("n_result_0 shape: ", n_result_0.shape)
+    def test_compressed_forward(self):
+        result_pt = eval_pt_descriptor(
+            self.se_a,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
 
-            dd1 = DescrptSeA(
-                self.rcut,
-                self.rcut_smth,
-                self.sel,
-                precision=prec,
-                resnet_dt=idt,
-                old_impl=False,
-                exclude_types=em,
-            ).to(self.device)
-            dd1.mean = torch.tensor(davg, dtype=dtype, device=self.device)
-            dd1.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        self.se_a.enable_compression(1.0)
+        result_pt_compressed = eval_pt_descriptor(
+            self.se_a,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
 
-            print("ntypes: ", dd1.get_ntypes())
-            print("neuron: ", dd1.serialize()["neuron"])
-            # print(dd1.serialize())
-
-            embedding_net_nodes = dd1.serialize()["embeddings"]["networks"]
-            print("embedding networks----------------------------")
-            print(len(embedding_net_nodes))
-            # print(embedding_net_nodes)
-            embedding_net_1 = embedding_net_nodes[0]
-            # print(embedding_net_1)
-            print("layers----------------------------------------")
-            print(len(embedding_net_1["layers"]))           
-            print(embedding_net_1["layers"])
-            print("bias------------------------------------------")
-            print(embedding_net_1["layers"][0]["@variables"]["b"])
-            
-
-            dd1.enable_compression(1.0)
-            print("enable successful")
-            print("lower: ", dd1.lower)
-            print("upper: ", dd1.upper)
-
-            
-
-            n_result_1, _, _, _, _ = dd1(
-                torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
-                torch.tensor(self.atype_ext, dtype=int, device=self.device),
-                torch.tensor(self.nlist, dtype=int, device=self.device),
-            )
-            print("n_result_1 shape: ", n_result_1.shape)
-            self.assertEqual(n_result_0.shape, n_result_1.shape)
-
-            torch.testing.assert_close(
-                n_result_0,
-                n_result_1,
-                atol=atol,
-                rtol=atol,
-            )
-            return 
-
+        print("result shape: ", result_pt.shape)
+        # print("result_pt: ", result_pt[:, 1, :])
+        # print("result_pt_compressed: ", result_pt_compressed[:, 1, :])
+        # print("result_pt: ", result_pt[:, 3, :])
+        # print("result_pt_compressed: ", result_pt_compressed[:, 3, :])
+        self.assertEqual(result_pt.shape, result_pt_compressed.shape)
+        torch.testing.assert_close(
+            result_pt,
+            result_pt_compressed,
+            atol=self.atol,
+            rtol=self.atol,
+        )
 
 if __name__ == '__main__':
     unittest.main()

@@ -284,6 +284,12 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         self.lower, self.upper = self.table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
+        self.sea.enable_compression(
+            self.table,
+            self.table_config,
+            self.lower,
+            self.upper
+        )
         
 
     def forward(
@@ -291,8 +297,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        natoms: Optional[torch.Tensor] = None,
     ):
         """Compute the descriptor.
 
@@ -326,7 +334,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.sea.forward(nlist, coord_ext, atype_ext, None, mapping)
+        return self.sea.forward(nlist, coord_ext, atype_ext, extended_atype_embd, mapping, natoms)
 
     def set_stat_mean_and_stddev(
         self,
@@ -667,9 +675,8 @@ class DescrptBlockSeA(DescriptorBlock):
         lower,
         upper,
     ) -> None:
-        # set the needed data
-        self.table = table
         self.compress = True
+        self.table = table
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
@@ -681,6 +688,7 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
+        natoms: Optional[torch.Tensor] = None,
     ):
         """Calculate decoded embedding for each atom.
 
@@ -701,6 +709,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 extended_atype,
                 extended_atype_embd,
                 mapping,
+                natoms,
             )
         else:
             return self.normal_forward(
@@ -709,6 +718,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 extended_atype,
                 extended_atype_embd,
                 mapping,
+                natoms,
             )
     
     def normal_forward(
@@ -718,8 +728,9 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
+        natoms: Optional[torch.Tensor] = None,
     ):
-        del extended_atype_embd, mapping
+        del extended_atype_embd, mapping, natoms
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -817,14 +828,12 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_coord: torch.Tensor, # coord_
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None, # natoms
-        mapping: Optional[torch.Tensor] = None, 
+        mapping: Optional[torch.Tensor] = None,
+        natoms: Optional[torch.Tensor] = None,
     ):
-        del mapping
+        del mapping, extended_atype_embd
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
-        # no use in torch
-        # coord = extended_coord.view(-1, extended_atype_embd[1] * 3)
-        # box = mapping.view(-1, 9)
         self.atype = atype # atype
 
         dmatrix, diff, sw = prod_env_mat(
@@ -838,17 +847,17 @@ class DescrptBlockSeA(DescriptorBlock):
             protection=self.env_protection,
         )
 
+        nlist[nlist > 0] = nlist[nlist > 0] % 6
         nlist_t = nlist.view(-1) + 1
-        atype_t = torch.cat([torch.tensor([self.ntypes]), self.atype.view(-1)], dim=0)
-        self.nei_type_vec = torch.nn.functional.embedding(nlist_t, atype_t) # used in _filter_lower()
+        atype_t = torch.cat([torch.tensor([self.ntypes], device=self.atype.device), self.atype.reshape(-1)], dim=0)
+        # self.nei_type_vec = torch.nn.functional.embedding(nlist_t, atype_t) # used in _filter_lower()
+        self.nei_type_vec = atype_t[nlist_t]
 
         self.descrpt_reshape = dmatrix.view(-1, self.ndescrpt)
 
         self.dout, self.qmat = self._pass_filter(
             self.descrpt_reshape,
-            atype,
-            extended_atype_embd,
-            trainable=self.trainable,
+            natoms,
         )
 
         return (
@@ -860,7 +869,7 @@ class DescrptBlockSeA(DescriptorBlock):
         )
     
     def _pass_filter(
-        self, inputs, atype, natoms, trainable,# no input_dict in torch
+        self, inputs, natoms,
     ):
         type_embedding = None
         # input_dict
@@ -878,20 +887,17 @@ class DescrptBlockSeA(DescriptorBlock):
                 layer, qmat = self._filter(
                     inputs_i,
                     type_i,
-                    natoms=natoms,
-                    trainable=trainable,
-                    activation_fn=self.filter_activation_fn,
+                    natoms,
+                    type_embedding,
                 )
                 layer = layer.view(inputs.size(0), natoms[2 + type_i], self.get_dim_out())
-                qmat = qmat.view(inputs.size(0), natoms[2 + type_i], self.get_dim_rot_mat_1() * 3)
+                qmat = qmat.reshape(inputs.size(0), natoms[2 + type_i], self.get_dim_rot_mat_1() * 3)
                 output.append(layer)
                 output_qmat.append(qmat)
                 start_index += natoms[2 + type_i]
         else:
             inputs_i = inputs.view(-1, self.ndescrpt)
             type_i = -1
-            
-            self.atype_nloc = atype[:, :natoms[0]].view(-1)
             
             if len(self.exclude_types):
                 mask = self.emask
@@ -900,13 +906,11 @@ class DescrptBlockSeA(DescriptorBlock):
             layer, qmat = self._filter(
                 inputs_i,
                 type_i,
-                natoms=natoms,
-                trainable=trainable,
-                activation_fn=self.filter_activation_fn,
-                type_embedding=type_embedding,
+                natoms,
+                type_embedding,
             )
             layer = layer.view(inputs.size(0), natoms[0], self.get_dim_out())
-            qmat = qmat.view(inputs.size(0), natoms[0], self.get_dim_rot_mat_1() * 3)
+            qmat = qmat.reshape(inputs.size(0), natoms[0], self.get_dim_rot_mat_1() * 3)
             output.append(layer)
             output_qmat.append(qmat)
         
@@ -922,7 +926,7 @@ class DescrptBlockSeA(DescriptorBlock):
         natoms,
         type_embedding=None,
     ):
-        nframes = inputs.view(-1, natoms[0], self.ndescrpt).shape[0]
+        # nframes = inputs.view(-1, natoms[0], self.ndescrpt).shape[0]
         # natom x (nei x 4)
         shape = list(inputs.shape)
         outputs_size = [1, *self.filter_neuron]
@@ -953,7 +957,6 @@ class DescrptBlockSeA(DescriptorBlock):
                     start_index,
                     self.sel[type_i],
                     inputs,
-                    nframes,
                     natoms,
                     type_embedding=type_embedding,
                     is_exclude=(type_input, type_i) in self.exclude_types,
@@ -971,7 +974,6 @@ class DescrptBlockSeA(DescriptorBlock):
                 start_index,
                 np.cumsum(self.sel)[-1],
                 inputs,
-                nframes,
                 natoms,
                 type_embedding=type_embedding,
                 is_exclude=False,
@@ -1006,7 +1008,6 @@ class DescrptBlockSeA(DescriptorBlock):
         start_index,
         incrs_index,
         inputs,
-        nframes,
         natoms,
         type_embedding=None,
         is_exclude=False,
@@ -1020,19 +1021,22 @@ class DescrptBlockSeA(DescriptorBlock):
         natom = inputs_i.shape[0]
         # reshape inputs
         # with (natom x nei_type_i) x 4
-        inputs_reshape = inputs_i.view(-1, 4)
+        inputs_reshape = inputs_i.reshape(-1, 4)
         # with (natom x nei_type_i) x 1
         xyz_scatter = inputs_reshape[:, :1]
 
-        if type_embedding is not None:
-            xyz_scatter = self._concat_type_embedding(xyz_scatter, nframes, natoms, type_embedding)
-            if self.compress:
-                raise RuntimeError(
-                    "compression of type embedded descriptor is not supported when tebd_input_mode is not set to 'strip'"
-                )
+        # if type_embedding is not None:
+        #     xyz_scatter = self._concat_type_embedding(xyz_scatter, nframes, natoms, type_embedding)
+        #     if self.compress:
+        #         raise RuntimeError(
+        #             "compression of type embedded descriptor is not supported when tebd_input_mode is not set to 'strip'"
+        #         )
         
         if self.compress and (not is_exclude):
-            net = f"filter_{'-1' if self.type_one_side else str(type_input)}_net_{type_i}"
+            if self.type_one_side:
+                net = "filter_-1_net_" + str(type_i)
+            else:
+                net = "filter_" + str(type_input) + "_net_" + str(type_i)
             info = [
                 self.lower[net],
                 self.upper[net],
@@ -1041,13 +1045,17 @@ class DescrptBlockSeA(DescriptorBlock):
                 self.table_config[2],
                 self.table_config[3],
             ]
-            return torch.ops.deepmd.tabulate_fusion_se_a(
-                self.table.data[net].to(dtype=self.prec),
-                info,
-                xyz_scatter,
-                inputs_i.view(natom, shape_i[1] // 4, 4),
-                last_layer_size=outputs_size[-1],
+            tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+            xyz_scatter_tensor = xyz_scatter.to(env.DEVICE).to(dtype=self.prec)
+            inputs_i_tensor = inputs_i.view(natom, shape_i[1] // 4, 4).to(env.DEVICE).to(dtype=self.prec)
+            result = torch.ops.deepmd.tabulate_fusion_se_a(
+                tensor_data.contiguous(),
+                torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                xyz_scatter_tensor.contiguous(),
+                inputs_i_tensor.contiguous(),
+                int(outputs_size[-1]),
             )
+            return result[0]
         
     def _concat_type_embedding(
         self,

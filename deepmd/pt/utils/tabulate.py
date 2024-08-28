@@ -144,7 +144,22 @@ class DPTabulate:
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+            uu = np.max(upper)
+            ll = np.min(lower)
+            xx = np.arange(ll, uu, stride0, dtype=self.data_type)
+            xx = np.append(
+                xx,
+                np.arange(uu, extrapolate * uu, stride1, dtype=self.data_type),
+            )
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+            nspline = ((uu - ll) / stride0 + (extrapolate * uu - uu) / stride1).astype(
+                int
+            )
+            self._build_lower(
+                "filter_net", xx, 0, uu, ll, stride0, stride1, extrapolate, nspline
+            )
+        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (
                     not self.type_one_side
@@ -165,8 +180,8 @@ class DPTabulate:
                         net = (
                             "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
                         )
-                        uu = upper[ielement]
-                        ll = lower[ielement]
+                        uu = np.max(upper[ielement])
+                        ll = np.min(lower[ielement])
                     xx = np.arange(ll, uu, stride0, dtype=self.data_type)
                     xx = np.append(
                         xx,
@@ -184,23 +199,25 @@ class DPTabulate:
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
             xx_all = []
             for ii in range(self.ntypes):
+                uu = np.max(upper[ii])
+                ll = np.min(lower[ii])
                 xx = np.arange(
-                    extrapolate * lower[ii], lower[ii], stride1, dtype=self.data_type
+                    extrapolate * ll, ll, stride1, dtype=self.data_type
                 )
                 xx = np.append(
-                    xx, np.arange(lower[ii], upper[ii], stride0, dtype=self.data_type)
+                    xx, np.arange(ll, uu, stride0, dtype=self.data_type)
                 )
                 xx = np.append(
                     xx,
                     np.arange(
-                        upper[ii],
-                        extrapolate * upper[ii],
+                        uu,
+                        extrapolate * uu,
                         stride1,
                         dtype=self.data_type,
                     ),
                 )
                 xx = np.append(
-                    xx, np.array([extrapolate * upper[ii]], dtype=self.data_type)
+                    xx, np.array([extrapolate * uu], dtype=self.data_type)
                 )
                 xx_all.append(xx)
             nspline = (
@@ -215,12 +232,12 @@ class DPTabulate:
                         net,
                         xx_all[ii],
                         idx,
-                        upper[ii],
-                        lower[ii],
+                        uu,
+                        ll,
                         stride0,
                         stride1,
                         extrapolate,
-                        nspline[ii],
+                        nspline[ii][0],
                     )
                     idx += 1
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
@@ -556,12 +573,15 @@ class DPTabulate:
             basic_size = len(self.embedding_net_nodes) * len(self.neuron)
         else:
             basic_size = len(self.embedding_net_nodes) * len(self.embedding_net_nodes[0]) * len(self.neuron)
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
-            layer_size = basic_size // (self.ntypes * self.ntypes - len(self.exclude_types))
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+            layer_size = len(self.embedding_net_nodes[0]["layers"])
+        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+            layer_size = len(self.embedding_net_nodes[0]["layers"])
             if self.type_one_side:
                 layer_size = basic_size // (self.ntypes - self._n_all_excluded)
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
-            layer_size = basic_size // int(comb(self.ntypes + 1, 2))
+            layer_size = len(self.embedding_net_nodes[0]["layers"])
+            # layer_size = basic_size // int(comb(self.ntypes + 1, 2))
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
             layer_size = basic_size // (self.ntypes * self.ntypes - len(self.exclude_types))
             if self.type_one_side:
@@ -572,7 +592,9 @@ class DPTabulate:
 
     def _get_table_size(self):
         table_size = 0
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+            table_size = 1
+        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
             table_size = self.ntypes * self.ntypes
             if self.type_one_side:
                 table_size = self.ntypes
@@ -590,7 +612,10 @@ class DPTabulate:
         bias = {}
         for layer in range(1, self.layer_size + 1):
             bias["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+            if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"]["b"]
+                bias["layer_" + str(layer)].append(node)
+            elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         if not self._all_excluded(ii):
@@ -606,7 +631,8 @@ class DPTabulate:
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer - 1]["@variables"]["b"]
+                            # node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer - 1]["@variables"]["b"]
+                            node = self.embedding_net_nodes[(ii % self.ntypes)*self.ntypes + ii // self.ntypes]["layers"][layer - 1]["@variables"]["b"]
                             # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
@@ -615,14 +641,14 @@ class DPTabulate:
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
                     for jj in range(ii, self.ntypes):
-                        node = self.embedding_net_nodes[ii][jj]["layers"][layer]["@variables"]["b"]
+                        node = self.embedding_net_nodes[jj*self.ntypes + ii]["layers"][layer - 1]["@variables"]["b"]
                         # node = torch.from_numpy(node)
                         bias["layer_" + str(layer)].append(node)
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         if not self._all_excluded(ii):
-                            node = self.embedding_net_nodes[ii]["layers"][layer]["@variables"]["b"]
+                            node = self.embedding_net_nodes[ii]["layers"][layer - 1]["@variables"]["b"]
                             # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
@@ -634,7 +660,7 @@ class DPTabulate:
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer]["@variables"]["b"]
+                            node = self.embedding_net_nodes[(ii % self.ntypes)*self.ntypes + ii // self.ntypes]["layers"][layer - 1]["@variables"]["b"]
                             # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
@@ -648,7 +674,10 @@ class DPTabulate:
         matrix = {}
         for layer in range(1, self.layer_size + 1):
             matrix["layer_" + str(layer)] = []
-            if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+            if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"]["w"]
+                matrix["layer_" + str(layer)].append(node)
+            elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         if not self._all_excluded(ii):
@@ -664,7 +693,8 @@ class DPTabulate:
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer - 1]["@variables"]["w"]
+                            # node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer - 1]["@variables"]["w"]
+                            node = self.embedding_net_nodes[(ii % self.ntypes)*self.ntypes + ii // self.ntypes]["layers"][layer - 1]["@variables"]["w"]
                             # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
@@ -673,14 +703,14 @@ class DPTabulate:
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
                     for jj in range(ii, self.ntypes):
-                        node = self.embedding_net_nodes[ii][jj]["layers"][layer]["@variables"]["w"]
+                        node = self.embedding_net_nodes[jj*self.ntypes + ii]["layers"][layer - 1]["@variables"]["w"]
                         # node = torch.from_numpy(node)
                         matrix["layer_" + str(layer)].append(node)
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
                 if self.type_one_side:
                     for ii in range(0, self.ntypes):
                         if not self._all_excluded(ii):
-                            node = self.embedding_net_nodes[ii]["layers"][layer]["@variables"]["w"]
+                            node = self.embedding_net_nodes[ii]["layers"][layer - 1]["@variables"]["w"]
                             # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
@@ -692,7 +722,7 @@ class DPTabulate:
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer]["@variables"]["w"]
+                            node = self.embedding_net_nodes[(ii % self.ntypes)*self.ntypes + ii // self.ntypes]["layers"][layer - 1]["@variables"]["w"]
                             # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
