@@ -301,6 +301,8 @@ void FixDPLR::init() {
   }
 }
 
+void FixDPLR::setup_pre_exchange() { post_integrate(); }
+
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
