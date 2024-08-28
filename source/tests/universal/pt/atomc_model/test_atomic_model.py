@@ -30,8 +30,8 @@ from ...common.cases.atomic_model.atomic_model import (
     DosAtomicModelTest,
     EnerAtomicModelTest,
     PolarAtomicModelTest,
-    ZBLAtomicModelTest,
     PropertyAtomicModelTest,
+    ZBLAtomicModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
@@ -414,7 +414,10 @@ class TestZBLAtomicModelPT(unittest.TestCase, ZBLAtomicModelTest, PTTestCase):
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
         (
-            *[(param_func, PropertyFittingNet) for param_func in FittingParamPropertyList],
+            *[
+                (param_func, PropertyFittingNet)
+                for param_func in FittingParamPropertyList
+            ],
         ),  # fitting_class_param & class
     ),
 )

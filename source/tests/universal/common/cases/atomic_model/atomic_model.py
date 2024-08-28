@@ -109,6 +109,7 @@ class ZBLAtomicModelTest(AtomicModelTestCase):
             "sw_rmax": 4.0,
         }
 
+
 class PropertyAtomicModelTest(AtomicModelTestCase):
     @classmethod
     def setUpClass(cls) -> None:

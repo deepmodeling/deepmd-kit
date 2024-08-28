@@ -136,6 +136,7 @@ class SpinEnerModelTest(ModelTestCase):
         }
         cls.test_spin = True
 
+
 class PropertyModelTest(ModelTestCase):
     @classmethod
     def setUpClass(cls) -> None:

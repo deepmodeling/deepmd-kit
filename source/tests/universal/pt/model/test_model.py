@@ -22,8 +22,8 @@ from deepmd.pt.model.model import (
     DPZBLModel,
     EnergyModel,
     PolarModel,
-    SpinEnergyModel,
     PropertyModel,
+    SpinEnergyModel,
 )
 from deepmd.pt.model.task import (
     DipoleFittingNet,
@@ -44,9 +44,9 @@ from ...common.cases.model.model import (
     DosModelTest,
     EnerModelTest,
     PolarModelTest,
+    PropertyModelTest,
     SpinEnerModelTest,
     ZBLModelTest,
-    PropertyModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
@@ -731,7 +731,10 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
         (
-            *[(param_func, PropertyFittingNet) for param_func in FittingParamPropertyList],
+            *[
+                (param_func, PropertyFittingNet)
+                for param_func in FittingParamPropertyList
+            ],
         ),  # fitting_class_param & class
     ),
 )
