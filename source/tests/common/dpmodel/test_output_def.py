@@ -88,7 +88,7 @@ class TestDef(unittest.TestCase):
                 c_differentiable=False,
                 atomic=True,
                 intensive=True,
-            )
+            ),
         ]
         # fitting definition
         fd = FittingOutputDef(defs)
@@ -168,7 +168,7 @@ class TestDef(unittest.TestCase):
             "mask",
             "mask_mag",
             "gap",
-            "gap_redu"
+            "gap_redu",
         ]
         self.assertEqual(
             set(expected_keys),
@@ -560,7 +560,7 @@ class TestDef(unittest.TestCase):
                     magnetic=True,
                 ),
             )
-    
+
     def test_inten_requires_redu(self):
         with self.assertRaises(ValueError) as context:
             (

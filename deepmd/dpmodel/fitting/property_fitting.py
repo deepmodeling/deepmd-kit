@@ -65,6 +65,7 @@ class PropertyFittingNet(InvarFitting):
     type_map: List[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
+
     def __init__(
         self,
         ntypes: int,

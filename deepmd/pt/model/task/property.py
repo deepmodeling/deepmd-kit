@@ -72,6 +72,7 @@ class PropertyFittingNet(InvarFitting):
     seed : int, optional
         Random seed.
     """
+
     def __init__(
         self,
         ntypes: int,
