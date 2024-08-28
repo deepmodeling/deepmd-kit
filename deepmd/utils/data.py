@@ -623,7 +623,8 @@ class DeepmdData:
                 grids = []
                 densities = []
                 for batch_grids, batch_densities in calculate_density(
-                        filename, self.density_grid_size, self.density_origin):
+                    filename, self.density_grid_size, self.density_origin
+                ):
                     grids.append(batch_grids)
                     densities.append(batch_densities)
                 grids = np.concatenate(grids)  # [ngrids, 3]
