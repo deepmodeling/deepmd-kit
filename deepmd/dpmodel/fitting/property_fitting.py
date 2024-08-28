@@ -21,6 +21,50 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("property")
 class PropertyFittingNet(InvarFitting):
+    r"""Fitting the rotationally invariant porperties of `task_dim` of the system.
+
+    Parameters
+    ----------
+    ntypes
+            The number of atom types.
+    dim_descrpt
+            The dimension of the input descriptor.
+    task_dim
+            The dimension of outputs of fitting net.
+    neuron
+            Number of neurons :math:`N` in each hidden layer of the fitting net
+    bias_atom_p
+            Average property per atom for each element.
+    rcond
+            The condition number for the regression of atomic energy.
+    trainable
+            If the weights of fitting net are trainable.
+            Suppose that we have :math:`N_l` hidden layers in the fitting net,
+            this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
+    intensive
+            Whether the fitting property is intensive.
+    bias_method
+            The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'.
+            If 'normal' is used, the computed bias will be added to the atomic output.
+            If 'no_bias' is used, no bias will be added to the atomic output.
+    resnet_dt
+            Time-step `dt` in the resnet construction:
+            :math:`y = x + dt * \phi (Wx + b)`
+    numb_fparam
+            Number of frame parameter
+    numb_aparam
+            Number of atomic parameter
+    activation_function
+            The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
+    precision
+            The precision of the embedding net parameters. Supported options are |PRECISION|
+    mixed_types
+            If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
+    exclude_types: List[int]
+            Atomic contributions of the excluded atom types are set zero.
+    type_map: List[str], Optional
+            A list of strings. Give the name to each type of atoms.
+    """
     def __init__(
         self,
         ntypes: int,

@@ -36,6 +36,42 @@ log = logging.getLogger(__name__)
 
 @Fitting.register("property")
 class PropertyFittingNet(InvarFitting):
+    """Fitting the rotationally invariant porperties of `task_dim` of the system.
+
+    Parameters
+    ----------
+    ntypes : int
+        Element count.
+    dim_descrpt : int
+        Embedding width per atom.
+    task_dim : int
+            The dimension of outputs of fitting net.
+    neuron : List[int]
+        Number of neurons in each hidden layers of the fitting net.
+    bias_atom_p : torch.Tensor, optional
+        Average property per atom for each element.
+    intensive : bool, optional
+        Whether the fitting property is intensive.
+    bias_method : str, optional
+        The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'.
+        If 'normal' is used, the computed bias will be added to the atomic output.
+        If 'no_bias' is used, no bias will be added to the atomic output.
+    resnet_dt : bool
+        Using time-step in the ResNet construction.
+    numb_fparam : int
+        Number of frame parameters.
+    numb_aparam : int
+        Number of atomic parameters.
+    activation_function : str
+        Activation function.
+    precision : str
+        Numerical precision.
+    mixed_types : bool
+        If true, use a uniform fitting net for all atom types, otherwise use
+        different fitting nets for different atom types.
+    seed : int, optional
+        Random seed.
+    """
     def __init__(
         self,
         ntypes: int,

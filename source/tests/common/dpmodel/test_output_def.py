@@ -80,10 +80,19 @@ class TestDef(unittest.TestCase):
                 c_differentiable=False,
                 atomic=True,
             ),
+            OutputVariableDef(
+                "gap",
+                [13],
+                reducible=True,
+                r_differentiable=False,
+                c_differentiable=False,
+                atomic=True,
+                intensive=True,
+            )
         ]
         # fitting definition
         fd = FittingOutputDef(defs)
-        expected_keys = ["energy", "energy2", "energy3", "dos", "foo"]
+        expected_keys = ["energy", "energy2", "energy3", "dos", "foo", "gap"]
         self.assertEqual(
             set(expected_keys),
             set(fd.keys()),
@@ -94,18 +103,21 @@ class TestDef(unittest.TestCase):
         self.assertEqual(fd["energy3"].shape, [1])
         self.assertEqual(fd["dos"].shape, [10])
         self.assertEqual(fd["foo"].shape, [3])
+        self.assertEqual(fd["gap"].shape, [13])
         # atomic
         self.assertEqual(fd["energy"].atomic, True)
         self.assertEqual(fd["energy2"].atomic, True)
         self.assertEqual(fd["energy3"].atomic, True)
         self.assertEqual(fd["dos"].atomic, True)
         self.assertEqual(fd["foo"].atomic, True)
+        self.assertEqual(fd["gap"].atomic, True)
         # reduce
         self.assertEqual(fd["energy"].reducible, True)
         self.assertEqual(fd["energy2"].reducible, True)
         self.assertEqual(fd["energy3"].reducible, True)
         self.assertEqual(fd["dos"].reducible, True)
         self.assertEqual(fd["foo"].reducible, False)
+        self.assertEqual(fd["gap"].reducible, True)
         # derivative
         self.assertEqual(fd["energy"].r_differentiable, True)
         self.assertEqual(fd["energy"].c_differentiable, True)
@@ -118,14 +130,17 @@ class TestDef(unittest.TestCase):
         self.assertEqual(fd["energy3"].r_hessian, False)
         self.assertEqual(fd["dos"].r_differentiable, False)
         self.assertEqual(fd["foo"].r_differentiable, False)
+        self.assertEqual(fd["gap"].r_differentiable, False)
         self.assertEqual(fd["dos"].c_differentiable, False)
         self.assertEqual(fd["foo"].c_differentiable, False)
+        self.assertEqual(fd["gap"].c_differentiable, False)
         # magnetic
         self.assertEqual(fd["energy"].magnetic, False)
         self.assertEqual(fd["energy2"].magnetic, False)
         self.assertEqual(fd["energy3"].magnetic, True)
         self.assertEqual(fd["dos"].magnetic, False)
         self.assertEqual(fd["foo"].magnetic, False)
+        self.assertEqual(fd["gap"].magnetic, False)
         # model definition
         md = ModelOutputDef(fd)
         expected_keys = [
@@ -152,6 +167,8 @@ class TestDef(unittest.TestCase):
             "dos_redu",
             "mask",
             "mask_mag",
+            "gap",
+            "gap_redu"
         ]
         self.assertEqual(
             set(expected_keys),
@@ -165,6 +182,7 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy3"].reducible, True)
         self.assertEqual(md["dos"].reducible, True)
         self.assertEqual(md["foo"].reducible, False)
+        self.assertEqual(md["gap"].reducible, True)
         # derivative
         self.assertEqual(md["energy"].r_differentiable, True)
         self.assertEqual(md["energy"].c_differentiable, True)
@@ -177,8 +195,10 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy3"].r_hessian, False)
         self.assertEqual(md["dos"].r_differentiable, False)
         self.assertEqual(md["foo"].r_differentiable, False)
+        self.assertEqual(md["gap"].r_differentiable, False)
         self.assertEqual(md["dos"].c_differentiable, False)
         self.assertEqual(md["foo"].c_differentiable, False)
+        self.assertEqual(md["gap"].c_differentiable, False)
         # shape
         self.assertEqual(md["mask"].shape, [1])
         self.assertEqual(md["mask_mag"].shape, [1])
@@ -201,6 +221,8 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy3_derv_c_redu"].shape, [1, 9])
         self.assertEqual(md["energy3_derv_r_mag"].shape, [1, 3])
         self.assertEqual(md["energy3_derv_c_mag"].shape, [1, 9])
+        self.assertEqual(md["gap"].shape, [13])
+        self.assertEqual(md["gap_redu"].shape, [13])
         # atomic
         self.assertEqual(md["energy"].atomic, True)
         self.assertEqual(md["energy2"].atomic, True)
@@ -221,6 +243,8 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["energy3_derv_r_mag"].atomic, True)
         self.assertEqual(md["energy3_derv_c_mag"].atomic, True)
         self.assertEqual(md["energy3_derv_c_redu"].atomic, False)
+        self.assertEqual(md["gap"].atomic, True)
+        self.assertEqual(md["gap_redu"].atomic, False)
         # category
         self.assertEqual(md["mask"].category, OutputVariableCategory.OUT)
         self.assertEqual(md["mask_mag"].category, OutputVariableCategory.OUT)
@@ -256,6 +280,8 @@ class TestDef(unittest.TestCase):
         self.assertEqual(
             md["energy3_derv_c_mag"].category, OutputVariableCategory.DERV_C
         )
+        self.assertEqual(md["gap"].category, OutputVariableCategory.OUT)
+        self.assertEqual(md["gap_redu"].category, OutputVariableCategory.REDU)
         # flag
         OVO = OutputVariableOperation
         self.assertEqual(md["energy"].category & OVO.REDU, 0)
@@ -273,6 +299,9 @@ class TestDef(unittest.TestCase):
         self.assertEqual(md["foo"].category & OVO.REDU, 0)
         self.assertEqual(md["foo"].category & OVO.DERV_R, 0)
         self.assertEqual(md["foo"].category & OVO.DERV_C, 0)
+        self.assertEqual(md["gap"].category & OVO.REDU, 0)
+        self.assertEqual(md["gap"].category & OVO.DERV_R, 0)
+        self.assertEqual(md["gap"].category & OVO.DERV_C, 0)
         # flag: energy
         self.assertEqual(
             md["energy_redu"].category & OVO.REDU,
@@ -529,6 +558,21 @@ class TestDef(unittest.TestCase):
                     r_differentiable=True,
                     r_hessian=True,
                     magnetic=True,
+                ),
+            )
+    
+    def test_inten_requires_redu(self):
+        with self.assertRaises(ValueError) as context:
+            (
+                OutputVariableDef(
+                    "foo",
+                    [20],
+                    reducible=False,
+                    atomic=True,
+                    r_differentiable=False,
+                    r_hessian=False,
+                    magnetic=False,
+                    intensive=True,
                 ),
             )
 
