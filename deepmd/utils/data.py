@@ -6,6 +6,7 @@ import logging
 from typing import (
     List,
     Optional,
+    Tuple,
 )
 
 import numpy as np
@@ -15,6 +16,9 @@ from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils import random as dp_random
+from deepmd.utils.density import (
+    calculate_density,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -58,6 +62,8 @@ class DeepmdData:
         modifier=None,
         trn_all_set: bool = False,
         sort_atoms: bool = True,
+        density_grid_size: Tuple[int, int, int] = (100, 100, 100),
+        density_origin: np.ndarray = np.zeros(3),
     ):
         """Constructor."""
         root = DPPath(sys_path)
@@ -126,6 +132,8 @@ class DeepmdData:
         self.nframes = np.sum(frames_list)
         # The prefix sum stores the range of indices contained in each directory, which is needed by get_item method
         self.prefix_sum = np.cumsum(frames_list).tolist()
+        self.density_grid_size = density_grid_size
+        self.density_origin = density_origin
 
     def add(
         self,
@@ -607,7 +615,24 @@ class DeepmdData:
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
         path = set_name / (key + ".npy")
-        if path.is_file():
+        if key == "grid_density" and path.is_file():
+            path_list = path.load_numpy()
+            data = []
+            for path in path_list:
+                filename = set_name / path
+                grids = []
+                densities = []
+                for batch_grids, batch_densities in calculate_density(
+                        filename, self.density_grid_size, self.density_origin):
+                    grids.append(batch_grids)
+                    densities.append(batch_densities)
+                grids = np.concatenate(grids)  # [ngrids, 3]
+                densities = np.concatenate(densities)  # [ngrids, 3]
+                grid_densities = np.stack([grids, densities])  # [2, ngrids, 3]
+                data.append(grid_densities)
+            data = np.stack(data)  # [nframes, 2, ngrids, 3]
+            return np.float32(1.0), data
+        elif path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
                 if atomic:
