@@ -3,7 +3,7 @@ from typing import Iterator, Tuple
 
 
 class DensityCalculator:
-    def __init__(self):
+    def __init__(self, filename):
         self.gammaonly = False
         self.ngm_g = 0
         self.nspin = 0
@@ -11,7 +11,7 @@ class DensityCalculator:
         self.miller_indices = None
         self.rhog = None
         self.cell_volume = None
-        self.read_binary_file()
+        self.read_binary_file(filename)
 
     def read_binary_file(self, filename: str):
     # the func will be further modified when PR 4991 are merged.

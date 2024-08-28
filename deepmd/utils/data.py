@@ -627,10 +627,10 @@ class DeepmdData:
                     grids.append(batch_grids)
                     densities.append(batch_densities)
                 grids = np.concatenate(grids)  # [ngrids, 3]
-                densities = np.concatenate(densities)  # [ngrids, 3]
-                grid_densities = np.stack([grids, densities])  # [2, ngrids, 3]
+                densities = np.concatenate(densities)  # [ngrids]
+                grid_densities = np.concatenate([grids, densities.reshape([-1, 1])], axis=1)  # [ngrids, 4]
                 data.append(grid_densities)
-            data = np.stack(data)  # [nframes, 2, ngrids, 3]
+            data = np.stack(data)  # [nframes, ngrids, 4]
             return np.float32(1.0), data
         elif path.is_file():
             data = path.load_numpy().astype(dtype)
