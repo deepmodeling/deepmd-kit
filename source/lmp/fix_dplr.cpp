@@ -301,9 +301,9 @@ void FixDPLR::init() {
   }
 }
 
-void FixDPLR::setup_pre_exchange() { 
+void FixDPLR::setup_pre_exchange() {
   printf("FixDPLR::setup_pre_exchange\n");
-  pre_exchange(); 
+  pre_exchange();
   printf("FixDPLR::setup_pre_exchange\n");
 }
 
