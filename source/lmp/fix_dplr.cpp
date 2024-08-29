@@ -235,7 +235,7 @@ int FixDPLR::setmask() {
   // THERMO_ENERGY removed in lammps/lammps#2560
   mask |= THERMO_ENERGY;
 #endif
-  mask |= POST_INTEGRATE;
+  mask |= PRE_EXCHANGE;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
   mask |= MIN_PRE_EXCHANGE;
@@ -310,7 +310,11 @@ void FixDPLR::init() {
   }
 }
 
-void FixDPLR::setup_pre_exchange() { post_integrate(); }
+void FixDPLR::setup_pre_exchange() { 
+  printf("FixDPLR::setup_pre_exchange\n");
+  pre_exchange(); 
+  printf("FixDPLR::setup_pre_exchange\n");
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -319,11 +323,13 @@ void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::setup(int vflag) {
+  printf("FixDPLR::setup\n");
   // if (strstr(update->integrate_style,"verlet"))
   post_force(vflag);
   // else {
   //   error->all(FLERR, "respa is not supported by this fix");
   // }
+  printf("FixDPLR::setup\n");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -410,7 +416,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::post_integrate() {
+void FixDPLR::pre_exchange() {
   double **x = atom->x;
   double **v = atom->v;
   int *type = atom->type;
@@ -729,7 +735,7 @@ void FixDPLR::post_force(int vflag) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::min_pre_exchange() { post_integrate(); }
+void FixDPLR::min_pre_exchange() { pre_exchange(); }
 
 /* ---------------------------------------------------------------------- */
 
