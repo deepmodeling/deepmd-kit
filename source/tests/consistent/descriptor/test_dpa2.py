@@ -37,7 +37,7 @@ from deepmd.dpmodel.descriptor.dpa2 import (
     RepinitArgs,
 )
 from deepmd.utils.argcheck import (
-    descrpt_se_atten_args,
+    descrpt_dpa2_args,
 )
 
 
@@ -59,6 +59,9 @@ from deepmd.utils.argcheck import (
     (True,),  # repformer_set_davg_zero
     (True,),  # repformer_trainable_ln
     (1e-5,),  # repformer_ln_eps
+    (True,),  # repformer_use_sqrt_nnei
+    (True,),  # repformer_g1_out_conv
+    (True,),  # repformer_g1_out_mlp
     (True, False),  # smooth
     ([], [[0, 1]]),  # exclude_types
     ("float64",),  # precision
@@ -87,6 +90,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,
@@ -141,6 +147,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
                     "set_davg_zero": True,
                     "trainable_ln": repformer_trainable_ln,
                     "ln_eps": repformer_ln_eps,
+                    "use_sqrt_nnei": repformer_use_sqrt_nnei,
+                    "g1_out_conv": repformer_g1_out_conv,
+                    "g1_out_mlp": repformer_g1_out_mlp,
                 }
             ),
             # kwargs for descriptor
@@ -176,6 +185,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,
@@ -205,6 +217,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,
@@ -234,6 +249,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,
@@ -246,7 +264,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptDPA2TF
     dp_class = DescrptDPA2DP
     pt_class = DescrptDPA2PT
-    args = descrpt_se_atten_args().append(Argument("ntypes", int, optional=False))
+    args = descrpt_dpa2_args().append(Argument("ntypes", int, optional=False))
 
     def setUp(self):
         CommonTest.setUp(self)
@@ -299,6 +317,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,
@@ -361,6 +382,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,
@@ -396,6 +420,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repformer_set_davg_zero,
             repformer_trainable_ln,
             repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
             smooth,
             exclude_types,
             precision,

@@ -1047,6 +1047,9 @@ def dpa2_repformer_args():
     doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
     doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
     doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
+    doc_use_sqrt_nnei = "Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly."
+    doc_g1_out_conv = "Whether to put the convolutional update of g1 separately outside the concatenated MLP update."
+    doc_g1_out_mlp = "Whether to put the self MLP update of g1 separately outside the concatenated MLP update."
     doc_update_h2 = "Update the h2 rep."
     doc_attn1_hidden = (
         "The hidden dimension of localized self-attention to update the g1 rep."
@@ -1166,6 +1169,27 @@ def dpa2_repformer_args():
             optional=True,
             default=True,
             doc=doc_update_g2_has_attn,
+        ),
+        Argument(
+            "use_sqrt_nnei",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_sqrt_nnei,
+        ),
+        Argument(
+            "g1_out_conv",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_g1_out_conv,
+        ),
+        Argument(
+            "g1_out_mlp",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_g1_out_mlp,
         ),
         Argument(
             "update_h2",

@@ -172,6 +172,9 @@ class RepformerArgs:
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         trainable_ln: bool = True,
+        use_sqrt_nnei: bool = False,
+        g1_out_conv: bool = False,
+        g1_out_mlp: bool = False,
         ln_eps: Optional[float] = 1e-5,
     ):
         r"""The constructor for the RepformerArgs class which defines the parameters of the repformer block in DPA2 descriptor.
@@ -236,6 +239,12 @@ class RepformerArgs:
             Set the normalization average to zero.
         trainable_ln : bool, optional
             Whether to use trainable shift and scale weights in layer normalization.
+        use_sqrt_nnei : bool, optional
+            Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly.
+        g1_out_conv : bool, optional
+            Whether to put the convolutional update of g1 separately outside the concatenated MLP update.
+        g1_out_mlp : bool, optional
+            Whether to put the self MLP update of g1 separately outside the concatenated MLP update.
         ln_eps : float, optional
             The epsilon value for layer normalization.
         """
@@ -265,6 +274,9 @@ class RepformerArgs:
         self.update_residual_init = update_residual_init
         self.set_davg_zero = set_davg_zero
         self.trainable_ln = trainable_ln
+        self.use_sqrt_nnei = use_sqrt_nnei
+        self.g1_out_conv = g1_out_conv
+        self.g1_out_mlp = g1_out_mlp
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
@@ -304,6 +316,9 @@ class RepformerArgs:
             "update_residual_init": self.update_residual_init,
             "set_davg_zero": self.set_davg_zero,
             "trainable_ln": self.trainable_ln,
+            "use_sqrt_nnei": self.use_sqrt_nnei,
+            "g1_out_conv": self.g1_out_conv,
+            "g1_out_mlp": self.g1_out_mlp,
             "ln_eps": self.ln_eps,
         }
 
@@ -448,6 +463,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             trainable_ln=self.repformer_args.trainable_ln,
+            use_sqrt_nnei=self.repformer_args.use_sqrt_nnei,
+            g1_out_conv=self.repformer_args.g1_out_conv,
+            g1_out_mlp=self.repformer_args.g1_out_mlp,
             ln_eps=self.repformer_args.ln_eps,
             seed=child_seed(seed, 1),
         )

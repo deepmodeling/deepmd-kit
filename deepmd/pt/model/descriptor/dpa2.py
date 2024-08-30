@@ -210,6 +210,9 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             precision=precision,
             trainable_ln=self.repformer_args.trainable_ln,
             ln_eps=self.repformer_args.ln_eps,
+            use_sqrt_nnei=self.repformer_args.use_sqrt_nnei,
+            g1_out_conv=self.repformer_args.g1_out_conv,
+            g1_out_mlp=self.repformer_args.g1_out_mlp,
             seed=child_seed(seed, 1),
             old_impl=old_impl,
         )
