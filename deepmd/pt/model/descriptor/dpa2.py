@@ -69,6 +69,9 @@ from .repformers import (
 from .se_atten import (
     DescrptBlockSeAtten,
 )
+from .se_t_tebd import (
+    DescrptBlockSeTTebd,
+)
 
 
 @BaseDescriptor.register("dpa2")
@@ -177,6 +180,27 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             type_one_side=self.repinit_args.type_one_side,
             seed=child_seed(seed, 0),
         )
+        self.use_three_body = self.repinit_args.use_three_body
+        if self.repinit_args.use_three_body:
+            self.repinit_three_body = DescrptBlockSeTTebd(
+                self.repinit_args.three_body_rcut,
+                self.repinit_args.three_body_rcut_smth,
+                self.repinit_args.three_body_sel,
+                ntypes,
+                neuron=self.repinit_args.three_body_neuron,
+                tebd_dim=self.repinit_args.tebd_dim,
+                tebd_input_mode=self.repinit_args.tebd_input_mode,
+                set_davg_zero=self.repinit_args.set_davg_zero,
+                exclude_types=exclude_types,
+                env_protection=env_protection,
+                activation_function=self.repinit_args.activation_function,
+                precision=precision,
+                resnet_dt=self.repinit_args.resnet_dt,
+                smooth=smooth,
+                seed=child_seed(seed, 5),
+            )
+        else:
+            self.repinit_three_body = None
         self.repformers = DescrptBlockRepformers(
             self.repformer_args.rcut,
             self.repformer_args.rcut_smth,
@@ -216,6 +240,35 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             seed=child_seed(seed, 1),
             old_impl=old_impl,
         )
+        if not self.use_three_body:
+            self.rcut_list = [self.repformers.get_rcut(), self.repinit.get_rcut()]
+            self.nsel_list = [self.repformers.get_nsel(), self.repinit.get_nsel()]
+        else:
+            if (
+                self.repinit_three_body.get_rcut() >= self.repformers.get_rcut()
+                and self.repinit_three_body.get_nsel() >= self.repformers.get_nsel()
+            ):
+                self.rcut_list = [
+                    self.repformers.get_rcut(),
+                    self.repinit_three_body.get_rcut(),
+                    self.repinit.get_rcut(),
+                ]
+                self.nsel_list = [
+                    self.repformers.get_nsel(),
+                    self.repinit_three_body.get_nsel(),
+                    self.repinit.get_nsel(),
+                ]
+            else:
+                self.rcut_list = [
+                    self.repinit_three_body.get_rcut(),
+                    self.repformers.get_rcut(),
+                    self.repinit.get_rcut(),
+                ]
+                self.nsel_list = [
+                    self.repinit_three_body.get_nsel(),
+                    self.repformers.get_nsel(),
+                    self.repinit.get_nsel(),
+                ]
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
@@ -236,11 +289,16 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
 
-        if self.repinit.dim_out == self.repformers.dim_in:
+        self.repinit_out_dim = self.repinit.dim_out
+        if self.repinit_args.use_three_body:
+            assert self.repinit_three_body is not None
+            self.repinit_out_dim += self.repinit_three_body.dim_out
+
+        if self.repinit_out_dim == self.repformers.dim_in:
             self.g1_shape_tranform = Identity()
         else:
             self.g1_shape_tranform = MLPLayer(
-                self.repinit.dim_out,
+                self.repinit_out_dim,
                 self.repformers.dim_in,
                 bias=False,
                 precision=precision,
@@ -386,6 +444,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         self.ntypes = len(type_map)
         repinit = self.repinit
         repformers = self.repformers
+        repinit_three_body = self.repinit_three_body
         if has_new_type:
             # the avg and std of new types need to be updated
             extend_descrpt_stat(
@@ -402,6 +461,14 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 if model_with_new_type_stat is not None
                 else None,
             )
+            if self.use_three_body:
+                extend_descrpt_stat(
+                    repinit_three_body,
+                    type_map,
+                    des_with_stat=model_with_new_type_stat.repinit_three_body
+                    if model_with_new_type_stat is not None
+                    else None,
+                )
         repinit.ntypes = self.ntypes
         repformers.ntypes = self.ntypes
         repinit.reinit_exclude(self.exclude_types)
@@ -410,6 +477,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         repinit["dstd"] = repinit["dstd"][remap_index]
         repformers["davg"] = repformers["davg"][remap_index]
         repformers["dstd"] = repformers["dstd"][remap_index]
+        if self.use_three_body:
+            repinit_three_body.ntypes = self.ntypes
+            repinit_three_body.reinit_exclude(self.exclude_types)
+            repinit_three_body["davg"] = repinit_three_body["davg"][remap_index]
+            repinit_three_body["dstd"] = repinit_three_body["dstd"][remap_index]
 
     @property
     def dim_out(self):
@@ -464,6 +536,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
     def serialize(self) -> dict:
         repinit = self.repinit
         repformers = self.repformers
+        repinit_three_body = self.repinit_three_body
         data = {
             "@class": "Descriptor",
             "type": "dpa2",
@@ -517,6 +590,28 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 "repformers_variable": repformers_variable,
             }
         )
+        if self.use_three_body:
+            repinit_three_body_variable = {
+                "embeddings": repinit_three_body.filter_layers.serialize(),
+                "env_mat": DPEnvMat(
+                    repinit_three_body.rcut, repinit_three_body.rcut_smth
+                ).serialize(),
+                "@variables": {
+                    "davg": to_numpy_array(repinit_three_body["davg"]),
+                    "dstd": to_numpy_array(repinit_three_body["dstd"]),
+                },
+            }
+            if repinit_three_body.tebd_input_mode in ["strip"]:
+                repinit_three_body_variable.update(
+                    {
+                        "embeddings_strip": repinit_three_body.filter_layers_strip.serialize()
+                    }
+                )
+            data.update(
+                {
+                    "repinit_three_body_variable": repinit_three_body_variable,
+                }
+            )
         return data
 
     @classmethod
@@ -527,6 +622,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
         repformers_variable = data.pop("repformers_variable").copy()
+        repinit_three_body_variable = (
+            data.pop("repinit_three_body_variable").copy()
+            if "repinit_three_body_variable" in data
+            else None
+        )
         type_embedding = data.pop("type_embedding")
         g1_shape_tranform = data.pop("g1_shape_tranform")
         tebd_transform = data.pop("tebd_transform", None)
@@ -562,6 +662,23 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             )
         obj.repinit["davg"] = t_cvt(statistic_repinit["davg"])
         obj.repinit["dstd"] = t_cvt(statistic_repinit["dstd"])
+
+        if data["repinit"].use_three_body:
+            # deserialize repinit_three_body
+            statistic_repinit_three_body = repinit_three_body_variable.pop("@variables")
+            env_mat = repinit_three_body_variable.pop("env_mat")
+            tebd_input_mode = data["repinit"].tebd_input_mode
+            obj.repinit_three_body.filter_layers = NetworkCollection.deserialize(
+                repinit_three_body_variable.pop("embeddings")
+            )
+            if tebd_input_mode in ["strip"]:
+                obj.repinit_three_body.filter_layers_strip = (
+                    NetworkCollection.deserialize(
+                        repinit_three_body_variable.pop("embeddings_strip")
+                    )
+                )
+            obj.repinit_three_body["davg"] = t_cvt(statistic_repinit_three_body["davg"])
+            obj.repinit_three_body["dstd"] = t_cvt(statistic_repinit_three_body["dstd"])
 
         # deserialize repformers
         statistic_repformers = repformers_variable.pop("@variables")
@@ -617,14 +734,15 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         # nlists
         nlist_dict = build_multiple_neighbor_list(
             extended_coord,
             nlist,
-            [self.repformers.get_rcut(), self.repinit.get_rcut()],
-            [self.repformers.get_nsel(), self.repinit.get_nsel()],
+            self.rcut_list,
+            self.nsel_list,
         )
         # repinit
         g1_ext = self.type_embedding(extended_atype)
@@ -638,6 +756,21 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             g1_ext,
             mapping,
         )
+        if use_three_body:
+            assert self.repinit_three_body is not None
+            g1_three_body, __, __, __, __ = self.repinit_three_body(
+                nlist_dict[
+                    get_multiple_nlist_key(
+                        self.repinit_three_body.get_rcut(),
+                        self.repinit_three_body.get_nsel(),
+                    )
+                ],
+                extended_coord,
+                extended_atype,
+                g1_ext,
+                mapping,
+            )
+            g1 = torch.cat([g1, g1_three_body], dim=-1)
         # linear to change shape
         g1 = self.g1_shape_tranform(g1)
         if self.add_tebd_to_repinit_out:

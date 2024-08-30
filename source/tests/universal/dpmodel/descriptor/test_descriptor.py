@@ -323,6 +323,7 @@ def DescriptorParamDPA2(
     repinit_tebd_input_mode="concat",
     repinit_set_davg_zero=False,
     repinit_type_one_side=False,
+    repinit_use_three_body=False,
     repformer_direct_dist=False,
     repformer_update_g1_has_conv=True,
     repformer_update_g1_has_drrd=True,
@@ -363,6 +364,10 @@ def DescriptorParamDPA2(
                 "set_davg_zero": repinit_set_davg_zero,
                 "activation_function": "tanh",
                 "type_one_side": repinit_type_one_side,
+                "use_three_body": repinit_use_three_body,
+                "three_body_sel": min(sum(sel) // 2, 10),
+                "three_body_rcut": rcut / 2,
+                "three_body_rcut_smth": rcut_smth / 2,
             }
         ),
         # kwargs for repformer
@@ -423,6 +428,7 @@ DescriptorParamDPA2List = parameterize_func(
             "repinit_tebd_input_mode": ("concat", "strip"),
             "repinit_set_davg_zero": (True,),
             "repinit_type_one_side": (False,),
+            "repinit_use_three_body": (True, False),
             "repformer_direct_dist": (False,),
             "repformer_update_g1_has_conv": (True,),
             "repformer_update_g1_has_drrd": (True,),

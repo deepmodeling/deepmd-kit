@@ -45,6 +45,7 @@ from deepmd.utils.argcheck import (
     ("concat", "strip"),  # repinit_tebd_input_mode
     (True,),  # repinit_set_davg_zero
     (False,),  # repinit_type_one_side
+    (True, False),  # repinit_use_three_body
     (True, False),  # repformer_direct_dist
     (True,),  # repformer_update_g1_has_conv
     (True,),  # repformer_update_g1_has_drrd
@@ -76,6 +77,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -115,6 +117,10 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
                     "set_davg_zero": repinit_set_davg_zero,
                     "activation_function": "tanh",
                     "type_one_side": repinit_type_one_side,
+                    "use_three_body": repinit_use_three_body,
+                    "three_body_sel": 8,
+                    "three_body_rcut": 4.0,
+                    "three_body_rcut_smth": 3.5,
                 }
             ),
             # kwargs for repformer
@@ -171,6 +177,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -203,6 +210,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -235,6 +243,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -303,6 +312,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -368,6 +378,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
@@ -406,6 +417,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_tebd_input_mode,
             repinit_set_davg_zero,
             repinit_type_one_side,
+            repinit_use_three_body,
             repformer_update_g1_has_conv,
             repformer_direct_dist,
             repformer_update_g1_has_drrd,
