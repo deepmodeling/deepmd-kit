@@ -2324,7 +2324,7 @@ def loss_dos():
 @loss_args_plugin.register("property")
 def loss_property():
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
-    doc_metric = "The metric such as 'mae','smooth_mae' for display."
+    doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
     doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
     return [
         Argument(
