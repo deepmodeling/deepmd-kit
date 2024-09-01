@@ -407,6 +407,7 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
 @parameterized(
     des_parameterized=(
         (
+            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybridMixed, DescrptHybrid),
@@ -416,6 +417,7 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
     ),
     fit_parameterized=(
         (
+            (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
