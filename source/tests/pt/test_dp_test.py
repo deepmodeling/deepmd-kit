@@ -23,9 +23,9 @@ from deepmd.pt.utils.utils import (
 )
 
 from .model.test_permutation import (
+    model_property,
     model_se_e2_a,
     model_spin,
-    model_property,
 )
 
 
@@ -139,6 +139,7 @@ class TestDPTestSeASpin(DPTest, unittest.TestCase):
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
 
+
 class TestDPTestPropertySeA(unittest.TestCase):
     def setUp(self):
         self.detail_file = "test_dp_test_property_detail"
@@ -192,6 +193,7 @@ class TestDPTestPropertySeA(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+
 
 if __name__ == "__main__":
     unittest.main()

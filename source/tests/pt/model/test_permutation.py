@@ -261,7 +261,7 @@ model_property = {
     "type_map": ["H", "C", "N", "O"],
     "descriptor": {
         "type": "se_e2_a",
-        "sel": [3, 3, 3,3],
+        "sel": [3, 3, 3, 3],
         "rcut_smth": 0.50,
         "rcut": 4.00,
         "neuron": [25, 50, 100],
@@ -276,9 +276,10 @@ model_property = {
         "resnet_dt": True,
         "bias_method": "normal",
         "intensive": True,
-        "seed": 1
+        "seed": 1,
     },
 }
+
 
 class PermutationTest:
     def test(
