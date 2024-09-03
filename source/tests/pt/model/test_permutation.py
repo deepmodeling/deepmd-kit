@@ -257,6 +257,28 @@ model_hybrid = {
     "_comment": " that's all",
 }
 
+model_property = {
+    "type_map": ["H", "C", "N", "O"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [3, 3, 3,3],
+        "rcut_smth": 0.50,
+        "rcut": 4.00,
+        "neuron": [25, 50, 100],
+        "resnet_dt": False,
+        "axis_neuron": 16,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "property",
+        "task_dim": 3,
+        "neuron": [24, 24, 24],
+        "resnet_dt": True,
+        "bias_method": "normal",
+        "intensive": True,
+        "seed": 1
+    },
+}
 
 class PermutationTest:
     def test(

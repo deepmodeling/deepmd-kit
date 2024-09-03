@@ -25,6 +25,7 @@ from deepmd.pt.utils.utils import (
 from .model.test_permutation import (
     model_se_e2_a,
     model_spin,
+    model_property,
 )
 
 
@@ -138,6 +139,59 @@ class TestDPTestSeASpin(DPTest, unittest.TestCase):
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)
 
+class TestDPTestPropertySeA(unittest.TestCase):
+    def setUp(self):
+        self.detail_file = "test_dp_test_property_detail"
+        input_json = str(Path(__file__).parent / "property/input.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        data_file = [str(Path(__file__).parent / "property/single")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_property)
+        self.input_json = "test_dp_test_property.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+
+    def test_dp_test_1_frame(self):
+        trainer = get_trainer(deepcopy(self.config))
+        with torch.device("cpu"):
+            input_dict, label_dict, _ = trainer.get_data(is_train=False)
+        input_dict.pop("spin", None)
+        result = trainer.model(**input_dict)
+        model = torch.jit.script(trainer.model)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp_test(
+            model=tmp_model.name,
+            system=self.config["training"]["validation_data"]["systems"][0],
+            datafile=None,
+            set_prefix="set",
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=self.detail_file,
+            atomic=True,
+        )
+        os.unlink(tmp_model.name)
+        pred_property = np.loadtxt(self.detail_file + ".property.out.0")[:, 1]
+        np.testing.assert_almost_equal(
+            pred_property,
+            to_numpy_array(result["property"])[0],
+        )
+
+    def tearDown(self):
+        for f in os.listdir("."):
+            if f.startswith("model") and f.endswith(".pt"):
+                os.remove(f)
+            if f.startswith(self.detail_file):
+                os.remove(f)
+            if f in ["lcurve.out", self.input_json]:
+                os.remove(f)
+            if f in ["stat_files"]:
+                shutil.rmtree(f)
 
 if __name__ == "__main__":
     unittest.main()
