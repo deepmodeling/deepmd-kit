@@ -59,6 +59,7 @@ jobs:
       with:
         name: split-${{ matrix.python }}-${{ matrix.group }}
         path: .test_durations_${{ matrix.group }}
+        include-hidden-files: true
     - uses: codecov/codecov-action@v4
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
