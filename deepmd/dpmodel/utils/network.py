@@ -147,9 +147,9 @@ class NativeLayer(NativeOP):
             variables.get("idt", None),
         )
         if obj.b is not None:
-            obj.b = obj.b.ravel()
+            obj.b = obj.b.flatten()
         if obj.idt is not None:
-            obj.idt = obj.idt.ravel()
+            obj.idt = obj.idt.flatten()
         obj.check_shape_consistency()
         return obj
 

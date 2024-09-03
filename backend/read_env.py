@@ -13,6 +13,9 @@ from packaging.version import (
     Version,
 )
 
+from .find_paddle import (
+    find_paddle,
+)
 from .find_pytorch import (
     find_pytorch,
     get_pt_version,
@@ -116,6 +119,19 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
         )
     else:
         cmake_args.append("-DENABLE_PYTORCH=OFF")
+        pt_version = None
+
+    if os.environ.get("DP_ENABLE_PADDLE", "0") == "1":
+        pd_install_dir, _ = find_paddle()
+        pt_version = get_pt_version(pd_install_dir)
+        cmake_args.extend(
+            [
+                "-DENABLE_PADDLE=ON",
+                f"-DCMAKE_PREFIX_PATH={pd_install_dir}",
+            ]
+        )
+    else:
+        cmake_args.append("-DENABLE_PADDLE=OFF")
         pt_version = None
 
     cmake_args = [

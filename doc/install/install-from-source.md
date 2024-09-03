@@ -167,7 +167,7 @@ The path to the ROCM toolkit directory.
 
 :::{envvar} DP_ENABLE_PYTORCH
 
-**Choices**: `0`, `1`; **Default**: `1`
+**Choices**: `0`, `1`; **Default**: `0`
 
 {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
 :::
