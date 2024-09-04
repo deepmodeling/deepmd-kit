@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """PyTorch backend implementaion of DeepEval.
+    """Paddle backend implementaion of DeepEval.
 
     Parameters
     ----------
@@ -118,8 +118,8 @@ class DeepEval(DeepEvalBackend):
             model = get_model(self.input_param).to(DEVICE)
             model = paddle.jit.to_static(model)
             self.dp = ModelWrapper(model)
-            self.dp.load_state_dict(state_dict)
-        elif str(self.model_path).endswith(".pth"):
+            self.dp.set_state_dict(state_dict)
+        elif str(self.model_path).endswith(".pdparams"):
             model = paddle.jit.load(model_file)
             self.dp = ModelWrapper(model)
         else:

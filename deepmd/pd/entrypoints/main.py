@@ -364,8 +364,8 @@ def show(FLAGS):
         model_params = json.loads(model_params_string)
     else:
         raise RuntimeError(
-            "The model provided must be a checkpoint file with a .pd extension "
-            "or a frozen model with a .pth extension"
+            "The model provided must be a checkpoint file with a .pdparams extension "
+            "or a frozen model with a .pdmodel extension"
         )
     model_is_multi_task = "model_dict" in model_params
     log.info("This is a multitask model") if model_is_multi_task else log.info(
@@ -417,12 +417,12 @@ def show(FLAGS):
 
 
 def change_bias(FLAGS):
-    if FLAGS.INPUT.endswith(".pd"):
+    if FLAGS.INPUT.endswith(".pdparams"):
         old_state_dict = paddle.load(FLAGS.INPUT)
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
-    elif FLAGS.INPUT.endswith(".pth"):
-        old_model = paddle.jit.load(FLAGS.INPUT)
+    elif FLAGS.INPUT.endswith(".pdmodel"):
+        old_model = paddle.jit.load(FLAGS.INPUT[: -len(".pdmodel")])
         model_params_string = old_model.get_model_def_script()
         model_params = json.loads(model_params_string)
         old_state_dict = old_model.state_dict()
@@ -430,7 +430,7 @@ def change_bias(FLAGS):
     else:
         raise RuntimeError(
             "The model provided must be a checkpoint file with a .pd extension "
-            "or a frozen model with a .pth extension"
+            "or a frozen model with a .pdparams extension"
         )
     multi_task = "model_dict" in model_params
     model_branch = FLAGS.model_branch
@@ -455,10 +455,10 @@ def change_bias(FLAGS):
     model_to_change = model if not multi_task else model[model_branch]
     if FLAGS.INPUT.endswith(".pd"):
         wrapper = ModelWrapper(model)
-        wrapper.load_state_dict(old_state_dict["model"])
+        wrapper.set_state_dict(old_state_dict["model"])
     else:
-        # for .pth
-        model.load_state_dict(old_state_dict)
+        # for .pdparams
+        model.set_state_dict(old_state_dict)
 
     if FLAGS.bias_value is not None:
         # use user-defined bias
@@ -528,11 +528,11 @@ def change_bias(FLAGS):
             old_state_dict["_extra_state"] = model_state_dict["_extra_state"]
         paddle.save(old_state_dict, output_path)
     else:
-        # for .pth
+        # for .pdparams
         output_path = (
             FLAGS.output
             if FLAGS.output is not None
-            else FLAGS.INPUT.replace(".pth", "_updated.pth")
+            else FLAGS.INPUT.replace(".pdparams", "_updated.pdparams")
         )
         model = paddle.jit.script(model)
         paddle.jit.save(
@@ -550,7 +550,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     else:
         FLAGS = args
 
-    set_log_handles(FLAGS.log_level, FLAGS.log_path, mpi_log=None)
+    set_log_handles(FLAGS.log_level, Path(FLAGS.log_path), mpi_log=None)
     log.debug("Log handles were successfully set")
     log.info("DeePMD version: %s", __version__)
 
@@ -563,7 +563,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
         else:
             FLAGS.model = FLAGS.checkpoint_folder
-        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pdparams"))
         freeze(FLAGS)
     elif FLAGS.command == "show":
         show(FLAGS)

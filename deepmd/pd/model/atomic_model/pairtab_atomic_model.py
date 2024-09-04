@@ -15,6 +15,7 @@ from deepmd.dpmodel import (
     OutputVariableDef,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.utils.pair_tab import (
@@ -383,10 +384,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         nframes, nloc, nnei = nlist.shape
         coord_l = coords[:, :nloc].reshape([nframes, -1, 1, 3])
         index = nlist.reshape([nframes, -1]).unsqueeze(-1).expand(-1, -1, 3)
-        coord_r = paddle.take_along_axis(coords, axis=1, indices=index)
+        # coord_r = paddle.take_along_axis(coords, axis=1, indices=index)
+        coord_r = aux.take_along_axis(coords, axis=1, indices=index)
         coord_r = coord_r.reshape([nframes, nloc, nnei, 3])
         diff = coord_r - coord_l
-        pairwise_rr = paddle.linalg.norm(diff, axis=-1, keepdim=True).squeeze(-1)
+        # pairwise_rr = paddle.linalg.norm(diff, axis=-1, keepdim=True).squeeze(-1)
+        pairwise_rr = aux.norm(diff, axis=-1, keepdim=True).squeeze(-1)
         return pairwise_rr
 
     @staticmethod
@@ -437,7 +440,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         # tab_data_idx: (nframes * nloc * nnei, 4)
         tab_data_idx = tab_data_idx.reshape([nframes * nloc * nnei, 1]).expand(-1, 4)
         # (nframes, nloc, nnei, 4)
-        final_coef = paddle.take_along_axis(
+        # final_coef = paddle.take_along_axis(
+        #     tab_data, axis=0, indices=tab_data_idx
+        # ).reshape([nframes, nloc, nnei, 4])
+        final_coef = aux.take_along_axis(
             tab_data, axis=0, indices=tab_data_idx
         ).reshape([nframes, nloc, nnei, 4])
 

@@ -152,15 +152,18 @@ def calculate_gain(nonlinearity, param=None):
         raise ValueError(f"Unsupported nonlinearity {nonlinearity}")
 
 
-def _calculate_fan_in_and_fan_out(tensor):
+def _calculate_fan_in_and_fan_out(tensor, reverse=False):
     dimensions = tensor.ndim
     if dimensions < 2:
         raise ValueError(
             "Fan in and fan out can not be computed for tensor with fewer than 2 dimensions"
         )
 
-    num_input_fmaps = tensor.shape[1]
-    num_output_fmaps = tensor.shape[0]
+    if reverse:
+        num_input_fmaps, num_output_fmaps = tensor.shape[0], tensor.shape[1]
+    else:
+        num_input_fmaps, num_output_fmaps = tensor.shape[1], tensor.shape[0]
+
     receptive_field_size = 1
     if tensor.ndim > 2:
         # math.prod is not always available, accumulate the product manually
@@ -173,13 +176,13 @@ def _calculate_fan_in_and_fan_out(tensor):
     return fan_in, fan_out
 
 
-def _calculate_correct_fan(tensor: paddle.Tensor, mode):
+def _calculate_correct_fan(tensor, mode, reverse=False):
     mode = mode.lower()
     valid_modes = ["fan_in", "fan_out"]
     if mode not in valid_modes:
         raise ValueError(f"Mode {mode} not supported, please use one of {valid_modes}")
 
-    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor, reverse)
     return fan_in if mode == "fan_in" else fan_out
 
 
@@ -296,6 +299,7 @@ def kaiming_uniform_(
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
     generator: _Optional[paddle.Generator] = None,
+    reverse: bool = False,
 ):
     r"""Fill the input `Tensor` with values using a Kaiming uniform distribution.
 
@@ -320,6 +324,8 @@ def kaiming_uniform_(
         nonlinearity: the non-linear function (`nn.functional` name),
             recommended to use only with ``'relu'`` or ``'leaky_relu'`` (default).
         generator: the paddle Generator to sample from (default: None)
+        reverse (bool, optional): Tensor data format order, False by default as
+            [fout, fin, ...].. Defaults to False.
 
     Examples
     --------
@@ -340,7 +346,7 @@ def kaiming_uniform_(
     if 0 in tensor.shape:
         warnings.warn("Initializing zero-element tensors is a no-op")
         return tensor
-    fan = _calculate_correct_fan(tensor, mode)
+    fan = _calculate_correct_fan(tensor, mode, reverse)
     gain = calculate_gain(nonlinearity, a)
     std = gain / math.sqrt(fan)
     bound = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
@@ -354,6 +360,7 @@ def kaiming_normal_(
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
     generator: _Optional[paddle.Generator] = None,
+    reverse: bool = False,
 ):
     r"""Fill the input `Tensor` with values using a Kaiming normal distribution.
 
@@ -378,6 +385,8 @@ def kaiming_normal_(
         nonlinearity: the non-linear function (`nn.functional` name),
             recommended to use only with ``'relu'`` or ``'leaky_relu'`` (default).
         generator: the paddle Generator to sample from (default: None)
+        reverse (bool, optional): Tensor data format order, False by default as
+            [fout, fin, ...].. Defaults to False.
 
     Examples
     --------
@@ -387,7 +396,7 @@ def kaiming_normal_(
     if 0 in tensor.shape:
         warnings.warn("Initializing zero-element tensors is a no-op")
         return tensor
-    fan = _calculate_correct_fan(tensor, mode)
+    fan = _calculate_correct_fan(tensor, mode, reverse)
     gain = calculate_gain(nonlinearity, a)
     std = gain / math.sqrt(fan)
     with paddle.no_grad():
@@ -395,7 +404,10 @@ def kaiming_normal_(
 
 
 def xavier_uniform_(
-    tensor: Tensor, gain: float = 1.0, generator: _Optional[paddle.Generator] = None
+    tensor: Tensor,
+    gain: float = 1.0,
+    generator: _Optional[paddle.Generator] = None,
+    reverse: bool = False,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Xavier uniform distribution.
 
@@ -413,13 +425,15 @@ def xavier_uniform_(
         tensor: an n-dimensional `paddle.Tensor`
         gain: an optional scaling factor
         generator: the paddle Generator to sample from (default: None)
+        reverse (bool, optional): Tensor data format order, False by default as
+            [fout, fin, ...].. Defaults to False.
 
     Examples
     --------
         >>> w = paddle.empty(3, 5)
         >>> nn.init.xavier_uniform_(w, gain=nn.init.calculate_gain("relu"))
     """
-    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor, reverse=reverse)
     std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
     a = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
 
@@ -430,6 +444,7 @@ def xavier_normal_(
     tensor: Tensor,
     gain: float = 1.0,
     generator: _Optional[paddle.Generator] = None,
+    reverse: bool = False,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Xavier normal distribution.
 
@@ -446,13 +461,15 @@ def xavier_normal_(
         tensor: an n-dimensional `paddle.Tensor`
         gain: an optional scaling factor
         generator: the paddle Generator to sample from (default: None)
+        reverse (bool, optional): Tensor data format order, False by
+            default as [fout, fin, ...]. Defaults to False.
 
     Examples
     --------
         >>> w = paddle.empty(3, 5)
         >>> nn.init.xavier_normal_(w)
     """
-    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
+    fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor, reverse=reverse)
     std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
 
     return _no_grad_normal_(tensor, 0.0, std, generator)

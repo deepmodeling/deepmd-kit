@@ -11,6 +11,7 @@ from deepmd.pd.loss.loss import (
     TaskLoss,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -224,7 +225,8 @@ class EnergyStdLoss(TaskLoss):
 
             if self.relative_f is not None:
                 force_label_3 = force_label.reshape([-1, 3])
-                norm_f = force_label_3.norm(axis=1, keepdim=True) + self.relative_f
+                # norm_f = force_label_3.norm(axis=1, keepdim=True) + self.relative_f
+                norm_f = aux.norm(force_label_3, axis=1, keepdim=True) + self.relative_f
                 diff_f_3 = diff_f.reshape([-1, 3])
                 diff_f_3 = diff_f_3 / norm_f
                 diff_f = diff_f_3.reshape([-1])

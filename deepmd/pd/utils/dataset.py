@@ -37,7 +37,7 @@ class DeepmdDataSetForLoader(Dataset):
 
     def __getitem__(self, index):
         """Get a frame from the selected system."""
-        b_data = self._data_system.get_item_torch(index)
+        b_data = self._data_system.get_item_paddle(index)
         b_data["natoms"] = self._natoms_vec
         return b_data
 

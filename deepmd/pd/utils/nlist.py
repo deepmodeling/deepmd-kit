@@ -9,6 +9,7 @@ from typing import (
 import paddle
 
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.region import (
@@ -26,7 +27,6 @@ def extend_input_and_build_neighbor_list(
     box: Optional[paddle.Tensor] = None,
 ):
     nframes, nloc = atype.shape[:2]
-    nloc = 192
     if box is not None:
         box_gpu = box.to(coord.place)
         coord_normalized = normalize_coord(
@@ -119,7 +119,8 @@ def build_neighbor_list(
     ).unsqueeze(2)
     assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
-    rr = paddle.linalg.norm(diff, axis=-1)
+    # rr = paddle.linalg.norm(diff, axis=-1)
+    rr = aux.norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
     rr -= paddle.eye(nloc, nall, dtype=rr.dtype).to(device=rr.place).unsqueeze(0)
     rr, nlist = paddle.sort(rr, axis=-1), paddle.argsort(rr, axis=-1)
@@ -261,7 +262,8 @@ def build_directional_neighbor_list(
     diff = coord_neig[:, None, :, :] - coord_cntl[:, :, None, :]
     assert list(diff.shape) == [batch_size, nloc_cntl, nall_neig, 3]
     # nloc x nall
-    rr = paddle.linalg.norm(diff, axis=-1)
+    # rr = paddle.linalg.norm(diff, axis=-1)
+    rr = aux.norm(diff, axis=-1)
     rr, nlist = paddle.sort(rr, axis=-1), paddle.argsort(rr, axis=-1)
 
     # We assume that the central and neighbor atoms are diffferent,
@@ -293,7 +295,12 @@ def nlist_distinguish_types(
     tmp_atype = paddle.tile(atype.unsqueeze(1), [1, nloc, 1])
     mask = nlist == -1
     # nloc x s(nsel)
-    tnlist = paddle.take_along_axis(
+    # tnlist = paddle.take_along_axis(
+    #     tmp_atype,
+    #     axis=2,
+    #     indices=nlist.masked_fill(mask, 0),
+    # )
+    tnlist = aux.take_along_axis(
         tmp_atype,
         axis=2,
         indices=nlist.masked_fill(mask, 0),
@@ -310,7 +317,8 @@ def nlist_distinguish_types(
             paddle.argsort(pick_mask, axis=-1, descending=True, stable=True),
         )
         # nloc x s(nsel)
-        inlist = paddle.take_along_axis(nlist, axis=2, indices=imap)
+        # inlist = paddle.take_along_axis(nlist, axis=2, indices=imap)
+        inlist = aux.take_along_axis(nlist, axis=2, indices=imap)
         inlist = inlist.masked_fill(~(pick_mask.to(paddle.bool)), -1)
         # nloc x nsel[ii]
         ret_nlist.append(paddle.split(inlist, [ss, snsel - ss], axis=-1)[0])
@@ -386,13 +394,17 @@ def build_multiple_neighbor_list(
         .expand(-1, -1, 3)
     )
     # nb x nloc x nsel x 3
-    coord2 = paddle.take_along_axis(coord1, axis=1, index=index).reshape(
+    # coord2 = paddle.take_along_axis(coord1, axis=1, index=index).reshape(
+    #     [nb, nloc, nsel, 3]
+    # )
+    coord2 = aux.take_along_axis(coord1, axis=1, index=index).reshape(
         [nb, nloc, nsel, 3]
     )
     # nb x nloc x nsel x 3
     diff = coord2 - coord0[:, :, None, :]
     # nb x nloc x nsel
-    rr = paddle.linalg.norm(diff, axis=-1)
+    # rr = paddle.linalg.norm(diff, axis=-1)
+    rr = aux.norm(diff, axis=-1)
     rr.masked_fill(nlist_mask, float("inf"))
     nlist0 = nlist
     ret = {}
@@ -439,7 +451,7 @@ def extend_coord_with_ghosts(
     device = coord.place
     nf, nloc = atype.shape[:2]
     nloc = 192
-    aidx = paddle.tile(paddle.arange(nloc).to(device="gpu:0").unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
+    aidx = paddle.tile(paddle.arange(nloc).to(device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()
@@ -474,9 +486,10 @@ def extend_coord_with_ghosts(
         xyz = xyz + yi.reshape([1, -1, 1, 1]) * eye_3[1]
         xyz = xyz + zi.reshape([1, 1, -1, 1]) * eye_3[2]
         xyz = xyz.reshape([-1, 3])
-        xyz = xyz.to(device="gpu:0")
+        xyz = xyz.to(device=device)
         # ns x 3
-        shift_idx = xyz[paddle.argsort(paddle.norm(xyz, axis=1))]
+        # shift_idx = xyz[paddle.argsort(paddle.norm(xyz, axis=1))]
+        shift_idx = xyz[paddle.argsort(aux.norm(xyz, axis=1))]
         ns, _ = shift_idx.shape
         nall = ns * nloc
         # nf x ns x 3

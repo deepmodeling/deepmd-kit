@@ -28,6 +28,9 @@ from deepmd.pd.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
+from deepmd.pd.utils import (
+    aux,
+)
 from deepmd.pd.utils.env import (
     GLOBAL_PD_ENER_FLOAT_PRECISION,
     GLOBAL_PD_FLOAT_PRECISION,
@@ -438,7 +441,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 # nf x nloc x nnei x 3
                 coord1 = coord1.reshape([n_nf, n_nloc, n_nnei, 3])
                 # nf x nloc x nnei
-                rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                # rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                rr = aux.norm(coord0[:, :, None, :] - coord1, axis=-1)
                 rr = paddle.where(m_real_nei, rr, float("inf"))
                 rr, nlist_mapping = paddle.sort(rr, axis=-1)
                 nlist = paddle.gather(nlist, 2, nlist_mapping)

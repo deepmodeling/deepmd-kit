@@ -248,6 +248,21 @@ class DeepmdData:
         frame["fid"] = index
         return frame
 
+    def get_item_paddle(self, index: int) -> dict:
+        """Get a single frame data . The frame is picked from the data system by index. The index is coded across all the sets.
+
+        Parameters
+        ----------
+        index
+            index of the frame
+        """
+        i = bisect.bisect_right(self.prefix_sum, index)
+        frames = self._load_set(self.dirs[i])
+        frame = self._get_subdata(frames, index - self.prefix_sum[i])
+        frame = self.reformat_data_torch(frame)
+        frame["fid"] = index
+        return frame
+
     def get_batch(self, batch_size: int) -> dict:
         """Get a batch of data with `batch_size` frames. The frames are randomly picked from the data system.
 
@@ -480,6 +495,25 @@ class DeepmdData:
             else:
                 if kk in data and self.data_dict[kk]["atomic"]:
                     data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
+        data["atype"] = data["type"]
+        if not self.pbc:
+            data["box"] = None
+        return data
+
+    def reformat_data_paddle(self, data):
+        """Modify the data format for the requirements of Torch backend.
+
+        Parameters
+        ----------
+        data
+            original data
+        """
+        for kk in self.data_dict.keys():
+            if "find_" in kk:
+                pass
+            else:
+                if kk in data and self.data_dict[kk]["atomic"]:
+                    data[kk] = data[kk].reshape([-1, self.data_dict[kk]["ndof"]])
         data["atype"] = data["type"]
         if not self.pbc:
             data["box"] = None

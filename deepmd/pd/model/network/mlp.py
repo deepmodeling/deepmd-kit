@@ -102,6 +102,7 @@ class MLPLayer(nn.Layer):
         self.prec = PRECISION_DICT[self.precision]
         self.matrix = self.create_parameter(
             (num_in, num_out),
+            dtype=self.prec,
             default_initializer=nn.initializer.Assign(
                 empty_t((num_in, num_out), self.prec)
             ),
@@ -110,6 +111,7 @@ class MLPLayer(nn.Layer):
         if bias:
             self.bias = self.create_parameter(
                 [num_out],
+                dtype=self.prec,
                 default_initializer=nn.initializer.Assign(
                     empty_t([num_out], self.prec)
                 ),
@@ -119,6 +121,7 @@ class MLPLayer(nn.Layer):
         if self.use_timestep:
             self.idt = self.create_parameter(
                 [num_out],
+                dtype=self.prec,
                 default_initializer=nn.initializer.Assign(
                     empty_t([num_out], self.prec)
                 ),
@@ -283,17 +286,14 @@ class MLPLayer(nn.Layer):
         prec = PRECISION_DICT[obj.precision]
 
         def check_load_param(ss):
-            return (
-                paddle.create_parameter(
-                    nl[ss].shape,
-                    DEFAULT_PRECISION,
-                    default_initializer=paddle.nn.initializer.Assign(
-                        to_paddle_tensor(nl[ss])
-                    ),
+            if nl[ss] is not None:
+                tensor = to_paddle_tensor(nl[ss])
+                return paddle.create_parameter(
+                    tensor.shape,
+                    dtype=tensor.dtype,
+                    default_initializer=paddle.nn.initializer.Assign(tensor),
                 )
-                if nl[ss] is not None
-                else None
-            )
+            return None
 
         obj.matrix = check_load_param("matrix")
         obj.bias = check_load_param("bias")

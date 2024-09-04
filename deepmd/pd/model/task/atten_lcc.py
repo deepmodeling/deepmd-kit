@@ -2,6 +2,9 @@
 import paddle
 import paddle.nn as nn
 
+from deepmd.pd.model.network import (
+    init,
+)
 from deepmd.pd.model.network.network import (
     EnergyHead,
     NodeTaskHead,
@@ -22,7 +25,7 @@ class FittingNetAttenLcc(Fitting):
         self.embedding_width = embedding_width
         self.engergy_proj = EnergyHead(self.embedding_width, 1)
         self.energe_agg_factor = nn.Embedding(4, 1, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-        nn.init.normal_(self.energe_agg_factor.weight, 0, 0.01)
+        init.normal_(self.energe_agg_factor.weight, 0, 0.01)
         bias_atom_e = paddle.to_tensor(bias_atom_e)  # pylint: disable=no-explicit-dtype,no-explicit-device
         self.register_buffer("bias_atom_e", bias_atom_e)
         self.pair_embed_dim = pair_embed_dim

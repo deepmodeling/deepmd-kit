@@ -51,10 +51,10 @@ def load_library(module_name: str) -> bool:
             if PT_CXX11_ABI_FLAG != pt_cxx11_abi_flag:
                 raise RuntimeError(
                     "This deepmd-kit package was compiled with "
-                    "CXX11_ABI_FLAG=%d, but PyTorch runtime was compiled "
+                    "CXX11_ABI_FLAG=%d, but Paddle runtime was compiled "
                     "with CXX11_ABI_FLAG=%d. These two library ABIs are "
                     "incompatible and thus an error is raised when loading %s. "
-                    "You need to rebuild deepmd-kit against this PyTorch "
+                    "You need to rebuild deepmd-kit against this Paddle "
                     "runtime."
                     % (
                         PT_CXX11_ABI_FLAG,
@@ -66,20 +66,20 @@ def load_library(module_name: str) -> bool:
             # different versions may cause incompatibility, see TF
             if PT_VERSION != pt_py_version:
                 raise RuntimeError(
-                    "The version of PyTorch used to compile this "
-                    f"deepmd-kit package is {PT_VERSION}, but the version of PyTorch "
+                    "The version of Paddle used to compile this "
+                    f"deepmd-kit package is {PT_VERSION}, but the version of Paddle "
                     f"runtime you are using is {pt_py_version}. These two versions are "
                     f"incompatible and thus an error is raised when loading {module_name}. "
-                    f"You need to install PyTorch {PT_VERSION}, or rebuild deepmd-kit "
-                    f"against PyTorch {pt_py_version}.\nIf you are using a wheel from "
+                    f"You need to install Paddle {PT_VERSION}, or rebuild deepmd-kit "
+                    f"against Paddle {pt_py_version}.\nIf you are using a wheel from "
                     "PyPI, you may consider to install deepmd-kit execuating "
-                    "`DP_ENABLE_PYTORCH=1 pip install deepmd-kit --no-binary deepmd-kit` "
+                    "`DP_ENABLE_Paddle=1 pip install deepmd-kit --no-binary deepmd-kit` "
                     "instead."
                 ) from e
             error_message = (
-                "This deepmd-kit package is inconsitent with PyTorch "
+                "This deepmd-kit package is inconsitent with Paddle "
                 f"Runtime, thus an error is raised when loading {module_name}. "
-                "You need to rebuild deepmd-kit against this PyTorch "
+                "You need to rebuild deepmd-kit against this Paddle "
                 "runtime."
             )
             if PT_CXX11_ABI_FLAG == 1:

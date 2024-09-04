@@ -10,6 +10,7 @@ from deepmd.pd.model.network.network import (
     SimpleLinear,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.utils import (
@@ -28,7 +29,9 @@ def _make_nei_g1(
     # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand(-1, -1, ng1)
     # gg1  : nb x (nloc x nnei) x ng1
-    gg1 = paddle.take_along_axis(g1_ext, axis=1, index=index)
+    # print(g1_ext.shape, index.shape)
+    # gg1 = paddle.take_along_axis(g1_ext, axis=1, index=index)
+    gg1 = aux.take_along_axis(g1_ext, axis=1, index=index)
     # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.reshape([nb, nloc, nnei, ng1])
     return gg1
@@ -57,7 +60,8 @@ def _apply_h_norm(
     """
     nf, nl, nnei, _ = hh.shape
     # nf x nloc x nnei
-    normh = paddle.linalg.norm(hh, axis=-1)
+    # normh = paddle.linalg.norm(hh, axis=-1)
+    normh = aux.norm(hh, axis=-1)
     # nf x nloc
     std = paddle.std(normh, axis=-1)
     # nf x nloc x nnei x 3

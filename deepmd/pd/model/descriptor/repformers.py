@@ -23,6 +23,7 @@ from deepmd.pd.model.network.mlp import (
     MLPLayer,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.env_mat_stat import (
@@ -60,7 +61,7 @@ from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 #         argument8,
 #     ) -> paddle.Tensor:
 #         raise NotImplementedError(
-#             "border_op is not available since customized PyTorch OP library is not built when freezing the model."
+#             "border_op is not available since customized Paddle OP library is not built when freezing the model."
 #         )
 
 #     # Note: this hack cannot actually save a model that can be runned using LAMMPS.
@@ -306,7 +307,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             device=env.DEVICE
         )
         stddev = paddle.ones(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=env.DEVICE
+            device=aux.DEVICE
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
@@ -445,7 +446,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = paddle.split(dmatrix, [1, 3], axis=-1)
         else:
-            g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
+            # g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
+            g2, h2 = aux.norm(diff, axis=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nb x nloc x nnei x ng2

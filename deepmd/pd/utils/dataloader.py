@@ -136,17 +136,13 @@ class DpLoaderSet(Dataset):
             if dist.is_available() and dist.is_initialized():
                 system_batch_sampler = DistributedBatchSampler(
                     system,
-                    shuffle=(
-                        not (dist.is_available() and dist.is_initialized()) and shuffle
-                    ),
+                    shuffle=False,
                 )
                 self.sampler_list.append(system_batch_sampler)
             else:
                 system_batch_sampler = BatchSampler(
                     system,
-                    shuffle=(
-                        not (dist.is_available() and dist.is_initialized()) and shuffle
-                    ),
+                    shuffle=shuffle,
                 )
                 self.sampler_list.append(system_batch_sampler)
             system_dataloader = DataLoader(

@@ -32,7 +32,7 @@ device = env.DEVICE
 
 
 def empty_t(shape, precision):
-    return paddle.empty(shape, dtype=precision, device=device)
+    return paddle.empty(shape, dtype=precision).to(device=device)
 
 
 class LayerNorm(nn.Layer):
@@ -53,9 +53,17 @@ class LayerNorm(nn.Layer):
         self.num_in = num_in
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
-        self.matrix = nn.Parameter(data=empty_t((num_in,), self.prec))
-        self.bias = nn.Parameter(
-            data=empty_t([num_in], self.prec),
+        self.matrix = self.create_parameter(
+            shape=[num_in],
+            dtype=self.prec,
+            default_initializer=nn.initializer.Assign(
+                empty_t((num_in,), self.prec),
+            ),
+        )
+        self.bias = self.create_parameter(
+            shape=[num_in],
+            dtype=self.prec,
+            default_initializer=nn.initializer.Assign(empty_t([num_in], self.prec)),
         )
         random_generator = get_generator(seed)
         if self.uni_init:

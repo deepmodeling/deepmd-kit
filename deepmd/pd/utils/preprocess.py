@@ -7,6 +7,7 @@ from typing import (
 import paddle
 
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 
@@ -26,11 +27,14 @@ class Region3D:
 
         # boxt = boxt.permute(1, 0)
         c_yz = paddle.cross(boxt[1], boxt[2])
-        self._h2yz = self.volume / paddle.linalg.norm(c_yz)
+        # self._h2yz = self.volume / paddle.linalg.norm(c_yz)
+        self._h2yz = self.volume / aux.norm(c_yz)
         c_zx = paddle.cross(boxt[2], boxt[0])
-        self._h2zx = self.volume / paddle.linalg.norm(c_zx)
+        # self._h2zx = self.volume / paddle.linalg.norm(c_zx)
+        self._h2zx = self.volume / aux.norm(c_zx)
         c_xy = paddle.cross(boxt[0], boxt[1])
-        self._h2xy = self.volume / paddle.linalg.norm(c_xy)
+        # self._h2xy = self.volume / paddle.linalg.norm(c_xy)
+        self._h2xy = self.volume / aux.norm(c_xy)
 
     def phys2inter(self, coord):
         """Convert physical coordinates to internal ones."""

@@ -2,6 +2,9 @@
 
 import paddle
 
+from deepmd.pd.utils import (
+    aux,
+)
 from deepmd.pd.utils.preprocess import (
     compute_smooth_weight,
 )
@@ -24,10 +27,12 @@ def _make_env_mat(
     nlist = paddle.where(mask, nlist, nall - 1)
     coord_l = coord[:, :natoms].reshape([bsz, -1, 1, 3])
     index = nlist.reshape([bsz, -1]).unsqueeze(-1).expand([-1, -1, 3])
-    coord_r = paddle.take_along_axis(coord, axis=1, indices=index)
+    # coord_r = paddle.take_along_axis(coord, axis=1, indices=index)
+    coord_r = aux.take_along_axis(coord, axis=1, indices=index)
     coord_r = coord_r.reshape([bsz, natoms, nnei, 3])
     diff = coord_r - coord_l
-    length = paddle.linalg.norm(diff, axis=-1, keepdim=True)
+    # length = paddle.linalg.norm(diff, axis=-1, keepdim=True)
+    length = aux.norm(diff, axis=-1, keepdim=True)
     # for index 0 nloc atom
     length = length + (~mask.unsqueeze(-1)).astype(length.dtype)
     t0 = 1 / (length + protection)

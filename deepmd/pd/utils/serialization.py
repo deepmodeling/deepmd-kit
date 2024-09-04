@@ -27,22 +27,24 @@ def serialize_from_file(model_file: str) -> dict:
     dict
         The serialized model data.
     """
-    if model_file.endswith(".pth"):
+    if model_file.endswith(".pdparams"):
         saved_model = paddle.jit.load(model_file)
         model_def_script = json.loads(saved_model.model_def_script)
         model = get_model(model_def_script)
-        model.load_state_dict(saved_model.state_dict())
-    elif model_file.endswith(".pd"):
+        model.set_state_dict(saved_model.state_dict())
+    elif model_file.endswith(".pdmodel"):
         state_dict = paddle.load(model_file)
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_def_script = state_dict["_extra_state"]["model_params"]
         model = get_model(model_def_script)
         modelwrapper = ModelWrapper(model)
-        modelwrapper.load_state_dict(state_dict)
+        modelwrapper.set_state_dict(state_dict)
         model = modelwrapper.model["Default"]
     else:
-        raise ValueError("Pypaddle backend only supports converting .pth or .pd file")
+        raise ValueError(
+            "Pypaddle backend only supports converting .pdparams or .pd file"
+        )
 
     model_dict = model.serialize()
     data = {
@@ -67,8 +69,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     data : dict
         The dictionary to be deserialized.
     """
-    if not model_file.endswith(".pth"):
-        raise ValueError("Pypaddle backend only supports converting .pth file")
+    if not model_file.endswith(".pdparams"):
+        raise ValueError("Pypaddle backend only supports converting .pdparams file")
     model = BaseModel.deserialize(data["model"])
     # JIT will happy in this way...
     model.model_def_script = json.dumps(data["model_def_script"])

@@ -83,22 +83,23 @@ class NeighborStatOP(paddle.nn.Layer):
         coord1 = extend_coord.reshape([nframes, -1])
         nall = coord1.shape[1] // 3
         coord0 = coord1[:, : nloc * 3]
-        diff = (
-            coord1.reshape([nframes, -1, 3])[:, None, :, :]
-            - coord0.reshape([nframes, -1, 3])[:, :, None, :]
-        )
+        diff: paddle.Tensor = coord1.reshape([nframes, -1, 3]).unsqueeze(
+            1
+        ) - coord0.reshape([nframes, -1, 3]).unsqueeze(2)
         assert list(diff.shape) == [nframes, nloc, nall, 3]
         # remove the diagonal elements
         mask = paddle.eye(nloc, nall).to(dtype=paddle.bool, device=diff.place)
-        diff[:, mask] = float("inf")
+        # diff[:, mask] = float("inf")
+        diff.masked_fill_(
+            paddle.broadcast_to(mask.unsqueeze([0, -1]), diff.shape),
+            paddle.to_tensor(float("inf")),
+        )
         rr2 = paddle.sum(paddle.square(diff), axis=-1)
         min_rr2 = paddle.min(rr2, axis=-1)
         # count the number of neighbors
         if not self.mixed_types:
             mask = rr2 < self.rcut**2
-            nnei = paddle.zeros((nframes, nloc, self.ntypes), dtype=paddle.int32).to(
-                device=mask.place
-            )
+            nnei = paddle.zeros((nframes, nloc, self.ntypes), dtype=paddle.int64)
             for ii in range(self.ntypes):
                 nnei[:, :, ii] = paddle.sum(
                     mask & extend_atype.equal(ii)[:, None, :], axis=-1
@@ -184,9 +185,9 @@ class NeighborStat(BaseNeighborStat):
             The cell.
         """
         minrr2, max_nnei = self.op(
-            paddle.to_tensor(coord).to(DEVICE),
-            paddle.to_tensor(atype).to(DEVICE),
-            paddle.to_tensor(cell).to(DEVICE) if cell is not None else None,
+            paddle.to_tensor(coord, place=DEVICE),
+            paddle.to_tensor(atype, place=DEVICE),
+            paddle.to_tensor(cell, place=DEVICE) if cell is not None else None,
         )
         minrr2 = minrr2.numpy()
         max_nnei = max_nnei.numpy()

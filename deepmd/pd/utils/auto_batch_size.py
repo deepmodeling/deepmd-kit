@@ -55,6 +55,6 @@ class AutoBatchSize(AutoBatchSizeBase):
             or "cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR" in e.args[0]
         ):
             # Release all unoccupied cached memory
-            paddle.device.cuda.empty_cache()
+            # paddle.device.cuda.empty_cache()
             return True
         return False

@@ -158,7 +158,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
                 # must share, even if not do stat
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
-            # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
+            # self.set_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
             # the following will successfully link all the params except buffers
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]

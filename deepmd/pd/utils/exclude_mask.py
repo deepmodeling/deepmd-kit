@@ -8,6 +8,9 @@ from typing import (
 import numpy as np
 import paddle
 
+from deepmd.pd.utils import (
+    aux,
+)
 from deepmd.pd.utils.utils import (
     to_paddle_tensor,
 )
@@ -148,7 +151,10 @@ class PairExcludeMask(paddle.nn.Layer):
         type_i = atype_ext[:, :nloc].reshape([nf, nloc]) * (self.ntypes + 1)
         # nf x nloc x nnei
         index = paddle.where(nlist == -1, nall, nlist).reshape([nf, nloc * nnei])
-        type_j = paddle.take_along_axis(ae, axis=1, indices=index).reshape(
+        # type_j = paddle.take_along_axis(ae, axis=1, indices=index).reshape(
+        #     [nf, nloc, nnei]
+        # )
+        type_j = aux.take_along_axis(ae, axis=1, indices=index).reshape(
             [nf, nloc, nnei]
         )
         type_ij = type_i[:, :, None] + type_j

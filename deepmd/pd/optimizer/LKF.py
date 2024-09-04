@@ -44,7 +44,7 @@ class LKFOptimizer(Optimizer):
             )
 
         # NOTE: LKF has only global state, but we register it as state for
-        # the first param, because this helps with casting in load_state_dict
+        # the first param, because this helps with casting in set_state_dict
         self._state = self.state[self._params[0]]
         self._state.setdefault("kalman_lambda", kalman_lambda)
         self.dist_init = dist.is_available() and dist.is_initialized()

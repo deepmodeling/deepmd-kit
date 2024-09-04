@@ -186,7 +186,7 @@ class Trainer:
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     # drop_last=False,
-                    # collate_fn=lambda batch: batch,  # prevent extra conversion
+                    collate_fn=lambda batch: batch[0],  # prevent extra conversion
                     # pin_memory=True,
                 )
                 # with paddle.device("cpu"):
@@ -449,7 +449,7 @@ class Trainer:
                         state_dict["_extra_state"]["model_params"]
                     )
                     pretrained_model_wrapper = ModelWrapper(pretrained_model)
-                    pretrained_model_wrapper.load_state_dict(state_dict)
+                    pretrained_model_wrapper.set_state_dict(state_dict)
                     # update type related params
                     for model_key in self.model_keys:
                         finetune_rule_single = self.finetune_links[model_key]
@@ -517,7 +517,7 @@ class Trainer:
                         "_extra_state"
                     ]
 
-                self.wrapper.load_state_dict(state_dict)
+                self.wrapper.set_state_dict(state_dict)
 
                 # change bias for fine-tuning
                 if finetune_model is not None:
@@ -560,7 +560,7 @@ class Trainer:
 
         if init_frz_model is not None:
             frz_model = paddle.jit.load(init_frz_model)
-            self.model.load_state_dict(frz_model.state_dict())
+            self.model.set_state_dict(frz_model.state_dict())
 
         # Multi-task share params
         if shared_links is not None:
@@ -600,7 +600,7 @@ class Trainer:
                 learning_rate=self.scheduler, parameters=self.wrapper.parameters()
             )
             if optimizer_state_dict is not None and self.restart_training:
-                self.optimizer.load_state_dict(optimizer_state_dict)
+                self.optimizer.set_state_dict(optimizer_state_dict)
         elif self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
@@ -648,7 +648,7 @@ class Trainer:
         if dist.is_available() and dist.is_initialized():
             log.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
         if self.enable_tensorboard:
-            from paddle.utils.tensorboard import (
+            from tensorboardX import (
                 SummaryWriter,
             )
 
@@ -667,7 +667,7 @@ class Trainer:
             prof.start()
 
         def step(_step_id, task_key="Default"):
-            # PyTorch Profiler
+            # Paddle Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
             self.wrapper.train()
@@ -1007,12 +1007,10 @@ class Trainer:
                     )
 
             if JIT:
-                pth_model_path = (
-                    "frozen_model.pth"  # We use .pth to denote the frozen model
-                )
-                self.model.save(pth_model_path)
+                pdparams_model_path = "frozen_model.pdparams"  # We use .pdparams to denote the frozen model
+                self.model.save(pdparams_model_path)
                 log.info(
-                    f"Frozen model for inferencing has been saved to {pth_model_path}"
+                    f"Frozen model for inferencing has been saved to {pdparams_model_path}"
                 )
             log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
@@ -1023,7 +1021,6 @@ class Trainer:
         if self.enable_tensorboard:
             writer.close()
         if self.enable_profiler or self.profiling:
-            prof.stop()
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(

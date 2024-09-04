@@ -10,10 +10,14 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 
+from deepmd.pd.model.network import (
+    init,
+)
 from deepmd.pd.model.network.mlp import (
     EmbeddingNet,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.utils.version import (
@@ -157,19 +161,23 @@ class ResidualLinear(nn.Layer):
 
         self.matrix = self.create_parameter(
             [num_in, num_out],
+            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
             default_initializer=nn.initializer.Assign(Tensor(num_in, num_out)),
         )
-        nn.init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
+        init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
         self.bias = self.create_parameter(
-            (1, num_out), default_initializer=nn.initializer.Assign(Tensor(1, num_out))
+            (1, num_out),
+            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
+            default_initializer=nn.initializer.Assign(Tensor(1, num_out)),
         )
-        nn.init.normal_(self.bias.data, mean=bavg, std=stddev)
+        init.normal_(self.bias.data, mean=bavg, std=stddev)
         if self.resnet:
             self.idt = self.create_parameter(
                 (1, num_out),
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION,
                 default_initializer=nn.initializer.Assign(Tensor(1, num_out)),
             )
-            nn.init.normal_(self.idt.data, mean=1.0, std=0.001)
+            init.normal_(self.idt.data, mean=1.0, std=0.001)
 
     def forward(self, inputs):
         """Return X ?+ X*W+b."""
@@ -330,15 +338,15 @@ class SimpleLinear(nn.Layer):
         self.activate = ActivationFn(activate)
 
         self.matrix = self.create_parameter(data=Tensor(num_in, num_out))
-        nn.init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
+        init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
         if bias:
             self.bias = self.create_parameter(data=Tensor(1, num_out))
-            nn.init.normal_(self.bias.data, mean=bavg, std=stddev)
+            init.normal_(self.bias.data, mean=bavg, std=stddev)
         else:
             self.bias = None
         if self.use_timestep:
             self.idt = self.create_parameter(data=Tensor(1, num_out))
-            nn.init.normal_(self.idt.data, mean=0.1, std=0.001)
+            init.normal_(self.idt.data, mean=0.1, std=0.001)
 
     def forward(self, inputs):
         """Return X*W+b."""
@@ -393,10 +401,10 @@ class Linear(nn.Linear):
         _, fan_in = self.weight.shape
         scale = scale / max(1, fan_in)
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
-        nn.init.trunc_normal_(self.weight, mean=0.0, std=std)
+        init.trunc_normal_(self.weight, mean=0.0, std=std)
 
     def _glorot_uniform_init(self):
-        nn.init.xavier_uniform_(self.weight, gain=1)
+        init.xavier_uniform_(self.weight, gain=1)
 
     def _zero_init(self, use_bias=True):
         with paddle.no_grad():
@@ -406,7 +414,7 @@ class Linear(nn.Linear):
                     self.bias.fill_(1.0)
 
     def _normal_init(self):
-        nn.init.kaiming_normal_(self.weight, nonlinearity="linear")
+        init.kaiming_normal_(self.weight, nonlinearity="linear")
 
 
 class Transition(nn.Layer):
@@ -453,7 +461,7 @@ class Embedding(nn.Embedding):
             self.weight.data[self.padding_idx].zero_()
 
     def _normal_init(self, std=0.02):
-        nn.init.normal_(self.weight, mean=0.0, std=std)
+        init.normal_(self.weight, mean=0.0, std=std)
 
 
 class NonLinearHead(nn.Layer):
@@ -486,8 +494,8 @@ class NonLinear(nn.Layer):
         return x
 
     def zero_init(self):
-        nn.init.zeros_(self.layer2.weight)
-        nn.init.zeros_(self.layer2.bias)
+        init.zeros_(self.layer2.weight)
+        init.zeros_(self.layer2.bias)
 
 
 class MaskLMHead(nn.Layer):
@@ -610,7 +618,7 @@ class TypeEmbedNet(nn.Layer):
             precision=precision,
             seed=seed,
         )
-        # nn.init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
+        # init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
     def forward(self, atype):
         """
@@ -889,8 +897,8 @@ class GaussianKernel(nn.Layer):
         self.bias = Embedding(
             num_pair + 1, 1, padding_idx=num_pair, dtype=env.GLOBAL_PD_FLOAT_PRECISION
         )
-        nn.init.constant_(self.bias.weight, 0)
-        nn.init.constant_(self.mul.weight, 1.0)
+        init.constant_(self.bias.weight, 0)
+        init.constant_(self.mul.weight, 1.0)
 
     def forward(self, x, atom_pair):
         mul = self.mul(atom_pair).abs().sum(axis=-2)
@@ -960,7 +968,8 @@ class GaussianEmbedding(nn.Layer):
         # ncluster x natoms x natoms x 3
         delta_pos = coord_selected.unsqueeze(1) - coord_selected.unsqueeze(2)
         # (ncluster x natoms x natoms
-        dist = delta_pos.norm(axis=-1).reshape([-1, natoms, natoms])
+        # dist = delta_pos.norm(axis=-1).reshape([-1, natoms, natoms])
+        dist = aux.norm(delta_pos, axis=-1).reshape([-1, natoms, natoms])
         # [ncluster, natoms, natoms, K]
         gbf_feature = self.gbf(dist, edge_type_2dim)
         if self.atomic_sum_gbf:
@@ -1349,7 +1358,7 @@ class NodeTaskHead(nn.Layer):
         self.dropout = 0.1
 
     def zero_init(self):
-        nn.init.zeros_(self.force_proj.weight)
+        init.zeros_(self.force_proj.weight)
 
     def forward(
         self,

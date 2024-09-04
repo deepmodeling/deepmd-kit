@@ -29,6 +29,7 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNetConsistent,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -788,7 +789,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         # nb x (nloc x nnei) x nt
         index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand(-1, -1, nt)
         # nb x (nloc x nnei) x nt
-        atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
+        # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
+        atype_tebd_nlist = aux.take_along_axis(atype_tebd_ext, axis=1, index=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
         # beyond the cutoff sw should be 0.0

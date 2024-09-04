@@ -37,11 +37,11 @@ class FrozenModel(BaseModel):
     def __init__(self, model_file: str, **kwargs):
         super().__init__(**kwargs)
         self.model_file = model_file
-        if model_file.endswith(".pth"):
+        if model_file.endswith(".pdparams"):
             self.model = paddle.jit.load(model_file)
         else:
             # try to convert from other formats
-            with tempfile.NamedTemporaryFile(suffix=".pth") as f:
+            with tempfile.NamedTemporaryFile(suffix=".pdparams") as f:
                 convert_backend(INPUT=model_file, OUTPUT=f.name)
                 self.model = paddle.jit.load(f.name)
 
@@ -156,7 +156,7 @@ class FrozenModel(BaseModel):
         # try to recover the original model
         model_def_script = json.loads(self.get_model_def_script())
         model = get_model(model_def_script)
-        model.load_state_dict(self.model.state_dict())
+        model.set_state_dict(self.model.state_dict())
         return model.serialize()
 
     @classmethod
