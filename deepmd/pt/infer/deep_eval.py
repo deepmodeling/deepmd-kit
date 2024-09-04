@@ -14,6 +14,7 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
@@ -57,6 +58,7 @@ from deepmd.pt.utils.auto_batch_size import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
+    RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
@@ -392,14 +394,22 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([nframes, natoms, 3]),
+            coords.reshape([nframes, natoms, 3]).astype(
+                NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+            ),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
-        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        type_input = torch.tensor(
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[torch.long]]),
+            dtype=torch.long,
+            device=DEVICE,
+        )
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([nframes, 3, 3]),
+                cells.reshape([nframes, 3, 3]).astype(
+                    NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+                ),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
