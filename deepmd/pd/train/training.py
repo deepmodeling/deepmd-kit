@@ -1027,7 +1027,7 @@ class Trainer:
                     f"The profiling trace have been saved to: {self.profiling_file}"
                 )
 
-    def save_model(self, save_path, lr=0.0, step=0):
+    def save_model(self, save_path: Path, lr=0.0, step=0):
         module = (
             self.wrapper.module
             if dist.is_available() and dist.is_initialized()
@@ -1037,7 +1037,7 @@ class Trainer:
         module.train_infos["step"] = step
         paddle.save(
             {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
-            save_path,
+            str(save_path),
         )
         checkpoint_dir = save_path.parent
         checkpoint_files = [

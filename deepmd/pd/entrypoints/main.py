@@ -354,13 +354,15 @@ def freeze(FLAGS):
 
 
 def show(FLAGS):
-    if FLAGS.INPUT.split(".")[-1] == "pt":
+    if FLAGS.INPUT.split(".")[-1] == "pd":
         state_dict = paddle.load(FLAGS.INPUT)
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_params = state_dict["_extra_state"]["model_params"]
-    elif FLAGS.INPUT.split(".")[-1] == "pth":
-        model_params_string = paddle.jit.load(FLAGS.INPUT).model_def_script
+    elif FLAGS.INPUT.split(".")[-1] == "pdmodel":
+        model_params_string = paddle.jit.load(
+            FLAGS.INPUT[: -len(".pdmodel")]
+        ).model_def_script
         model_params = json.loads(model_params_string)
     else:
         raise RuntimeError(
