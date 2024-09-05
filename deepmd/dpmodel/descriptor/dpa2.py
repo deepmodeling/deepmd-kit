@@ -463,7 +463,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             seed=child_seed(seed, 0),
         )
         self.use_three_body = self.repinit_args.use_three_body
-        if self.repinit_args.use_three_body:
+        if self.use_three_body:
             self.repinit_three_body = DescrptBlockSeTTebd(
                 self.repinit_args.three_body_rcut,
                 self.repinit_args.three_body_rcut_smth,
@@ -521,37 +521,21 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             ln_eps=self.repformer_args.ln_eps,
             seed=child_seed(seed, 1),
         )
-        if not self.use_three_body:
-            self.rcut_list = [self.repformers.get_rcut(), self.repinit.get_rcut()]
-            self.nsel_list = [self.repformers.get_nsel(), self.repinit.get_nsel()]
-        else:
-            if (
-                self.repinit_three_body.get_rcut() >= self.repformers.get_rcut()
-                and self.repinit_three_body.get_nsel() >= self.repformers.get_nsel()
-            ):
-                self.rcut_list = [
-                    self.repformers.get_rcut(),
-                    self.repinit_three_body.get_rcut(),
-                    self.repinit.get_rcut(),
-                ]
-                self.nsel_list = [
-                    self.repformers.get_nsel(),
-                    self.repinit_three_body.get_nsel(),
-                    self.repinit.get_nsel(),
-                ]
-            else:
-                self.rcut_list = [
-                    self.repinit_three_body.get_rcut(),
-                    self.repformers.get_rcut(),
-                    self.repinit.get_rcut(),
-                ]
-                self.nsel_list = [
-                    self.repinit_three_body.get_nsel(),
-                    self.repformers.get_nsel(),
-                    self.repinit.get_nsel(),
-                ]
-        self.rcut_list = sorted(self.rcut_list)
-        self.nsel_list = sorted(self.nsel_list)
+        self.rcsl_list = [
+            (self.repformers.get_rcut(), self.repformers.get_nsel()),
+            (self.repinit.get_rcut(), self.repinit.get_nsel()),
+        ]
+        if self.use_three_body:
+            self.rcsl_list.append(
+                (self.repinit_three_body.get_rcut(), self.repinit_three_body.get_sel())
+            )
+        self.rcsl_list.sort()
+        for ii in range(1, len(self.rcsl_list)):
+            assert (
+                self.rcsl_list[ii - 1][1] <= self.rcsl_list[ii][1]
+            ), "rcut and sel are not in the same order"
+        self.rcut_list = [ii[0] for ii in self.rcsl_list]
+        self.nsel_list = [ii[1] for ii in self.rcsl_list]
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
