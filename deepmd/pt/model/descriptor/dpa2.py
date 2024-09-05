@@ -246,7 +246,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         ]
         if self.use_three_body:
             self.rcsl_list.append(
-                (self.repinit_three_body.get_rcut(), self.repinit_three_body.get_sel())
+                (self.repinit_three_body.get_rcut(), self.repinit_three_body.get_nsel())
             )
         self.rcsl_list.sort()
         for ii in range(1, len(self.rcsl_list)):
