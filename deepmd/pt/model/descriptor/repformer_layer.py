@@ -599,9 +599,9 @@ class RepformerLayer(torch.nn.Module):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        use_sqrt_nnei: bool = False,
-        g1_out_conv: bool = False,
-        g1_out_mlp: bool = False,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         seed: Optional[Union[int, List[int]]] = None,
     ):
         super().__init__()
@@ -925,7 +925,7 @@ class RepformerLayer(torch.nn.Module):
         sw: torch.Tensor,
         smooth: bool = True,
         epsilon: float = 1e-4,
-        use_sqrt_nnei: bool = False,
+        use_sqrt_nnei: bool = True,
     ) -> torch.Tensor:
         """
         Calculate the transposed rotation matrix.

@@ -203,9 +203,9 @@ class RepformerArgs:
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         trainable_ln: bool = True,
-        use_sqrt_nnei: bool = False,
-        g1_out_conv: bool = False,
-        g1_out_mlp: bool = False,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
     ):
         r"""The constructor for the RepformerArgs class which defines the parameters of the repformer block in DPA2 descriptor.
@@ -850,7 +850,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa2",
-            "@version": 2,
+            "@version": 3,
             "ntypes": self.ntypes,
             "repinit_args": self.repinit_args.serialize(),
             "repformer_args": self.repformer_args.serialize(),
@@ -927,7 +927,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 3)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()

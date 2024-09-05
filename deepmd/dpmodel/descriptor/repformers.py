@@ -163,9 +163,9 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        use_sqrt_nnei: bool = False,
-        g1_out_conv: bool = False,
-        g1_out_mlp: bool = False,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, List[int]]] = None,
     ):
@@ -544,7 +544,7 @@ def _cal_hg(
     sw: np.ndarray,
     smooth: bool = True,
     epsilon: float = 1e-4,
-    use_sqrt_nnei: bool = False,
+    use_sqrt_nnei: bool = True,
 ) -> np.ndarray:
     """
     Calculate the transposed rotation matrix.
@@ -635,7 +635,7 @@ def symmetrization_op(
     axis_neuron: int,
     smooth: bool = True,
     epsilon: float = 1e-4,
-    use_sqrt_nnei: bool = False,
+    use_sqrt_nnei: bool = True,
 ) -> np.ndarray:
     """
     Symmetrization operator to obtain atomic invariant rep.
@@ -1128,9 +1128,9 @@ class RepformerLayer(NativeOP):
         smooth: bool = True,
         precision: str = "float64",
         trainable_ln: bool = True,
-        use_sqrt_nnei: bool = False,
-        g1_out_conv: bool = False,
-        g1_out_mlp: bool = False,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, List[int]]] = None,
     ):

@@ -105,9 +105,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, List[int]]] = None,
-        use_sqrt_nnei: bool = False,
-        g1_out_conv: bool = False,
-        g1_out_mlp: bool = False,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         old_impl: bool = False,
     ):
         r"""
