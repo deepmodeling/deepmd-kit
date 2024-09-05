@@ -56,7 +56,9 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 #endif
 
   scalar_flag = 1;
+  extscalar = 1;
   vector_flag = 1;
+  extvector = 1;
   size_vector = 3;
   qe2f = force->qe2f;
   xstyle = ystyle = zstyle = NONE;

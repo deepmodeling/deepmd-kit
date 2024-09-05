@@ -104,7 +104,7 @@ docs = [
     "sphinxcontrib-moderncmakedomain",
 ]
 lmp = [
-    "lammps~=2023.8.2.3.0",
+    "lammps~=2024.8.29.0.0",
 ]
 ipi = [
     "ipi",
@@ -222,7 +222,7 @@ repair-wheel-command = """delocate-wheel --require-archs {delocate_archs} -w {de
 
 [tool.cibuildwheel.macos.environment]
 PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
+DP_LAMMPS_VERSION = "stable_29Aug2024"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 # for unclear reason, when enabling PyTorch, OpenMP is found accidentally
@@ -258,7 +258,7 @@ before-build = [
 ]
 [tool.cibuildwheel.linux.environment]
 PIP_PREFER_BINARY = "1"
-DP_LAMMPS_VERSION = "stable_2Aug2023_update3"
+DP_LAMMPS_VERSION = "stable_29Aug2024"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
 MPI_HOME = "/usr/lib64/mpich"

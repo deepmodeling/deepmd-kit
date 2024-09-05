@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.6.2
+    rev: v0.6.3
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -146,7 +146,7 @@ repos:
         exclude: .pre-commit-config.yaml|source/lmp
   # customized pylint rules
   - repo: https://github.com/pylint-dev/pylint/
-    rev: v3.2.6
+    rev: v3.2.7
     hooks:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint
