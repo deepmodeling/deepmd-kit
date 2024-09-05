@@ -51,6 +51,7 @@ from deepmd.pd.utils.auto_batch_size import (
 from deepmd.pd.utils.env import (
     DEVICE,
     GLOBAL_PD_FLOAT_PRECISION,
+    enable_prim,
 )
 from deepmd.pd.utils.utils import (
     to_paddle_tensor,
@@ -91,18 +92,13 @@ class DeepEval(DeepEvalBackend):
         head: Optional[str] = None,
         **kwargs: Any,
     ):
-        paddle.core.set_prim_eager_enabled(True)
-        paddle.core._set_prim_all_enabled(True)
+        enable_prim(True)
         self.output_def = output_def
         self.model_path = model_file
         if str(self.model_path).endswith(".pd"):
             state_dict = paddle.load(model_file)
             if "model" in state_dict:
                 state_dict = state_dict["model"]
-            # TODO: fix there
-            state_dict["_extra_state"] = eval(
-                "{'model_params': {'type_map': ['O', 'H'], 'descriptor': {'type': 'se_e2_a', 'sel': [46, 92], 'rcut_smth': 0.5, 'rcut': 6.0, 'neuron': [25, 50, 100], 'resnet_dt': False, 'axis_neuron': 16, 'type_one_side': True, 'seed': 1, 'activation_function': 'tanh', 'precision': 'default', 'trainable': True, 'exclude_types': [], 'env_protection': 0.0, 'set_davg_zero': False}, 'fitting_net': {'neuron': [240, 240, 240], 'resnet_dt': True, 'seed': 1, 'type': 'ener', 'numb_fparam': 0, 'numb_aparam': 0, 'activation_function': 'tanh', 'precision': 'default', 'trainable': True, 'rcond': None, 'atom_ener': [], 'use_aparam_as_mask': False}, 'data_stat_nbatch': 20, 'data_stat_protect': 0.01, 'data_bias_nsample': 10, 'pair_exclude_types': [], 'atom_exclude_types': [], 'srtab_add_bias': True, 'type': 'standard'}, 'train_infos': {'lr': 5.861945287651712e-08, 'step': 99999}}"
-            )
             self.input_param = state_dict["_extra_state"]["model_params"]
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:

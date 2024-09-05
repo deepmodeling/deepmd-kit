@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 import os
 
 import numpy as np
@@ -13,6 +14,8 @@ from deepmd.env import (
     get_default_nthreads,
     set_default_nthreads,
 )
+
+log = logging.getLogger(__name__)
 
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 try:
@@ -68,10 +71,23 @@ DEFAULT_PRECISION = "float64"
 # throw warnings if threads not set
 set_default_nthreads()
 inter_nthreads, intra_nthreads = get_default_nthreads()
-if inter_nthreads > 0:  # the behavior of 0 is not documented
-    paddle.set_num_interop_threads(inter_nthreads)
+# if inter_nthreads > 0:  # the behavior of 0 is not documented
+#     paddle.set_num_interop_threads(inter_nthreads)
 if intra_nthreads > 0:
-    paddle.set_num_threads(intra_nthreads)
+    paddle.framework.core.set_num_threads(intra_nthreads)
+
+
+def enable_prim(enable: bool = True):
+    """Enable running program in primitive C++ API in eager/static mode."""
+    if enable:
+        from paddle.framework import (
+            core,
+        )
+
+        core.set_prim_eager_enabled(True)
+        core._set_prim_all_enabled(True)
+        log.info("Enable prim in eager and static mode.")
+
 
 __all__ = [
     "GLOBAL_ENER_FLOAT_PRECISION",

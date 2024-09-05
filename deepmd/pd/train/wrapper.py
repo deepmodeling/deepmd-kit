@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import logging
 from typing import (
     Dict,
     Optional,
+    OrderedDict,
     Union,
 )
 
 import paddle
+
+_StateDict = Union[Dict[str, paddle.Tensor], OrderedDict[str, paddle.Tensor]]
 
 # if paddle.__version__.startswith("2"):
 #     import paddle._dynamo
@@ -183,14 +190,33 @@ class ModelWrapper(paddle.nn.Layer):
             )
             return model_pred, loss, more_loss
 
-    def set_extra_state(self, state: Dict):
-        self.model_params = state["model_params"]
-        self.train_infos = state["train_infos"]
+    def load_state_dict(
+        self,
+        state_dict: _StateDict,
+    ) -> tuple[list[str], list[str]]:
+        self.set_extra_state(state_dict["_extra_state"])
+        return super().set_state_dict(state_dict)
+
+    def set_state_dict(
+        self,
+        state_dict: _StateDict,
+    ) -> tuple[list[str], list[str]]:
+        return self.load_state_dict(state_dict)
+
+    def state_dict(self):
+        state_dict = super().state_dict()
+        extra_state = self.get_extra_state()
+        state_dict.update({"_extra_state": extra_state})
+        return state_dict
+
+    def set_extra_state(self, extra_state: Dict):
+        self.model_params = extra_state["model_params"]
+        self.train_infos = extra_state["train_infos"]
         return None
 
     def get_extra_state(self) -> Dict:
-        state = {
+        extra_state = {
             "model_params": self.model_params,
             "train_infos": self.train_infos,
         }
-        return state
+        return extra_state

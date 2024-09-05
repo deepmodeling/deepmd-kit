@@ -58,6 +58,7 @@ from deepmd.pd.utils.env import (
     JIT,
     LOCAL_RANK,
     SAMPLER_RECORD,
+    enable_prim,
 )
 from deepmd.pd.utils.learning_rate import (
     LearningRateExp,
@@ -102,8 +103,7 @@ class Trainer:
         Args:
         - config: The Dict-like configuration with training options.
         """
-        paddle.core.set_prim_eager_enabled(True)
-        paddle.core._set_prim_all_enabled(True)
+        enable_prim(True)
         if init_model is not None:
             resume_model = init_model
         elif restart_model is not None:
