@@ -22,6 +22,7 @@ from deepmd.pt.model.model import (
     DPZBLModel,
     EnergyModel,
     PolarModel,
+    PropertyModel,
     SpinEnergyModel,
 )
 from deepmd.pt.model.task import (
@@ -29,6 +30,7 @@ from deepmd.pt.model.task import (
     DOSFittingNet,
     EnergyFittingNet,
     PolarFittingNet,
+    PropertyFittingNet,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -42,6 +44,7 @@ from ...common.cases.model.model import (
     DosModelTest,
     EnerModelTest,
     PolarModelTest,
+    PropertyModelTest,
     SpinEnerModelTest,
     ZBLModelTest,
 )
@@ -71,6 +74,8 @@ from ...dpmodel.fitting.test_fitting import (
     FittingParamEnergyList,
     FittingParamPolar,
     FittingParamPolarList,
+    FittingParamProperty,
+    FittingParamPropertyList,
 )
 from ...dpmodel.model.test_model import (
     skip_model_tests,
@@ -94,6 +99,7 @@ defalut_fit_param = [
     FittingParamDos,
     FittingParamDipole,
     FittingParamPolar,
+    FittingParamProperty,
 ]
 
 
@@ -691,6 +697,98 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
             pair_exclude_types=pair_exclude_types,
         )
         cls.module = SpinEnergyModel(backbone_model=backbone_model, spin=spin)
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
+        cls.output_def = cls.module.translated_output_def()
+        cls.expected_has_message_passing = ds.has_message_passing()
+        cls.expected_sel_type = ft.get_sel_type()
+        cls.expected_dim_fparam = ft.get_dim_fparam()
+        cls.expected_dim_aparam = ft.get_dim_aparam()
+
+
+@parameterized(
+    des_parameterized=(
+        (
+            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
+            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            (DescriptorParamHybrid, DescrptHybrid),
+            (DescriptorParamHybridMixed, DescrptHybrid),
+        ),  # descrpt_class_param & class
+        ((FittingParamProperty, PropertyFittingNet),),  # fitting_class_param & class
+    ),
+    fit_parameterized=(
+        (
+            (DescriptorParamSeA, DescrptSeA),
+            (DescriptorParamDPA1, DescrptDPA1),
+            (DescriptorParamDPA2, DescrptDPA2),
+        ),  # descrpt_class_param & class
+        (
+            *[
+                (param_func, PropertyFittingNet)
+                for param_func in FittingParamPropertyList
+            ],
+        ),  # fitting_class_param & class
+    ),
+)
+class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
+
+    @classmethod
+    def setUpClass(cls):
+        PropertyModelTest.setUpClass()
+        (DescriptorParam, Descrpt) = cls.param[0]
+        (FittingParam, Fitting) = cls.param[1]
+        # set special precision
+        if Descrpt in [DescrptDPA2]:
+            cls.epsilon_dict["test_smooth"] = 1e-8
+        cls.input_dict_ds = DescriptorParam(
+            len(cls.expected_type_map),
+            cls.expected_rcut,
+            cls.expected_rcut / 2,
+            cls.expected_sel,
+            cls.expected_type_map,
+        )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(cls)
+        if skiptest:
+            raise cls.skipTest(cls, skip_reason)
+
+        ds = Descrpt(**cls.input_dict_ds)
+        cls.input_dict_ft = FittingParam(
+            ntypes=len(cls.expected_type_map),
+            dim_descrpt=ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            type_map=cls.expected_type_map,
+            embedding_width=ds.get_dim_emb(),
+        )
+        ft = Fitting(
+            **cls.input_dict_ft,
+        )
+        cls.module = PropertyModel(
+            ds,
+            ft,
+            type_map=cls.expected_type_map,
+        )
         # only test jit API once for different models
         if (
             DescriptorParam not in defalut_des_param

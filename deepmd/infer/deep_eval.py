@@ -74,6 +74,8 @@ class DeepEvalBackend(ABC):
         "dipole_derv_c_redu": "virial",
         "dos": "atom_dos",
         "dos_redu": "dos",
+        "property": "atom_property",
+        "property_redu": "property",
         "mask_mag": "mask_mag",
         "mask": "mask",
         # old models in v1

@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    PropertyLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -1239,6 +1240,10 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["label_name"] = label_name
         loss_params["tensor_name"] = label_name
         return TensorLoss(**loss_params)
+    elif loss_type == "property":
+        task_dim = _model.get_task_dim()
+        loss_params["task_dim"] = task_dim
+        return PropertyLoss(**loss_params)
     else:
         raise NotImplementedError
 
