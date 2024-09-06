@@ -603,7 +603,8 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 3, 3)
+        version = data.pop("@version")
+        check_version_compatibility(version, 3, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
@@ -617,6 +618,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         g1_shape_tranform = data.pop("g1_shape_tranform")
         tebd_transform = data.pop("tebd_transform", None)
         add_tebd_to_repinit_out = data["add_tebd_to_repinit_out"]
+        if version < 3:
+            # compat with old version
+            data["repformer_args"]["use_sqrt_nnei"] = False
+            data["repformer_args"]["g1_out_conv"] = False
+            data["repformer_args"]["g1_out_mlp"] = False
         data["repinit"] = RepinitArgs(**data.pop("repinit_args"))
         data["repformer"] = RepformerArgs(**data.pop("repformer_args"))
         # compat with version 1
