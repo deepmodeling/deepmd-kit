@@ -307,7 +307,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             device=env.DEVICE
         )
         stddev = paddle.ones(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            device=aux.DEVICE
+            device=env.DEVICE
         )
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)

@@ -103,7 +103,7 @@ def build_neighbor_list(
     if coord.numel() > 0:
         xmax = paddle.max(coord) + 2.0 * rcut
     else:
-        xmax = paddle.zeros(1, dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
+        xmax = paddle.zeros([1], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
     coord1 = paddle.where(
@@ -242,7 +242,7 @@ def build_directional_neighbor_list(
         xmax = paddle.max(coord_cntl) + 2.0 * rcut
     else:
         xmax = (
-            paddle.zeros(1, dtype=coord_neig.dtype, device=coord_neig.place)
+            paddle.zeros([1], dtype=coord_neig.dtype, device=coord_neig.place)
             + 2.0 * rcut
         )
     # nf x nloc
@@ -391,13 +391,13 @@ def build_multiple_neighbor_list(
         nlist.masked_fill(nlist_mask, 0)
         .reshape([nb, nloc * nsel])
         .unsqueeze(-1)
-        .expand(-1, -1, 3)
+        .expand([-1, -1, 3])
     )
     # nb x nloc x nsel x 3
     # coord2 = paddle.take_along_axis(coord1, axis=1, index=index).reshape(
     #     [nb, nloc, nsel, 3]
     # )
-    coord2 = aux.take_along_axis(coord1, axis=1, index=index).reshape(
+    coord2 = aux.take_along_axis(coord1, axis=1, indices=index).reshape(
         [nb, nloc, nsel, 3]
     )
     # nb x nloc x nsel x 3

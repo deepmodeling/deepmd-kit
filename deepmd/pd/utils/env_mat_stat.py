@@ -55,8 +55,10 @@ class EnvMatStat(BaseEnvMatStat):
         for kk, vv in env_mat.items():
             stats[kk] = StatItem(
                 number=vv.numel().item(),
-                sum=vv.sum().item(),
-                squared_sum=paddle.square(vv).sum().item(),
+                sum=vv.sum().item() if vv.numel().item() != 0 else paddle.zeros([]),
+                squared_sum=paddle.square(vv).sum().item()
+                if vv.numel().item() != 0
+                else paddle.zeros([]),
             )
         return stats
 

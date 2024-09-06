@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import math
+from collections import (
+    defaultdict,
+)
 
 import paddle
 import paddle.distributed as dist
@@ -34,11 +37,16 @@ class LKFOptimizer(Optimizer):
     ):
         defaults = {"lr": 0.1, "kalman_nue": kalman_nue, "block_size": block_size}
 
-        super().__init__(params, defaults)
+        super().__init__(
+            defaults["lr"],
+            params,
+        )
+        self.state = defaultdict(dict)
+        self._params = self._param_groups[0]["params"]
+        for param_group in self._param_groups:
+            param_group.update(defaults)
 
-        self._params = self.param_groups[0]["params"]
-
-        if len(self.param_groups) != 1 or len(self._params) == 0:
+        if len(self._param_groups) != 1 or len(self._params) == 0:
             raise ValueError(
                 "LKF doesn't support per-parameter options " "(parameter groups)"
             )
@@ -60,10 +68,10 @@ class LKFOptimizer(Optimizer):
         data_type = self._params[0].dtype
         device = self._params[0].place
 
-        for param_group in self.param_groups:
+        for param_group in self._param_groups:
             params = param_group["params"]
             for param in params:
-                param_num = param.data.nelement()
+                param_num = param.data.numel().item()
                 if param_sum + param_num > block_size:
                     if param_sum > 0:
                         param_nums.append(param_sum)
@@ -100,8 +108,7 @@ class LKFOptimizer(Optimizer):
                                     paddle.eye(
                                         block_size,
                                         dtype=data_type,
-                                        device=dist_device,
-                                    )
+                                    ).to(device=dist_device)
                                 )
                             else:
                                 continue
@@ -112,8 +119,7 @@ class LKFOptimizer(Optimizer):
                                     paddle.eye(
                                         param_num - block_size * i,
                                         dtype=data_type,
-                                        device=dist_device,
-                                    )
+                                    ).to(device=dist_device)
                                 )
                             else:
                                 continue
@@ -125,7 +131,9 @@ class LKFOptimizer(Optimizer):
                     if self.rank == device_id:
                         dist_device = "gpu:" + str(device_id)
                         P.append(
-                            paddle.eye(param_num, dtype=data_type, device=dist_device)
+                            paddle.eye(param_num, dtype=data_type).to(
+                                device=dist_device
+                            )
                         )
         else:
             for param_num in param_nums:
@@ -137,8 +145,7 @@ class LKFOptimizer(Optimizer):
                                 paddle.eye(
                                     block_size,
                                     dtype=data_type,
-                                    device=device,
-                                )
+                                ).to(device=device)
                             )
                             params_packed_index.append(block_size)
                         else:
@@ -146,12 +153,11 @@ class LKFOptimizer(Optimizer):
                                 paddle.eye(
                                     param_num - block_size * i,
                                     dtype=data_type,
-                                    device=device,
-                                )
+                                ).to(device=device)
                             )
                             params_packed_index.append(param_num - block_size * i)
                 else:
-                    P.append(paddle.eye(param_num, dtype=data_type, device=device))
+                    P.append(paddle.eye(param_num, dtype=data_type).to(device=device))
                     params_packed_index.append(param_num)
 
         self._state.setdefault("P", P)
@@ -159,14 +165,14 @@ class LKFOptimizer(Optimizer):
         self._state.setdefault("params_packed_index", params_packed_index)
 
     def __get_blocksize(self):
-        return self.param_groups[0]["block_size"]
+        return self._param_groups[0]["block_size"]
 
     def __get_nue(self):
-        return self.param_groups[0]["kalman_nue"]
+        return self._param_groups[0]["kalman_nue"]
 
     def __split_weights(self, weight):
         block_size = self.__get_blocksize()
-        param_num = weight.nelement()
+        param_num = weight.numel().item()
         res = []
         if param_num < block_size:
             res.append(weight)
@@ -206,7 +212,9 @@ class LKFOptimizer(Optimizer):
             device = "gpu:" + str(self.rank)
             local_shape = [tensor.shape[0] for tensor in weights]
             shape_list = [
-                paddle.zeros_like(paddle.empty(1), dtype=paddle.float64, device=device)  # pylint: disable=no-explicit-dtype,no-explicit-device
+                paddle.zeros_like(paddle.empty(1), dtype=paddle.float64).to(
+                    device=device
+                )  # pylint: disable=no-explicit-dtype,no-explicit-device
                 for _ in range(dist.get_world_size())
             ]
             dist.all_gather_object(shape_list, local_shape)
@@ -215,8 +223,8 @@ class LKFOptimizer(Optimizer):
             weight_list = [None] * len(world_shape)
             for i in range(len(world_shape)):
                 weight_list[i] = paddle.zeros(
-                    world_shape[i], dtype=paddle.float64, device=device
-                )
+                    [world_shape[i]], dtype=paddle.float64
+                ).to(device=device)
             dist.all_gather(weight_list, weight_tensor)
             result = []
             for i in range(dist.get_world_size()):
@@ -227,10 +235,10 @@ class LKFOptimizer(Optimizer):
 
         i = 0
         param_sum = 0
-        for param_group in self.param_groups:
+        for param_group in self._param_groups:
             params = param_group["params"]
             for param in params:
-                param_num = param.nelement()
+                param_num = param.numel().item()
                 weight_tmp = weights[i][param_sum : param_sum + param_num]
                 if param_num < block_size:
                     if param.ndim > 1:
@@ -268,29 +276,29 @@ class LKFOptimizer(Optimizer):
 
         for param in self._params:
             if param.ndim > 1:
-                tmp = param.data.T.contiguous().reshape(param.data.nelement(), 1)
+                tmp = param.data.T.contiguous().reshape(param.data.numel().item(), 1)
                 if param.grad is None:
                     tmp_grad = paddle.zeros_like(tmp)
                 else:
                     tmp_grad = (
                         (param.grad / self.grad_prefactor)
                         .T.contiguous()
-                        .reshape(param.grad.nelement(), 1)
+                        .reshape(param.grad.numel().item(), 1)
                     )
             else:
-                tmp = param.data.reshape(param.data.nelement(), 1)
+                tmp = param.data.reshape(param.data.numel().item(), 1)
                 if param.grad is None:
                     tmp_grad = paddle.zeros_like(tmp)
                 else:
                     tmp_grad = (param.grad / self.grad_prefactor).reshape(
-                        param.grad.nelement(), 1
+                        param.grad.numel().item(), 1
                     )
 
             tmp = self.__split_weights(tmp)
             tmp_grad = self.__split_weights(tmp_grad)
 
             for split_grad, split_weight in zip(tmp_grad, tmp):
-                nelement = split_grad.nelement()
+                numel = split_grad.numel().item()
 
                 if param_sum == 0:
                     res_grad = split_grad
@@ -299,7 +307,7 @@ class LKFOptimizer(Optimizer):
                     res_grad = paddle.concat((res_grad, split_grad), axis=0)
                     res = paddle.concat((res, split_weight), axis=0)
 
-                param_sum += nelement
+                param_sum += numel
 
                 if param_sum == params_packed_index[param_index]:
                     param_sum = 0

@@ -382,7 +382,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
             mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
             # nfnl x nt x 1
             ss = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-            ss = ss * mm[:, :, None]
+            ss = ss * mm[:, :, None].astype(ss.dtype)
             # nfnl x nt x ng
             gg = ll.forward(ss)
             gg = paddle.mean(gg, axis=1).unsqueeze(1)

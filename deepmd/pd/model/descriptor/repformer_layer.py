@@ -108,7 +108,7 @@ def _make_nei_g1(
     # g1_ext: nb x nall x ng1
     ng1 = g1_ext.shape[-1]
     # index: nb x (nloc x nnei) x ng1
-    index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand(-1, -1, ng1)
+    index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, ng1])
     # gg1  : nb x (nloc x nnei) x ng1
     gg1 = paddle.gather(g1_ext, axis=1, index=index)
     # gg1  : nb x nloc x nnei x ng1

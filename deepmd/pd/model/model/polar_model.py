@@ -35,8 +35,8 @@ class PolarModel(DPModelCommon, DPDOSModel_):
         *args,
         **kwargs,
     ):
-        DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)
+        DPModelCommon.__init__(self)
 
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()

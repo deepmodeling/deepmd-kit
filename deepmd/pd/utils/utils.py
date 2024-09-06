@@ -71,9 +71,11 @@ def to_numpy_array(
     prec = NP_PRECISION_DICT.get(prec, np.float64)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    if isinstance(xx, np.ndarray):
+        return xx.astype(prec)
     if xx.dtype == paddle.bfloat16:
         xx = xx.astype(paddle.get_default_dtype())
-    return xx.astype(prec)
+    return xx.numpy().astype(prec)
 
 
 @overload

@@ -344,7 +344,7 @@ def train(FLAGS):
 def freeze(FLAGS):
     model = inference.Tester(FLAGS.model, head=FLAGS.head).model
     model.eval()
-    model = paddle.jit.script(model)
+    model = paddle.jit.to_static(model)
     extra_files = {}
     paddle.jit.save(
         model,
@@ -536,7 +536,7 @@ def change_bias(FLAGS):
             if FLAGS.output is not None
             else FLAGS.INPUT.replace(".pdparams", "_updated.pdparams")
         )
-        model = paddle.jit.script(model)
+        model = paddle.jit.to_static(model)
         paddle.jit.save(
             model,
             output_path,
@@ -552,7 +552,11 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     else:
         FLAGS = args
 
-    set_log_handles(FLAGS.log_level, Path(FLAGS.log_path), mpi_log=None)
+    set_log_handles(
+        FLAGS.log_level,
+        Path(FLAGS.log_path) if FLAGS.log_path is not None else None,
+        mpi_log=None,
+    )
     log.debug("Log handles were successfully set")
     log.info("DeePMD version: %s", __version__)
 

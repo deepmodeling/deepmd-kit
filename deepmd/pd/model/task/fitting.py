@@ -277,8 +277,7 @@ class GeneralFitting(Fitting):
             extend_bias_atom_e = paddle.zeros(
                 extend_shape,
                 dtype=self.bias_atom_e.dtype,
-                device=self.bias_atom_e.place,
-            )
+            ).to(device=self.bias_atom_e.place)
             self.bias_atom_e = paddle.concat(
                 [self.bias_atom_e, extend_bias_atom_e], axis=0
             )

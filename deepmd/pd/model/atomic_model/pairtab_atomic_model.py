@@ -105,7 +105,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             self.register_buffer("tab_info", None)
             self.register_buffer("tab_data", None)
         self.bias_atom_e = paddle.zeros(
-            self.ntypes, 1, dtype=env.GLOBAL_PD_ENER_FLOAT_PRECISION
+            [self.ntypes, 1], dtype=env.GLOBAL_PD_ENER_FLOAT_PRECISION
         ).to(device=env.DEVICE)
 
         # self.model_type = "ener"
@@ -383,7 +383,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         coord_l = coords[:, :nloc].reshape([nframes, -1, 1, 3])
-        index = nlist.reshape([nframes, -1]).unsqueeze(-1).expand(-1, -1, 3)
+        index = nlist.reshape([nframes, -1]).unsqueeze(-1).expand([-1, -1, 3])
         # coord_r = paddle.take_along_axis(coords, axis=1, indices=index)
         coord_r = aux.take_along_axis(coords, axis=1, indices=index)
         coord_r = coord_r.reshape([nframes, nloc, nnei, 3])
@@ -422,7 +422,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         """
         # (nframes, nloc, nnei)
-        expanded_i_type = i_type.unsqueeze(-1).expand(-1, -1, j_type.shape[-1])
+        expanded_i_type = i_type.unsqueeze(-1).expand([-1, -1, j_type.shape[-1]])
 
         # handle the case where idx is beyond the number of splines
         clipped_indices = paddle.clamp(idx, 0, nspline - 1).to(paddle.int64)
@@ -438,7 +438,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         # tab_data: (ntype, ntype, nspline, 4)
         tab_data = tab_data.reshape([ntypes * ntypes * nspline, 4])
         # tab_data_idx: (nframes * nloc * nnei, 4)
-        tab_data_idx = tab_data_idx.reshape([nframes * nloc * nnei, 1]).expand(-1, 4)
+        tab_data_idx = tab_data_idx.reshape([nframes * nloc * nnei, 1]).expand([-1, 4])
         # (nframes, nloc, nnei, 4)
         # final_coef = paddle.take_along_axis(
         #     tab_data, axis=0, indices=tab_data_idx

@@ -702,11 +702,11 @@ class DescrptBlockSeT(DescriptorBlock):
                 # nfnl x nt_i x 3
                 rr_i = dmatrix[:, self.sec[ti] : self.sec[ti + 1], 1:]
                 mm_i = exclude_mask[:, self.sec[ti] : self.sec[ti + 1]]
-                rr_i = rr_i * mm_i[:, :, None]
+                rr_i = rr_i * mm_i[:, :, None].astype(rr_i.dtype)
                 # nfnl x nt_j x 3
                 rr_j = dmatrix[:, self.sec[tj] : self.sec[tj + 1], 1:]
                 mm_j = exclude_mask[:, self.sec[tj] : self.sec[tj + 1]]
-                rr_j = rr_j * mm_j[:, :, None]
+                rr_j = rr_j * mm_j[:, :, None].astype(rr_j.dtype)
                 # nfnl x nt_i x nt_j
                 env_ij = paddle.einsum("ijm,ikm->ijk", rr_i, rr_j)
                 # nfnl x nt_i x nt_j x 1

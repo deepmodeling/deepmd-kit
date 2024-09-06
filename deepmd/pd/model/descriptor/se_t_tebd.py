@@ -787,10 +787,10 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         nt = extended_atype_embd.shape[-1]
         atype_tebd_ext = extended_atype_embd
         # nb x (nloc x nnei) x nt
-        index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand(-1, -1, nt)
+        index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
         # nb x (nloc x nnei) x nt
         # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
-        atype_tebd_nlist = aux.take_along_axis(atype_tebd_ext, axis=1, index=index)
+        atype_tebd_nlist = aux.take_along_axis(atype_tebd_ext, axis=1, indices=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
         # beyond the cutoff sw should be 0.0
@@ -803,7 +803,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         nfnl = dmatrix.shape[0]
         # nfnl x nnei x 4
         rr = dmatrix
-        rr = rr * exclude_mask[:, :, None]
+        rr = rr * exclude_mask[:, :, None].astype(rr.dtype)
 
         # nfnl x nt_i x 3
         rr_i = rr[:, :, 1:]

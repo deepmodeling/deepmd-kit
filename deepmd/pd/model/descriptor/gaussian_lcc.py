@@ -16,6 +16,7 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNet,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.utils.path import (
@@ -202,7 +203,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
                 paddle.arange(0, nloc)
                 .to(device=nlist.place)  # pylint: disable=no-explicit-dtype
                 .reshape([1, nloc, 1])
-                .expand(nframes, -1, -1),
+                .expand([nframes, -1, -1]),
                 nlist,
             ],
             axis=-1,
@@ -212,7 +213,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
                 paddle.arange(0, nloc)
                 .to(device=nlist_loc.place)  # pylint: disable=no-explicit-dtype
                 .reshape([1, nloc, 1])
-                .expand(nframes, -1, -1),
+                .expand([nframes, -1, -1]),
                 nlist_loc,
             ],
             axis=-1,
@@ -249,7 +250,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
             axis=1,
             index=nlist_loc2.reshape([nframes, -1])
             .unsqueeze(-1)
-            .expand(-1, -1, self.embed_dim),
+            .expand([-1, -1, self.embed_dim]),
         ).reshape([nframes * nloc, 1 + self.nnei, self.embed_dim])
         if self.pre_add_seq and seq_input is not None:
             first_dim = seq_input.shape[0]
@@ -261,7 +262,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
                     axis=1,
                     index=nlist_loc2.reshape([nframes, -1])
                     .unsqueeze(-1)
-                    .expand(-1, -1, self.embed_dim),
+                    .expand([-1, -1, self.embed_dim]),
                 ).reshape([nframes * nloc, 1 + self.nnei, self.embed_dim])
                 atom_feature += atom_feature_seq
             else:
@@ -285,21 +286,23 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
             [
                 nlist_type2_reshape.reshape(
                     [nframes * nloc, 1 + self.nnei, 1, 1]
-                ).expand(-1, -1, 1 + self.nnei, -1),
+                ).expand([-1, -1, 1 + self.nnei, -1]),
                 nlist_type2_reshape.reshape(
                     [nframes * nloc, 1, 1 + self.nnei, 1]
-                ).expand(-1, 1 + self.nnei, -1, -1)
+                ).expand([-1, 1 + self.nnei, -1, -1])
                 + self.ntypes,
             ],
             axis=-1,
         )
         # [(nframes x nloc) x (1 + nnei2) x 3]
-        coord_selected = paddle.gather(
+        coord_selected = aux.take_along_axis(
             extended_coord.unsqueeze(1)
-            .expand(-1, nloc, -1, -1)
+            .expand([-1, nloc, -1, -1])
             .reshape([nframes * nloc, nall, 3]),
             axis=1,
-            index=nlist2.reshape([nframes * nloc, 1 + self.nnei, 1]).expand(-1, -1, 3),
+            indices=nlist2.reshape([nframes * nloc, 1 + self.nnei, 1]).expand(
+                [-1, -1, 3]
+            ),
         )
 
         # Update pair features (or and atomic features) with gbf features

@@ -490,15 +490,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = paddle.squeeze(sw, -1)
         # nf x nloc x nt -> nf x nloc x nnei x nt
         atype_tebd = extended_atype_embd[:, :nloc, :]
-        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)
+        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand([-1, -1, self.nnei, -1])
         # nf x nall x nt
         nt = extended_atype_embd.shape[-1]
         atype_tebd_ext = extended_atype_embd
         # nb x (nloc x nnei) x nt
-        index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand(-1, -1, nt)
+        index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
         # nb x (nloc x nnei) x nt
         # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
-        atype_tebd_nlist = aux.take_along_axis(atype_tebd_ext, axis=1, index=index)
+        atype_tebd_nlist = aux.take_along_axis(atype_tebd_ext, axis=1, indices=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
         # beyond the cutoff sw should be 0.0
@@ -534,7 +534,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nfnl = dmatrix.shape[0]
             # nfnl x nnei x 4
             rr = dmatrix
-            rr = rr * exclude_mask[:, :, None]
+            rr = rr * exclude_mask[:, :, None].astype(rr.dtype)
             ss = rr[:, :, :1]
             nlist_tebd = atype_tebd_nlist.reshape([nfnl, nnei, self.tebd_dim])
             atype_tebd = atype_tebd_nnei.reshape([nfnl, nnei, self.tebd_dim])
@@ -986,7 +986,7 @@ class GatedAttentionLayer(nn.Layer):
             assert input_r is not None, "input_r must be provided when dotr is True!"
             # (nf x nloc) x 1 x nnei x nnei
             angular_weight = paddle.matmul(
-                input_r, input_r.transpose([0, 1, 3, 2])
+                input_r, input_r.transpose([0, 2, 1])
             ).reshape([-1, 1, self.nnei, self.nnei])
             attn_weights = attn_weights * angular_weight
 

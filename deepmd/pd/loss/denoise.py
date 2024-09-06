@@ -67,7 +67,7 @@ class DenoiseLoss(TaskLoss):
                     )
                 else:
                     coord_loss = paddle.zeros(
-                        1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+                        [1], dtype=env.GLOBAL_PD_FLOAT_PRECISION
                     ).to(env.DEVICE)[0]
             else:
                 coord_loss = F.smooth_l1_loss(
@@ -90,7 +90,7 @@ class DenoiseLoss(TaskLoss):
                     )
                 else:
                     token_loss = paddle.zeros(
-                        1, dtype=env.GLOBAL_PD_FLOAT_PRECISION
+                        [1], dtype=env.GLOBAL_PD_FLOAT_PRECISION
                     ).to(env.DEVICE)[0]
             else:
                 token_loss = F.nll_loss(

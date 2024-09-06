@@ -306,7 +306,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             #           f" that of the coordinate {input_prec}"
             #         )
             _lst: List[Optional[paddle.Tensor]] = [
-                vv.to(coord.dtype) if vv is not None else None
+                vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
             box, fparam, aparam = _lst
@@ -436,7 +436,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 # nf x nloc x 3
                 coord0 = extended_coord[:, :n_nloc, :]
                 # nf x (nloc x nnei) x 3
-                index = nlist.reshape([n_nf, n_nloc * n_nnei, 1]).expand(-1, -1, 3)
+                index = nlist.reshape([n_nf, n_nloc * n_nnei, 1]).expand([-1, -1, 3])
                 coord1 = paddle.gather(extended_coord, 1, index)
                 # nf x nloc x nnei x 3
                 coord1 = coord1.reshape([n_nf, n_nloc, n_nnei, 3])

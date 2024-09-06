@@ -513,7 +513,7 @@ class MaskLMHead(nn.Layer):
             ).weight
         self.weight = weight
         self.bias = self.create_parameter(
-            paddle.zeros(output_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)  # pylint: disable=no-explicit-dtype,no-explicit-device
+            paddle.zeros([output_dim], dtype=env.GLOBAL_PD_FLOAT_PRECISION)  # pylint: disable=no-explicit-dtype,no-explicit-device
         )
 
     def forward(
@@ -753,7 +753,9 @@ class TypeEmbedNetConsistent(nn.Layer):
             embed = paddle.concat(
                 [
                     embed,
-                    paddle.zeros(1, embed.shape[1], dtype=self.prec).to(device=device),
+                    paddle.zeros([1, embed.shape[1]], dtype=self.prec).to(
+                        device=device
+                    ),
                 ]
             )
         return embed
@@ -874,7 +876,7 @@ class TypeEmbedNetConsistent(nn.Layer):
         }
 
 
-# @paddle.jit.script
+# @paddle.jit.to_static
 def gaussian(x, mean, std: float):
     pi = 3.14159
     a = (2 * pi) ** 0.5
@@ -905,7 +907,7 @@ class GaussianKernel(nn.Layer):
         bias = self.bias(atom_pair).sum(axis=-2)
         x = mul * x.unsqueeze(-1) + bias
         # [nframes, nloc, nnei, K]
-        x = x.expand(-1, -1, -1, self.K)
+        x = x.expand([-1, -1, -1, self.K])
         mean = self.mean.reshape([-1])
         return gaussian(x, mean, self.std)
 
@@ -1284,7 +1286,7 @@ class LocalSelfMultiheadAttention(nn.Layer):
         # v = paddle.concat([v, padding.unsqueeze(0).unsqueeze(1)], axis=1)
 
         # [nframes, nloc * nnei, feature_dim]
-        index = nlist.reshape([nframes, -1]).unsqueeze(-1).expand(-1, -1, feature_dim)
+        index = nlist.reshape([nframes, -1]).unsqueeze(-1).expand([-1, -1, feature_dim])
         k = paddle.gather(k, axis=1, index=index)
         # [nframes, nloc * nnei, feature_dim]
         v = paddle.gather(v, axis=1, index=index)

@@ -188,7 +188,7 @@ class SpinModel(paddle.nn.Layer):
             paddle.arange(0, nloc, dtype=nlist.dtype)
             .to(device=nlist.place)
             .reshape([1, -1, 1])
-            .expand(nframes, -1, -1)
+            .expand([nframes, -1, -1])
         )
         self_spin = self_real + nall
         # real atom's neighbors: self spin + real neighbor + virtual neighbor
