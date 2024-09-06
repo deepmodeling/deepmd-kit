@@ -60,6 +60,9 @@ from .model import (
 from .polar_model import (
     PolarModel,
 )
+from .property_model import (
+    PropertyModel,
+)
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
@@ -182,6 +185,8 @@ def get_standard_model(model_params):
         modelcls = DOSModel
     elif fitting_net["type"] in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
+    elif fitting_net["type"] == "property":
+        modelcls = PropertyModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
 

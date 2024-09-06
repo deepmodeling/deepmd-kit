@@ -37,6 +37,9 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
@@ -166,6 +169,9 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.model["Default"].get_dim_aparam()
 
+    def get_intensive(self) -> bool:
+        return self.dp.model["Default"].get_intensive()
+
     @property
     def model_type(self) -> Type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
@@ -182,6 +188,8 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif "property" in model_output_type:
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -197,6 +205,10 @@ class DeepEval(DeepEvalBackend):
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
         return self.dp.model["Default"].get_numb_dos()
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension."""
+        return self.dp.model["Default"].get_task_dim()
 
     def get_has_efield(self):
         """Check if the model has efield."""

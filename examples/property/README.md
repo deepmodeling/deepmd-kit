@@ -1,0 +1,1 @@
+The data in this directory is a small subset of `qm9` dataset. The leaderboard website is [paperswithcode](https://paperswithcode.com/sota/molecular-property-prediction-on-qm9). Each frame in directory `data/` is labeled with three properties: `lumo`,`homo` and `band_gap`. We assume that they are intensive.

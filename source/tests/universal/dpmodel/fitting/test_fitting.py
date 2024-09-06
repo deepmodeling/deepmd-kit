@@ -9,6 +9,7 @@ from deepmd.dpmodel.fitting import (
     DOSFittingNet,
     EnergyFittingNet,
     PolarFitting,
+    PropertyFittingNet,
 )
 
 from ....consistent.common import (
@@ -187,12 +188,51 @@ FittingParamPolarList = parameterize_func(
 FittingParamPolar = FittingParamPolarList[0]
 
 
+def FittingParamProperty(
+    ntypes,
+    dim_descrpt,
+    mixed_types,
+    type_map,
+    exclude_types=[],
+    precision="float64",
+    embedding_width=None,
+    numb_param=0,  # test numb_fparam and numb_aparam together
+):
+    input_dict = {
+        "ntypes": ntypes,
+        "dim_descrpt": dim_descrpt,
+        "mixed_types": mixed_types,
+        "type_map": type_map,
+        "exclude_types": exclude_types,
+        "seed": GLOBAL_SEED,
+        "precision": precision,
+        "numb_fparam": numb_param,
+        "numb_aparam": numb_param,
+    }
+    return input_dict
+
+
+FittingParamPropertyList = parameterize_func(
+    FittingParamProperty,
+    OrderedDict(
+        {
+            "exclude_types": ([], [0]),
+            "precision": ("float64",),
+            "numb_param": (0, 2),
+        }
+    ),
+)
+# to get name for the default function
+FittingParamProperty = FittingParamPropertyList[0]
+
+
 @parameterized(
     (
         (FittingParamEnergy, EnergyFittingNet),
         (FittingParamDos, DOSFittingNet),
         (FittingParamDipole, DipoleFitting),
         (FittingParamPolar, PolarFitting),
+        (FittingParamProperty, PropertyFittingNet),
     ),  # class_param & class
     (True, False),  # mixed_types
 )

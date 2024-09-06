@@ -135,3 +135,23 @@ class SpinEnerModelTest(ModelTestCase):
             "virtual_scale": [0.3140],
         }
         cls.test_spin = True
+
+
+class PropertyModelTest(ModelTestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.expected_rcut = 5.0
+        cls.expected_type_map = ["O", "H"]
+        cls.expected_dim_fparam = 0
+        cls.expected_dim_aparam = 0
+        cls.expected_sel_type = [0, 1]
+        cls.expected_aparam_nall = False
+        cls.expected_model_output_type = ["property", "mask"]
+        cls.model_output_equivariant = []
+        cls.expected_sel = [46, 92]
+        cls.expected_sel_mix = sum(cls.expected_sel)
+        cls.expected_has_message_passing = False
+        cls.aprec_dict = {}
+        cls.rprec_dict = {}
+        cls.epsilon_dict = {}
+        cls.skip_test_autodiff = True
