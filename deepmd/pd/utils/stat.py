@@ -501,7 +501,7 @@ def compute_output_stats_global(
     atom_numbs = {kk: merged_natoms[kk].sum(-1) for kk in bias_atom_e.keys()}
 
     def rmse(x):
-        return (x**2).mean() ** 0.5
+        return np.sqrt(np.mean(np.square(x)))
 
     for kk in bias_atom_e.keys():
         rmse_ae = rmse(

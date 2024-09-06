@@ -395,7 +395,7 @@ class Trainer:
 
         # JIT
         if JIT:
-            self.model = paddle.jit.to_static(self.model)
+            self.model = paddle.jit.to_static(self.model, full_graph=False)
 
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model, self.loss, model_params=model_params)
@@ -603,7 +603,10 @@ class Trainer:
                 self.optimizer.set_state_dict(optimizer_state_dict)
         elif self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
-                self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
+                [{"params": self.wrapper.parameters()}],
+                0.98,
+                0.99870,
+                self.opt_param["kf_blocksize"],
             )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
