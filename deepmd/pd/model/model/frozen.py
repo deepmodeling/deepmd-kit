@@ -37,8 +37,8 @@ class FrozenModel(BaseModel):
     def __init__(self, model_file: str, **kwargs):
         super().__init__(**kwargs)
         self.model_file = model_file
-        if model_file.endswith(".pdparams"):
-            self.model = paddle.jit.load(model_file)
+        if model_file.endswith(".pdmodel"):
+            self.model = paddle.jit.load(model_file[:-8])
         else:
             # try to convert from other formats
             with tempfile.NamedTemporaryFile(suffix=".pdparams") as f:

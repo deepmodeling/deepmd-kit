@@ -188,7 +188,8 @@ def build_neighbor_list(
     coord_l = coord.reshape([-1, 1, 3])[:nloc]
     coord_r = coord.reshape([1, -1, 3])
     distance = coord_l - coord_r
-    distance = paddle.linalg.norm(distance, axis=-1)
+    # distance = paddle.linalg.norm(distance, axis=-1)
+    distance = aux.norm(distance, axis=-1)
     DISTANCE_INF = distance.max().detach() + rcut
     distance[:nloc, :nloc] += paddle.eye(nloc, dtype=paddle.bool) * DISTANCE_INF  # pylint: disable=no-explicit-device
     if min_check:

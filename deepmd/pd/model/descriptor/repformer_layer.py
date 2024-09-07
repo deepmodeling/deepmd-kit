@@ -22,6 +22,7 @@ from deepmd.pd.model.network.mlp import (
     MLPLayer,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -110,7 +111,7 @@ def _make_nei_g1(
     # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, ng1])
     # gg1  : nb x (nloc x nnei) x ng1
-    gg1 = paddle.gather(g1_ext, axis=1, index=index)
+    gg1 = aux.take_along_axis(g1_ext, axis=1, indices=index)
     # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.reshape([nb, nloc, nnei, ng1])
     return gg1
@@ -198,15 +199,15 @@ class Atten2Map(paddle.nn.Layer):
         # nb x nloc x nnei x nd x (nh x 2)
         g2qk = self.mapqk(g2).reshape([nb, nloc, nnei, nd, nh * 2])
         # nb x nloc x (nh x 2) x nnei x nd
-        g2qk = paddle.permute(g2qk, (0, 1, 4, 2, 3))
+        g2qk = paddle.transpose(g2qk, (0, 1, 4, 2, 3))
         # nb x nloc x nh x nnei x nd
-        g2q, g2k = paddle.split(g2qk, nh, axis=2)
+        g2q, g2k = paddle.split(g2qk, aux.sec(g2qk.shape[2], nh), axis=2)
         # g2q = paddle.nn.functional.normalize(g2q, axis=-1)
         # g2k = paddle.nn.functional.normalize(g2k, axis=-1)
         # nb x nloc x nh x nnei x nnei
-        attnw = paddle.matmul(g2q, paddle.transpose(g2k, -1, -2)) / nd**0.5
+        attnw = paddle.matmul(g2q, paddle.transpose(g2k, [0, 1, 2, 4, 3])) / nd**0.5
         if self.has_gate:
-            gate = paddle.matmul(h2, paddle.transpose(h2, -1, -2)).unsqueeze(-3)
+            gate = paddle.matmul(h2, paddle.transpose(h2, [0, 1, 3, 2])).unsqueeze(-3)
             attnw = attnw * gate
         # mask the attenmap, nb x nloc x 1 x 1 x nnei
         attnw_mask = ~nlist_mask.unsqueeze(2).unsqueeze(2)
@@ -221,7 +222,7 @@ class Atten2Map(paddle.nn.Layer):
                 attnw_mask,
                 float("-inf"),
             )
-        attnw = paddle.softmax(attnw, axis=-1)
+        attnw = paddle.nn.functional.softmax(attnw, axis=-1)
         attnw = attnw.masked_fill(
             attnw_mask,
             0.0,
@@ -234,12 +235,12 @@ class Atten2Map(paddle.nn.Layer):
         if self.smooth:
             attnw = attnw * sw[:, :, None, :, None] * sw[:, :, None, None, :]
         # nb x nloc x nnei x nnei
-        h2h2t = paddle.matmul(h2, paddle.transpose(h2, -1, -2)) / 3.0**0.5
+        h2h2t = paddle.matmul(h2, paddle.transpose(h2, [0, 1, 3, 2])) / 3.0**0.5
         # nb x nloc x nh x nnei x nnei
         ret = attnw * h2h2t[:, :, None, :, :]
-        # ret = paddle.softmax(g2qk, axis=-1)
+        # ret = paddle.nn.functional.softmax(g2qk, axis=-1)
         # nb x nloc x nnei x nnei x nh
-        ret = paddle.permute(ret, (0, 1, 3, 4, 2))
+        ret = paddle.transpose(ret, (0, 1, 3, 4, 2))
         return ret
 
     def serialize(self) -> dict:
@@ -317,14 +318,16 @@ class Atten2MultiHeadApply(paddle.nn.Layer):
         # nf x nloc x nnei x ng2 x nh
         g2v = self.mapv(g2).reshape([nf, nloc, nnei, ng2, nh])
         # nf x nloc x nh x nnei x ng2
-        g2v = paddle.permute(g2v, (0, 1, 4, 2, 3))
+        g2v = paddle.transpose(g2v, (0, 1, 4, 2, 3))
         # g2v = paddle.nn.functional.normalize(g2v, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        AA = paddle.permute(AA, (0, 1, 4, 2, 3))
+        AA = paddle.transpose(AA, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x ng2
         ret = paddle.matmul(AA, g2v)
         # nf x nloc x nnei x ng2 x nh
-        ret = paddle.permute(ret, (0, 1, 3, 4, 2)).reshape([nf, nloc, nnei, (ng2 * nh)])
+        ret = paddle.transpose(ret, (0, 1, 3, 4, 2)).reshape(
+            [nf, nloc, nnei, (ng2 * nh)]
+        )
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
@@ -390,14 +393,14 @@ class Atten2EquiVarApply(paddle.nn.Layer):
         nf, nloc, nnei, _ = h2.shape
         nh = self.head_num
         # nf x nloc x nh x nnei x nnei
-        AA = paddle.permute(AA, (0, 1, 4, 2, 3))
+        AA = paddle.transpose(AA, (0, 1, 4, 2, 3))
         h2m = paddle.unsqueeze(h2, axis=2)
         # nf x nloc x nh x nnei x 3
         h2m = paddle.tile(h2m, [1, 1, nh, 1, 1])
         # nf x nloc x nh x nnei x 3
         ret = paddle.matmul(AA, h2m)
         # nf x nloc x nnei x 3 x nh
-        ret = paddle.permute(ret, (0, 1, 3, 4, 2)).reshape([nf, nloc, nnei, 3, nh])
+        ret = paddle.transpose(ret, (0, 1, 3, 4, 2)).reshape([nf, nloc, nnei, 3, nh])
         # nf x nloc x nnei x 3
         return paddle.squeeze(self.head_map(ret), axis=-1)
 
@@ -489,16 +492,17 @@ class LocalAtten(paddle.nn.Layer):
         # nb x nloc x nd x nh
         g1q = self.mapq(g1).reshape([nb, nloc, nd, nh])
         # nb x nloc x nh x nd
-        g1q = paddle.permute(g1q, (0, 1, 3, 2))
+        g1q = paddle.transpose(g1q, (0, 1, 3, 2))
         # nb x nloc x nnei x (nd+ni) x nh
         gg1kv = self.mapkv(gg1).reshape([nb, nloc, nnei, nd + ni, nh])
-        gg1kv = paddle.permute(gg1kv, (0, 1, 4, 2, 3))
+        gg1kv = paddle.transpose(gg1kv, (0, 1, 4, 2, 3))
         # nb x nloc x nh x nnei x nd, nb x nloc x nh x nnei x ng1
         gg1k, gg1v = paddle.split(gg1kv, [nd, ni], axis=-1)
 
         # nb x nloc x nh x 1 x nnei
         attnw = (
-            paddle.matmul(g1q.unsqueeze(-2), paddle.transpose(gg1k, -1, -2)) / nd**0.5
+            paddle.matmul(g1q.unsqueeze(-2), paddle.transpose(gg1k, [0, 1, 2, 4, 3]))
+            / nd**0.5
         )
         # nb x nloc x nh x nnei
         attnw = attnw.squeeze(-2)
@@ -512,7 +516,7 @@ class LocalAtten(paddle.nn.Layer):
                 attnw_mask,
                 float("-inf"),
             )
-        attnw = paddle.softmax(attnw, axis=-1)
+        attnw = paddle.nn.functional.softmax(attnw, axis=-1)
         attnw = attnw.masked_fill(
             attnw_mask,
             0.0,
@@ -858,9 +862,9 @@ class RepformerLayer(paddle.nn.Layer):
         if not self.smooth:
             # normalized by number of neighbors, not smooth
             # nb x nloc x 1
-            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
+            # must use astype here to convert bool to float, otherwise there will be numerical difference from numpy
             invnnei = 1.0 / (
-                self.epsilon + paddle.sum(nlist_mask.type_as(gg1), axis=-1)
+                self.epsilon + paddle.sum(nlist_mask.astype(gg1.dtype), axis=-1)
             ).unsqueeze(-1)
         else:
             gg1 = _apply_switch(gg1, sw)
@@ -913,8 +917,8 @@ class RepformerLayer(paddle.nn.Layer):
         g2 = _apply_nlist_mask(g2, nlist_mask)
         if not smooth:
             # nb x nloc
-            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
-            invnnei = 1.0 / (epsilon + paddle.sum(nlist_mask.type_as(g2), axis=-1))
+            # must use astype here to convert bool to float, otherwise there will be numerical difference from numpy
+            invnnei = 1.0 / (epsilon + paddle.sum(nlist_mask.astype(g2.dtype), axis=-1))
             # nb x nloc x 1 x 1
             invnnei = invnnei.unsqueeze(-1).unsqueeze(-1)
         else:
@@ -923,7 +927,7 @@ class RepformerLayer(paddle.nn.Layer):
                 (nb, nloc, 1, 1), dtype=g2.dtype
             ).to(device=g2.place)
         # nb x nloc x 3 x ng2
-        h2g2 = paddle.matmul(paddle.transpose(h2, -1, -2), g2) * invnnei
+        h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei
         return h2g2
 
     @staticmethod
@@ -946,9 +950,9 @@ class RepformerLayer(paddle.nn.Layer):
         # nb x nloc x 3 x ng2
         nb, nloc, _, ng2 = h2g2.shape
         # nb x nloc x 3 x axis
-        h2g2m = paddle.split(h2g2, axis_neuron, axis=-1)[0]
+        h2g2m = paddle.split(h2g2, aux.sec(h2g2.shape[-1], axis_neuron), axis=-1)[0]
         # nb x nloc x axis x ng2
-        g1_13 = paddle.matmul(paddle.transpose(h2g2m, -1, -2), h2g2) / (3.0**1)
+        g1_13 = paddle.matmul(paddle.transpose(h2g2m, [0, 1, 3, 2]), h2g2) / (3.0**1)
         # nb x nloc x (axisxng2)
         g1_13 = g1_13.reshape([nb, nloc, axis_neuron * ng2])
         return g1_13
@@ -1063,8 +1067,8 @@ class RepformerLayer(paddle.nn.Layer):
         nb, nloc, nnei, _ = g2.shape
         nall = g1_ext.shape[1]
         g1, _ = paddle.split(g1_ext, [nloc, nall - nloc], axis=1)
-        assert (nb, nloc) == g1.shape[:2]
-        assert (nb, nloc, nnei) == h2.shape[:3]
+        assert [nb, nloc] == g1.shape[:2]
+        assert [nb, nloc, nnei] == h2.shape[:3]
 
         g2_update: List[paddle.Tensor] = [g2]
         h2_update: List[paddle.Tensor] = [h2]

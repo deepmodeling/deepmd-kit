@@ -52,8 +52,8 @@ def make_stat_input(datasets, dataloaders, nbatches):
     for i in range(len(datasets)):
         sys_stat = {}
 
-        device = paddle.get_device()
-        paddle.set_device("cpu")
+        # device = paddle.get_device()
+        # paddle.set_device("cpu")
         # with paddle.device("cpu"):
         iterator = iter(dataloaders[i])
         numb_batches = min(nbatches, len(dataloaders[i]))
@@ -74,7 +74,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
                     sys_stat[dd] = stat_data[dd]
                 else:
                     pass
-        paddle.set_device(device)
+        # paddle.set_device(device)
 
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
@@ -229,7 +229,7 @@ def _fill_stat_with_global(
     if atomic_stat is None:
         return global_stat
     else:
-        atomic_stat = atomic_stat.reshape(*global_stat.shape)
+        atomic_stat = atomic_stat.reshape(global_stat.shape)
         return np.nan_to_num(
             np.where(
                 np.isnan(atomic_stat) & ~np.isnan(global_stat), global_stat, atomic_stat

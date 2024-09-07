@@ -58,7 +58,7 @@ class DenoiseLoss(TaskLoss):
             if self.mask_loss_coord:
                 masked_updated_coord = updated_coord[coord_mask]
                 masked_clean_coord = clean_coord[coord_mask]
-                if masked_updated_coord.size(0) > 0:
+                if masked_updated_coord.shape[0] > 0:
                     coord_loss = F.smooth_l1_loss(
                         masked_updated_coord.reshape([-1, 3]),
                         masked_clean_coord.reshape([-1, 3]),
@@ -82,7 +82,7 @@ class DenoiseLoss(TaskLoss):
             if self.mask_loss_token:
                 masked_logits = logits[type_mask]
                 masked_target = clean_type[type_mask]
-                if masked_logits.size(0) > 0:
+                if masked_logits.shape[0] > 0:
                     token_loss = F.nll_loss(
                         F.log_softmax(masked_logits, axis=-1),
                         masked_target,

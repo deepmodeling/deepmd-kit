@@ -212,14 +212,14 @@ class EnergyFittingNetDirect(Fitting):
         -------
         - `paddle.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        nframes, nloc, _ = inputs.size()
+        nframes, nloc, _ = inputs.shape
         if self.use_tebd:
             # if atype_tebd is not None:
             #     inputs = paddle.concat([inputs, atype_tebd], axis=-1)
             vec_out = self.filter_layers_dipole[0](
                 inputs
             )  # Shape is [nframes, nloc, m1]
-            assert list(vec_out.size()) == [nframes, nloc, self.out_dim]
+            assert list(vec_out.shape) == [nframes, nloc, self.out_dim]
             # (nf x nloc) x 1 x od
             vec_out = vec_out.reshape([-1, 1, self.out_dim])
             assert gr is not None
@@ -242,7 +242,9 @@ class EnergyFittingNetDirect(Fitting):
                 atom_energy = self.filter_layers[0](inputs) + self.bias_atom_e[
                     atype
                 ].unsqueeze(-1)
-                outs = outs + atom_energy  # Shape is [nframes, natoms[0], 1]
+                outs = (
+                    outs.astype(atom_energy.dtype) + atom_energy
+                )  # Shape is [nframes, natoms[0], 1]
             else:
                 for type_i, filter_layer in enumerate(self.filter_layers):
                     mask = atype == type_i

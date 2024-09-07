@@ -151,11 +151,14 @@ class LayerNorm(nn.Layer):
         prec = PRECISION_DICT[obj.precision]
 
         def check_load_param(ss):
-            return (
-                nn.Parameter(data=to_paddle_tensor(nl[ss]))
-                if nl[ss] is not None
-                else None
-            )
+            if nl[ss] is not None:
+                tensor = to_paddle_tensor(nl[ss])
+                return paddle.create_parameter(
+                    tensor.shape,
+                    dtype=tensor.dtype,
+                    default_initializer=nn.initializer.Assign(tensor),
+                )
+            return None
 
         obj.matrix = check_load_param("matrix")
         obj.bias = check_load_param("bias")

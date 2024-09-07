@@ -160,5 +160,10 @@ class PairExcludeMask(paddle.nn.Layer):
         type_ij = type_i[:, :, None] + type_j
         # nf x (nloc x nnei)
         type_ij = type_ij.reshape([nf, nloc * nnei])
-        mask = self.type_mask[type_ij].reshape([nf, nloc, nnei]).to(atype_ext.place)
+        mask = (
+            self.type_mask[type_ij]
+            .reshape([nf, nloc, nnei])
+            .to(atype_ext.place)
+            .astype("bool")
+        )
         return mask

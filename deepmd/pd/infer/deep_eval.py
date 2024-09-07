@@ -122,7 +122,7 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             self.dp.set_state_dict(state_dict)
         elif str(self.model_path).endswith(".pdmodel"):
-            model = paddle.jit.load(model_file)
+            model = paddle.jit.load(model_file[: -len(".pdmodel")])
             self.dp = ModelWrapper(model)
         else:
             raise ValueError("Unknown model file format!")
@@ -374,7 +374,7 @@ class DeepEval(DeepEvalBackend):
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
             natoms = len(atom_types)
-            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+            atom_types = np.tile(atom_types, nframes).reshape([nframes, -1])
         else:
             natoms = len(atom_types[0])
 
@@ -445,7 +445,7 @@ class DeepEval(DeepEvalBackend):
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
             natoms = len(atom_types)
-            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+            atom_types = np.tile(atom_types, nframes).reshape([nframes, -1])
         else:
             natoms = len(atom_types[0])
 
@@ -467,13 +467,13 @@ class DeepEval(DeepEvalBackend):
             box_input = None
         if fparam is not None:
             fparam_input = to_paddle_tensor(
-                fparam.reshape(nframes, self.get_dim_fparam())
+                fparam.reshape([nframes, self.get_dim_fparam()])
             )
         else:
             fparam_input = None
         if aparam is not None:
             aparam_input = to_paddle_tensor(
-                aparam.reshape(nframes, natoms, self.get_dim_aparam())
+                aparam.reshape([nframes, natoms, self.get_dim_aparam()])
             )
         else:
             aparam_input = None
@@ -575,10 +575,10 @@ def eval_model(
         natoms = len(atom_types)
         if isinstance(atom_types, paddle.Tensor):
             atom_types = paddle.tile(atom_types.unsqueeze(0), [nframes, 1]).reshape(
-                nframes, -1
+                [nframes, -1]
             )
         else:
-            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+            atom_types = np.tile(atom_types, nframes).reshape([nframes, -1])
     else:
         natoms = len(atom_types[0])
 

@@ -225,15 +225,15 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         if ENABLE_CUSTOMIZED_OP:
             op_info = {
-                "build with PT ver": GLOBAL_CONFIG["pt_version"],
-                "build with PT inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
-                "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+                "build with PD ver": GLOBAL_CONFIG["pd_version"],
+                "build with PD inc": GLOBAL_CONFIG["pd_include_dir"].replace(";", "\n"),
+                "build with PD lib": GLOBAL_CONFIG["pd_libs"].replace(";", "\n"),
             }
         else:
             op_info = {}
         return {
             "Backend": "Paddle",
-            "PT ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
+            "PD ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
             "Enable custom OP": ENABLE_CUSTOMIZED_OP,
             **op_info,
         }
@@ -344,12 +344,32 @@ def train(FLAGS):
 def freeze(FLAGS):
     model = inference.Tester(FLAGS.model, head=FLAGS.head).model
     model.eval()
-    model = paddle.jit.to_static(model)
+    from paddle.static import (
+        InputSpec,
+    )
+
+    """
+    ** coord [None, 192, 3] paddle.float64
+    ** atype [None, 192] paddle.int64
+    ** box [None, 3, 3] paddle.float64
+    """
+    model = paddle.jit.to_static(
+        model,
+        full_graph=True,
+        input_spec=[
+            InputSpec([None, 192, 3], dtype="float64", name="coord"),
+            InputSpec([None, 192], dtype="int64", name="atype"),
+            InputSpec([None, 192, 3], dtype="float64", name="box"),
+        ],
+    )
     extra_files = {}
     paddle.jit.save(
         model,
-        FLAGS.output,
-        extra_files,
+        path=FLAGS.output,
+        # extra_files,
+    )
+    log.info(
+        f"Paddle inference model has been exported to: {FLAGS.output}.pdmodel(.pdiparams)"
     )
 
 
@@ -569,7 +589,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
             FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
         else:
             FLAGS.model = FLAGS.checkpoint_folder
-        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pdparams"))
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(""))
         freeze(FLAGS)
     elif FLAGS.command == "show":
         show(FLAGS)

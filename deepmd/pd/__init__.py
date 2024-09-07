@@ -11,3 +11,8 @@ try:
     ]
 except Exception as e:
     __all__ = []
+
+import paddle
+
+paddle.framework.core.set_prim_eager_enabled(True)
+paddle.framework.core._set_prim_all_enabled(True)

@@ -255,12 +255,16 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         # shared_level: 0
         # share all parameters in both type_embedding and se_ttebd
         if shared_level == 0:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
             self.se_ttebd.share_params(base_class.se_ttebd, 0, resume=resume)
         # shared_level: 1
         # share all parameters in type_embedding
         elif shared_level == 1:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
         # Other shared levels
         else:
             raise NotImplementedError

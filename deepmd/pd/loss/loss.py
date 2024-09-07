@@ -40,4 +40,4 @@ class TaskLoss(paddle.nn.Layer, ABC):
         find_property : float
             whether the property is found
         """
-        return loss if bool(find_property) else paddle.nan
+        return loss if bool(find_property) else paddle.to_tensor(float("nan"))

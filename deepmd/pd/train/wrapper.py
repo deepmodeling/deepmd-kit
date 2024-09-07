@@ -194,7 +194,7 @@ class ModelWrapper(paddle.nn.Layer):
         self,
         state_dict: _StateDict,
     ) -> tuple[list[str], list[str]]:
-        self.set_extra_state(state_dict["_extra_state"])
+        self.set_extra_state(state_dict.pop("_extra_state"))
         return super().set_state_dict(state_dict)
 
     def set_state_dict(

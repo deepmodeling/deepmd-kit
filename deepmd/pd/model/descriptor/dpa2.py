@@ -28,6 +28,7 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNetConsistent,
 )
 from deepmd.pd.utils import (
+    aux,
     env,
 )
 from deepmd.pd.utils.nlist import (
@@ -340,29 +341,37 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         # shared_level: 0
         # share all parameters in type_embedding, repinit and repformers
         if shared_level == 0:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
-            self._modules["g1_shape_tranform"] = base_class._modules[
+            self._sub_layers["g1_shape_tranform"] = base_class._sub_layers[
                 "g1_shape_tranform"
             ]
             self.repformers.share_params(base_class.repformers, 0, resume=resume)
         # shared_level: 1
         # share all parameters in type_embedding and repinit
         elif shared_level == 1:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
         # shared_level: 2
         # share all parameters in type_embedding and repformers
         elif shared_level == 2:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
-            self._modules["g1_shape_tranform"] = base_class._modules[
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
+            self._sub_layers["g1_shape_tranform"] = base_class._sub_layers[
                 "g1_shape_tranform"
             ]
             self.repformers.share_params(base_class.repformers, 0, resume=resume)
         # shared_level: 3
         # share all parameters in type_embedding
         elif shared_level == 3:
-            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            self._sub_layers["type_embedding"] = base_class._sub_layers[
+                "type_embedding"
+            ]
         # Other shared levels
         else:
             raise NotImplementedError
@@ -546,7 +555,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             obj.g1_shape_tranform = MLPLayer.deserialize(g1_shape_tranform)
 
         def t_cvt(xx):
-            return paddle.to_tensor(xx, dtype=obj.repinit.prec, device=env.DEVICE)
+            return paddle.to_tensor(xx, dtype=obj.repinit.prec, place=env.DEVICE)
 
         # deserialize repinit
         statistic_repinit = repinit_variable.pop("@variables")
@@ -650,7 +659,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 .unsqueeze(-1)
                 .expand([-1, -1, g1.shape[-1]])
             )
-            g1_ext = paddle.gather(g1, 1, mapping_ext)
+            g1_ext = aux.take_along_axis(g1, mapping_ext, 1)
             g1 = g1_ext
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Dict,
-    List,
-    Optional,
 )
 
 import paddle
@@ -32,11 +30,11 @@ def atomic_virial_corr(
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = paddle.split(paddle.sum(ce, axis=1), [1, 1, 1], axis=-1)
     faked_grad = paddle.ones_like(sumce0)
-    lst = paddle.jit.annotate(List[Optional[paddle.Tensor]], [faked_grad])
+    # lst = paddle.jit.annotate(List[Optional[paddle.Tensor]], [faked_grad])
     extended_virial_corr0 = paddle.autograd.grad(
         [sumce0],
         [extended_coord],
-        grad_outputs=lst,
+        # grad_outputs=lst,
         create_graph=False,
         retain_graph=True,
     )[0]
@@ -44,7 +42,7 @@ def atomic_virial_corr(
     extended_virial_corr1 = paddle.autograd.grad(
         [sumce1],
         [extended_coord],
-        grad_outputs=lst,
+        # grad_outputs=lst,
         create_graph=False,
         retain_graph=True,
     )[0]
@@ -52,7 +50,7 @@ def atomic_virial_corr(
     extended_virial_corr2 = paddle.autograd.grad(
         [sumce2],
         [extended_coord],
-        grad_outputs=lst,
+        # grad_outputs=lst,
         create_graph=False,
         retain_graph=True,
     )[0]

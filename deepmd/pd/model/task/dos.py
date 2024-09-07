@@ -59,12 +59,6 @@ class DOSFittingNet(InvarFitting):
         mixed_types: bool = True,
         type_map: Optional[List[str]] = None,
     ):
-        if bias_dos is not None:
-            self.bias_dos = bias_dos
-        else:
-            self.bias_dos = paddle.zeros((ntypes, numb_dos), dtype=dtype).to(
-                device=env.DEVICE
-            )
         super().__init__(
             var_name="dos",
             ntypes=ntypes,
@@ -84,6 +78,12 @@ class DOSFittingNet(InvarFitting):
             trainable=trainable,
             type_map=type_map,
         )
+        if bias_dos is not None:
+            self.bias_dos = bias_dos
+        else:
+            self.bias_dos = paddle.zeros((ntypes, numb_dos), dtype=dtype).to(
+                device=env.DEVICE
+            )
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(

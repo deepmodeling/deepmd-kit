@@ -107,13 +107,13 @@ class Atten2Map(paddle.nn.Layer):
         # nb x nloc x (nh x 2) x nnei x nd
         g2qk = paddle.transpose(g2qk, (0, 1, 4, 2, 3))
         # nb x nloc x nh x nnei x nd
-        g2q, g2k = paddle.split(g2qk, g2qk.shape[2] // nh, axis=2)
+        g2q, g2k = paddle.split(g2qk, aux.sec(g2qk.shape[2], nh), axis=2)
         # g2q = paddle.nn.functional.normalize(g2q, axis=-1)
         # g2k = paddle.nn.functional.normalize(g2k, axis=-1)
         # nb x nloc x nh x nnei x nnei
-        attnw = paddle.matmul(g2q, paddle.transpose(g2k, -1, -2)) / nd**0.5
+        attnw = paddle.matmul(g2q, paddle.transpose(g2k, [0, 1, 2, 4, 3])) / nd**0.5
         if self.has_gate:
-            gate = paddle.matmul(h2, paddle.transpose(h2, -1, -2)).unsqueeze(-3)
+            gate = paddle.matmul(h2, paddle.transpose(h2, [0, 1, 3, 2])).unsqueeze(-3)
             attnw = attnw * gate
         # mask the attenmap, nb x nloc x 1 x 1 x nnei
         attnw_mask = ~nlist_mask.unsqueeze(2).unsqueeze(2)
@@ -128,7 +128,7 @@ class Atten2Map(paddle.nn.Layer):
                 attnw_mask,
                 float("-inf"),
             )
-        attnw = paddle.softmax(attnw, axis=-1)
+        attnw = paddle.nn.functional.softmax(attnw, axis=-1)
         attnw = attnw.masked_fill(
             attnw_mask,
             0.0,
@@ -141,10 +141,10 @@ class Atten2Map(paddle.nn.Layer):
         if self.smooth:
             attnw = attnw * sw[:, :, None, :, None] * sw[:, :, None, None, :]
         # nb x nloc x nnei x nnei
-        h2h2t = paddle.matmul(h2, paddle.transpose(h2, -1, -2)) / 3.0**0.5
+        h2h2t = paddle.matmul(h2, paddle.transpose(h2, [0, 1, 3, 2])) / 3.0**0.5
         # nb x nloc x nh x nnei x nnei
         ret = attnw * h2h2t[:, :, None, :, :]
-        # ret = paddle.softmax(g2qk, axis=-1)
+        # ret = paddle.nn.functional.softmax(g2qk, axis=-1)
         # nb x nloc x nnei x nnei x nh
         ret = paddle.transpose(ret, (0, 1, 3, 4, 2))
         return ret
@@ -259,7 +259,8 @@ class LocalAtten(paddle.nn.Layer):
 
         # nb x nloc x nh x 1 x nnei
         attnw = (
-            paddle.matmul(g1q.unsqueeze(-2), paddle.transpose(gg1k, -1, -2)) / nd**0.5
+            paddle.matmul(g1q.unsqueeze(-2), paddle.transpose(gg1k, [0, 1, 2, 4, 3]))
+            / nd**0.5
         )
         # nb x nloc x nh x nnei
         attnw: paddle.Tensor = attnw.squeeze(-2)
@@ -273,7 +274,7 @@ class LocalAtten(paddle.nn.Layer):
                 attnw_mask,
                 float("-inf"),
             )
-        attnw = paddle.softmax(attnw, axis=-1)
+        attnw = paddle.nn.functional.softmax(attnw, axis=-1)
         attnw = attnw.masked_fill(
             attnw_mask,
             0.0,
@@ -330,7 +331,7 @@ class RepformerLayer(paddle.nn.Layer):
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
         assert len(sel) == 1
-        self.sel = paddle.to_tensor(sel, device=env.DEVICE)  # pylint: disable=no-explicit-dtype
+        self.sel = paddle.to_tensor(sel, place=env.DEVICE)  # pylint: disable=no-explicit-dtype
         self.sec = self.sel
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
@@ -376,10 +377,7 @@ class RepformerLayer(paddle.nn.Layer):
             self.attn2_mh_apply = Atten2MultiHeadApply(g2_dim, attn2_nhead)
             self.attn2_lm = paddle.nn.LayerNorm(
                 g2_dim,
-                elementwise_affine=True,
-                device=env.DEVICE,
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-            )
+            ).to(device=env.DEVICE)
         if self.update_h2:
             self.attn2h_map = Atten2Map(
                 g2_dim, attn2_hidden, attn2_nhead, attn2_has_gate, self.smooth
@@ -447,7 +445,7 @@ class RepformerLayer(paddle.nn.Layer):
             # normalized by number of neighbors, not smooth
             # nb x nloc x 1
             invnnei = 1.0 / (
-                self.epsilon + paddle.sum(nlist_mask.type_as(gg1), axis=-1)
+                self.epsilon + paddle.sum(nlist_mask.astype(gg1.dtype), axis=-1)
             ).unsqueeze(-1)
         else:
             gg1 = _apply_switch(gg1, sw)
@@ -474,7 +472,9 @@ class RepformerLayer(paddle.nn.Layer):
         g2 = _apply_nlist_mask(g2, nlist_mask)
         if not self.smooth:
             # nb x nloc
-            invnnei = 1.0 / (self.epsilon + paddle.sum(nlist_mask.type_as(g2), axis=-1))
+            invnnei = 1.0 / (
+                self.epsilon + paddle.sum(nlist_mask.astype(g2.dtype), axis=-1)
+            )
             # nb x nloc x 1 x 1
             invnnei = invnnei.unsqueeze(-1).unsqueeze(-1)
         else:
@@ -483,16 +483,18 @@ class RepformerLayer(paddle.nn.Layer):
                 (nb, nloc, 1, 1), dtype=env.GLOBAL_PD_FLOAT_PRECISION
             ).to(device=g2.place)
         # nb x nloc x 3 x ng2
-        h2g2 = paddle.matmul(paddle.transpose(h2, -1, -2), g2) * invnnei
+        h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei
         return h2g2
 
     def _cal_grrg(self, h2g2: paddle.Tensor) -> paddle.Tensor:
         # nb x nloc x 3 x ng2
         nb, nloc, _, ng2 = h2g2.shape
         # nb x nloc x 3 x axis
-        h2g2m = paddle.split(h2g2, h2g2.shape[-1] // self.axis_neuron, axis=-1)[0]
+        h2g2m = paddle.split(h2g2, aux.sec(h2g2.shape[-1], self.axis_neuron), axis=-1)[
+            0
+        ]
         # nb x nloc x axis x ng2
-        g1_13 = paddle.matmul(paddle.transpose(h2g2m, -1, -2), h2g2) / (3.0**1)
+        g1_13 = paddle.matmul(paddle.transpose(h2g2m, [0, 1, 3, 2]), h2g2) / (3.0**1)
         # nb x nloc x (axisxng2)
         g1_13 = g1_13.reshape([nb, nloc, self.axis_neuron * ng2])
         return g1_13
@@ -631,8 +633,8 @@ class RepformerLayer(paddle.nn.Layer):
         nb, nloc, nnei, _ = g2.shape
         nall = g1_ext.shape[1]
         g1, _ = paddle.split(g1_ext, [nloc, nall - nloc], axis=1)
-        assert (nb, nloc) == g1.shape[:2]
-        assert (nb, nloc, nnei) == h2.shape[:3]
+        assert [nb, nloc] == g1.shape[:2]
+        assert [nb, nloc, nnei] == h2.shape[:3]
         ng1 = g1.shape[-1]
         ng2 = g2.shape[-1]
         nh2 = h2.shape[-1]
@@ -744,12 +746,11 @@ class RepformerLayer(paddle.nn.Layer):
         self,
         nf: int = 1,
     ) -> Callable:
-        return paddle.nn.BatchNorm1d(
+        return paddle.nn.BatchNorm1D(
             nf,
-            eps=1e-5,
+            epsilon=1e-5,
             momentum=self.bn_momentum,
-            affine=False,
-            track_running_stats=True,
-            device=env.DEVICE,
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-        )
+            weight_attr=False,
+            bias_attr=False,
+            use_global_stats=False,
+        ).to(device=env.DEVICE)

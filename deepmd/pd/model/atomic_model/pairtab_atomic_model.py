@@ -260,7 +260,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         # this will mask all -1 in the nlist
         mask = nlist >= 0
-        masked_nlist = nlist * mask
+        masked_nlist = nlist * mask.astype(nlist.dtype)
 
         atype = extended_atype[:, :nloc]  # (nframes, nloc)
         pairwise_rr = self._get_pairwise_dist(
@@ -274,7 +274,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
-            paddle.arange(extended_atype.size(0), device=extended_coord.place)[  # pylint: disable=no-explicit-dtype
+            paddle.arange(extended_atype.shape[0]).to(device=extended_coord.place)[  # pylint: disable=no-explicit-dtype
                 :, None, None
             ],
             masked_nlist,
@@ -339,12 +339,12 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
         # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
-        uu = paddle.where(nlist != -1, uu, nspline + 1)
+        uu = paddle.where(nlist != -1, uu, float(nspline + 1))
 
         if paddle.any(uu < 0):
             raise Exception("coord go beyond table lower boundary")
 
-        idx = uu.to(paddle.int)
+        idx = uu.to(paddle.int32)
 
         uu -= idx
 
@@ -425,7 +425,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         expanded_i_type = i_type.unsqueeze(-1).expand([-1, -1, j_type.shape[-1]])
 
         # handle the case where idx is beyond the number of splines
-        clipped_indices = paddle.clamp(idx, 0, nspline - 1).to(paddle.int64)
+        clipped_indices = paddle.clip(idx, 0, nspline - 1).to(paddle.int64)
 
         nframes = i_type.shape[0]
         nloc = i_type.shape[1]
@@ -468,8 +468,12 @@ class PairTabAtomicModel(BaseAtomicModel):
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
         a3, a2, a1, a0 = paddle.unbind(coef, axis=-1)
-        etmp = (a3 * uu + a2) * uu + a1  # this should be elementwise operations.
-        ener = etmp * uu + a0  # this energy has the extrapolated value when rcut > rmax
+        etmp = (a3 * uu.astype(coef.dtype) + a2) * uu.astype(
+            coef.dtype
+        ) + a1  # this should be elementwise operations.
+        ener = (
+            etmp * uu.astype(coef.dtype) + a0
+        )  # this energy has the extrapolated value when rcut > rmax
         return ener
 
     def get_dim_fparam(self) -> int:

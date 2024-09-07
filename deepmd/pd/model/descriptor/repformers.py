@@ -469,7 +469,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             # g1_ext: nb x nall x ng1
             if comm_dict is None:
                 assert mapping is not None
-                g1_ext = paddle.gather(g1, 1, mapping)
+                g1_ext = aux.take_along_axis(g1, axis=1, indices=mapping)
             else:
                 n_padding = nall - nloc
                 g1 = paddle.nn.functional.pad(

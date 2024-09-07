@@ -158,7 +158,7 @@ class EnvMatStatSe(EnvMatStat):
             # shape: (ntypes, nloc)
             type_idx = paddle.equal(
                 atype.reshape([1, -1]),
-                paddle.arange(self.descriptor.get_ntypes(), dtype=paddle.int32)
+                paddle.arange(self.descriptor.get_ntypes(), dtype=atype.dtype)
                 .to(device=env.DEVICE)
                 .reshape([-1, 1]),
             )

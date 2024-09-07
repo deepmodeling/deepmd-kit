@@ -95,14 +95,7 @@ class DpLoaderSet(Dataset):
                 type_map=type_map,
             )
 
-        with Pool(
-            os.cpu_count()
-            // (
-                int(os.environ["LOCAL_WORLD_SIZE"])
-                if dist.is_available() and dist.is_initialized()
-                else 1
-            )
-        ) as pool:
+        with Pool(1) as pool:
             self.systems: List[DeepmdDataSetForLoader] = pool.map(
                 construct_dataset, systems
             )

@@ -17,6 +17,9 @@ from deepmd.dpmodel import (
 from deepmd.pd.model.atomic_model import (
     DPAtomicModel,
 )
+from deepmd.pd.utils import (
+    aux,
+)
 from deepmd.pd.utils.utils import (
     to_paddle_tensor,
 )
@@ -202,8 +205,10 @@ class SpinModel(paddle.nn.Layer):
         # update the index for switch
         first_part_index = (nloc <= extended_nlist) & (extended_nlist < nall)
         second_part_index = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
-        extended_nlist[first_part_index] += nloc
-        extended_nlist[second_part_index] -= nall - nloc
+        # extended_nlist[first_part_index] += nloc
+        extended_nlist = aux.masked_add_(extended_nlist, first_part_index, nloc)
+        # extended_nlist[second_part_index] -= nall - nloc
+        entended_nlist = aux.masked_add_(extended_nlist, second_part_index, nloc - nall)
         return extended_nlist
 
     @staticmethod
@@ -359,10 +364,12 @@ class SpinModel(paddle.nn.Layer):
         """Get attribute from the wrapped model."""
         if (
             name == "backbone_model"
-        ):  # paddle.nn.Layer will exclude modules to self.__dict__["_modules"]
-            return self.__dict__["_modules"]["backbone_model"]
+        ):  # paddle.nn.Layer will exclude modules to self.__dict__["_sub_layers"]
+            return self.__dict__["_sub_layers"]["backbone_model"]
         elif name in self.__dict__:
             return self.__dict__[name]
+        elif name in self._buffers:
+            return self._buffers[name]
         else:
             return getattr(self.backbone_model, name)
 

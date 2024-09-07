@@ -56,7 +56,7 @@ class DPPolarAtomicModel(DPAtomicModel):
                 )
 
                 eye = paddle.eye(3, dtype=dtype).to(device=device)
-                eye = eye.repeat(nframes, nloc, 1, 1)
+                eye = eye.tile([nframes, nloc, 1, 1])
                 # (nframes, nloc, 3, 3)
                 modified_bias = modified_bias.unsqueeze(-1) * eye
 

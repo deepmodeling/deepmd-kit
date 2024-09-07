@@ -50,7 +50,9 @@ from deepmd.utils.finetune import (
 
 
 def Tensor(*shape):
-    return paddle.empty(shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION, device=env.DEVICE)
+    return paddle.empty(shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
+        device=env.DEVICE
+    )
 
 
 class Dropout(nn.Layer):
@@ -60,7 +62,7 @@ class Dropout(nn.Layer):
 
     def forward(self, x, inplace: bool = False):
         if self.p > 0 and self.training:
-            return F.dropout(x, p=self.p, training=True, inplace=inplace)
+            return F.dropout(x, p=self.p, training=True)
         else:
             return x
 
@@ -337,15 +339,30 @@ class SimpleLinear(nn.Layer):
         self.use_timestep = use_timestep
         self.activate = ActivationFn(activate)
 
-        self.matrix = self.create_parameter(data=Tensor(num_in, num_out))
+        t = Tensor(num_in, num_out)
+        self.matrix = self.create_parameter(
+            [num_in, num_out],
+            dtype=t.dtype,
+            default_initializer=nn.initializer.Assign(t),
+        )
         init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
         if bias:
-            self.bias = self.create_parameter(data=Tensor(1, num_out))
+            t = Tensor(1, num_out)
+            self.bias = self.create_parameter(
+                (1, num_out),
+                dtype=t.dtype,
+                default_initializer=nn.initializer.Assign(t),
+            )
             init.normal_(self.bias.data, mean=bavg, std=stddev)
         else:
             self.bias = None
         if self.use_timestep:
-            self.idt = self.create_parameter(data=Tensor(1, num_out))
+            t = Tensor(1, num_out)
+            self.idt = self.create_parameter(
+                (1, num_out),
+                dtype=t.dtype,
+                default_initializer=nn.initializer.Assign(t),
+            )
             init.normal_(self.idt.data, mean=0.1, std=0.001)
 
     def forward(self, inputs):
@@ -505,15 +522,15 @@ class MaskLMHead(nn.Layer):
         super().__init__()
         self.dense = SimpleLinear(embed_dim, embed_dim)
         self.activation_fn = ActivationFn(activation_fn)
-        self.layer_norm = nn.LayerNorm(embed_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+        self.layer_norm = nn.LayerNorm(embed_dim)
 
         if weight is None:
-            weight = nn.Linear(
-                embed_dim, output_dim, bias=False, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            ).weight
+            weight = nn.Linear(embed_dim, output_dim, bias_attr=False).weight
         self.weight = weight
         self.bias = self.create_parameter(
-            paddle.zeros([output_dim], dtype=env.GLOBAL_PD_FLOAT_PRECISION)  # pylint: disable=no-explicit-dtype,no-explicit-device
+            [output_dim],
+            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
+            default_initializer=nn.initializer.Constant(0),  # pylint: disable=no-explicit-dtype,no-explicit-device
         )
 
     def forward(
@@ -643,8 +660,8 @@ class TypeEmbedNet(nn.Layer):
         ), "Only TypeEmbedNet of the same type can share params!"
         if shared_level == 0:
             # the following will successfully link all the params except buffers, which need manually link.
-            for item in self._modules:
-                self._modules[item] = base_class._modules[item]
+            for item in self._sub_layers:
+                self._sub_layers[item] = base_class._sub_layers[item]
         else:
             raise NotImplementedError
 
@@ -781,8 +798,8 @@ class TypeEmbedNetConsistent(nn.Layer):
                 not do_resnet or self.activation_function == "Linear"
             ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
             first_layer_matrix = self.embedding_net.layers[0].matrix.data
-            eye_vector = paddle.eye(
-                self.ntypes, dtype=self.prec, device=first_layer_matrix.place
+            eye_vector = paddle.eye(self.ntypes, dtype=self.prec).to(
+                device=first_layer_matrix.place
             )
             # preprocess for resnet connection
             if self.neuron[0] == self.ntypes:
@@ -794,17 +811,16 @@ class TypeEmbedNetConsistent(nn.Layer):
             if has_new_type:
                 extend_type_params = paddle.rand(
                     [len(type_map), first_layer_matrix.shape[-1]],
-                    device=first_layer_matrix.place,
                     dtype=first_layer_matrix.dtype,
-                )
+                ).to(device=first_layer_matrix.place)
                 first_layer_matrix = paddle.concat(
                     [first_layer_matrix, extend_type_params], axis=0
                 )
 
             first_layer_matrix = first_layer_matrix[remap_index]
             new_ntypes = len(type_map)
-            eye_vector = paddle.eye(
-                new_ntypes, dtype=self.prec, device=first_layer_matrix.place
+            eye_vector = paddle.eye(new_ntypes, dtype=self.prec).to(
+                device=first_layer_matrix.place
             )
 
             if self.neuron[0] == new_ntypes:
@@ -814,7 +830,9 @@ class TypeEmbedNetConsistent(nn.Layer):
 
             self.embedding_net.layers[0].num_in = new_ntypes
             self.embedding_net.layers[0].matrix = self.create_parameter(
-                data=first_layer_matrix
+                first_layer_matrix.shape,
+                dtype=first_layer_matrix.dtype,
+                default_initializer=nn.initializer.Assign(first_layer_matrix),
             )
         else:
             econf_tebd, embed_input_dim = get_econf_tebd(
@@ -1101,21 +1119,13 @@ class NeighborWiseAttentionLayer(nn.Layer):
             temperature=temperature,
             smooth=smooth,
         )
-        self.attn_layer_norm = nn.LayerNorm(
-            self.embed_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION, device=env.place
-        )
+        self.attn_layer_norm = nn.LayerNorm(self.embed_dim).to(device=env.DEVICE)
         if self.ffn:
             self.ffn_embed_dim = ffn_embed_dim
-            self.fc1 = nn.Linear(
-                self.embed_dim, self.ffn_embed_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            self.fc1 = nn.Linear(self.embed_dim, self.ffn_embed_dim)
             self.activation_fn = ActivationFn(activation)
-            self.fc2 = nn.Linear(
-                self.ffn_embed_dim, self.embed_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
-            self.final_layer_norm = nn.LayerNorm(
-                self.embed_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            self.fc2 = nn.Linear(self.ffn_embed_dim, self.embed_dim)
+            self.final_layer_norm = nn.LayerNorm(self.embed_dim)
 
     def forward(
         self,
@@ -1214,7 +1224,7 @@ class GatedSelfAttetion(nn.Layer):
             k = F.normalize(k, axis=-1)
             v = F.normalize(v, axis=-1)
         q = q * self.scaling
-        k = k.transpose(1, 2)
+        k = k.transpose([0, 2, 1])
         #  [nframes * nloc, nnei, nnei]
         attn_weights = paddle.bmm(q, k)
         #  [nframes * nloc, nnei]
@@ -1237,7 +1247,9 @@ class GatedSelfAttetion(nn.Layer):
             attn_weights = attn_weights * sw[:, :, None] * sw[:, None, :]
         if self.dotr:
             assert input_r is not None, "input_r must be provided when dotr is True!"
-            angular_weight = paddle.bmm(input_r, input_r.transpose(1, 2))
+            perm = list(range(input_r.ndim))
+            perm[1], perm[2] = perm[2], perm[1]
+            angular_weight = paddle.bmm(input_r, input_r.transpose(perm))
             attn_weights = attn_weights * angular_weight
         o = paddle.bmm(attn_weights, v)
         output = self.out_proj(o)
@@ -1266,15 +1278,15 @@ class LocalSelfMultiheadAttention(nn.Layer):
         nlist: Optional[paddle.Tensor] = None,
         return_attn=True,
     ):
-        nframes, nloc, feature_dim = query.size()
-        _, _, nnei = nlist.size()
+        nframes, nloc, feature_dim = query.shape
+        _, _, nnei = nlist.shape
         assert feature_dim == self.feature_dim
         # [nframes, nloc, feature_dim]
         q, k, v = self.in_proj(query).chunk(3, axis=-1)
         # [nframes * attn_head * nloc, 1, head_dim]
         q = (
             q.reshape([nframes, nloc, self.attn_head, self.head_dim])
-            .transpose(1, 2)
+            .transpose([0, 2, 1, 3])
             .contiguous()
             .reshape([nframes * self.attn_head * nloc, 1, self.head_dim])
             * self.scaling
@@ -1287,9 +1299,9 @@ class LocalSelfMultiheadAttention(nn.Layer):
 
         # [nframes, nloc * nnei, feature_dim]
         index = nlist.reshape([nframes, -1]).unsqueeze(-1).expand([-1, -1, feature_dim])
-        k = paddle.gather(k, axis=1, index=index)
+        k = aux.take_along_axis(k, axis=1, indices=index)
         # [nframes, nloc * nnei, feature_dim]
-        v = paddle.gather(v, axis=1, index=index)
+        v = aux.take_along_axis(v, axis=1, indices=index)
         # [nframes * attn_head * nloc, nnei, head_dim]
         k = (
             k.reshape([nframes, nloc, nnei, self.attn_head, self.head_dim])
@@ -1304,7 +1316,7 @@ class LocalSelfMultiheadAttention(nn.Layer):
             .reshape([nframes * self.attn_head * nloc, nnei, self.head_dim])
         )
         # [nframes * attn_head * nloc, 1, nnei]
-        attn_weights = paddle.bmm(q, k.transpose(1, 2))
+        attn_weights = paddle.bmm(q, k.transpose([0, 2, 1]))
         # maskfill
         # [nframes, attn_head, nloc, nnei]
         attn_weights = attn_weights.reshape(
@@ -1321,11 +1333,11 @@ class LocalSelfMultiheadAttention(nn.Layer):
         # bmm
         # [nframes * attn_head * nloc, 1, head_dim]
         o = paddle.bmm(attn, v)
-        assert list(o.size()) == [nframes * self.attn_head * nloc, 1, self.head_dim]
+        assert list(o.shape) == [nframes * self.attn_head * nloc, 1, self.head_dim]
         # [nframes, nloc, feature_dim]
         o = (
             o.reshape([nframes, self.attn_head, nloc, self.head_dim])
-            .transpose(1, 2)
+            .transpose([0, 2, 1, 3])
             .contiguous()
             .reshape([nframes, nloc, self.feature_dim])
         )
@@ -1346,8 +1358,8 @@ class NodeTaskHead(nn.Layer):
         num_head: int,
     ):
         super().__init__()
-        self.layer_norm = nn.LayerNorm(embed_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-        self.pair_norm = nn.LayerNorm(pair_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+        self.layer_norm = nn.LayerNorm(embed_dim)
+        self.pair_norm = nn.LayerNorm(pair_dim)
         self.embed_dim = embed_dim
         self.q_proj = Linear(embed_dim, embed_dim, bias=False, init="glorot")
         self.k_proj = Linear(embed_dim, embed_dim, bias=False, init="glorot")
@@ -1369,7 +1381,7 @@ class NodeTaskHead(nn.Layer):
         delta_pos: Tensor,
         attn_mask: Tensor = None,
     ) -> Tensor:
-        ncluster, natoms, _ = query.size()
+        ncluster, natoms, _ = query.shape
         query = self.layer_norm(query)
         # [ncluster, natoms, natoms, pair_dim]
         pair = self.pair_norm(pair)
@@ -1378,22 +1390,22 @@ class NodeTaskHead(nn.Layer):
         q = (
             self.q_proj(query)
             .reshape([ncluster, natoms, self.num_heads, -1])
-            .transpose(1, 2)
+            .transpose([0, 2, 1, 3])
             * self.scaling
         )
         # [ncluster, attn_head, natoms, head_dim]
         k = (
             self.k_proj(query)
             .reshape([ncluster, natoms, self.num_heads, -1])
-            .transpose(1, 2)
+            .transpose([0, 2, 1, 3])
         )
         v = (
             self.v_proj(query)
             .reshape([ncluster, natoms, self.num_heads, -1])
-            .transpose(1, 2)
+            .transpose([0, 2, 1, 3])
         )
         # [ncluster, attn_head, natoms, natoms]
-        attn = q @ k.transpose(-1, -2)
+        attn = q @ k.transpose([0, 1, 3, 2])
         del q, k
         # [ncluster, attn_head, natoms, natoms]
         bias = self.linear_bias(pair).transpose([0, 3, 1, 2]).contiguous()
@@ -1409,8 +1421,8 @@ class NodeTaskHead(nn.Layer):
 
         # delta_pos: [ncluster, natoms, natoms, 3]
         # [ncluster, attn_head, natoms, natoms, 3]
-        rot_attn_probs = attn_probs.unsqueeze(-1) * delta_pos.unsqueeze(1).type_as(
-            attn_probs
+        rot_attn_probs = attn_probs.unsqueeze(-1) * delta_pos.unsqueeze(1).astype(
+            attn_probs.dtype
         )
         # [ncluster, attn_head, 3, natoms, natoms]
         rot_attn_probs = rot_attn_probs.transpose([0, 1, 4, 2, 3])
@@ -1429,7 +1441,7 @@ class EnergyHead(nn.Layer):
         output_dim,
     ):
         super().__init__()
-        self.layer_norm = nn.LayerNorm(input_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+        self.layer_norm = nn.LayerNorm(input_dim)
         self.linear_in = Linear(input_dim, input_dim, init="relu")
 
         self.linear_out = Linear(input_dim, output_dim, bias=True, init="final")
@@ -1449,12 +1461,8 @@ class OuterProduct(nn.Layer):
         self.d_pair = d_pair
         self.d_hid = d_hid
 
-        self.linear_in = nn.Linear(
-            d_atom, d_hid * 2, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
-        self.linear_out = nn.Linear(
-            d_hid**2, d_pair, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
+        self.linear_in = nn.Linear(d_atom, d_hid * 2)
+        self.linear_out = nn.Linear(d_hid**2, d_pair)
         self.act = nn.GELU()
 
     def _opm(self, a, b):
@@ -1522,7 +1530,7 @@ class Attention(nn.Layer):
         bias: paddle.Tensor,
         mask: paddle.Tensor = None,
     ) -> paddle.Tensor:
-        nframes, nloc, embed_dim = q.size()
+        nframes, nloc, embed_dim = q.shape
         g = None
         if self.linear_g is not None:
             # gating, use raw query input
@@ -1545,17 +1553,17 @@ class Attention(nn.Layer):
         # [nframes, h, nloc, d]
         q = (
             q.reshape([q.shape[:-1] + (self.num_heads, -1)])
-            .transpose(-2, -3)
+            .transpose([0, 1, 3, 2, 4])
             .contiguous()
         )
         k = (
             k.reshape([k.shape[:-1] + (self.num_heads, -1)])
-            .transpose(-2, -3)
+            .transpose([0, 1, 3, 2, 4])
             .contiguous()
         )
-        v = v.reshape([v.shape[:-1] + (self.num_heads, -1)]).transpose(-2, -3)
+        v = v.reshape([v.shape[:-1] + (self.num_heads, -1)]).transpose([0, 1, 3, 2, 4])
         # [nframes, h, nloc, nloc]
-        attn = paddle.matmul(q, k.transpose(-1, -2))
+        attn = paddle.matmul(q, k.transpose([0, 1, 2, 4, 3]))
         del q, k
         # [nframes, h, nloc, nloc]
         attn = softmax_dropout(attn, self.dropout, self.training, mask=mask, bias=bias)
@@ -1570,9 +1578,9 @@ class Attention(nn.Layer):
         # attn [nframes, h, nloc, nnei]
         # o [nframes, h, nloc, d]
 
-        assert list(o.size()) == [nframes, self.num_heads, nloc, self.head_dim]
+        assert list(o.shape) == [nframes, self.num_heads, nloc, self.head_dim]
         # [nframes, nloc, total_dim]
-        o = o.transpose(-2, -3).contiguous()
+        o = o.transpose([0, 2, 1, 3]).contiguous()
         o = o.reshape([*o.shape[:-2], -1])
 
         if g is not None:
@@ -1600,7 +1608,7 @@ class AtomAttention(nn.Layer):
         self.mha = Attention(
             q_dim, k_dim, v_dim, head_dim, num_heads, gating=gating, dropout=dropout
         )
-        self.layer_norm = nn.LayerNorm(pair_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+        self.layer_norm = nn.LayerNorm(pair_dim)
         self.linear_bias = Linear(pair_dim, num_heads)
 
     def forward(
@@ -1627,7 +1635,7 @@ class TriangleMultiplication(nn.Layer):
         self.linear_g = Linear(d_pair, d_pair, init="gating")
         self.linear_z = Linear(d_hid, d_pair, init="final")
 
-        self.layer_norm_out = nn.LayerNorm(d_hid, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+        self.layer_norm_out = nn.LayerNorm(d_hid)
 
     def forward(
         self,
@@ -1650,7 +1658,7 @@ class TriangleMultiplication(nn.Layer):
         # [nframes, d, nloc_i, nloc_k] row not trans
         a1 = a.transpose([0, 3, 1, 2])
         # [nframes, d, nloc_k, nloc_j(i)]  trans
-        b1 = b.transpose(-1, -3)
+        b1 = b.transpose([0, 3, 2, 1])
         # [nframes, d, nloc_i, nloc_j]
         x = paddle.matmul(a1, b1)
         del a1, b1
@@ -1658,7 +1666,7 @@ class TriangleMultiplication(nn.Layer):
         # [nframes, d, nloc_k, nloc_j(i)] not trans
         b2 = b.transpose([0, 3, 1, 2])
         # [nframes, d, nloc_i, nloc_k]  col trans # check TODO
-        a2 = a.transpose(-1, -3)
+        a2 = a.transpose([0, 3, 2, 1])
 
         # [nframes, d, nloc_i, nloc_j]
         x = x + paddle.matmul(a2, b2)
@@ -1689,17 +1697,13 @@ class EvoformerEncoderLayer(nn.Layer):
             ActivationFn(activation_fn) if activation_fn is not None else None
         )
         self.post_ln = post_ln
-        self.self_attn_layer_norm = nn.LayerNorm(
-            self.feature_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
+        self.self_attn_layer_norm = nn.LayerNorm(self.feature_dim)
 
         self.self_attn = LocalSelfMultiheadAttention(
             self.feature_dim,
             self.attn_head,
         )
-        self.final_layer_norm = nn.LayerNorm(
-            self.feature_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
+        self.final_layer_norm = nn.LayerNorm(self.feature_dim)
         self.fc1 = SimpleLinear(self.feature_dim, self.ffn_dim)
         self.fc2 = SimpleLinear(self.ffn_dim, self.feature_dim)
 
@@ -1798,9 +1802,7 @@ class Evoformer2bEncoder(nn.Layer):
             activate="tanh",
         )
         if self._emb_layer_norm:
-            self.emb_layer_norm = nn.LayerNorm(
-                self.feature_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            self.emb_layer_norm = nn.LayerNorm(self.feature_dim)
 
         ## TODO debug : self.in_proj_pair = NonLinearHead(self.pair_dim, self.attn_head, activation_fn=None)
         self.in_proj_pair = SimpleLinear(self.pair_dim, self.attn_head, activate=None)
@@ -1817,13 +1819,9 @@ class Evoformer2bEncoder(nn.Layer):
             )
         self.evoformer_encoder_layers = nn.LayerList(evoformer_encoder_layers)
         if self._final_layer_norm:
-            self.final_layer_norm = nn.LayerNorm(
-                self.feature_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            self.final_layer_norm = nn.LayerNorm(self.feature_dim)
         if self._final_head_layer_norm:
-            self.final_head_layer_norm = nn.LayerNorm(
-                self.attn_head, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            self.final_head_layer_norm = nn.LayerNorm(self.attn_head)
 
     def forward(self, atomic_rep, pair_rep, nlist, nlist_type, nlist_mask):
         """Encoder the atomic and pair representations.
@@ -1845,7 +1843,7 @@ class Evoformer2bEncoder(nn.Layer):
         - norm_delta_pair_rep: Normalization loss of delta_pair_rep.
         """
         # Global branch
-        nframes, nloc, _ = atomic_rep.size()
+        nframes, nloc, _ = atomic_rep.shape
         nnei = pair_rep.shape[2]
         input_atomic_rep = atomic_rep
         # [nframes, nloc, feature_dim]
@@ -1975,28 +1973,16 @@ class Evoformer3bEncoderLayer(nn.Layer):
         )
         # layer norm associated with the self attention layer
         self.pre_ln = pre_ln
-        self.self_attn_layer_norm = nn.LayerNorm(
-            self.embedding_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
-        self.fc1 = nn.Linear(
-            self.embedding_dim, ffn_embedding_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
-        self.fc2 = nn.Linear(
-            ffn_embedding_dim, self.embedding_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
-        self.final_layer_norm = nn.LayerNorm(
-            self.embedding_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
+        self.self_attn_layer_norm = nn.LayerNorm(self.embedding_dim)
+        self.fc1 = nn.Linear(self.embedding_dim, ffn_embedding_dim)
+        self.fc2 = nn.Linear(ffn_embedding_dim, self.embedding_dim)
+        self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
 
-        self.x_layer_norm_opm = nn.LayerNorm(
-            self.embedding_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
+        self.x_layer_norm_opm = nn.LayerNorm(self.embedding_dim)
         # self.opm = OuterProductLocal(self.embedding_dim, pair_dim, d_hid=pair_hidden_dim)
         self.opm = OuterProduct(self.embedding_dim, pair_dim, d_hid=pair_hidden_dim)
-        # self.pair_layer_norm_opm = nn.LayerNorm(pair_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-        self.pair_layer_norm_ffn = nn.LayerNorm(
-            pair_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        )
+        # self.pair_layer_norm_opm = nn.LayerNorm(pair_dim)
+        self.pair_layer_norm_ffn = nn.LayerNorm(pair_dim)
         self.pair_ffn = Transition(
             pair_dim,
             1,
@@ -2005,9 +1991,7 @@ class Evoformer3bEncoderLayer(nn.Layer):
         self.pair_dropout = pair_dropout
         self.tri_update = tri_update
         if self.tri_update:
-            self.pair_layer_norm_trimul = nn.LayerNorm(
-                pair_dim, dtype=env.GLOBAL_PD_FLOAT_PRECISION
-            )
+            self.pair_layer_norm_trimul = nn.LayerNorm(pair_dim)
             self.pair_tri_mul = TriangleMultiplication(pair_dim, pair_hidden_dim)
 
     def update_pair(
@@ -2192,7 +2176,7 @@ class Evoformer3bEncoder(nn.Layer):
         """
         # [ncluster, natoms, 1]
         op_mask = atom_mask.unsqueeze(-1)
-        op_mask = op_mask * (op_mask.size(-2) ** -0.5)
+        op_mask = op_mask * (op_mask.shape[-2] ** -0.5)
         eps = 1e-3
         # [ncluster, natoms, natoms, 1]
         op_norm = 1.0 / (eps + paddle.einsum("...bc,...dc->...bdc", op_mask, op_mask))

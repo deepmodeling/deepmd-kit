@@ -291,7 +291,7 @@ class MLPLayer(nn.Layer):
                 return paddle.create_parameter(
                     tensor.shape,
                     dtype=tensor.dtype,
-                    default_initializer=paddle.nn.initializer.Assign(tensor),
+                    default_initializer=nn.initializer.Assign(tensor),
                 )
             return None
 

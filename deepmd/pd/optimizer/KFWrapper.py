@@ -33,7 +33,7 @@ class KFOptimizerWrapper:
         natoms_sum = int(inputs["atype"].shape[-1])
         self.optimizer.set_grad_prefactor(natoms_sum)
 
-        self.optimizer.zero_grad()
+        self.optimizer.clear_grad()
         bs = Etot_label.shape[0]
         error = Etot_label - Etot_predict
         error = error / natoms_sum
@@ -65,7 +65,7 @@ class KFOptimizerWrapper:
         index = self.__sample(self.atoms_selected, self.atoms_per_group, natoms_sum)
 
         for i in range(index.shape[0]):
-            self.optimizer.zero_grad()
+            self.optimizer.clear_grad()
             model_pred, _, _ = self.model(**inputs, inference_only=True)
             Etot_predict = model_pred["energy"]
             natoms_sum = int(inputs["atype"].shape[-1])
@@ -104,7 +104,7 @@ class KFOptimizerWrapper:
         index = self.__sample(self.atoms_selected, self.atoms_per_group, natoms_sum)
 
         for i in range(index.shape[0]):
-            self.optimizer.zero_grad()
+            self.optimizer.clear_grad()
             model_pred, _, _ = self.model(**inputs, inference_only=True)
             updated_coord = model_pred["updated_coord"]
             natoms_sum = int(inputs["atype"].shape[-1])

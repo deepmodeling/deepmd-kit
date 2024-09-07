@@ -73,8 +73,8 @@ set_default_nthreads()
 inter_nthreads, intra_nthreads = get_default_nthreads()
 # if inter_nthreads > 0:  # the behavior of 0 is not documented
 #     paddle.set_num_interop_threads(inter_nthreads)
-if intra_nthreads > 0:
-    paddle.framework.core.set_num_threads(intra_nthreads)
+# if intra_nthreads > 0:
+#     paddle.framework.core.set_num_threads(intra_nthreads)
 
 
 def enable_prim(enable: bool = True):

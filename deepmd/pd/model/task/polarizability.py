@@ -115,15 +115,6 @@ class PolarFittingNet(GeneralFitting):
                 raise ValueError(
                     "Scale must be a list of float of length ntypes or a float."
                 )
-        self.scale = (
-            paddle.to_tensor(self.scale, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .to(device=env.DEVICE)
-            .reshape([ntypes, 1])
-        )
-        self.shift_diag = shift_diag
-        self.constant_matrix = paddle.zeros(
-            [ntypes], dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        ).to(device=env.DEVICE)
         super().__init__(
             var_name="polar",
             ntypes=ntypes,
@@ -141,6 +132,15 @@ class PolarFittingNet(GeneralFitting):
             type_map=type_map,
             **kwargs,
         )
+        self.scale = (
+            paddle.to_tensor(self.scale, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            .to(device=env.DEVICE)
+            .reshape([ntypes, 1])
+        )
+        self.shift_diag = shift_diag
+        self.constant_matrix = paddle.zeros(
+            [ntypes], dtype=env.GLOBAL_PD_FLOAT_PRECISION
+        ).to(device=env.DEVICE)
         self.old_impl = False  # this only supports the new implementation.
 
     def _net_out_dim(self):

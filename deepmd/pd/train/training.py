@@ -367,7 +367,11 @@ class Trainer:
 
                 training_data[model_key].print_summary(
                     f"training in {model_key}",
-                    to_numpy_array(self.training_dataloader[model_key].sampler.weights),
+                    to_numpy_array(
+                        self.training_dataloader[
+                            model_key
+                        ].batch_sampler.sampler.weights
+                    ),
                 )
                 if (
                     validation_data is not None
@@ -376,7 +380,9 @@ class Trainer:
                     validation_data[model_key].print_summary(
                         f"validation in {model_key}",
                         to_numpy_array(
-                            self.validation_dataloader[model_key].sampler.weights
+                            self.validation_dataloader[
+                                model_key
+                            ].batch_sampler.sampler.weights
                         ),
                     )
 

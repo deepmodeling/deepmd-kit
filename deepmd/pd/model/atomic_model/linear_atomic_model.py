@@ -160,7 +160,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         zipped = paddle.stack(
             [
                 self.rcuts,
-                self.nsels,
+                self.nsels.astype(self.rcuts.dtype),
             ],
             axis=0,
         ).T
@@ -525,7 +525,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
-        masked_nlist = paddle.clamp(nlist_larger, 0)
+        masked_nlist = paddle.clip(nlist_larger, 0)
         pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
             extended_coord, masked_nlist
         )
@@ -533,7 +533,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             paddle.where(
                 nlist_larger != -1,
                 pairwise_rr * paddle.exp(-pairwise_rr / self.smin_alpha),
-                paddle.zeros_like(nlist_larger),
+                paddle.zeros_like(nlist_larger, dtype=pairwise_rr.dtype),
             ),
             axis=-1,
         )
@@ -541,12 +541,12 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             paddle.where(
                 nlist_larger != -1,
                 paddle.exp(-pairwise_rr / self.smin_alpha),
-                paddle.zeros_like(nlist_larger),
+                paddle.zeros_like(nlist_larger).astype(pairwise_rr.dtype),
             ),
             axis=-1,
         )  # handle masked nnei.
 
-        sigma = numerator / paddle.clamp(denominator, 1e-20)  # nfrmes, nloc
+        sigma = numerator / paddle.clip(denominator, 1e-20)  # nfrmes, nloc
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
         coef = paddle.zeros_like(u)
         left_mask = sigma < self.sw_rmin

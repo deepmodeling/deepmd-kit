@@ -97,9 +97,9 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         self.env_protection = env_protection
 
         self.sel = sel
-        self.sec = paddle.to_tensor(np.append([0], np.cumsum(self.sel)), dtype=int).to(
-            device=env.DEVICE
-        )
+        self.sec = paddle.to_tensor(
+            np.append([0], np.cumsum(self.sel)), dtype="int64"
+        ).to(device=env.DEVICE)
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 1
@@ -113,9 +113,9 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         self.filter_layers = None
 
         filter_layers = NetworkCollection(
-            naxis=1, ntypes=len(sel), network_type="embedding_network"
+            ndim=1, ntypes=len(sel), network_type="embedding_network"
         )
-        # TODO: naxis=2 if type_one_side=False
+        # TODO: ndim=2 if type_one_side=False
         for ii in range(self.ntypes):
             filter_layers[(ii,)] = EmbeddingNet(
                 1,
@@ -222,8 +222,8 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
                 self.stddev = base_class.stddev
             # self.set_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
             # the following will successfully link all the params except buffers
-            for item in self._modules:
-                self._modules[item] = base_class._modules[item]
+            for item in self._sub_layers:
+                self._sub_layers[item] = base_class._sub_layers[item]
         # Other shared levels
         else:
             raise NotImplementedError

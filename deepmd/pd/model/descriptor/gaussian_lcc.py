@@ -239,16 +239,16 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
             attn_mask.reshape(
                 [nframes * nloc, 1 + self.nnei, 1 + self.nnei, self.attention_heads]
             )
-            .permute(0, 3, 1, 2)
+            .transpose([0, 3, 1, 2])
             .contiguous()
         )
 
         # Atomic feature
         # [(nframes x nloc) x (1 + nnei2) x tebd_dim]
-        atom_feature = paddle.gather(
+        atom_feature = aux.take_along_axis(
             atype_tebd,
             axis=1,
-            index=nlist_loc2.reshape([nframes, -1])
+            indices=nlist_loc2.reshape([nframes, -1])
             .unsqueeze(-1)
             .expand([-1, -1, self.embed_dim]),
         ).reshape([nframes * nloc, 1 + self.nnei, self.embed_dim])
@@ -257,10 +257,10 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
             if first_dim == nframes * nloc:
                 atom_feature += seq_input
             elif first_dim == nframes:
-                atom_feature_seq = paddle.gather(
+                atom_feature_seq = aux.take_along_axis(
                     seq_input,
                     axis=1,
-                    index=nlist_loc2.reshape([nframes, -1])
+                    indices=nlist_loc2.reshape([nframes, -1])
                     .unsqueeze(-1)
                     .expand([-1, -1, self.embed_dim]),
                 ).reshape([nframes * nloc, 1 + self.nnei, self.embed_dim])

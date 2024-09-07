@@ -6,6 +6,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import paddle
 
 from deepmd.pd.utils import (
@@ -100,7 +101,7 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    if coord.numel() > 0:
+    if np.prod(coord.shape) > 0:
         xmax = paddle.max(coord) + 2.0 * rcut
     else:
         xmax = paddle.zeros([1], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
@@ -122,15 +123,15 @@ def build_neighbor_list(
     # rr = paddle.linalg.norm(diff, axis=-1)
     rr = aux.norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
-    rr -= paddle.eye(nloc, nall, dtype=rr.dtype).to(device=rr.place).unsqueeze(0)
+    rr = rr - paddle.eye(nloc, nall, dtype=rr.dtype).to(device=rr.place).unsqueeze(0)
     rr, nlist = paddle.sort(rr, axis=-1), paddle.argsort(rr, axis=-1)
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
-
-    return _trim_mask_distinguish_nlist(
+    t = _trim_mask_distinguish_nlist(
         is_vir, atype, rr, nlist, rcut, sel, distinguish_types
     )
+    return t
 
 
 def _trim_mask_distinguish_nlist(
@@ -154,7 +155,10 @@ def _trim_mask_distinguish_nlist(
         rr = paddle.concat(
             [
                 rr,
-                paddle.ones([batch_size, nloc, nsel - nnei]).to(device=rr.place) + rcut,
+                paddle.ones([batch_size, nloc, nsel - nnei]).to(
+                    device=rr.place, dtype=rr.dtype
+                )
+                + rcut,
             ],  # pylint: disable=no-explicit-dtype
             axis=-1,
         )
@@ -450,7 +454,6 @@ def extend_coord_with_ghosts(
     """
     device = coord.place
     nf, nloc = atype.shape[:2]
-    nloc = 192
     aidx = paddle.tile(paddle.arange(nloc).to(device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
     if cell is None:
         nall = nloc
