@@ -62,6 +62,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             sm,
             prec,
             ect,
+            ns,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -70,8 +71,12 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [True, False],  # repformer_update_g1_has_conv
             [True, False],  # repformer_update_g1_has_drrd
             [True, False],  # repformer_update_g1_has_grrg
-            [True, False],  # repformer_update_g1_has_attn
-            [True, False],  # repformer_update_g2_has_g1g1
+            [
+                False,
+            ],  # repformer_update_g1_has_attn
+            [
+                False,
+            ],  # repformer_update_g2_has_g1g1
             [True, False],  # repformer_update_g2_has_attn
             [
                 False,
@@ -83,10 +88,18 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [
                 True,
             ],  # repformer_set_davg_zero
-            [True, False],  # smooth
+            [
+                True,
+            ],  # smooth
             ["float64"],  # precision
             [False, True],  # use_econf_tebd
+            [
+                False,
+                True,
+            ],  # new sub-structures (use_sqrt_nnei, g1_out_conv, g1_out_mlp)
         ):
+            if ns and not rp1d and not rp1g:
+                continue
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             if prec == "float64":
@@ -121,6 +134,9 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 attn2_has_gate=rp2gate,
                 update_style=rus,
                 set_davg_zero=rpz,
+                use_sqrt_nnei=ns,
+                g1_out_conv=ns,
+                g1_out_mlp=ns,
             )
 
             # dpa2 new impl
@@ -174,7 +190,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
             )
             # old impl
-            if prec == "float64" and rus == "res_avg" and ect is False:
+            if prec == "float64" and rus == "res_avg" and ect is False and ns is False:
                 dd3 = DescrptDPA2(
                     self.nt,
                     repinit=repinit,
@@ -239,6 +255,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             sm,
             prec,
             ect,
+            ns,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -277,6 +294,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ],  # smooth
             ["float64"],  # precision
             [False, True],  # use_econf_tebd
+            [True],  # new sub-structures (use_sqrt_nnei, g1_out_conv, g1_out_mlp)
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -310,6 +328,9 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 attn2_has_gate=rp2gate,
                 update_style=rus,
                 set_davg_zero=rpz,
+                use_sqrt_nnei=ns,
+                g1_out_conv=ns,
+                g1_out_mlp=ns,
             )
 
             # dpa2 new impl

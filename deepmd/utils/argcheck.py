@@ -965,6 +965,17 @@ def dpa2_repinit_args():
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
+    doc_use_three_body = (
+        "Whether to concatenate three-body representation in the output descriptor."
+    )
+    doc_three_body_neuron = (
+        "Number of neurons in each hidden layers of the three-body embedding net."
+        "When two layers are of the same size or one layer is twice as large as the previous layer, "
+        "a skip connection is built."
+    )
+    doc_three_body_sel = "Maximally possible number of selected neighbors in the three-body representation."
+    doc_three_body_rcut = "The cut-off radius in the three-body representation."
+    doc_three_body_rcut_smth = "Where to start smoothing in the three-body representation. For example the 1/r term is smoothed from `three_body_rcut` to `three_body_rcut_smth`."
 
     return [
         # repinit args
@@ -1027,6 +1038,37 @@ def dpa2_repinit_args():
             default=False,
             doc=doc_resnet_dt,
         ),
+        Argument(
+            "use_three_body",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_three_body,
+        ),
+        Argument(
+            "three_body_neuron",
+            list,
+            optional=True,
+            default=[2, 4, 8],
+            doc=doc_three_body_neuron,
+        ),
+        Argument(
+            "three_body_rcut",
+            float,
+            optional=True,
+            default=4.0,
+            doc=doc_three_body_rcut,
+        ),
+        Argument(
+            "three_body_rcut_smth",
+            float,
+            optional=True,
+            default=0.5,
+            doc=doc_three_body_rcut_smth,
+        ),
+        Argument(
+            "three_body_sel", int, optional=True, default=40, doc=doc_three_body_sel
+        ),
     ]
 
 
@@ -1047,6 +1089,9 @@ def dpa2_repformer_args():
     doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
     doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
     doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
+    doc_use_sqrt_nnei = "Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly."
+    doc_g1_out_conv = "Whether to put the convolutional update of g1 separately outside the concatenated MLP update."
+    doc_g1_out_mlp = "Whether to put the self MLP update of g1 separately outside the concatenated MLP update."
     doc_update_h2 = "Update the h2 rep."
     doc_attn1_hidden = (
         "The hidden dimension of localized self-attention to update the g1 rep."
@@ -1166,6 +1211,27 @@ def dpa2_repformer_args():
             optional=True,
             default=True,
             doc=doc_update_g2_has_attn,
+        ),
+        Argument(
+            "use_sqrt_nnei",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_use_sqrt_nnei,
+        ),
+        Argument(
+            "g1_out_conv",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_g1_out_conv,
+        ),
+        Argument(
+            "g1_out_mlp",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_g1_out_mlp,
         ),
         Argument(
             "update_h2",

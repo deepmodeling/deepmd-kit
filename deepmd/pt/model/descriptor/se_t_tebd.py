@@ -557,7 +557,6 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         else:
             self.embd_input_dim = 1
 
-        self.filter_layers_old = None
         self.filter_layers = None
         self.filter_layers_strip = None
         filter_layers = NetworkCollection(
