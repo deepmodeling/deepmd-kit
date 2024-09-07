@@ -110,6 +110,14 @@ class TestDeepPot(unittest.TestCase):
         self.assertIsInstance(dp, DeepPot)
         # its methods has been tested in test_dp_test
 
+    def test_eval_typeebd(self):
+        dp = DeepPot(str(self.model))
+        eval_typeebd = dp.eval_typeebd()
+        self.assertEqual(
+            eval_typeebd.shape, (len(self.config["model"]["type_map"]) + 1, 8)
+        )
+        np.testing.assert_allclose(eval_typeebd[-1], np.zeros_like(eval_typeebd[-1]))
+
 
 class TestDeepPotFrozen(TestDeepPot):
     def setUp(self):

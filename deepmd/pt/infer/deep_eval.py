@@ -46,6 +46,9 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.model.model import (
     get_model,
 )
+from deepmd.pt.model.network.network import (
+    TypeEmbedNetConsistent,
+)
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -61,6 +64,7 @@ from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.utils import (
+    to_numpy_array,
     to_torch_tensor,
 )
 
@@ -555,6 +559,36 @@ class DeepEval(DeepEvalBackend):
             return [nframes, natoms, *odef.shape, 1]
         else:
             raise RuntimeError("unknown category")
+
+    def eval_typeebd(self) -> np.ndarray:
+        """Evaluate output of type embedding network by using this model.
+
+        Returns
+        -------
+        np.ndarray
+            The output of type embedding network. The shape is [ntypes, o_size] or [ntypes + 1, o_size],
+            where ntypes is the number of types, and o_size is the number of nodes
+            in the output layer. If there are multiple type embedding networks,
+            these outputs will be concatenated along the second axis.
+
+        Raises
+        ------
+        KeyError
+            If the model does not enable type embedding.
+
+        See Also
+        --------
+        deepmd.pt.model.network.network.TypeEmbedNetConsistent :
+            The type embedding network.
+        """
+        out = []
+        for mm in self.dp.model["Default"].modules():
+            if mm.original_name == TypeEmbedNetConsistent.__name__:
+                out.append(mm(DEVICE))
+        if not out:
+            raise KeyError("The model has no type embedding networks.")
+        typeebd = torch.cat(out, dim=1)
+        return to_numpy_array(typeebd)
 
 
 # For tests only
