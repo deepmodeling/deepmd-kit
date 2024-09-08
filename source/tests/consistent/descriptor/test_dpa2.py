@@ -235,7 +235,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        return CommonTest.skip_pt
+        return CommonTest.skip_dp
 
     @property
     def skip_tf(self) -> bool:
