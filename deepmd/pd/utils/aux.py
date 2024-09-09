@@ -18,7 +18,9 @@ __all__ = [
 ]
 
 
-def norm(x: paddle.Tensor, p: float = 2, axis: bool = -1, keepdim: bool = False):
+def norm(
+    x: paddle.Tensor, p: float = 2, axis: bool = -1, keepdim: bool = False
+) -> paddle.Tensor:
     if p == 2 or p == 2.0:
         return (x * x).sum(axis=axis, keepdim=keepdim) ** 0.5
     return (x**p).sum(axis=axis, keepdim=keepdim) ** (1 / p)
@@ -65,13 +67,15 @@ def scatter_reduce(
     return input
 
 
-def sec(l: int, size: int):
+def sec(l: int, size: int) -> list[int]:
     if l % size == 0:
         return [size] * (l // size)
     return [size] * (l // size) + [l % size]
 
 
-def masked_add_(x: paddle.Tensor, mask: paddle.Tensor, v: paddle.Tensor):
+def masked_add_(
+    x: paddle.Tensor, mask: paddle.Tensor, v: paddle.Tensor
+) -> paddle.Tensor:
     assert mask.dtype == paddle.bool, f"mask must be bool type, but got {mask.dtype}"
     # indices is bool mask
     mask_coord = paddle.concat(
@@ -87,3 +91,12 @@ def masked_add_(x: paddle.Tensor, mask: paddle.Tensor, v: paddle.Tensor):
     )
     paddle.assign(t, x)  # inplace update
     return x
+
+
+def normalize(
+    x: paddle.Tensor,
+    p: float = 2,
+    axis: int = 1,
+    epsilon: float = 1e-12,
+) -> paddle.Tensor:
+    return x / (norm(x, p=p, axis=axis, keepdim=True).clip(min=epsilon))
