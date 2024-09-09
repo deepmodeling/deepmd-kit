@@ -4,7 +4,8 @@
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 :::
 
-The notation of `se_e3` is short for the Deep Potential Smooth Edition (DeepPot-SE) constructed from all information (both angular and radial) of atomic configurations. The embedding takes bond angles between a central atom and its two neighboring atoms as input (denoted by `e3`).
+The notation of `se_e3` is short for three-body embedding DeepPot-SE, which incorporates bond-angle information.
+The embedding takes bond angles between a central atom and its two neighboring atoms as input (denoted by `e3`).
 
 ## Theory
 
