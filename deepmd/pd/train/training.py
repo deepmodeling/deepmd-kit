@@ -57,6 +57,7 @@ from deepmd.pd.utils.env import (
     DEVICE,
     JIT,
     LOCAL_RANK,
+    NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
 )
@@ -179,13 +180,12 @@ class Trainer:
                 _dataloader = DataLoader(
                     _data,
                     batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler, drop_last=False
+                        sampler=_sampler,
+                        drop_last=False,
                     ),
-                    # batch_size=None,
-                    num_workers=0
+                    num_workers=NUM_WORKERS
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    # drop_last=False,
                     collate_fn=lambda batch: batch[0],  # prevent extra conversion
                     # pin_memory=True,
                 )

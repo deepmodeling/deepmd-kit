@@ -515,7 +515,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 atype_tebd=atype_tebd_nnei,
                 nlist_tebd=atype_tebd_nlist,
             )  # shape is [nframes*nall, self.neei, out_size]
-            input_r = paddle.nn.functional.normalize(
+            # input_r = paddle.nn.functional.normalize(
+            #     dmatrix.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
+            # )
+            input_r = aux.normalize(
                 dmatrix.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
             )
             gg = self.dpa1_attention(
@@ -566,9 +569,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             else:
                 raise NotImplementedError
 
-            input_r = paddle.nn.functional.normalize(
-                rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
-            )
+            # input_r = paddle.nn.functional.normalize(
+            #     rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
+            # )
+            input_r = aux.normalize(rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1)
             gg = self.dpa1_attention(
                 gg, nlist_mask, input_r=input_r, sw=sw
             )  # shape is [nframes*nloc, self.neei, out_size]
@@ -946,9 +950,12 @@ class GatedAttentionLayer(nn.Layer):
         )
 
         if self.normalize:
-            q = paddle_func.normalize(q, axis=-1)
-            k = paddle_func.normalize(k, axis=-1)
-            v = paddle_func.normalize(v, axis=-1)
+            # q = paddle_func.normalize(q, axis=-1)
+            # k = paddle_func.normalize(k, axis=-1)
+            # v = paddle_func.normalize(v, axis=-1)
+            q = aux.normalize(q, axis=-1)
+            k = aux.normalize(k, axis=-1)
+            v = aux.normalize(v, axis=-1)
 
         q = q * self.scaling
         # (nf x nloc) x num_heads x head_dim x nnei

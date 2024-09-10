@@ -42,7 +42,7 @@ def _make_env_mat(
     if radial_only:
         env_mat = t0 * weight
     else:
-        env_mat = paddle.concat([t0, t1], axis=-1) * weight
+        env_mat = paddle.concat([t0.astype(t1.dtype), t1], axis=-1) * weight
     return env_mat, diff * mask.unsqueeze(-1).astype(diff.dtype), weight
 
 

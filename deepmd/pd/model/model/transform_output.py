@@ -180,7 +180,7 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
-            model_ret[kk_redu] = paddle.sum(vv.to(redu_prec), axis=atom_axis)
+            model_ret[kk_redu] = paddle.sum(vv.astype(redu_prec), axis=atom_axis)
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 dr, dc = take_deriv(
@@ -197,7 +197,7 @@ def fit_output_to_model_output(
                     assert dc is not None
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = paddle.sum(
-                        model_ret[kk_derv_c].to(redu_prec), axis=1
+                        model_ret[kk_derv_c].astype(redu_prec), axis=1
                     )
     return model_ret
 

@@ -1220,9 +1220,12 @@ class GatedSelfAttetion(nn.Layer):
         k = k.reshape([-1, self.nnei, self.hidden_dim])
         v = v.reshape([-1, self.nnei, self.hidden_dim])
         if self.normalize:
-            q = F.normalize(q, axis=-1)
-            k = F.normalize(k, axis=-1)
-            v = F.normalize(v, axis=-1)
+            # q = F.normalize(q, axis=-1)
+            # k = F.normalize(k, axis=-1)
+            # v = F.normalize(v, axis=-1)
+            q = aux.normalize(q, axis=-1)
+            k = aux.normalize(k, axis=-1)
+            v = aux.normalize(v, axis=-1)
         q = q * self.scaling
         k = k.transpose([0, 2, 1])
         #  [nframes * nloc, nnei, nnei]

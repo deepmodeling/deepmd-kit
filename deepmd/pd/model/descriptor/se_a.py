@@ -652,7 +652,7 @@ class DescrptBlockSeA(DescriptorBlock):
         else:
             assert self.filter_layers is not None
             dmatrix = dmatrix.reshape([-1, self.nnei, 4])
-            dmatrix = dmatrix.to(dtype=self.prec)
+            dmatrix = dmatrix.astype(self.prec)
             nfnl = dmatrix.shape[0]
             # pre-allocate a shape to pass jit
             xyz_scatter = paddle.zeros(
@@ -672,7 +672,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     # ti: center atom type, ii: neighbor type...
                     ii = embedding_idx // self.ntypes
                     ti = embedding_idx % self.ntypes
-                    ti_mask = atype.flatten().equal(ti)
+                    ti_mask = atype.flatten() == ti
                 # nfnl x nt
                 if ti_mask is not None:
                     mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
@@ -704,8 +704,8 @@ class DescrptBlockSeA(DescriptorBlock):
         result = result.reshape([nf, nloc, self.filter_neuron[-1] * self.axis_neuron])
         rot_mat = rot_mat.reshape([nf, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
-            result.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            result.astype(env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.astype(env.GLOBAL_PD_FLOAT_PRECISION),
             None,
             None,
             sw,

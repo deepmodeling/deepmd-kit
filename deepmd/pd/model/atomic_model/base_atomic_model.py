@@ -252,7 +252,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
-        atom_mask = ext_atom_mask[:, :nloc].to(paddle.int32)
+        atom_mask = ext_atom_mask[:, :nloc].astype(paddle.int32)
         if self.atom_excl is not None:
             atom_mask *= self.atom_excl(atype)
 

@@ -90,10 +90,11 @@ class NeighborStatOP(paddle.nn.Layer):
         # remove the diagonal elements
         mask = paddle.eye(nloc, nall).to(dtype=paddle.bool, device=diff.place)
         # diff[:, mask] = float("inf")
-        diff.masked_fill_(
-            paddle.broadcast_to(mask.unsqueeze([0, -1]), diff.shape),
-            paddle.to_tensor(float("inf")),
-        )
+        # diff.masked_fill_(
+        #     paddle.broadcast_to(mask.unsqueeze([0, -1]), diff.shape),
+        #     paddle.to_tensor(float("inf")),
+        # )
+        diff[paddle.broadcast_to(mask.unsqueeze([0, -1]), diff.shape)] = float("inf")
         rr2 = paddle.sum(paddle.square(diff), axis=-1)
         min_rr2 = paddle.min(rr2, axis=-1)
         # count the number of neighbors
@@ -102,12 +103,12 @@ class NeighborStatOP(paddle.nn.Layer):
             nnei = paddle.zeros((nframes, nloc, self.ntypes), dtype=paddle.int64)
             for ii in range(self.ntypes):
                 nnei[:, :, ii] = paddle.sum(
-                    mask & extend_atype.equal(ii)[:, None, :], axis=-1
+                    mask & ((extend_atype == ii)[:, None, :]), axis=-1
                 )
         else:
             mask = rr2 < self.rcut**2
             # virtual types (<0) are not counted
-            nnei = paddle.sum(mask & extend_atype.ge(0)[:, None, :], axis=-1).reshape(
+            nnei = paddle.sum(mask & ((extend_atype > 0)[:, None, :]), axis=-1).reshape(
                 [nframes, nloc, 1]
             )
         max_nnei = paddle.max(nnei, axis=1)
@@ -184,11 +185,12 @@ class NeighborStat(BaseNeighborStat):
         cell
             The cell.
         """
-        minrr2, max_nnei = self.op(
-            paddle.to_tensor(coord, place=DEVICE),
-            paddle.to_tensor(atype, place=DEVICE),
-            paddle.to_tensor(cell, place=DEVICE) if cell is not None else None,
-        )
+        with paddle.no_grad():
+            minrr2, max_nnei = self.op(
+                paddle.to_tensor(coord, place=DEVICE),
+                paddle.to_tensor(atype, place=DEVICE),
+                paddle.to_tensor(cell, place=DEVICE) if cell is not None else None,
+            )
         minrr2 = minrr2.numpy()
         max_nnei = max_nnei.numpy()
         return minrr2, max_nnei

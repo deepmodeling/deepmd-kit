@@ -359,7 +359,7 @@ def freeze(FLAGS):
         input_spec=[
             InputSpec([None, 192, 3], dtype="float64", name="coord"),
             InputSpec([None, 192], dtype="int64", name="atype"),
-            InputSpec([None, 192, 3], dtype="float64", name="box"),
+            InputSpec([None, 3, 3], dtype="float64", name="box"),
         ],
     )
     extra_files = {}

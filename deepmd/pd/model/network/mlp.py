@@ -222,7 +222,7 @@ class MLPLayer(nn.Layer):
             The output.
         """
         ori_prec = xx.dtype
-        xx = xx.to(self.prec)
+        xx = xx.astype(self.prec)
         yy = (
             paddle.matmul(xx, self.matrix.astype(self.prec)) + self.bias
             if self.bias is not None
@@ -237,7 +237,7 @@ class MLPLayer(nn.Layer):
                 yy += paddle.concat([xx, xx], axis=-1)
             else:
                 yy = yy
-        yy = yy.to(ori_prec)
+        yy = yy.astype(ori_prec)
         return yy
 
     def serialize(self) -> dict:

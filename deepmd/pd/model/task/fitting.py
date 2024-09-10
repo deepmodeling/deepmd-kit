@@ -517,6 +517,7 @@ class GeneralFitting(Fitting):
             else:
                 for type_i, ll in enumerate(self.filter_layers.networks):
                     mask = (atype == type_i).unsqueeze(-1)
+                    mask.stop_gradient = True
                     mask = paddle.tile(mask, (1, 1, net_dim_out))
                     atom_property = ll(xx)
                     if xx_zeros is not None:
@@ -536,4 +537,4 @@ class GeneralFitting(Fitting):
         mask = self.emask(atype)
         # nf x nloc x nod
         outs = outs * mask[:, :, None].astype(outs.dtype)
-        return {self.var_name: outs.to(env.GLOBAL_PD_FLOAT_PRECISION)}
+        return {self.var_name: outs.astype(env.GLOBAL_PD_FLOAT_PRECISION)}

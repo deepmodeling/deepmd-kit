@@ -814,7 +814,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         # nfnl x nt_j x 3
         rr_j = rr[:, :, 1:]
         # nfnl x nt_i x nt_j
-        env_ij = paddle.einsum("ijm,ikm->ijk", rr_i, rr_j)
+        # env_ij = paddle.einsum("ijm,ikm->ijk", rr_i, rr_j)
+        env_ij = (
+            # ij1m x i1km -> ijkm -> ijk
+            rr_i.unsqueeze(2) * rr_j.unsqueeze(1)
+        ).sum(-1)
         # nfnl x nt_i x nt_j x 1
         ss = env_ij.unsqueeze(-1)
 
@@ -850,7 +854,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             raise NotImplementedError
 
         # nfnl x ng
-        res_ij = paddle.einsum("ijk,ijkm->im", env_ij, gg)
+        # res_ij = paddle.einsum("ijk,ijkm->im", env_ij, gg)
+        res_ij = (
+            # ijk1 x ijkm -> ijkm -> im
+            env_ij.unsqueeze(-1) * gg
+        ).sum([1, 2])
         res_ij = res_ij * (1.0 / float(self.nnei) / float(self.nnei))
         # nf x nl x ng
         result = res_ij.reshape([nframes, nloc, self.filter_neuron[-1]])
