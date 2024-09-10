@@ -1771,6 +1771,9 @@ def model_args(exclude_hybrid=False):
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+    doc_preset_out_bias = (
+        "The preset bias of the atomic output. The set_davg_zero should be set to true."
+    )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -1832,6 +1835,13 @@ def model_args(exclude_hybrid=False):
                 optional=True,
                 default=[],
                 doc=doc_only_pt_supported + doc_atom_exclude_types,
+            ),
+            Argument(
+                "preset_out_bias",
+                list,
+                optional=True,
+                default=None,
+                doc=doc_only_pt_supported + doc_preset_out_bias,
             ),
             Argument(
                 "srtab_add_bias",
