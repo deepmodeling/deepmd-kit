@@ -47,7 +47,7 @@ def serialize_from_file(model_file: str) -> dict:
     model_dict = model.serialize()
     data = {
         "backend": "PyTorch",
-        "pt_version": torch.__version__,
+        "pt_version": str(torch.__version__),
         "model": model_dict,
         "model_def_script": model_def_script,
         "@variables": {},

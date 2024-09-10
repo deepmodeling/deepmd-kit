@@ -14,6 +14,7 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableCategory,
@@ -36,11 +37,17 @@ from deepmd.infer.deep_polar import (
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.infer.deep_property import (
+    DeepProperty,
+)
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
 from deepmd.pt.model.model import (
     get_model,
+)
+from deepmd.pt.model.network.network import (
+    TypeEmbedNetConsistent,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -54,8 +61,10 @@ from deepmd.pt.utils.auto_batch_size import (
 from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
+    RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.utils import (
+    to_numpy_array,
     to_torch_tensor,
 )
 
@@ -164,6 +173,9 @@ class DeepEval(DeepEvalBackend):
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.dp.model["Default"].get_dim_aparam()
 
+    def get_intensive(self) -> bool:
+        return self.dp.model["Default"].get_intensive()
+
     @property
     def model_type(self) -> Type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
@@ -180,6 +192,8 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif "property" in model_output_type:
+            return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
 
@@ -195,6 +209,10 @@ class DeepEval(DeepEvalBackend):
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
         return self.dp.model["Default"].get_numb_dos()
+
+    def get_task_dim(self) -> int:
+        """Get the output dimension."""
+        return self.dp.model["Default"].get_task_dim()
 
     def get_has_efield(self):
         """Check if the model has efield."""
@@ -380,14 +398,22 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([nframes, natoms, 3]),
+            coords.reshape([nframes, natoms, 3]).astype(
+                NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+            ),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
-        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        type_input = torch.tensor(
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISON_DICT[torch.long]]),
+            dtype=torch.long,
+            device=DEVICE,
+        )
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([nframes, 3, 3]),
+                cells.reshape([nframes, 3, 3]).astype(
+                    NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+                ),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
@@ -533,6 +559,36 @@ class DeepEval(DeepEvalBackend):
             return [nframes, natoms, *odef.shape, 1]
         else:
             raise RuntimeError("unknown category")
+
+    def eval_typeebd(self) -> np.ndarray:
+        """Evaluate output of type embedding network by using this model.
+
+        Returns
+        -------
+        np.ndarray
+            The output of type embedding network. The shape is [ntypes, o_size] or [ntypes + 1, o_size],
+            where ntypes is the number of types, and o_size is the number of nodes
+            in the output layer. If there are multiple type embedding networks,
+            these outputs will be concatenated along the second axis.
+
+        Raises
+        ------
+        KeyError
+            If the model does not enable type embedding.
+
+        See Also
+        --------
+        deepmd.pt.model.network.network.TypeEmbedNetConsistent :
+            The type embedding network.
+        """
+        out = []
+        for mm in self.dp.model["Default"].modules():
+            if mm.original_name == TypeEmbedNetConsistent.__name__:
+                out.append(mm(DEVICE))
+        if not out:
+            raise KeyError("The model has no type embedding networks.")
+        typeebd = torch.cat(out, dim=1)
+        return to_numpy_array(typeebd)
 
 
 # For tests only

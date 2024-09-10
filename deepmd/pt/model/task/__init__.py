@@ -24,6 +24,9 @@ from .fitting import (
 from .polarizability import (
     PolarFittingNet,
 )
+from .property import (
+    PropertyFittingNet,
+)
 from .type_predict import (
     TypePredictNet,
 )
@@ -39,4 +42,5 @@ __all__ = [
     "TypePredictNet",
     "PolarFittingNet",
     "DOSFittingNet",
+    "PropertyFittingNet",
 ]
