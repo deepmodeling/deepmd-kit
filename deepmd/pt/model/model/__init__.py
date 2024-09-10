@@ -26,6 +26,9 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.task import (
     BaseFitting,
 )
+from deepmd.pt.utils.utils import (
+    to_torch_tensor,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -151,6 +154,21 @@ def get_zbl_model(model_params):
     )
 
 
+def _convert_preset_out_bias_to_torch_tensor(preset_out_bias, type_map):
+    if preset_out_bias is not None:
+        for kk in preset_out_bias.keys():
+            if len(preset_out_bias[kk]) != len(type_map):
+                raise ValueError(
+                    "length of the preset_out_bias should be the same as the type_map"
+                )
+            for jj in range(len(preset_out_bias[kk])):
+                if preset_out_bias[kk][jj] is not None:
+                    preset_out_bias[kk][jj] = to_torch_tensor(
+                        np.array(preset_out_bias[kk][jj])
+                    )
+    return preset_out_bias
+
+
 def get_standard_model(model_params):
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
@@ -178,13 +196,9 @@ def get_standard_model(model_params):
     pair_exclude_types = model_params.get("pair_exclude_types", [])
     default_preset_out_bias = [None] * len(model_params["type_map"])
     preset_out_bias = model_params.get("preset_out_bias")
-    preset_out_bias = (
-        preset_out_bias if preset_out_bias is not None else default_preset_out_bias
+    preset_out_bias = _convert_preset_out_bias_to_torch_tensor(
+        preset_out_bias, model_params["type_map"]
     )
-    if len(preset_out_bias) != len(model_params["type_map"]):
-        raise ValueError(
-            "length of the preset_out_bias should be the same as the type_map"
-        )
 
     if fitting_net["type"] == "dipole":
         modelcls = DipoleModel
