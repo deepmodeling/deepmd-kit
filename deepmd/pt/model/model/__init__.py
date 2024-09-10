@@ -194,7 +194,6 @@ def get_standard_model(model_params):
     fitting = BaseFitting(**fitting_net)
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
-    default_preset_out_bias = [None] * len(model_params["type_map"])
     preset_out_bias = model_params.get("preset_out_bias")
     preset_out_bias = _convert_preset_out_bias_to_torch_tensor(
         preset_out_bias, model_params["type_map"]
