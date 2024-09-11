@@ -187,8 +187,8 @@ def _compute_model_predict(
 
 def _make_preset_out_bias(
     ntypes: int,
-    ibias: List[Optional[np.array]],
-) -> Optional[np.array]:
+    ibias: List[Optional[np.ndarray]],
+) -> Optional[np.ndarray]:
     """Make preset out bias.
 
     output:
@@ -242,7 +242,7 @@ def compute_output_stats(
     keys: Union[str, List[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
+    preset_bias: Optional[Dict[str, List[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
     atomic_output: Optional[FittingOutputDef] = None,
 ):
@@ -264,9 +264,9 @@ def compute_output_stats(
         The path to the stat file.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_bias : Dict[str, List[Optional[torch.Tensor]]], optional
+    preset_bias : Dict[str, List[Optional[np.ndarray]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
         The `set_davg_zero` key in the descrptor should be set.
     model_forward : Callable[..., torch.Tensor], optional
@@ -405,7 +405,7 @@ def compute_output_stats_global(
     ntypes: int,
     keys: List[str],
     rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[torch.Tensor]]]] = None,
+    preset_bias: Optional[Dict[str, List[Optional[np.ndarray]]]] = None,
     model_pred: Optional[Dict[str, np.ndarray]] = None,
     atomic_output: Optional[FittingOutputDef] = None,
 ):
