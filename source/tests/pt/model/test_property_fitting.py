@@ -159,18 +159,30 @@ class TestInvarianceOutCell(unittest.TestCase):
         self.nf = 1
         self.nt = 3
         self.rng = np.random.default_rng()
-        self.coord = torch.tensor([[1.1042, 0.6852, 1.3582],
-                                   [1.8812, 1.6277, 0.3153],
-                                   [1.5655, 1.0383, 0.4152],
-                                   [0.9594, 1.2298, 0.8124],
-                                   [0.7905, 0.5014, 0.6654]], dtype=dtype, device=env.DEVICE)
+        self.coord = torch.tensor(
+            [
+                [1.1042, 0.6852, 1.3582],
+                [1.8812, 1.6277, 0.3153],
+                [1.5655, 1.0383, 0.4152],
+                [0.9594, 1.2298, 0.8124],
+                [0.7905, 0.5014, 0.6654],
+            ],
+            dtype=dtype,
+            device=env.DEVICE,
+        )
         self.shift = torch.tensor([1000, 1000, 1000], dtype=dtype, device=env.DEVICE)
         self.atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        self.cell = torch.tensor([[0.7333, 0.9166, 0.6533],
-                                  [0.1151, 0.9078, 0.2058],
-                                  [0.6907, 0.0370, 0.4863]], dtype=dtype, device=env.DEVICE)
-        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE) 
+        self.cell = torch.tensor(
+            [
+                [0.7333, 0.9166, 0.6533],
+                [0.1151, 0.9078, 0.2058],
+                [0.6907, 0.0370, 0.4863],
+            ],
+            dtype=dtype,
+            device=env.DEVICE,
+        )
+        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
     def test_trans(self):
         atype = self.atype.reshape(1, 5)
@@ -196,7 +208,12 @@ class TestInvarianceOutCell(unittest.TestCase):
                 _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                xyz, atype, self.rcut, self.sel, self.dd0.mixed_types(), box=self.cell,
+                xyz,
+                atype,
+                self.rcut,
+                self.sel,
+                self.dd0.mixed_types(),
+                box=self.cell,
             )
 
             rd0, gr0, _, _, _ = self.dd0(
@@ -209,6 +226,7 @@ class TestInvarianceOutCell(unittest.TestCase):
             res.append(ret0["property"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+
 
 class TestInvarianceRandomShift(unittest.TestCase):
     def setUp(self) -> None:
@@ -272,7 +290,12 @@ class TestInvarianceRandomShift(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, self.dd0.mixed_types(), box=cell_rot,
+                    xyz + self.shift,
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=cell_rot,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -307,7 +330,12 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                coord[idx_perm], atype, self.rcut, self.sel, self.dd0.mixed_types(), box=self.cell,
+                coord[idx_perm],
+                atype,
+                self.rcut,
+                self.sel,
+                self.dd0.mixed_types(),
+                box=self.cell,
             )
 
             rd0, gr0, _, _, _ = self.dd0(
@@ -323,7 +351,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             to_numpy_array(res[0][:, idx_perm]),
             to_numpy_array(res[1]),
         )
-    
+
     def test_trans(self):
         atype = self.atype.reshape(1, 5)
         coord_s = torch.matmul(
@@ -348,7 +376,12 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 _,
                 nlist,
             ) = extend_input_and_build_neighbor_list(
-                xyz, atype, self.rcut, self.sel, self.dd0.mixed_types(), box=self.cell,
+                xyz,
+                atype,
+                self.rcut,
+                self.sel,
+                self.dd0.mixed_types(),
+                box=self.cell,
             )
 
             rd0, gr0, _, _, _ = self.dd0(
@@ -361,6 +394,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             res.append(ret0["property"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+
 
 class TestPropertyModel(unittest.TestCase):
     def setUp(self):
