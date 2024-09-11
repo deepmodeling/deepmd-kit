@@ -557,7 +557,7 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
 
     set_log_handles(
         FLAGS.log_level,
-        Path(args.log_path) if args.log_path else None,
+        Path(FLAGS.log_path) if FLAGS.log_path else None,
         mpi_log=None,
     )
     log.debug("Log handles were successfully set")
