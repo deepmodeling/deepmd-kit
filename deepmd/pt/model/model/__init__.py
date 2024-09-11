@@ -26,9 +26,6 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.task import (
     BaseFitting,
 )
-from deepmd.pt.utils.utils import (
-    to_torch_tensor,
-)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -154,7 +151,7 @@ def get_zbl_model(model_params):
     )
 
 
-def _convert_preset_out_bias_to_torch_tensor(preset_out_bias, type_map):
+def _convert_preset_out_bias_to_array(preset_out_bias, type_map):
     if preset_out_bias is not None:
         for kk in preset_out_bias.keys():
             if len(preset_out_bias[kk]) != len(type_map):
@@ -163,9 +160,7 @@ def _convert_preset_out_bias_to_torch_tensor(preset_out_bias, type_map):
                 )
             for jj in range(len(preset_out_bias[kk])):
                 if preset_out_bias[kk][jj] is not None:
-                    preset_out_bias[kk][jj] = to_torch_tensor(
-                        np.array(preset_out_bias[kk][jj])
-                    )
+                    preset_out_bias[kk][jj] = np.array(preset_out_bias[kk][jj])
     return preset_out_bias
 
 
@@ -195,7 +190,7 @@ def get_standard_model(model_params):
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
     preset_out_bias = model_params.get("preset_out_bias")
-    preset_out_bias = _convert_preset_out_bias_to_torch_tensor(
+    preset_out_bias = _convert_preset_out_bias_to_array(
         preset_out_bias, model_params["type_map"]
     )
 

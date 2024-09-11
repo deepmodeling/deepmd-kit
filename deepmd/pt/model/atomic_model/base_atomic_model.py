@@ -11,6 +11,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import torch
 
 from deepmd.dpmodel.atomic_model import (
@@ -66,7 +67,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         of the atomic model. Implemented by removing the pairs from the nlist.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_out_bias : Dict[str, List[Optional[torch.Tensor]]], optional
+    preset_out_bias : Dict[str, List[Optional[np.array]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
         The value is a list specifying the bias. the elements can be None or np.array of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
@@ -80,7 +81,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         atom_exclude_types: List[int] = [],
         pair_exclude_types: List[Tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[Dict[str, torch.Tensor]] = None,
+        preset_out_bias: Optional[Dict[str, np.array]] = None,
     ):
         torch.nn.Module.__init__(self)
         BaseAtomicModel_.__init__(self)

@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import torch
 
 from deepmd.pt.model.model import (
@@ -54,8 +55,8 @@ class TestGetModel(unittest.TestCase):
             {
                 "energy": [
                     None,
-                    torch.tensor([1.0], dtype=dtype, device=env.DEVICE),
-                    torch.tensor([3.0], dtype=dtype, device=env.DEVICE),
+                    np.array([1.0]),
+                    np.array([3.0]),
                 ]
             },
         )
