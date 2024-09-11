@@ -58,8 +58,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for mixed_types, nfp, nap, bias_atom_p, intensive, bias_method in itertools.product(
-            [True, False],
+        for nfp, nap, bias_atom_p, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
             [
@@ -75,7 +74,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 task_dim=5,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
+                mixed_types=self.dd0.mixed_types(),
                 bias_atom_p=bias_atom_p,
                 intensive=intensive,
                 bias_method=bias_method,
@@ -132,8 +131,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for mixed_types, nfp, nap, intensive, bias_method in itertools.product(
-            [True, False],
+        for nfp, nap, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
@@ -145,7 +143,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 task_dim=5,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
+                mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
                 bias_method=bias_method,
             ).to(env.DEVICE)
@@ -235,8 +233,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
         # use larger cell to rotate only coord and shift to the center of cell
         cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
 
-        for mixed_types, nfp, nap, intensive, bias_method in itertools.product(
-            [True, False],
+        for nfp, nap, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
@@ -248,7 +245,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 task_dim=9,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=True,
+                mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
                 bias_method=bias_method,
             ).to(env.DEVICE)
@@ -384,7 +381,7 @@ class TestPropertyModel(unittest.TestCase):
             task_dim=3,
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=True,
+            mixed_types=self.dd0.mixed_types(),
             intensive=True,
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
