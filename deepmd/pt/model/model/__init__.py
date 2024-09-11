@@ -153,7 +153,7 @@ def get_zbl_model(model_params):
 
 def _convert_preset_out_bias_to_array(preset_out_bias, type_map):
     if preset_out_bias is not None:
-        for kk in preset_out_bias.keys():
+        for kk in preset_out_bias:
             if len(preset_out_bias[kk]) != len(type_map):
                 raise ValueError(
                     "length of the preset_out_bias should be the same as the type_map"
