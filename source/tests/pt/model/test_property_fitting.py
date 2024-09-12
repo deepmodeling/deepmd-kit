@@ -45,7 +45,6 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.rng = np.random.default_rng()
         self.nf, self.nloc, _ = self.nlist.shape
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        self.scale = self.rng.uniform(0, 1, self.nt).tolist()
 
     def test_consistency(
         self,
@@ -59,16 +58,15 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.atype_ext[:, : self.nloc], dtype=int, device=env.DEVICE
         )
 
-        for mixed_types, nfp, nap, fit_diag, scale, bias_atom_p in itertools.product(
-            [True, False],
+        for nfp, nap, bias_atom_p, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
-            [True, False],
-            [None, self.scale],
             [
                 np.array([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]]),
                 np.array([[11, 12, 13, 4, 15], [16, 17, 18, 9, 20]]),
             ],
+            [True, False],
+            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
@@ -76,10 +74,10 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 task_dim=5,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
-                fit_diag=fit_diag,
-                scale=scale,
+                mixed_types=self.dd0.mixed_types(),
                 bias_atom_p=bias_atom_p,
+                intensive=intensive,
+                bias_method=bias_method,
             ).to(env.DEVICE)
 
             ft1 = DPProperFittingNet.deserialize(ft0.serialize())
@@ -133,11 +131,11 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for mixed_types, nfp, nap, fit_diag in itertools.product(
-            [True, False],
+        for nfp, nap, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
+            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
@@ -145,13 +143,92 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 task_dim=5,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=mixed_types,
-                fit_diag=fit_diag,
+                mixed_types=self.dd0.mixed_types(),
+                intensive=intensive,
+                bias_method=bias_method,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
 
-class TestInvariance(unittest.TestCase):
+class TestInvarianceOutCell(unittest.TestCase):
+    def setUp(self) -> None:
+        self.natoms = 5
+        self.rcut = 4
+        self.rcut_smth = 0.5
+        self.sel = [46, 92, 4]
+        self.nf = 1
+        self.nt = 3
+        self.rng = np.random.default_rng()
+        self.coord = torch.tensor(
+            [
+                [1.1042, 0.6852, 1.3582],
+                [1.8812, 1.6277, 0.3153],
+                [1.5655, 1.0383, 0.4152],
+                [0.9594, 1.2298, 0.8124],
+                [0.7905, 0.5014, 0.6654],
+            ],
+            dtype=dtype,
+            device=env.DEVICE,
+        )
+        self.shift = torch.tensor([1000, 1000, 1000], dtype=dtype, device=env.DEVICE)
+        self.atype = torch.tensor([0, 0, 0, 1, 1], dtype=torch.int32, device=env.DEVICE)
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+        self.cell = torch.tensor(
+            [
+                [0.7333, 0.9166, 0.6533],
+                [0.1151, 0.9078, 0.2058],
+                [0.6907, 0.0370, 0.4863],
+            ],
+            dtype=dtype,
+            device=env.DEVICE,
+        )
+        self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
+
+    def test_trans(self):
+        atype = self.atype.reshape(1, 5)
+        coord_s = torch.matmul(
+            torch.remainder(
+                torch.matmul(self.coord + self.shift, torch.linalg.inv(self.cell)), 1.0
+            ),
+            self.cell,
+        )
+        ft0 = PropertyFittingNet(
+            self.nt,
+            self.dd0.dim_out,
+            task_dim=11,
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=self.dd0.mixed_types(),
+        ).to(env.DEVICE)
+        res = []
+        for xyz in [self.coord, coord_s]:
+            (
+                extended_coord,
+                extended_atype,
+                _,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                xyz,
+                atype,
+                self.rcut,
+                self.sel,
+                self.dd0.mixed_types(),
+                box=self.cell,
+            )
+
+            rd0, gr0, _, _, _ = self.dd0(
+                extended_coord,
+                extended_atype,
+                nlist,
+            )
+
+            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+            res.append(ret0["property"])
+
+        np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+
+
+class TestInvarianceRandomShift(unittest.TestCase):
     def setUp(self) -> None:
         self.natoms = 5
         self.rcut = 4
@@ -166,19 +243,19 @@ class TestInvariance(unittest.TestCase):
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
         self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
-        self.scale = self.rng.uniform(0, 1, self.nt).tolist()
 
     def test_rot(self):
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
+        # use larger cell to rotate only coord and shift to the center of cell
+        cell_rot = 10.0 * torch.eye(3, dtype=dtype, device=env.DEVICE)
 
-        for mixed_types, nfp, nap, fit_diag, scale in itertools.product(
-            [True, False],
+        for nfp, nap, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
             [True, False],
-            [None, self.scale],
+            ["normal", "no_bias"],
         ):
             ft0 = PropertyFittingNet(
                 self.nt,
@@ -186,9 +263,9 @@ class TestInvariance(unittest.TestCase):
                 task_dim=9,
                 numb_fparam=nfp,
                 numb_aparam=nap,
-                mixed_types=True,
-                fit_diag=fit_diag,
-                scale=scale,
+                mixed_types=self.dd0.mixed_types(),
+                intensive=intensive,
+                bias_method=bias_method,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -213,7 +290,12 @@ class TestInvariance(unittest.TestCase):
                     _,
                     nlist,
                 ) = extend_input_and_build_neighbor_list(
-                    xyz + self.shift, atype, self.rcut, self.sel, mixed_types
+                    xyz + self.shift,
+                    atype,
+                    self.rcut,
+                    self.sel,
+                    self.dd0.mixed_types(),
+                    box=cell_rot,
                 )
 
                 rd0, gr0, _, _, _ = self.dd0(
@@ -222,7 +304,7 @@ class TestInvariance(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=ifp, aparam=iap)
+                ret0 = ft0(rd0, atype, gr0, fparam=ifp, aparam=iap)
                 res.append(ret0["property"])
             np.testing.assert_allclose(
                 to_numpy_array(res[1]),
@@ -231,42 +313,44 @@ class TestInvariance(unittest.TestCase):
 
     def test_permu(self):
         coord = torch.matmul(self.coord, self.cell)
-        for fit_diag, scale in itertools.product([True, False], [None, self.scale]):
-            ft0 = PropertyFittingNet(
-                self.nt,
-                self.dd0.dim_out,
-                task_dim=8,
-                numb_fparam=0,
-                numb_aparam=0,
-                mixed_types=True,
-                fit_diag=fit_diag,
-                scale=scale,
-            ).to(env.DEVICE)
-            res = []
-            for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
-                atype = self.atype[idx_perm].reshape(1, 5)
-                (
-                    extended_coord,
-                    extended_atype,
-                    _,
-                    nlist,
-                ) = extend_input_and_build_neighbor_list(
-                    coord[idx_perm], atype, self.rcut, self.sel, False
-                )
-
-                rd0, gr0, _, _, _ = self.dd0(
-                    extended_coord,
-                    extended_atype,
-                    nlist,
-                )
-
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=None, aparam=None)
-                res.append(ret0["property"])
-
-            np.testing.assert_allclose(
-                to_numpy_array(res[0][:, idx_perm]),
-                to_numpy_array(res[1]),
+        ft0 = PropertyFittingNet(
+            self.nt,
+            self.dd0.dim_out,
+            task_dim=8,
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=self.dd0.mixed_types(),
+        ).to(env.DEVICE)
+        res = []
+        for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
+            atype = self.atype[idx_perm].reshape(1, 5)
+            (
+                extended_coord,
+                extended_atype,
+                _,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                coord[idx_perm],
+                atype,
+                self.rcut,
+                self.sel,
+                self.dd0.mixed_types(),
+                box=self.cell,
             )
+
+            rd0, gr0, _, _, _ = self.dd0(
+                extended_coord,
+                extended_atype,
+                nlist,
+            )
+
+            ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
+            res.append(ret0["property"])
+
+        np.testing.assert_allclose(
+            to_numpy_array(res[0][:, idx_perm]),
+            to_numpy_array(res[1]),
+        )
 
     def test_trans(self):
         atype = self.atype.reshape(1, 5)
@@ -276,38 +360,40 @@ class TestInvariance(unittest.TestCase):
             ),
             self.cell,
         )
-        for fit_diag, scale in itertools.product([True, False], [None, self.scale]):
-            ft0 = PropertyFittingNet(
-                self.nt,
-                self.dd0.dim_out,
-                task_dim=11,
-                numb_fparam=0,
-                numb_aparam=0,
-                mixed_types=True,
-                fit_diag=fit_diag,
-                scale=scale,
-            ).to(env.DEVICE)
-            res = []
-            for xyz in [self.coord, coord_s]:
-                (
-                    extended_coord,
-                    extended_atype,
-                    _,
-                    nlist,
-                ) = extend_input_and_build_neighbor_list(
-                    xyz, atype, self.rcut, self.sel, False
-                )
+        ft0 = PropertyFittingNet(
+            self.nt,
+            self.dd0.dim_out,
+            task_dim=11,
+            numb_fparam=0,
+            numb_aparam=0,
+            mixed_types=self.dd0.mixed_types(),
+        ).to(env.DEVICE)
+        res = []
+        for xyz in [self.coord, coord_s]:
+            (
+                extended_coord,
+                extended_atype,
+                _,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                xyz,
+                atype,
+                self.rcut,
+                self.sel,
+                self.dd0.mixed_types(),
+                box=self.cell,
+            )
 
-                rd0, gr0, _, _, _ = self.dd0(
-                    extended_coord,
-                    extended_atype,
-                    nlist,
-                )
+            rd0, gr0, _, _, _ = self.dd0(
+                extended_coord,
+                extended_atype,
+                nlist,
+            )
 
-                ret0 = ft0(rd0, extended_atype, gr0, fparam=0, aparam=0)
-                res.append(ret0["property"])
+            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+            res.append(ret0["property"])
 
-            np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
+        np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
 
 class TestPropertyModel(unittest.TestCase):
@@ -329,7 +415,7 @@ class TestPropertyModel(unittest.TestCase):
             task_dim=3,
             numb_fparam=0,
             numb_aparam=0,
-            mixed_types=True,
+            mixed_types=self.dd0.mixed_types(),
             intensive=True,
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
