@@ -555,7 +555,11 @@ def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
     else:
         FLAGS = args
 
-    set_log_handles(FLAGS.log_level, Path(FLAGS.log_path), mpi_log=None)
+    set_log_handles(
+        FLAGS.log_level,
+        Path(FLAGS.log_path) if FLAGS.log_path else None,
+        mpi_log=None,
+    )
     log.debug("Log handles were successfully set")
     log.info("DeePMD version: %s", __version__)
 
