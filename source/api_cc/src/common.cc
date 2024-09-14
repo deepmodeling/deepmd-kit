@@ -406,6 +406,9 @@ void deepmd::load_op_library() {
 #ifdef BUILD_PYTORCH
   _load_single_op_library("deepmd_op_pt");
 #endif
+#ifdef BUILD_PADDLE
+  _load_single_op_library("deepmd_op_pd");
+#endif
   // load customized plugins
   const char* env_customized_plugins = std::getenv("DP_PLUGIN_PATH");
   if (env_customized_plugins) {

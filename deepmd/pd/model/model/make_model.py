@@ -429,7 +429,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                     axis=-1,
                 )
 
-            if n_nnei > nnei or extra_nlist_sort:
+            # if n_nnei > nnei or extra_nlist_sort:
+            if False:
                 n_nf, n_nloc, n_nnei = nlist.shape
                 m_real_nei = nlist >= 0
                 nlist = paddle.where(m_real_nei, nlist, 0)

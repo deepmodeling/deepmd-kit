@@ -12,6 +12,10 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 #endif
+// #define BUILD_PADDLE
+// #ifdef BUILD_PADDLE
+#include "DeepPotPD.h"
+// #endif
 #include "device.h"
 
 using namespace deepmd;
@@ -30,6 +34,7 @@ DeepPot::~DeepPot() {}
 void DeepPot::init(const std::string& model,
                    const int& gpu_rank,
                    const std::string& file_content) {
+  std::cout << "**  access here" << std::endl;
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -41,9 +46,12 @@ void DeepPot::init(const std::string& model,
     backend = deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     backend = deepmd::DPBackend::TensorFlow;
+  } else if (true) {
+    backend = deepmd::DPBackend::Paddle;
   } else {
-    throw deepmd::deepmd_exception("Unsupported model file format");
+    throw deepmd::deepmd_exception("Unsupported model file formatt");
   }
+
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
@@ -57,7 +65,11 @@ void DeepPot::init(const std::string& model,
     throw deepmd::deepmd_exception("PyTorch backend is not built");
 #endif
   } else if (deepmd::DPBackend::Paddle == backend) {
-    throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
+// #ifdef BUILD_PADDLE
+    dp = std::make_shared<deepmd::DeepPotPD>(model, gpu_rank, file_content);
+// #else
+    throw deepmd::deepmd_exception("Paddle backend is not built");
+// #endif
   } else {
     throw deepmd::deepmd_exception("Unknown file type");
   }

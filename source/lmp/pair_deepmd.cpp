@@ -23,6 +23,7 @@
 #include "neighbor.h"
 #include "output.h"
 #include "update.h"
+#include <boost/stacktrace.hpp>
 #if LAMMPS_VERSION_NUMBER >= 20210831
 // in lammps #2902, fix_ttm members turns from private to protected
 #define USE_TTM 1
@@ -975,9 +976,18 @@ void PairDeepMD::settings(int narg, char **arg) {
   numb_models = models.size();
   if (numb_models == 1) {
     try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd_compat::deepmd_exception &e) {
-      error->one(FLERR, e.what());
+      std::cout << "****** init deepmd model from file 1: " << std::endl;
+      auto node_rank = get_node_rank();
+      std::cout << "****** init deepmd model from file 2: " << std::endl;
+      auto content = get_file_content(arg[0]);
+      std::cout << "****** init deepmd model from file 3: " << std::endl;
+      deep_pot.init(arg[0], node_rank, content);
+      std::cout << "****** init deepmd model from file 4: " << std::endl;
+    } catch (const std::exception &e) {
+      // error->one(FLERR, e.what());
+      std::cerr << "Standard exception caught: " << e.what() << std::endl;
+      // 打印堆栈跟踪信息
+      std::cerr << "Stack trace:\n" << boost::stacktrace::stacktrace() << std::endl;
     }
     cutoff = deep_pot.cutoff() * dist_unit_cvt_factor;
     numb_types = deep_pot.numb_types();

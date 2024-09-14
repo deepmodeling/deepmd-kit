@@ -20,7 +20,8 @@ NPROC=$(nproc --all)
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake -D ENABLE_TENSORFLOW=ON \
+cmake -DCMAKE_PREFIX_PATH=/workspace/hesensen/deepmd_backend/deepmd_paddle_new/source/install/libtorch \
+	-D ENABLE_TENSORFLOW=OFF \
 	-D ENABLE_PYTORCH=ON \
 	-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 	-D USE_TF_PYTHON_LIBS=TRUE \

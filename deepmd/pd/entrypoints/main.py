@@ -366,10 +366,13 @@ def freeze(FLAGS):
     paddle.jit.save(
         model,
         path=FLAGS.output,
+        skip_prune_program=True,
         # extra_files,
     )
+    pir_flag = os.getenv("FLAGS_enable_pir_api", "false")
+    suffix = "json" if pir_flag.lower() in ["true", "1"] else "pdmodel"
     log.info(
-        f"Paddle inference model has been exported to: {FLAGS.output}.pdmodel(.pdiparams)"
+        f"Paddle inference model has been exported to: {FLAGS.output}.{suffix}(.pdiparams)"
     )
 
 

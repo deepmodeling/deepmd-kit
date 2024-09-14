@@ -6,7 +6,6 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import paddle
 
 from deepmd.pd.utils import (
@@ -101,10 +100,11 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    if np.prod(coord.shape) > 0:
+    # if coord.numel().item() > 0:
+    if True > 0:
         xmax = paddle.max(coord) + 2.0 * rcut
     else:
-        xmax = paddle.zeros([1], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
+        xmax = paddle.zeros([], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
     # nf x nall
     is_vir = atype < 0
     coord1 = paddle.where(
@@ -118,7 +118,8 @@ def build_neighbor_list(
     diff = coord1.reshape([batch_size, -1, 3]).unsqueeze(1) - coord0.reshape(
         [batch_size, -1, 3]
     ).unsqueeze(2)
-    assert list(diff.shape) == [batch_size, nloc, nall, 3]
+    if paddle.in_dynamic_mode():
+        assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
     # rr = paddle.linalg.norm(diff, axis=-1)
     rr = aux.norm(diff, axis=-1)
@@ -147,7 +148,8 @@ def _trim_mask_distinguish_nlist(
     nsel = sum(sel)
     # nloc x nsel
     batch_size, nloc, nnei = rr.shape
-    assert batch_size == is_vir_cntl.shape[0]
+    if paddle.in_dynamic_mode():
+        assert batch_size == is_vir_cntl.shape[0]
     if nsel <= nnei:
         rr = rr[:, :, :nsel]
         nlist = nlist[:, :, :nsel]
@@ -171,7 +173,8 @@ def _trim_mask_distinguish_nlist(
             ],
             axis=-1,
         )
-    assert list(nlist.shape) == [batch_size, nloc, nsel]
+        if paddle.in_dynamic_mode():
+            assert list(nlist.shape) == [batch_size, nloc, nsel]
     nlist = paddle.where(
         paddle.logical_or((rr > rcut), is_vir_cntl[:, :nloc, None]), -1, nlist
     )
@@ -264,7 +267,8 @@ def build_directional_neighbor_list(
         sel = [sel]
     # nloc x nall x 3
     diff = coord_neig[:, None, :, :] - coord_cntl[:, :, None, :]
-    assert list(diff.shape) == [batch_size, nloc_cntl, nall_neig, 3]
+    if paddle.in_dynamic_mode():
+        assert list(diff.shape) == [batch_size, nloc_cntl, nall_neig, 3]
     # nloc x nall
     # rr = paddle.linalg.norm(diff, axis=-1)
     rr = aux.norm(diff, axis=-1)
@@ -372,7 +376,8 @@ def build_multiple_neighbor_list(
         value being the corresponding nlist.
 
     """
-    assert len(rcuts) == len(nsels)
+    if paddle.in_dynamic_mode():
+        assert len(rcuts) == len(nsels)
     if len(rcuts) == 0:
         return {}
     nb, nloc, nsel = nlist.shape
@@ -473,17 +478,25 @@ def extend_coord_with_ghosts(
         # 3
         nbuff = paddle.amax(nbuff, axis=0)  # faster than paddle.max
         nbuff_cpu = nbuff.cpu()
-        xi = paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1).to(
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION, device="cpu"
+        xi = (
+            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1)
+            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            .cpu()
         )  # pylint: disable=no-explicit-dtype
-        yi = paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1).to(
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION, device="cpu"
+        yi = (
+            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1)
+            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            .cpu()
         )  # pylint: disable=no-explicit-dtype
-        zi = paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1).to(
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION, device="cpu"
+        zi = (
+            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1)
+            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            .cpu()
         )  # pylint: disable=no-explicit-dtype
-        eye_3 = paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION, device="cpu"
+        eye_3 = (
+            paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            .cpu()
         )
         xyz = xi.reshape([-1, 1, 1, 1]) * eye_3[0]
         xyz = xyz + yi.reshape([1, -1, 1, 1]) * eye_3[1]
