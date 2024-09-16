@@ -835,7 +835,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_show = subparsers.add_parser(
         "show",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Show the information of a model",
+        help="Show the information of a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
