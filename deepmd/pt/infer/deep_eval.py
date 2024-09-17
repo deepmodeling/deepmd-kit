@@ -138,9 +138,11 @@ class DeepEval(DeepEvalBackend):
         elif str(self.model_path).endswith(".pth"):
             model = torch.jit.load(model_file, map_location=env.DEVICE)
             self.dp = ModelWrapper(model)
-            self.model_def_script = json.loads(
-                self.dp.model["Default"].get_model_def_script()
-            )
+            model_def_script = self.dp.model["Default"].get_model_def_script()
+            if model_def_script:
+                self.model_def_script = json.loads(model_def_script)
+            else:
+                self.model_def_script = {}
         else:
             raise ValueError("Unknown model file format!")
         self.rcut = self.dp.model["Default"].get_rcut()
