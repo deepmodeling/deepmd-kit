@@ -23,10 +23,7 @@ if(ENABLE_PYTORCH
   target_link_libraries(${libname} PRIVATE "${TORCH_LIBRARIES}")
   target_compile_definitions(${libname} PRIVATE BUILD_PYTORCH)
 endif()
-if(ENABLE_PADDLE
-   AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}"
-       # LAMMPS and i-PI in the Python package are not ready - needs more work
-   AND NOT BUILD_PY_IF)
+if(ENABLE_PADDLE AND NOT BUILD_PY_IF)
   target_link_libraries(${libname} PRIVATE "${PADDLE_LIBRARIES}")
   target_compile_definitions(${libname} PRIVATE BUILD_PADDLE)
 endif()

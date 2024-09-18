@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
-#include "paddle/include/paddle_inference_api.h"
+// #include "paddle/include/paddle_inference_api.h"
 // #include "paddle/extension.h"
 // #include "paddle/phi/backends/all_context.h"
 
 #include "DeepPot.h"
 #include "common.h"
+#include "commonPD.h"
 #include "neighbor_list.h"
 
 namespace deepmd {
@@ -177,19 +178,19 @@ class DeepPotPD : public DeepPotBase {
    *same aparam.
    * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_mixed_type(ENERGYVTYPE& ener,
-                          std::vector<VALUETYPE>& force,
-                          std::vector<VALUETYPE>& virial,
-                          std::vector<VALUETYPE>& atom_energy,
-                          std::vector<VALUETYPE>& atom_virial,
-                          const int& nframes,
-                          const std::vector<VALUETYPE>& coord,
-                          const std::vector<int>& atype,
-                          const std::vector<VALUETYPE>& box,
-                          const std::vector<VALUETYPE>& fparam,
-                          const std::vector<VALUETYPE>& aparam,
-                          const bool atomic);
+  // template <typename VALUETYPE, typename ENERGYVTYPE>
+  // void compute_mixed_type(ENERGYVTYPE& ener,
+  //                         std::vector<VALUETYPE>& force,
+  //                         std::vector<VALUETYPE>& virial,
+  //                         std::vector<VALUETYPE>& atom_energy,
+  //                         std::vector<VALUETYPE>& atom_virial,
+  //                         const int& nframes,
+  //                         const std::vector<VALUETYPE>& coord,
+  //                         const std::vector<int>& atype,
+  //                         const std::vector<VALUETYPE>& box,
+  //                         const std::vector<VALUETYPE>& fparam,
+  //                         const std::vector<VALUETYPE>& aparam,
+  //                         const bool atomic);
 
  public:
   /**
@@ -327,6 +328,10 @@ class DeepPotPD : public DeepPotBase {
  private:
   int num_intra_nthreads, num_inter_nthreads;
   bool inited;
+
+  template <class VT>
+  VT get_scalar(const std::string& name) const;
+
   int ntypes;
   int ntypes_spin;
   int dfparam;
@@ -336,6 +341,7 @@ class DeepPotPD : public DeepPotBase {
   std::shared_ptr<paddle_infer::Predictor> predictor = nullptr;
   std::shared_ptr<paddle_infer::Config> config = nullptr;
   double rcut;
+  double cell_size;
   NeighborListData nlist_data;
   int max_num_neighbors;
   InputNlist nlist;
