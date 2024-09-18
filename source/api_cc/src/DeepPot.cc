@@ -34,7 +34,7 @@ DeepPot::~DeepPot() {}
 void DeepPot::init(const std::string& model,
                    const int& gpu_rank,
                    const std::string& file_content) {
-  std::cout << "**  access here" << std::endl;
+  std::cout << "****** access here" << std::endl;
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -46,6 +46,7 @@ void DeepPot::init(const std::string& model,
     backend = deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     backend = deepmd::DPBackend::TensorFlow;
+  // } else if (model.length() >= 3 && (model.substr(model.length() - 5) == ".json" || model.substr(model.length() - 8) == ".pdmodel")) {
   } else if (true) {
     backend = deepmd::DPBackend::Paddle;
   } else {

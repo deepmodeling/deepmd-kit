@@ -129,6 +129,125 @@ if(WITH_GPU)
   endif()
 endif()
 
+macro(safe_set_static_flag)
+  foreach(flag_var
+          CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+          CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+    if(${flag_var} MATCHES "/MD")
+      string(REGEX REPLACE "/MD" "/MT" ${flag_var} "${${flag_var}}")
+    endif(${flag_var} MATCHES "/MD")
+  endforeach(flag_var)
+endmacro()
+
+if(NOT DEFINED PADDLE_LIB)
+  message(
+    FATAL_ERROR "please set PADDLE_LIB with -DPADDLE_LIB=/path/paddle/lib")
+endif()
+set(PADDLE_LIB
+    ${PADDLE_LIB}
+    CACHE PATH "/path/paddle/lib")
+
+include_directories("${PADDLE_LIB}/")
+set(PADDLE_LIB_THIRD_PARTY_PATH "${PADDLE_LIB}/third_party/install/")
+
+include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
+include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
+include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
+include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+
+link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/lib")
+link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
+link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
+link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
+link_directories("${PADDLE_LIB}/paddle/lib")
+
+# add custom operators
+option(USE_TENSORRT "Compile demo with TensorRT." OFF)
+
+if(WITH_GPU)
+  if(NOT WIN32)
+    set(CUDA_LIB
+        "/usr/local/cuda/lib64/"
+        CACHE STRING "CUDA Library")
+  else()
+    if(CUDA_LIB STREQUAL "")
+      set(CUDA_LIB
+          "C:\\Program\ Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v8.0\\lib\\x64"
+      )
+    endif()
+  endif(NOT WIN32)
+endif()
+
+if(NOT WIN32)
+  if(USE_TENSORRT AND WITH_GPU)
+    include_directories("${TENSORRT_INCLUDE_DIR}")
+    link_directories("${TENSORRT_LIB_DIR}")
+  endif()
+endif(NOT WIN32)
+
+if(WITH_STATIC_LIB)
+  set(DEPS
+      ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_STATIC_LIBRARY_SUFFIX}
+  )
+else()
+  if(WIN32)
+    set(DEPS
+        ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_STATIC_LIBRARY_SUFFIX}
+    )
+  else()
+    set(DEPS
+        ${PADDLE_LIB}/paddle/lib/libpaddle_inference${CMAKE_SHARED_LIBRARY_SUFFIX}
+    )
+  endif()
+endif()
+
+if(NOT WIN32)
+  set(EXTERNAL_LIB "-lrt -ldl -lpthread")
+  set(DEPS
+      ${DEPS}
+      ${MATH_LIB}
+      ${MKLDNN_LIB}
+      glog
+      gflags
+      protobuf
+      xxhash
+      ${EXTERNAL_LIB})
+else()
+  set(DEPS
+      ${DEPS}
+      ${MATH_LIB}
+      ${MKLDNN_LIB}
+      glog
+      gflags_static
+      libprotobuf
+      xxhash
+      ${EXTERNAL_LIB})
+  set(DEPS ${DEPS} shlwapi.lib)
+endif(NOT WIN32)
+
+if(WITH_GPU)
+  if(NOT WIN32)
+    if(USE_TENSORRT)
+      set(DEPS ${DEPS}
+               ${TENSORRT_LIB_DIR}/libnvinfer${CMAKE_SHARED_LIBRARY_SUFFIX})
+      set(DEPS
+          ${DEPS}
+          ${TENSORRT_LIB_DIR}/libnvinfer_plugin${CMAKE_SHARED_LIBRARY_SUFFIX})
+    endif()
+    set(DEPS ${DEPS} ${CUDA_LIB}/libcudart${CMAKE_SHARED_LIBRARY_SUFFIX})
+  else()
+    if(USE_TENSORRT)
+      set(DEPS ${DEPS}
+               ${TENSORRT_LIB_DIR}/nvinfer${CMAKE_STATIC_LIBRARY_SUFFIX})
+      set(DEPS ${DEPS}
+               ${TENSORRT_LIB_DIR}/nvinfer_plugin${CMAKE_STATIC_LIBRARY_SUFFIX})
+    endif()
+    set(DEPS ${DEPS} ${CUDA_LIB}/cudart${CMAKE_STATIC_LIBRARY_SUFFIX})
+    set(DEPS ${DEPS} ${CUDA_LIB}/cublas${CMAKE_STATIC_LIBRARY_SUFFIX})
+    set(DEPS ${DEPS} ${CUDA_LIB}/cudnn${CMAKE_STATIC_LIBRARY_SUFFIX})
+  endif()
+endif()
+
 option(BUILD_TESTING "Build test and enable converage" OFF)
 set(DEEPMD_C_ROOT
     ""
