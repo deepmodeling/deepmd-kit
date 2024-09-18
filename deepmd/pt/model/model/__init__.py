@@ -151,6 +151,15 @@ def get_zbl_model(model_params):
     )
 
 
+def _can_be_converted_to_float(value):
+    try:
+        float(value)
+        return True
+    except (TypeError, ValueError):
+        # return false for any failure...
+        return False
+
+
 def _convert_preset_out_bias_to_array(preset_out_bias, type_map):
     if preset_out_bias is not None:
         for kk in preset_out_bias:
@@ -160,7 +169,17 @@ def _convert_preset_out_bias_to_array(preset_out_bias, type_map):
                 )
             for jj in range(len(preset_out_bias[kk])):
                 if preset_out_bias[kk][jj] is not None:
-                    preset_out_bias[kk][jj] = np.array(preset_out_bias[kk][jj])
+                    if isinstance(preset_out_bias[kk][jj], list):
+                        bb = preset_out_bias[kk][jj]
+                    elif _can_be_converted_to_float(preset_out_bias[kk][jj]):
+                        bb = [float(preset_out_bias[kk][jj])]
+                    else:
+                        raise ValueError(
+                            f"unsupported type/value of the {jj}th element of "
+                            f"preset_out_bias['{kk}'] "
+                            f"{type(preset_out_bias[kk][jj])}"
+                        )
+                    preset_out_bias[kk][jj] = np.array(bb)
     return preset_out_bias
 
 
