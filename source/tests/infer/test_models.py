@@ -325,6 +325,12 @@ class TestDeepPot(unittest.TestCase):
                 err_msg=f"Result {ii} virial",
             )
 
+    def test_model_script_def(self):
+        if self.case.model_def_script is not None:
+            self.assertDictEqual(
+                self.case.model_def_script, self.dp.get_model_def_script()
+            )
+
 
 @parameterized(
     ("se_e2_a",),  # key

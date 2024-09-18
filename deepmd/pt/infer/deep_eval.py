@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -100,7 +101,7 @@ class DeepEval(DeepEvalBackend):
         *args: Any,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        head: Optional[str] = None,
+        head: Optional[Union[str, int]] = None,
         **kwargs: Any,
     ):
         self.output_def = output_def
@@ -110,9 +111,12 @@ class DeepEval(DeepEvalBackend):
             if "model" in state_dict:
                 state_dict = state_dict["model"]
             self.input_param = state_dict["_extra_state"]["model_params"]
+            self.model_def_script = self.input_param
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:
                 model_keys = list(self.input_param["model_dict"].keys())
+                if isinstance(head, int):
+                    head = model_keys[0]
                 assert (
                     head is not None
                 ), f"Head must be set for multitask model! Available heads are: {model_keys}"
@@ -134,6 +138,11 @@ class DeepEval(DeepEvalBackend):
         elif str(self.model_path).endswith(".pth"):
             model = torch.jit.load(model_file, map_location=env.DEVICE)
             self.dp = ModelWrapper(model)
+            model_def_script = self.dp.model["Default"].get_model_def_script()
+            if model_def_script:
+                self.model_def_script = json.loads(model_def_script)
+            else:
+                self.model_def_script = {}
         else:
             raise ValueError("Unknown model file format!")
         self.rcut = self.dp.model["Default"].get_rcut()
@@ -589,6 +598,10 @@ class DeepEval(DeepEvalBackend):
             raise KeyError("The model has no type embedding networks.")
         typeebd = torch.cat(out, dim=1)
         return to_numpy_array(typeebd)
+
+    def get_model_def_script(self) -> str:
+        """Get model defination script."""
+        return self.model_def_script
 
 
 # For tests only
