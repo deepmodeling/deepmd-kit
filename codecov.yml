@@ -44,3 +44,7 @@ component_management:
       name: i-PI
       paths:
         - source/ipi/**
+codecov:
+  notify:
+    # 12 Python + 2 C++
+    after_n_builds: 14
