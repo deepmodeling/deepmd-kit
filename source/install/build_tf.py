@@ -173,6 +173,8 @@ class OnlineResource:
                 def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
                     for member in tar.getmembers():
                         member_path = os.path.join(path, member.name)
+                        if os.path.isabs(member.name) or ".." in Path(member.name).parts:
+                            raise Exception("Attempted Path Traversal in Tar File")
                         if not is_within_directory(path, member_path):
                             raise Exception("Attempted Path Traversal in Tar File")
 
