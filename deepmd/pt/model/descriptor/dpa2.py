@@ -389,6 +389,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         if shared_level == 0:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            if self.use_three_body:
+                self.repinit_three_body.share_params(
+                    base_class.repinit_three_body, 0, resume=resume
+                )
             self._modules["g1_shape_tranform"] = base_class._modules[
                 "g1_shape_tranform"
             ]
@@ -398,6 +402,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            if self.use_three_body:
+                self.repinit_three_body.share_params(
+                    base_class.repinit_three_body, 0, resume=resume
+                )
         # shared_level: 2
         # share all parameters in type_embedding and repformers
         elif shared_level == 2:
@@ -499,7 +507,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             The path to the stat file.
 
         """
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+        descrpt_list = [self.repinit, self.repformers]
+        if self.use_three_body:
+            descrpt_list.append(self.repinit_three_body)
+        for ii, descrpt in enumerate(descrpt_list):
             descrpt.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
@@ -508,16 +519,24 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         stddev: List[torch.Tensor],
     ) -> None:
         """Update mean and stddev for descriptor."""
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+        descrpt_list = [self.repinit, self.repformers]
+        if self.use_three_body:
+            descrpt_list.append(self.repinit_three_body)
+        for ii, descrpt in enumerate(descrpt_list):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
     def get_stat_mean_and_stddev(self) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
         """Get mean and stddev for descriptor."""
-        return [self.repinit.mean, self.repformers.mean], [
+        mean_list = [self.repinit.mean, self.repformers.mean]
+        stddev_list = [
             self.repinit.stddev,
             self.repformers.stddev,
         ]
+        if self.use_three_body:
+            mean_list.append(self.repinit_three_body.mean)
+            stddev_list.append(self.repinit_three_body.stddev)
+        return mean_list, stddev_list
 
     def serialize(self) -> dict:
         repinit = self.repinit
