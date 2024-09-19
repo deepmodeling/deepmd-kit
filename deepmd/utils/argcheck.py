@@ -1772,7 +1772,7 @@ def model_args(exclude_hybrid=False):
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
-    doc_preset_out_bias = "The preset bias of the atomic output. Is provided as a dict. Taking the energy model that has three atom types for example, the preset_out_bias may be given as `{ 'energy': [null, 0., 1.] }`. In this case the bias of type 1 and 2 are set to 0. and 1., respectively.The set_davg_zero should be set to true."
+    doc_preset_out_bias = "The preset bias of the atomic output. Note that the set_davg_zero should be set to true. The bias is provided as a dict. Taking the energy model that has three atom types for example, the `preset_out_bias` may be given as `{ 'energy': [null, 0., 1.] }`. In this case the energy bias of type 1 and 2 are set to 0. and 1., respectively. A dipole model with two atom types may set `preset_out_bias` as `{ 'dipole': [null, [0., 1., 2.]] }`"
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -1837,7 +1837,7 @@ def model_args(exclude_hybrid=False):
             ),
             Argument(
                 "preset_out_bias",
-                Dict[str, Optional[float]],
+                Dict[str, List[Optional[Union[float, List[float]]]]],
                 optional=True,
                 default=None,
                 doc=doc_only_pt_supported + doc_preset_out_bias,

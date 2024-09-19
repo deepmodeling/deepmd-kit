@@ -86,7 +86,7 @@ jobs:
           rm -rf .git
         if: matrix.dp_pkg_name == 'deepmd-kit-cu11'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.20
+        uses: pypa/cibuildwheel@v2.21
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all

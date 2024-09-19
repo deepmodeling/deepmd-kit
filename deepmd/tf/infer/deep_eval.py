@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from functools import (
     lru_cache,
 )
@@ -1122,6 +1123,13 @@ class DeepEval(DeepEvalBackend):
 
     def get_has_efield(self) -> bool:
         return self.has_efield
+
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        t_script = self._get_tensor("train_attr/training_script:0")
+        [script] = run_sess(self.sess, [t_script], feed_dict={})
+        model_def_script = script.decode("utf-8")
+        return json.loads(model_def_script)["model"]
 
 
 class DeepEvalOld:
