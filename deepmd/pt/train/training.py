@@ -401,7 +401,9 @@ class Trainer:
         optimizer_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
-            state_dict = torch.load(resume_model, map_location=DEVICE)
+            state_dict = torch.load(
+                resume_model, map_location=DEVICE, weights_only=True
+            )
             if "model" in state_dict:
                 optimizer_state_dict = (
                     state_dict["optimizer"] if finetune_model is None else None

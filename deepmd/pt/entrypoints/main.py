@@ -275,7 +275,9 @@ def train(FLAGS):
         FLAGS.init_model is not None or FLAGS.init_frz_model is not None
     ) and FLAGS.use_pretrain_script:
         if FLAGS.init_model is not None:
-            init_state_dict = torch.load(FLAGS.init_model, map_location=DEVICE)
+            init_state_dict = torch.load(
+                FLAGS.init_model, map_location=DEVICE, weights_only=True
+            )
             if "model" in init_state_dict:
                 init_state_dict = init_state_dict["model"]
             config["model"] = init_state_dict["_extra_state"]["model_params"]
@@ -358,7 +360,9 @@ def freeze(FLAGS):
 
 def change_bias(FLAGS):
     if FLAGS.INPUT.endswith(".pt"):
-        old_state_dict = torch.load(FLAGS.INPUT, map_location=env.DEVICE)
+        old_state_dict = torch.load(
+            FLAGS.INPUT, map_location=env.DEVICE, weights_only=True
+        )
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
     elif FLAGS.INPUT.endswith(".pth"):
