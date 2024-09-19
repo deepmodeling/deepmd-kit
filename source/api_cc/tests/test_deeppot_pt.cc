@@ -74,7 +74,7 @@ class TestInferDeepPotAPt : public ::testing::Test {
     }
   };
 
-  void TearDown() override { remove("deeppot.pb"); };
+  void TearDown() override {};
 };
 
 TYPED_TEST_SUITE(TestInferDeepPotAPt, ValueTypes);
