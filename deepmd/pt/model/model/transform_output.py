@@ -108,14 +108,6 @@ def get_leading_dims(
     return list(vshape[: (len(vshape) - len(vdef.shape))])
 
 
-def get_atom_axis(
-    vdef: torch.Tensor,
-):
-    """Get the axis of atoms."""
-    atom_axis = -(len(vdef.shape) + 1)
-    return atom_axis
-
-
 def take_deriv(
     vv: torch.Tensor,
     svv: torch.Tensor,

@@ -68,17 +68,6 @@ def to_face_distance(
     return dist.view(list(cshape[:-2]) + [3])  # noqa:RUF005
 
 
-def _to_face_distance(cell):
-    volume = torch.linalg.det(cell)
-    c_yz = torch.cross(cell[1], cell[2])
-    _h2yz = volume / torch.linalg.norm(c_yz)
-    c_zx = torch.cross(cell[2], cell[0])
-    _h2zx = volume / torch.linalg.norm(c_zx)
-    c_xy = torch.cross(cell[0], cell[1])
-    _h2xy = volume / torch.linalg.norm(c_xy)
-    return torch.stack([_h2yz, _h2zx, _h2xy])
-
-
 def b_to_face_distance(cell):
     volume = torch.linalg.det(cell)
     c_yz = torch.cross(cell[:, 1], cell[:, 2], dim=-1)
