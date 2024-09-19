@@ -4,12 +4,6 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.preprocess import (
-    Region3D,
-)
 from deepmd.pt.utils.region import (
     inter2phys,
     to_face_distance,
@@ -60,29 +54,3 @@ class TestRegion(unittest.TestCase):
                 torch.testing.assert_close(
                     dists[ii][jj], expected, rtol=self.prec, atol=self.prec
                 )
-
-
-class TestLegacyRegion(unittest.TestCase):
-    def setUp(self):
-        self.cell = torch.tensor(
-            [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype, device=env.DEVICE
-        )
-        self.prec = 1e-6
-
-    def test_inter_to_phys(self):
-        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
-        inter = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
-        reg = Region3D(self.cell)
-        phys = reg.inter2phys(inter)
-        expected_phys = torch.matmul(inter, self.cell)
-        torch.testing.assert_close(phys, expected_phys, rtol=self.prec, atol=self.prec)
-
-    def test_inter_to_inter(self):
-        generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
-        inter = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
-        reg = Region3D(self.cell)
-        new_inter = reg.phys2inter(reg.inter2phys(inter))
-        torch.testing.assert_close(inter, new_inter, rtol=self.prec, atol=self.prec)
-
-    def test_to_face_dist(self):
-        pass
