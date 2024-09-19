@@ -147,6 +147,7 @@ class Case:
         self.type_map = config["type_map"]
         self.dim_fparam = config["dim_fparam"]
         self.dim_aparam = config["dim_aparam"]
+        self.model_def_script = config.get("model_def_script")
 
     @lru_cache
     def get_model(self, suffix: str, out_file: Optional[str] = None) -> str:

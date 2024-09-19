@@ -284,6 +284,10 @@ class DeepEvalBackend(ABC):
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""
 
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        raise NotImplementedError("Not implemented in this backend.")
+
 
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
@@ -546,3 +550,7 @@ class DeepEval(ABC):
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""
         return self.deep_eval.get_ntypes_spin()
+
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        return self.deep_eval.get_model_def_script()

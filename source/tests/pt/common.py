@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd.pt.entrypoints.main import (
+from deepmd.main import (
     main,
 )
 
