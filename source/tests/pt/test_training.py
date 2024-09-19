@@ -493,7 +493,11 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         # check parameters
         state_dict_finetuned = trainer_finetune.wrapper.model.state_dict()
         for state_key in state_dict_finetuned:
-            if "out_bias" not in state_key and "out_std" not in state_key and "fitting" not in state_key:
+            if (
+                "out_bias" not in state_key
+                and "out_std" not in state_key
+                and "fitting" not in state_key
+            ):
                 torch.testing.assert_close(
                     state_dict_trained[state_key],
                     state_dict_finetuned[state_key],
@@ -501,7 +505,6 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
 
         # check running
         trainer_finetune.run()
-
 
     def tearDown(self):
         for f in os.listdir("."):
