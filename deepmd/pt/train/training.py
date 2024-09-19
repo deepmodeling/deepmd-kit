@@ -489,6 +489,16 @@ class Trainer:
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
                                 )
+                            elif _new_fitting and ((".out_bias" in item_key) or (".out_std" in item_key)):
+                                new_key = item_key.replace(
+                                    f".{_model_key}.", f".{_model_key_from}."
+                                )
+                                if _random_state_dict[item_key].shape[-1] != _origin_state_dict[new_key].shape[-1]:
+                                    assert _random_state_dict[item_key].shape[:-1] == _origin_state_dict[new_key].shape[:-1]
+                                    _origin_state_dict[new_key] = _origin_state_dict[new_key].expand(_random_state_dict[item_key].shape)
+                                _new_state_dict[item_key] = (
+                                    _origin_state_dict[new_key].clone().detach()
+                                )
                             else:
                                 new_key = item_key.replace(
                                     f".{_model_key}.", f".{_model_key_from}."
