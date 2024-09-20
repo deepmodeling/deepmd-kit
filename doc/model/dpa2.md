@@ -6,7 +6,7 @@
 
 The DPA-2 model implementation. See https://arxiv.org/abs/2312.15492 for more details.
 
-Training example: `examples/water/dpa2/input_torch.json`.
+Training example: `examples/water/dpa2/input_torch_medium.json`, see [README](../../examples/water/dpa2/README.md) for inputs in different levels.
 
 ## Data format
 

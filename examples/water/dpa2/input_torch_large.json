@@ -9,8 +9,8 @@
       "type": "dpa2",
       "repinit": {
         "tebd_dim": 8,
-        "rcut": 9.0,
-        "rcut_smth": 8.0,
+        "rcut": 6.0,
+        "rcut_smth": 0.5,
         "nsel": 120,
         "neuron": [
           25,
@@ -18,7 +18,11 @@
           100
         ],
         "axis_neuron": 12,
-        "activation_function": "tanh"
+        "activation_function": "tanh",
+        "three_body_sel": 40,
+        "three_body_rcut": 4.0,
+        "three_body_rcut_smth": 3.5,
+        "use_three_body": true
       },
       "repformer": {
         "rcut": 4.0,
@@ -36,10 +40,16 @@
         "update_g1_has_conv": true,
         "update_g1_has_grrg": true,
         "update_g1_has_drrd": true,
-        "update_g1_has_attn": true,
-        "update_g2_has_g1g1": true,
+        "update_g1_has_attn": false,
+        "update_g2_has_g1g1": false,
         "update_g2_has_attn": true,
-        "attn2_has_gate": true
+        "update_style": "res_residual",
+        "update_residual": 0.01,
+        "update_residual_init": "norm",
+        "attn2_has_gate": true,
+        "use_sqrt_nnei": true,
+        "g1_out_conv": true,
+        "g1_out_mlp": true
       },
       "add_tebd_to_repinit_out": false
     },
@@ -58,7 +68,7 @@
   "learning_rate": {
     "type": "exp",
     "decay_steps": 5000,
-    "start_lr": 0.0002,
+    "start_lr": 0.001,
     "stop_lr": 3.51e-08,
     "_comment": "that's all"
   },
