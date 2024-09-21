@@ -1032,7 +1032,7 @@ class Trainer:
         )
         module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
-        optim_state_dict = self.optimizer.state_dict()
+        optim_state_dict = deepcopy(self.optimizer.state_dict())
         for item in optim_state_dict["param_groups"]:
             item["lr"] = float(item["lr"])
         torch.save(
