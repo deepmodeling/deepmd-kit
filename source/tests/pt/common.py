@@ -72,7 +72,7 @@ def eval_model(
         if spins is not None:
             assert isinstance(spins, torch.Tensor), err_msg
         assert isinstance(atom_types, torch.Tensor) or isinstance(atom_types, list)
-        atom_types = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        atom_types = torch.tensor(atom_types, dtype=torch.int32, device=DEVICE)
     elif isinstance(coords, np.ndarray):
         if cells is not None:
             assert isinstance(cells, np.ndarray), err_msg
