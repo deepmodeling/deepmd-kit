@@ -21,8 +21,10 @@ from ...seed import (
 
 dtype = torch.float64
 
-from .test_permutation import (
+from ..common import (
     eval_model,
+)
+from .test_permutation import (
     model_dpa1,
     model_dpa2,
     model_hybrid,
