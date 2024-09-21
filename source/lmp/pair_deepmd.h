@@ -93,6 +93,7 @@ class PairDeepMD : public Pair {
   int numb_types;
   int numb_types_spin;
   std::vector<std::vector<double> > all_force;
+  std::vector<std::vector<double> > all_force_mag;
   std::ofstream fp;
   int out_freq;
   std::string out_file;

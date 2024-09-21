@@ -760,6 +760,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         double min = numeric_limits<double>::max(), max = 0, avg = 0;
         ana_st(max, min, avg, std_f, nlocal);
         double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
+        double all_fm_min = 0, all_fm_max = 0, all_fm_avg = 0;
         MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
         MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
         MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
@@ -775,7 +776,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
           MPI_Reduce(&min, &all_fm_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
           MPI_Reduce(&max, &all_fm_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
           MPI_Reduce(&avg, &all_fm_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-          all_fm_avg /= double(all_nlocal);
+          // need modified for only spin atoms
+          all_fm_avg /= double(atom->natoms);
         }
         // std v
         std::vector<double> send_v(9 * numb_models);
@@ -834,8 +836,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
             all_fm_avg *= force_unit_cvt_factor;
             fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
                << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
-               << " " << setw(18) << all_fr_max << " " << setw(18) << all_fr_min
-               << " " << setw(18) << all_fr_avg << " " << setw(18) << all_fm_max
+               << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
+               << " " << setw(18) << all_f_avg << " " << setw(18) << all_fm_max
                << " " << setw(18) << all_fm_min << " " << setw(18)
                << all_fm_avg;
           }
