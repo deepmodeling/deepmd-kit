@@ -847,7 +847,7 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
          extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
          new_idx_map, old_idx_map, lmp_list, dcoord, dtype, nghost, dspin_,
-         numb_types, numb_types_spin, virtual_len);
+         numb_types, numb_types_spin, virtual_len, spin_norm);
   // extend_lmp_list = InputNlist(extend_inum, &extend_ilist[0],
   //                              &extend_numneigh[0], &extend_firstneigh[0]);
   deepmd_compat::InputNlist extend_lmp_list(extend_inum, &extend_ilist[0],
