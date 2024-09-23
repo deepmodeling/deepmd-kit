@@ -370,8 +370,6 @@ ignore = [
     "D205", # 1 blank line required between summary line and description
     "D401", # TODO: first line should be in imperative mood
     "D404", # TODO: first word of the docstring should not be This
-    "UP007",
-    "UP006",
 ]
 ignore-init-module-imports = true
 
