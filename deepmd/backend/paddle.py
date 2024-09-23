@@ -41,7 +41,7 @@ class PaddleBackend(Backend):
         | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = [".pdparams", ".pd"]
+    suffixes: ClassVar[List[str]] = [".json", ".pd"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
