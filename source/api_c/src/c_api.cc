@@ -800,9 +800,15 @@ void DP_DeepPotModelDeviComputeNList_variant_sp(DP_DeepPotModelDevi* dp,
   // different from DeepPot
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, fm, v, ae, av;
-  DP_REQUIRES_OK(
-      dp, dp->dp.compute(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_,
-                         nghost, nlist->nl, ago, fparam_, aparam_));
+  if (atomic_energy || atomic_virial) {
+    DP_REQUIRES_OK(
+         dp, dp->dp.compute(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_, nghost,
+                            nlist->nl, ago, fparam_, aparam_));
+  } else {
+    DP_REQUIRES_OK(
+         dp, dp->dp.compute(e, f, fm, v, coord_, spin_, atype_, cell_,
+                            nghost, nlist->nl, ago, fparam_, aparam_));
+  }
   // 2D vector to 2D array, flatten first
   if (energy) {
     std::copy(e.begin(), e.end(), energy);

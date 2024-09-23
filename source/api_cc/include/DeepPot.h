@@ -824,6 +824,20 @@ class DeepPotModelDevi {
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  template <typename VALUETYPE>
+  void compute(std::vector<ENERGYTYPE>& all_ener,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_force_mag,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<VALUETYPE>& spin,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using these DP models.
@@ -857,6 +871,23 @@ class DeepPotModelDevi {
                std::vector<std::vector<VALUETYPE> >& all_atom_energy,
                std::vector<std::vector<VALUETYPE> >& all_atom_virial,
                const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+
+  template <typename VALUETYPE>
+  void compute(std::vector<ENERGYTYPE>& all_ener,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_force_mag,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
+               std::vector<std::vector<VALUETYPE> >& all_atom_energy,
+               std::vector<std::vector<VALUETYPE> >& all_atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<VALUETYPE>& spin,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const int nghost,

@@ -506,7 +506,7 @@ extern void DP_DeepPotComputeNListf2SP(DP_DeepPot* dp,
                                        float* force_mag,
                                        float* virial,
                                        float* atomic_energy,
-                                       float* atomic_virial)
+                                       float* atomic_virial);
 
     /**
      * @brief Evaluate the energy, force and virial by using a DP with the mixed
@@ -1001,7 +1001,7 @@ void DP_DeepPotModelDeviComputeNListf2SP(DP_DeepPotModelDevi* dp,
                                          float* force_mag,
                                          float* virial,
                                          float* atomic_energy,
-                                         float* atomic_virial)
+                                         float* atomic_virial);
 
     /**
      * @brief Get the type map of a DP model deviation.
