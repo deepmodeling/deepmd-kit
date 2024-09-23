@@ -12,7 +12,7 @@ mass 		1 16
 mass		2 2
 
 # See https://deepmd.rtfd.io/lammps/ for usage
-pair_style	deepmd /workspace/hesensen/deepmd_backend/deepmd_paddle_new/examples/water/se_e2_a/torch_infer.pth
+pair_style	deepmd frozen_model.pb
 # If atom names (O H in this example) are not set in the pair_coeff command, the type_map defined by the training parameter will be used by default.
 pair_coeff  * *	O H
 
@@ -21,7 +21,7 @@ velocity        all create 330.0 23456789
 fix             1 all nvt temp 330.0 330.0 0.5
 timestep        0.0005
 thermo_style    custom step pe ke etotal temp press vol
-thermo          1
-dump		1 all custom 1 water.dump id type x y z
+thermo          100
+dump		1 all custom 100 water.dump id type x y z
 
-run             10
+run             1000
