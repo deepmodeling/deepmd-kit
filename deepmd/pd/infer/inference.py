@@ -61,5 +61,6 @@ class Tester:
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model)  # inference only
         if JIT:
-            self.wrapper = paddle.jit.to_static(self.wrapper)
+            raise NotImplementedError
+            # self.wrapper = paddle.jit.to_static(self.wrapper)
         self.wrapper.set_state_dict(state_dict)

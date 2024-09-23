@@ -259,7 +259,7 @@ class DeepmdData:
         i = bisect.bisect_right(self.prefix_sum, index)
         frames = self._load_set(self.dirs[i])
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
-        frame = self.reformat_data_torch(frame)
+        frame = self.reformat_data_paddle(frame)
         frame["fid"] = index
         return frame
 

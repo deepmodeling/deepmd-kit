@@ -182,7 +182,7 @@ class AutoBatchSize(ABC):
         ) -> Tuple[int, Tuple[np.ndarray]]:
             end_index = start_index + batch_size
             end_index = min(end_index, total_size)
-            result = callable(
+            return (end_index - start_index), callable(
                 *[
                     (
                         vv[start_index:end_index, ...]
@@ -208,7 +208,6 @@ class AutoBatchSize(ABC):
                     for kk, vv in kwargs.items()
                 },
             )
-            return (end_index - start_index), result
 
         index = 0
         results = None
