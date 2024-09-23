@@ -385,15 +385,15 @@ def show(FLAGS):
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_params = state_dict["_extra_state"]["model_params"]
-    elif FLAGS.INPUT.split(".")[-1] == "pdmodel":
-        model_params_string = paddle.jit.load(
-            FLAGS.INPUT[: -len(".pdmodel")]
-        ).model_def_script
-        model_params = json.loads(model_params_string)
+    # elif FLAGS.INPUT.split(".")[-1] == "pdmodel":
+    #     model_params_string = paddle.jit.load(
+    #         FLAGS.INPUT[: -len(".pdmodel")]
+    #     ).model_def_script
+    #     model_params = json.loads(model_params_string)
     else:
         raise RuntimeError(
-            "The model provided must be a checkpoint file with a .pdparams extension "
-            "or a frozen model with a .pdmodel extension"
+            "The model provided must be a checkpoint file with a .pd extension"
+            # "or a frozen model with a .pdmodel extension"
         )
     model_is_multi_task = "model_dict" in model_params
     log.info("This is a multitask model") if model_is_multi_task else log.info(
@@ -449,16 +449,16 @@ def change_bias(FLAGS):
         old_state_dict = paddle.load(FLAGS.INPUT)
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
-    elif FLAGS.INPUT.endswith(".pdmodel"):
-        old_model = paddle.jit.load(FLAGS.INPUT[: -len(".pdmodel")])
-        model_params_string = old_model.get_model_def_script()
-        model_params = json.loads(model_params_string)
-        old_state_dict = old_model.state_dict()
-        model_state_dict = old_state_dict
+    # elif FLAGS.INPUT.endswith(".pdmodel"):
+    #     old_model = paddle.jit.load(FLAGS.INPUT[: -len(".pdmodel")])
+    #     model_params_string = old_model.get_model_def_script()
+    #     model_params = json.loads(model_params_string)
+    #     old_state_dict = old_model.state_dict()
+    #     model_state_dict = old_state_dict
     else:
         raise RuntimeError(
-            "The model provided must be a checkpoint file with a .pd extension "
-            "or a frozen model with a .pdparams extension"
+            "The model provided must be a checkpoint file with a .pd extension"
+            # "or a frozen model with a .pdparams extension"
         )
     multi_task = "model_dict" in model_params
     model_branch = FLAGS.model_branch
@@ -556,7 +556,8 @@ def change_bias(FLAGS):
             old_state_dict["_extra_state"] = model_state_dict["_extra_state"]
         paddle.save(old_state_dict, output_path)
     else:
-        # for .pdparams
+        raise NotImplementedError
+        # for .json
         output_path = (
             FLAGS.output
             if FLAGS.output is not None
