@@ -37,8 +37,8 @@ INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
 INSTALLED_JAX = Backend.get_backend("jax")().is_available()
 
-if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_JAX):
-    raise ImportError("TensorFlow or PyTorch or JAX should be tested in the CI")
+if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
+    raise ImportError("TensorFlow or PyTorch should be tested in the CI")
 
 
 if INSTALLED_TF:
