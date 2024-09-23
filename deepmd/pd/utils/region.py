@@ -25,11 +25,14 @@ def phys2inter(
         the internal coordinates
 
     """
-    try:
+    if paddle.in_dynamic_mode():
+        try:
+            rec_cell = paddle.linalg.inv(cell)
+        except Exception as e:
+            rec_cell = paddle.full_like(cell, float("nan"))
+            rec_cell.stop_gradient = cell.stop_gradient
+    else:
         rec_cell = paddle.linalg.inv(cell)
-    except Exception:
-        rec_cell = paddle.full_like(cell, float("nan"))
-        rec_cell.stop_gradient = False
     return paddle.matmul(coord, rec_cell)
 
 

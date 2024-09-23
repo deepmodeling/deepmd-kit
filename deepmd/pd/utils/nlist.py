@@ -318,7 +318,7 @@ def nlist_distinguish_types(
     for ii, ss in enumerate(sel):
         # nloc x s(nsel)
         # to int because bool cannot be sort on GPU
-        pick_mask = (tnlist == ii).to(paddle.int32)
+        pick_mask = (tnlist == ii).to(paddle.int64)
         # nloc x s(nsel), stable sort, nearer neighbors first
         pick_mask, imap = (
             paddle.sort(pick_mask, axis=-1, descending=True, stable=True),
@@ -477,32 +477,36 @@ def extend_coord_with_ghosts(
         nbuff = paddle.ceil(rcut / to_face).to(paddle.int64)
         # 3
         nbuff = paddle.amax(nbuff, axis=0)  # faster than paddle.max
-        nbuff_cpu = nbuff.cpu()
+        # nbuff_cpu = nbuff.cpu()
         xi = (
-            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1)
-            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .cpu()
+            paddle.arange(-nbuff[0], nbuff[0] + 1, 1).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
+            # .cpu()
         )  # pylint: disable=no-explicit-dtype
         yi = (
-            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1)
-            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .cpu()
+            paddle.arange(-nbuff[1], nbuff[1] + 1, 1).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
+            # .cpu()
         )  # pylint: disable=no-explicit-dtype
         zi = (
-            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1)
-            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .cpu()
+            paddle.arange(-nbuff[2], nbuff[2] + 1, 1).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
+            # .cpu()
         )  # pylint: disable=no-explicit-dtype
         eye_3 = (
-            paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .cpu()
+            paddle.eye(3, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION
+            )
+            # .cpu()
         )
         xyz = xi.reshape([-1, 1, 1, 1]) * eye_3[0]
         xyz = xyz + yi.reshape([1, -1, 1, 1]) * eye_3[1]
         xyz = xyz + zi.reshape([1, 1, -1, 1]) * eye_3[2]
         xyz = xyz.reshape([-1, 3])
-        xyz = xyz.to(device=device)
+        # xyz = xyz.to(device=device)
         # ns x 3
         # shift_idx = xyz[paddle.argsort(paddle.norm(xyz, axis=1))]
         shift_idx = xyz[paddle.argsort(aux.norm(xyz, axis=1))]

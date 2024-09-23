@@ -495,7 +495,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
       }
     }
   }
-
   vector<int> dtype(nall);
   for (int ii = 0; ii < nall; ++ii) {
     dtype[ii] = type_idx_map[type[ii] - 1];
@@ -976,13 +975,9 @@ void PairDeepMD::settings(int narg, char **arg) {
   numb_models = models.size();
   if (numb_models == 1) {
     try {
-      std::cout << "****** init deepmd model from file 1: " << std::endl;
       auto node_rank = get_node_rank();
-      std::cout << "****** init deepmd model from file 2: " << std::endl;
       auto content = get_file_content(arg[0]);
-      std::cout << "****** init deepmd model from file 3: " << std::endl;
       deep_pot.init(arg[0], node_rank, content);
-      std::cout << "****** init deepmd model from file 4: " << std::endl;
     } catch (const std::exception &e) {
       // error->one(FLERR, e.what());
       std::cerr << "Standard exception caught: " << e.what() << std::endl;

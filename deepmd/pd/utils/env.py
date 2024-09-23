@@ -67,6 +67,7 @@ RESERVED_PRECISON_DICT = {
 }
 assert set(PRECISION_DICT.values()) == set(RESERVED_PRECISON_DICT.keys())
 DEFAULT_PRECISION = "float64"
+PIR_ENABLED = os.getenv("FLAGS_enable_pir_api", "false")
 
 # throw warnings if threads not set
 set_default_nthreads()

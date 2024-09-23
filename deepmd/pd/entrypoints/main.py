@@ -53,6 +53,7 @@ from deepmd.pd.utils.dataloader import (
 )
 from deepmd.pd.utils.env import (
     DEVICE,
+    PIR_ENABLED,
 )
 from deepmd.pd.utils.finetune import (
     get_finetune_rules,
@@ -349,17 +350,20 @@ def freeze(FLAGS):
     )
 
     """
-    ** coord [None, 192, 3] paddle.float64
-    ** atype [None, 192] paddle.int64
-    ** box [None, 3, 3] paddle.float64
+    ** coord [None, natoms, 3] paddle.float64
+    ** atype [None, natoms] paddle.int64
+    ** nlist [None, natoms, nnei] paddle.int32
     """
+    model.atomic_model.buffer_type_map.set_value(
+        paddle.to_tensor([ord(c) for c in model.atomic_model.type_map], dtype="int32")
+    )
     model = paddle.jit.to_static(
-        model,
+        model.forward_lower,
         full_graph=True,
         input_spec=[
-            InputSpec([None, 192, 3], dtype="float64", name="coord"),
-            InputSpec([None, 192], dtype="int64", name="atype"),
-            InputSpec([None, 3, 3], dtype="float64", name="box"),
+            InputSpec([-1, -1, 3], dtype="float64", name="coord"),
+            InputSpec([-1, -1], dtype="int32", name="atype"),
+            InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
         ],
     )
     extra_files = {}
@@ -369,8 +373,7 @@ def freeze(FLAGS):
         skip_prune_program=True,
         # extra_files,
     )
-    pir_flag = os.getenv("FLAGS_enable_pir_api", "false")
-    suffix = "json" if pir_flag.lower() in ["true", "1"] else "pdmodel"
+    suffix = "json" if PIR_ENABLED.lower() in ["true", "1"] else "pdmodel"
     log.info(
         f"Paddle inference model has been exported to: {FLAGS.output}.{suffix}(.pdiparams)"
     )

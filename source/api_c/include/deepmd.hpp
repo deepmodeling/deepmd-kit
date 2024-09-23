@@ -685,7 +685,6 @@ class DeepPot {
                 << std::endl;
       return;
     }
-    std::cout << "** [deepmd.hpp] DeepPot.init" << std::endl;
     dp = DP_NewDeepPotWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
                                  file_content.size());
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);

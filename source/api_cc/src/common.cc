@@ -929,93 +929,6 @@ int deepmd::session_get_dtype(tensorflow::Session* session,
 #endif
 
 #ifdef BUILD_PADDLE
-template <typename MODELTYPE, typename VALUETYPE>
-int deepmd::predictor_input_tensors(
-    const std::shared_ptr<paddle_infer::Predictor>& predictor,
-    const std::vector<VALUETYPE>& dcoord_,
-    const int& ntypes,
-    const std::vector<int>& datype_,
-    const std::vector<VALUETYPE>& dbox,
-    InputNlist& dlist,
-    const std::vector<VALUETYPE>& fparam_,
-    const std::vector<VALUETYPE>& aparam_,
-    const deepmd::AtomMap& atommap,
-    const int nghost,
-    const int ago,
-    const bool aparam_nall) {
-  // if datype.size is 0, not clear nframes; but 1 is just ok
-  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
-  int nall = datype_.size();
-  int nloc = nall - nghost;
-  assert(nall * 3 * nframes == dcoord_.size());
-  assert(dbox.size() == nframes * 9);
-
-  std::vector<int> datype = atommap.get_type();
-  std::vector<int> type_count(ntypes, 0);
-  for (unsigned ii = 0; ii < datype.size(); ++ii) {
-    type_count[datype[ii]]++;
-  }
-  datype.insert(datype.end(), datype_.begin() + nloc, datype_.end());
-
-  std::vector<VALUETYPE> dcoord(dcoord_);
-  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
-
-  // 准备输入Tensor句柄
-  auto input_names = predictor->GetInputNames();
-  auto coord_handle = predictor->GetInputHandle(input_names[0]);
-  auto atype_handle = predictor->GetInputHandle(input_names[1]);
-  auto natoms_handle = predictor->GetInputHandle(input_names[2]);
-  auto box_handle = predictor->GetInputHandle(input_names[3]);
-  auto mesh_handle = predictor->GetInputHandle(input_names[4]);
-
-  // 设置输入 Tensor 的维度信息
-  std::vector<int> COORD_SHAPE = {nframes, nall * 3};
-  std::vector<int> ATYPE_SHAPE = {nframes, nall};
-  std::vector<int> BOX_SHAPE = {nframes, 9};
-  std::vector<int> MESH_SHAPE = {16};
-  std::vector<int> NATOMS_SHAPE = {2 + ntypes};
-
-  coord_handle->Reshape(COORD_SHAPE);
-  atype_handle->Reshape(ATYPE_SHAPE);
-  natoms_handle->Reshape(NATOMS_SHAPE);
-  box_handle->Reshape(BOX_SHAPE);
-  mesh_handle->Reshape(MESH_SHAPE);
-
-  // 发送输入数据到Tensor句柄
-  coord_handle->CopyFromCpu(dcoord.data());
-
-  std::vector<int> datype_pad(nframes * nall, 0);
-  for (int ii = 0; ii < nframes; ++ii) {
-    for (int jj = 0; jj < nall; ++jj) {
-      datype_pad[ii * nall + jj] = datype[jj];
-    }
-  }
-  atype_handle->CopyFromCpu(datype_pad.data());
-
-  std::vector<int> mesh_pad(16, 0);
-  mesh_pad[0] = ago;
-  mesh_pad[1] = dlist.inum;
-  mesh_pad[2] = 0;
-  mesh_pad[3] = 0;
-  memcpy(&mesh_pad[4], &(dlist.ilist), sizeof(int*));
-  memcpy(&mesh_pad[8], &(dlist.numneigh), sizeof(int*));
-  memcpy(&mesh_pad[12], &(dlist.firstneigh), sizeof(int**));
-  mesh_handle->CopyFromCpu(mesh_pad.data());
-
-  std::vector<int> natoms_pad = {nloc, nall};
-  for (int ii = 0; ii < ntypes; ++ii) {
-    natoms_pad.push_back(type_count[ii]);
-  }
-  natoms_handle->CopyFromCpu(natoms_pad.data());
-
-  box_handle->CopyFromCpu(dbox.data());
-
-  const int stride = sizeof(int*) / sizeof(int);
-  assert(stride * sizeof(int) == sizeof(int*));
-  assert(stride <= 4);
-
-  return nloc;
-}
 
 template <typename MODELTYPE, typename VALUETYPE>
 int deepmd::predictor_input_tensors(
@@ -1026,7 +939,7 @@ int deepmd::predictor_input_tensors(
     const std::vector<VALUETYPE>& dbox,
     const double& cell_size,
     const std::vector<VALUETYPE>& fparam_,
-    const std::vector<VALUETYPE>& aparam_,
+    const std::vector<VALUETYPE>& aparam__,
     const deepmd::AtomMap& atommap,
     const bool aparam_nall) {
   // if datype.size is 0, not clear nframes; but 1 is just ok
@@ -1043,84 +956,376 @@ int deepmd::predictor_input_tensors(
   }
   datype.insert(datype.end(), datype_.begin() + nloc, datype_.end());
 
-  std::vector<VALUETYPE> dcoord(dcoord_);
-  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
-
   // 准备输入Tensor句柄
   auto input_names = predictor->GetInputNames();
   auto coord_handle = predictor->GetInputHandle(input_names[0]);
-  auto atype_handle = predictor->GetInputHandle(input_names[1]);
+  auto type_handle = predictor->GetInputHandle(input_names[1]);
   auto natoms_handle = predictor->GetInputHandle(input_names[2]);
   auto box_handle = predictor->GetInputHandle(input_names[3]);
   auto mesh_handle = predictor->GetInputHandle(input_names[4]);
 
   // 设置输入 Tensor 的维度信息
-  std::vector<int> COORD_SHAPE = {nframes, nall * 3};
-  std::vector<int> ATYPE_SHAPE = {nframes, nall};
-  std::vector<int> BOX_SHAPE = {nframes, 9};
-  std::vector<int> MESH_SHAPE;
+  std::vector<int> coord_shape = {nframes, nall * 3};
+  std::vector<int> atype_shape = {nframes, nall};
+  std::vector<int> box_shape = {nframes, 9};
+  std::vector<int> mesh_shape;
   if (b_pbc) {
-    MESH_SHAPE = std::vector<int>(6);
+    mesh_shape = std::vector<int>({6});
   } else {
-    MESH_SHAPE = std::vector<int>(0);
+    mesh_shape = std::vector<int>({0});
   }
 
-  std::vector<int> NATOMS_SHAPE = {2 + ntypes};
+  std::vector<int> natoms_shape = {2 + ntypes};
 
-  coord_handle->Reshape(COORD_SHAPE);
-  atype_handle->Reshape(ATYPE_SHAPE);
-  natoms_handle->Reshape(NATOMS_SHAPE);
-  box_handle->Reshape(BOX_SHAPE);
-  mesh_handle->Reshape(MESH_SHAPE);
+  coord_handle->Reshape(coord_shape);
+  type_handle->Reshape(atype_shape);
+  natoms_handle->Reshape(natoms_shape);
+  box_handle->Reshape(box_shape);
+  mesh_handle->Reshape(mesh_shape);
+
+  paddle_infer::DataType model_type;
+  if (std::is_same<MODELTYPE, double>::value) {
+    model_type = paddle_infer::DataType::FLOAT64;
+  } else if (std::is_same<MODELTYPE, float>::value) {
+    model_type = paddle_infer::DataType::FLOAT32;
+  } else {
+    throw deepmd::deepmd_exception("unsupported data type");
+  }
+
+  std::vector<VALUETYPE> dcoord(dcoord_);
+  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+  std::vector<VALUETYPE> aparam_(aparam__);
+  if ((aparam_nall ? nall : nloc) > 0) {
+    atommap.forward<VALUETYPE>(
+        aparam_.begin(), aparam__.begin(),
+        aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+        (aparam_nall ? nall : nloc));
+  }
 
   // 发送输入数据到Tensor句柄
   coord_handle->CopyFromCpu(dcoord.data());
-
-  std::vector<int> datype_pad(nframes * nall, 0);
+  if (b_pbc) {
+    box_handle->CopyFromCpu(dbox.data());
+  } else {
+    std::vector<VALUETYPE> zero = dbox;
+    std::fill(zero.begin(), zero.end(), 0);
+    box_handle->CopyFromCpu(zero.data());
+  }
+  std::vector<int> datype_rep(nframes * nall, 0);
   for (int ii = 0; ii < nframes; ++ii) {
     for (int jj = 0; jj < nall; ++jj) {
-      datype_pad[ii * nall + jj] = datype[jj];
+      datype_rep[ii * nall + jj] = datype[jj];
     }
   }
-  atype_handle->CopyFromCpu(datype_pad.data());
-
-
-  std::vector<int> mesh_pad;
+  type_handle->CopyFromCpu(datype_rep.data());
+  std::vector<int> mesh;
   if (b_pbc) {
-    mesh_pad = std::vector<int>(6);
+    mesh = std::vector<int>(6);
+    mesh[1 - 1] = 0;
+    mesh[2 - 1] = 0;
+    mesh[3 - 1] = 0;
+    mesh[4 - 1] = 0;
+    mesh[5 - 1] = 0;
+    mesh[6 - 1] = 0;
   } else {
-    mesh_pad = std::vector<int>(0);
+    mesh = std::vector<int>(0);
   }
-  // mesh_pad[0] = ago;
-  // mesh_pad[1] = dlist.inum;
-  // mesh_pad[2] = 0;
-  // mesh_pad[3] = 0;
-  // memcpy(&mesh_pad[4], &(dlist.ilist), sizeof(int*));
-  // memcpy(&mesh_pad[8], &(dlist.numneigh), sizeof(int*));
-  // memcpy(&mesh_pad[12], &(dlist.firstneigh), sizeof(int**));
-  mesh_handle->CopyFromCpu(mesh_pad.data());
-  if (b_pbc) {
-    mesh_pad[1 - 1] = 0;
-    mesh_pad[2 - 1] = 0;
-    mesh_pad[3 - 1] = 0;
-    mesh_pad[4 - 1] = 0;
-    mesh_pad[5 - 1] = 0;
-    mesh_pad[6 - 1] = 0;
-  }
-  std::vector<int> natoms_pad = {nloc, nall};
+  mesh_handle->CopyFromCpu(mesh.data());
+  std::vector<int> natoms = {nloc, nall};
   for (int ii = 0; ii < ntypes; ++ii) {
-    natoms_pad.push_back(type_count[ii]);
+    natoms.push_back(type_count[ii]);
   }
-  // natoms_handle->CopyFromCpu(natoms_pad.data());
-
-  box_handle->CopyFromCpu(dbox.data());
-
-  // const int stride = sizeof(int*) / sizeof(int);
-  // assert(stride * sizeof(int) == sizeof(int*));
-  // assert(stride <= 4);
+  natoms_handle->CopyFromCpu(natoms.data());
 
   return nloc;
 }
+
+template <typename MODELTYPE, typename VALUETYPE>
+int deepmd::predictor_input_tensors(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const std::vector<VALUETYPE>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    InputNlist& dlist,
+    const std::vector<VALUETYPE>& fparam_,
+    const std::vector<VALUETYPE>& aparam__,
+    const deepmd::AtomMap& atommap,
+    const int nghost,
+    const int ago,
+    const bool aparam_nall) {
+  // if datype.size is 0, not clear nframes; but 1 is just ok
+  int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
+  int nall = datype_.size();
+  int nloc = nall - nghost;
+  assert(nall * 3 * nframes == dcoord_.size());
+  assert(dbox.size() == nframes * 9);
+
+  std::vector<int> datype = atommap.get_type();
+  // for (int i=0; i<datype.size(); ++i)
+  //   printf("datype[%d] = %d\n", i, datype[i]);
+  std::vector<int> type_count(ntypes, 0);
+  for (unsigned ii = 0; ii < datype.size(); ++ii) {
+    type_count[datype[ii]]++;
+  }
+  datype.insert(datype.end(), datype_.begin() + nloc, datype_.end());
+
+  // 准备输入Tensor句柄
+  auto input_names = predictor->GetInputNames();
+  // for (auto &ss: input_names)
+  // {
+  //   std::cout << "input_name: " << " " << ss << std::endl;
+  // }
+  auto coord_handle = predictor->GetInputHandle(input_names[0]);
+  auto type_handle = predictor->GetInputHandle(input_names[1]);
+  // auto natoms_handle = predictor->GetInputHandle(input_names[2]);
+  auto box_handle = predictor->GetInputHandle(input_names[2]);
+  // auto mesh_handle = predictor->GetInputHandle(input_names[4]);
+
+  // 设置输入 Tensor 的维度信息
+  std::vector<int> coord_shape = {nframes, nall, 3};
+  std::vector<int> coord_shape_flat = {nframes, nall * 3};
+
+  std::vector<int> atype_shape = {nframes, nall};
+  std::vector<int> atype_shape_flat = {nframes, nall};
+
+  std::vector<int> box_shape = {nframes, 3, 3};
+  std::vector<int> box_shape_flat = {nframes * 9};
+  // std::vector<int> mesh_shape = std::vector<int>({16});
+  // std::vector<int> natoms_shape = {2 + ntypes};
+
+  paddle_infer::DataType model_type;
+  if (std::is_same<MODELTYPE, double>::value) {
+    model_type = paddle_infer::DataType::FLOAT64;
+  } else if (std::is_same<MODELTYPE, float>::value) {
+    model_type = paddle_infer::DataType::FLOAT32;
+  } else {
+    throw deepmd::deepmd_exception("unsupported data type");
+  }
+
+  coord_handle->Reshape(coord_shape_flat);
+  box_handle->Reshape(box_shape_flat);
+  type_handle->Reshape(atype_shape_flat);
+  // printf("coord.shape = [");
+  // for (auto &d: coord_shape)
+  // {
+  //   printf("%d, ", d);
+  // }
+  // printf("]\n");
+
+  // printf("type.shape = [");
+  // for (auto &d: atype_shape)
+  // {
+  //   printf("%d, ", d);
+  // }
+  // printf("]\n");
+
+  // printf("box.shape = [");
+  // for (auto &d: box_shape)
+  // {
+  //   printf("%d, ", d);
+  // }
+  // printf("]\n");
+  // mesh_handle->Reshape(mesh_shape);
+  // natoms_handle->Reshape(natoms_shape);
+
+  std::vector<VALUETYPE> dcoord(dcoord_);
+  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall); //012
+  std::vector<VALUETYPE> aparam_(aparam__);
+  if ((aparam_nall ? nall : nloc) > 0) {
+    atommap.forward<VALUETYPE>(
+        aparam_.begin(), aparam__.begin(),
+        aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+        (aparam_nall ? nall : nloc));
+  }
+
+  // const std::string filename = "/workspace/hesensen/deepmd_backend/deepmd_paddle_new/examples/water/lmp/coord_torch.log";
+  // std::ifstream inputFile(filename);
+  // VALUETYPE number;
+  // int iii = 0;
+  // while (inputFile >> number) {
+  //     dcoord[iii] = number;
+  //     ++iii;
+  // }
+  // printf("dcoord finished, iii = %d\n", iii);
+  // inputFile.close();
+
+  // 发送输入数据到Tensor句柄
+  coord_handle->CopyFromCpu(dcoord.data());
+  coord_handle->Reshape(coord_shape);
+  box_handle->CopyFromCpu(dbox.data());
+  box_handle->Reshape(box_shape);
+  // for (int i = 0; i < dcoord.size(); ++i)
+  // {
+  //   printf("dcoord[%d] = %.6lf\n", i, dcoord[i]);
+  // }
+  std::vector<int> datype_rep(nframes * nall, 0);
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall; ++jj) {
+      datype_rep[ii * nall + jj] = datype[jj];
+    }
+  }
+  // const std::string filename1 = "/workspace/hesensen/deepmd_backend/deepmd_paddle_new/examples/water/lmp/type_torch.log";
+  // std::ifstream inputFile1(filename1);
+  // int number_int;
+  // iii = 0;
+  // while (inputFile1 >> number_int) {
+  //     datype_rep[iii] = number_int;
+  //     ++iii;
+  // }
+  // printf("atype finishied, iii = %d\n", iii);
+  // inputFile1.close();
+
+  type_handle->CopyFromCpu(datype_rep.data());
+  // for (int i = 0; i < datype_rep.size(); ++i)
+  // {
+  //   printf("%d\n", datype_rep[i]);
+  // }
+  type_handle->Reshape(atype_shape);
+  // std::vector<int> mesh(mesh_shape[0], 0);
+  // for (int ii = 0; ii < 16; ++ii) {
+  //   mesh[ii] = 0;
+  // }
+  // const int stride = sizeof(int*) / sizeof(int);
+  // assert(stride * sizeof(int) == sizeof(int*));
+  // assert(stride <= 4);
+  // mesh[0] = ago;
+  // mesh[1] = dlist.inum;
+  // mesh[2] = 0;
+  // mesh[3] = 0;
+  // memcpy(&mesh[4], &(dlist.ilist), sizeof(int*));
+  // memcpy(&mesh[8], &(dlist.numneigh), sizeof(int*));
+  // memcpy(&mesh[12], &(dlist.firstneigh), sizeof(int**));
+  // mesh_handle->CopyFromCpu(mesh.data());
+
+  // std::vector<int> natoms = {nloc, nall};
+  // for (int ii = 0; ii < ntypes; ++ii) {
+  //   natoms.push_back(type_count[ii]);
+  // }
+  // natoms_handle->CopyFromCpu(natoms.data());
+  // printf("finished predictor_input_tensors\n");
+  // printf("nloc = %d\n", nloc);
+  return nloc;
+}
+
+template <typename MODELTYPE, typename VALUETYPE>
+int deepmd::predictor_input_tensors_mixed_type(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const int& nframes,
+    const std::vector<VALUETYPE>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    const double& cell_size,
+    const std::vector<VALUETYPE>& fparam_,
+    const std::vector<VALUETYPE>& aparam__,
+    const deepmd::AtomMap& atommap,
+    const bool aparam_nall) {
+  int nall = datype_.size() / nframes;
+  int nloc = nall;
+  assert(nall * 3 * nframes == dcoord_.size());
+  bool b_pbc = (dbox.size() == nframes * 9);
+
+  std::vector<int> datype(datype_);
+  atommap.forward<int>(datype.begin(), datype_.begin(), 1, nframes, nall);
+
+  auto input_names = predictor->GetInputNames();
+  auto coord_handle = predictor->GetInputHandle(input_names[0]);
+  auto type_handle = predictor->GetInputHandle(input_names[1]);
+  auto box_handle = predictor->GetInputHandle(input_names[3]);
+  auto mesh_handle = predictor->GetInputHandle(input_names[4]);
+  auto natoms_handle = predictor->GetInputHandle(input_names[2]);
+
+  // 设置输入 Tensor 的维度信息
+  std::vector<int> coord_shape = {nframes, nall * 3};
+  std::vector<int> atype_shape = {nframes, nall};
+  std::vector<int> box_shape = {nframes, 9};
+  std::vector<int> mesh_shape;
+  if (b_pbc) {
+    mesh_shape = std::vector<int>({7});
+  } else {
+    mesh_shape = std::vector<int>({1});
+  }
+  std::vector<int> natoms_shape = {2 + ntypes};
+
+  coord_handle->Reshape(coord_shape);
+  type_handle->Reshape(atype_shape);
+  box_handle->Reshape(box_shape);
+  mesh_handle->Reshape(mesh_shape);
+  natoms_handle->Reshape(natoms_shape);
+
+  paddle_infer::DataType model_type;
+  if (std::is_same<MODELTYPE, double>::value) {
+    model_type = paddle_infer::DataType::FLOAT64;
+  } else if (std::is_same<MODELTYPE, float>::value) {
+    model_type = paddle_infer::DataType::FLOAT32;
+  } else {
+    throw deepmd::deepmd_exception("unsupported data type");
+  }
+
+  std::vector<VALUETYPE> dcoord(dcoord_);
+  atommap.forward<VALUETYPE>(dcoord.begin(), dcoord_.begin(), 3, nframes, nall);
+  std::vector<VALUETYPE> aparam_(aparam__);
+  if ((aparam_nall ? nall : nloc) > 0) {
+    atommap.forward<VALUETYPE>(
+        aparam_.begin(), aparam__.begin(),
+        aparam__.size() / nframes / (aparam_nall ? nall : nloc), nframes,
+        (aparam_nall ? nall : nloc));
+  }
+  // coord
+  coord_handle->CopyFromCpu(dcoord.data());
+
+  // box
+  if (b_pbc) {
+    box_handle->CopyFromCpu(dbox.data());
+  } else {
+    std::vector<VALUETYPE> zero = dbox;
+    std::fill(zero.begin(), zero.end(), 0);
+    box_handle->CopyFromCpu(zero.data());
+  }
+
+  // datype
+  std::vector<int> datype_rep(nframes * nall, 0);
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall; ++jj) {
+      datype_rep[ii * nall + jj] = datype[jj];
+    }
+  }
+  type_handle->CopyFromCpu(datype_rep.data());
+  // mesh
+  std::vector<int> mesh;
+  if (b_pbc) {
+    mesh = std::vector<int>(7, 0);
+    mesh[1 - 1] = 0;
+    mesh[2 - 1] = 0;
+    mesh[3 - 1] = 0;
+    mesh[4 - 1] = 0;
+    mesh[5 - 1] = 0;
+    mesh[6 - 1] = 0;
+    mesh[7 - 1] = 0;
+  } else {
+    mesh = std::vector<int>(1, 0);
+    mesh[1 - 1] = 0;
+  }
+  mesh_handle->CopyFromCpu(mesh.data());
+  //natoms
+  std::vector<int> natoms_pad = {nloc, nall, nall};
+  if (ntypes > 1) {
+    for (int ii = 0; ii < ntypes; ++ii) {
+      natoms_pad.push_back(0);
+    }
+  }
+  natoms_handle->CopyFromCpu(natoms_pad.data());
+
+  // if (fparam_.size() > 0) {
+  //   input_tensors.push_back({prefix + "t_fparam", fparam_tensor});
+  // }
+  // if (aparam_.size() > 0) {
+  //   input_tensors.push_back({prefix + "t_aparam", aparam_tensor});
+  // }
+  return nloc;
+}
+
 #endif
 
 #ifdef BUILD_PADDLE
@@ -1456,7 +1661,7 @@ template void deepmd::select_map_inv<deepmd::STRINGTYPE>(
 
 #ifdef BUILD_PADDLE
 template std::string deepmd::predictor_get_scalar<std::string>(
-    const std::shared_ptr<paddle_infer::Predictor>& predictor, const std::string&);
+    const std::shared_ptr<paddle_infer::Predictor>& predictor, const std::string &name_);
 
 // template void deepmd::session_get_vector<std::string>(
 //     std::vector<std::string>&,
@@ -1789,59 +1994,55 @@ template int deepmd::predictor_input_tensors<float, float>(
     const int ago,
     const bool aparam_nall);
 
-// template int deepmd::session_input_tensors_mixed_type<double, double>(
-//     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
-//     const int& nframes,
-//     const std::vector<double>& dcoord_,
-//     const int& ntypes,
-//     const std::vector<int>& datype_,
-//     const std::vector<double>& dbox,
-//     const double& cell_size,
-//     const std::vector<double>& fparam_,
-//     const std::vector<double>& aparam_,
-//     const deepmd::AtomMap& atommap,
-//     const std::string scope,
-//     const bool aparam_nall);
-// template int deepmd::session_input_tensors_mixed_type<float, double>(
-//     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
-//     const int& nframes,
-//     const std::vector<double>& dcoord_,
-//     const int& ntypes,
-//     const std::vector<int>& datype_,
-//     const std::vector<double>& dbox,
-//     const double& cell_size,
-//     const std::vector<double>& fparam_,
-//     const std::vector<double>& aparam_,
-//     const deepmd::AtomMap& atommap,
-//     const std::string scope,
-//     const bool aparam_nall);
+template int deepmd::predictor_input_tensors_mixed_type<double, double>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const double& cell_size,
+    const std::vector<double>& fparam_,
+    const std::vector<double>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const bool aparam_nall);
+template int deepmd::predictor_input_tensors_mixed_type<float, double>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const double& cell_size,
+    const std::vector<double>& fparam_,
+    const std::vector<double>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const bool aparam_nall);
 
-// template int deepmd::session_input_tensors_mixed_type<double, float>(
-//     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
-//     const int& nframes,
-//     const std::vector<float>& dcoord_,
-//     const int& ntypes,
-//     const std::vector<int>& datype_,
-//     const std::vector<float>& dbox,
-//     const double& cell_size,
-//     const std::vector<float>& fparam_,
-//     const std::vector<float>& aparam_,
-//     const deepmd::AtomMap& atommap,
-//     const std::string scope,
-//     const bool aparam_nall);
-// template int deepmd::session_input_tensors_mixed_type<float, float>(
-//     std::vector<std::pair<std::string, tensorflow::Tensor>>& input_tensors,
-//     const int& nframes,
-//     const std::vector<float>& dcoord_,
-//     const int& ntypes,
-//     const std::vector<int>& datype_,
-//     const std::vector<float>& dbox,
-//     const double& cell_size,
-//     const std::vector<float>& fparam_,
-//     const std::vector<float>& aparam_,
-//     const deepmd::AtomMap& atommap,
-//     const std::string scope,
-//     const bool aparam_nall);
+template int deepmd::predictor_input_tensors_mixed_type<double, float>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const double& cell_size,
+    const std::vector<float>& fparam_,
+    const std::vector<float>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const bool aparam_nall);
+template int deepmd::predictor_input_tensors_mixed_type<float, float>(
+    const std::shared_ptr<paddle_infer::Predictor>& predictor,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const int& ntypes,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const double& cell_size,
+    const std::vector<float>& fparam_,
+    const std::vector<float>& aparam_,
+    const deepmd::AtomMap& atommap,
+    const bool aparam_nall);
 #endif
 
 void deepmd::print_summary(const std::string& pre) {

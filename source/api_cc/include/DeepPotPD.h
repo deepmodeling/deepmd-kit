@@ -142,17 +142,17 @@ class DeepPotPD : public DeepPotBase {
    *same aparam.
    * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
-  // template <typename VALUETYPE, typename ENERGYVTYPE>
-  // void compute_mixed_type(ENERGYVTYPE& ener,
-  //                         std::vector<VALUETYPE>& force,
-  //                         std::vector<VALUETYPE>& virial,
-  //                         const int& nframes,
-  //                         const std::vector<VALUETYPE>& coord,
-  //                         const std::vector<int>& atype,
-  //                         const std::vector<VALUETYPE>& box,
-  //                         const std::vector<VALUETYPE>& fparam,
-  //                         const std::vector<VALUETYPE>& aparam,
-  //                         const bool atomic);
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(ENERGYVTYPE& ener,
+                          std::vector<VALUETYPE>& force,
+                          std::vector<VALUETYPE>& virial,
+                          const int& nframes,
+                          const std::vector<VALUETYPE>& coord,
+                          const std::vector<int>& atype,
+                          const std::vector<VALUETYPE>& box,
+                          const std::vector<VALUETYPE>& fparam,
+                          const std::vector<VALUETYPE>& aparam,
+                          const bool atomic);
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -178,19 +178,19 @@ class DeepPotPD : public DeepPotBase {
    *same aparam.
    * @param[in] atomic Whether to compute the atomic energy and virial.
    **/
-  // template <typename VALUETYPE, typename ENERGYVTYPE>
-  // void compute_mixed_type(ENERGYVTYPE& ener,
-  //                         std::vector<VALUETYPE>& force,
-  //                         std::vector<VALUETYPE>& virial,
-  //                         std::vector<VALUETYPE>& atom_energy,
-  //                         std::vector<VALUETYPE>& atom_virial,
-  //                         const int& nframes,
-  //                         const std::vector<VALUETYPE>& coord,
-  //                         const std::vector<int>& atype,
-  //                         const std::vector<VALUETYPE>& box,
-  //                         const std::vector<VALUETYPE>& fparam,
-  //                         const std::vector<VALUETYPE>& aparam,
-  //                         const bool atomic);
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_mixed_type(ENERGYVTYPE& ener,
+                          std::vector<VALUETYPE>& force,
+                          std::vector<VALUETYPE>& virial,
+                          std::vector<VALUETYPE>& atom_energy,
+                          std::vector<VALUETYPE>& atom_virial,
+                          const int& nframes,
+                          const std::vector<VALUETYPE>& coord,
+                          const std::vector<int>& atype,
+                          const std::vector<VALUETYPE>& box,
+                          const std::vector<VALUETYPE>& fparam,
+                          const std::vector<VALUETYPE>& aparam,
+                          const bool atomic);
 
  public:
   /**
@@ -349,7 +349,7 @@ class DeepPotPD : public DeepPotBase {
   int gpu_id = 0;
   int do_message_passing = 0;  // 1:dpa2 model 0:others
   bool gpu_enabled = true;
-  int dtype = paddle_infer::DataType::FLOAT32;
+  int dtype = paddle_infer::DataType::FLOAT64;
   // paddle::Tensor firstneigh_tensor;
   // std::unordered_map<std::string, paddle::Tensor> comm_dict;
   /**

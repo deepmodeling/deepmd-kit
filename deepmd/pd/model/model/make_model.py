@@ -429,11 +429,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                     axis=-1,
                 )
 
-            # if n_nnei > nnei or extra_nlist_sort:
-            if False:
+            if True:  # TODO: Fix controlflow + backward in PIR static graph
                 n_nf, n_nloc, n_nnei = nlist.shape
                 m_real_nei = nlist >= 0
-                nlist = paddle.where(m_real_nei, nlist, 0)
+                nlist = paddle.where(m_real_nei, nlist, paddle.zeros_like(nlist))
                 # nf x nloc x 3
                 coord0 = extended_coord[:, :n_nloc, :]
                 # nf x (nloc x nnei) x 3
@@ -450,7 +449,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                     paddle.argsort(rr, axis=-1),
                 )
                 nlist = aux.take_along_axis(nlist, axis=2, indices=nlist_mapping)
-                nlist = paddle.where(rr > rcut, -1, nlist)
+                nlist = paddle.where(rr > rcut, paddle.full_like(nlist, -1), nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
                 pass  # great!

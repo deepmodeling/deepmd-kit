@@ -58,6 +58,11 @@ class DPAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map
+        self.register_buffer(
+            "buffer_type_map",
+            paddle.to_tensor([ord(c) for c in self.type_map], dtype="int32"),
+        )
+        self.buffer_type_map.name = "type_map"
         self.ntypes = ntypes
         self.descriptor = descriptor
         self.rcut = self.descriptor.get_rcut()

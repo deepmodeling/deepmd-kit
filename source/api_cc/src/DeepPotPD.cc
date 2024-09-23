@@ -20,12 +20,13 @@ static void run_model(
     std::vector<VALUETYPE>& dforce_,
     std::vector<VALUETYPE>& dvirial,
     const std::shared_ptr<paddle_infer::Predictor>& predictor,
-    // const std::vector<std::pair<std::string, paddle::Tensor>>& input_tensors,
     const AtomMap& atommap,
     const int nframes,
     const int nghost = 0) {
+  // printf("run_model 1 st\n");
   unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
+  // printf("nloc = %d, nall = %d\n", nloc, nall);
   dener.resize(nframes);
   if (nloc == 0) {
     // no backward map needed
@@ -39,14 +40,26 @@ static void run_model(
   }
 
   /* Running inference */
+  // printf("Running inference st\n");
   if (!predictor->Run()) {
     throw deepmd::deepmd_exception("Paddle inference failed");
   }
+  // printf("Running inference ed\n");
 
   auto output_names = predictor->GetOutputNames();
-  auto output_e = predictor->GetOutputHandle(output_names[0]);
-  auto output_f = predictor->GetOutputHandle(output_names[1]);
-  auto output_virial_tensor = predictor->GetOutputHandle(output_names[3]);
+  // for (auto &name: output_names)
+  // {
+  //   printf("output name: %s, shape: [", name.c_str());
+  //   auto shape = predictor->GetOutputHandle(name)->shape();
+  //   for (auto &dd: shape)
+  //   {
+  //     printf("%d, ", dd);
+  //   }
+  //   printf("]\n");
+  // }
+  auto output_e = predictor->GetOutputHandle(output_names[1]);
+  auto output_f = predictor->GetOutputHandle(output_names[2]);
+  auto output_virial_tensor = predictor->GetOutputHandle(output_names[4]);
 
   // 获取 Output paddle::Tensor 的维度信息
   std::vector<int> output_energy_shape = output_e->shape();
@@ -61,29 +74,48 @@ static void run_model(
   int output_virial_size =
       std::accumulate(output_virial_shape.begin(), output_virial_shape.end(), 1,
                       std::multiplies<int>());
+  // for (int i=0; i<output_energy_shape.size(); ++i)
+  //   printf("output_energy_shape.shape[%d] = %d\n", i, output_energy_shape[i]);
+  // for (int i=0; i<output_force_shape.size(); ++i)
+  //   printf("output_force_shape.shape[%d] = %d\n", i, output_force_shape[i]);
+  // for (int i=0; i<output_virial_shape.size(); ++i)
+  //   printf("output_virial_shape.shape[%d] = %d\n", i, output_virial_shape[i]);
 
   // get data of output_energy
+  // printf("Starting copy back to CPU\n");
   std::vector<ENERGYTYPE> oe;
+  // printf("Resize st\n");
   oe.resize(output_energy_size);
+  // printf("Resize ed\n");
+  // printf("CopytoCpu st\n");
   output_e->CopyToCpu(oe.data());
+  // printf("Resize st\n");
+  // printf("CopytoCpu ed\n");
   // get data of output_force
+  // printf("of\n");
   std::vector<MODELTYPE> of;
   of.resize(output_force_size);
   output_f->CopyToCpu(of.data());
   // get data of output_virial
+  // printf("oav\n");
   std::vector<VALUETYPE> oav;
   oav.resize(output_virial_size);
+  // printf("oav 2\n");
   output_virial_tensor->CopyToCpu(oav.data());
+  // printf("oav 22\n");
 
+  // printf("dvirial\n");
   std::vector<VALUETYPE> dforce(nframes * 3 * nall);
   dvirial.resize(nframes * 9);
   for (int ii = 0; ii < nframes; ++ii) {
+    // printf("oe[%d] = %.5lf\n", ii, oe[ii]);
     dener[ii] = oe[ii];
   }
   for (int ii = 0; ii < nframes * nall * 3; ++ii) {
     dforce[ii] = of[ii];
   }
   // set dvirial to zero, prevent input vector is not zero (#1123)
+  // printf("fill\n");
   std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
   for (int kk = 0; kk < nframes; ++kk) {
     for (int ii = 0; ii < nall; ++ii) {
@@ -99,8 +131,10 @@ static void run_model(
     }
   }
   dforce_ = dforce;
+  // printf("atommap.backward\n");
   atommap.backward<VALUETYPE>(dforce_.begin(), dforce.begin(), 3, nframes,
                               nall);
+  // printf("run_model 1 ed\n");
 }
 
 template void run_model<double, double>(
@@ -151,10 +185,10 @@ static void run_model(
     std::vector<VALUETYPE>& datom_energy_,
     std::vector<VALUETYPE>& datom_virial_,
     const std::shared_ptr<paddle_infer::Predictor>& predictor,
-    // const std::vector<std::pair<std::string, paddle::Tensor>>& input_tensors,
     const deepmd::AtomMap& atommap,
     const int nframes,
     const int nghost = 0) {
+  // printf("run_model 2\n");
   unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
   dener.resize(nframes);
@@ -329,7 +363,6 @@ static void run_model(
     std::vector<VALUETYPE>& dforce_,
     std::vector<VALUETYPE>& dvirial,
     const std::shared_ptr<paddle_infer::Predictor>& predictor,
-    // const std::vector<std::pair<std::string, paddle::Tensor>>& input_tensors,
     const deepmd::AtomMap& atommap,
     const int nframes,
     const int nghost = 0) {
@@ -389,7 +422,6 @@ static void run_model(
     std::vector<VALUETYPE>& datom_energy_,
     std::vector<VALUETYPE>& datom_virial_,
     const std::shared_ptr<paddle_infer::Predictor>& predictor,
-    // const std::vector<std::pair<std::string, paddle::Tensor>>& input_tensors,
     const deepmd::AtomMap& atommap,
     const int nframes = 1,
     const int nghost = 0) {
@@ -464,7 +496,7 @@ DeepPotPD::DeepPotPD(const std::string& model,
 void DeepPotPD::init(const std::string& model,
                    const int& gpu_rank,
                    const std::string& file_content) {
-  std::cout << ("** Access here.") << std::endl;
+  // std::cout << ("** Access here.") << std::endl;
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -481,10 +513,12 @@ void DeepPotPD::init(const std::string& model,
   std::string pdmodel_path = "";
   std::string pdiparams_path = "";
   bool use_paddle_inference = false;
+  bool use_pir = false;
   if (model.find(".json") != std::string::npos) {
+    use_pir = true;
     pdmodel_path = model;
     std::string tmp = model;
-    pdiparams_path = tmp.replace(model.find(".json"), 4, std::string(".pdiparams"));
+    pdiparams_path = tmp.replace(model.find(".json"), 5, std::string(".pdiparams"));
     use_paddle_inference = true;
   } else if (model.find(".pdmodel") != std::string::npos){
     pdmodel_path = model;
@@ -497,15 +531,23 @@ void DeepPotPD::init(const std::string& model,
   int math_lib_num_threads = 1;
 
   if (use_paddle_inference) {
+    // printf("***** creating paddle predictor\n");
     config = std::make_shared<paddle_infer::Config>();
+    config->DisableGlogInfo();
+    // config->SwitchIrDebug(true);
+    if (use_pir) {
+      config->EnableNewExecutor(true);
+      config->EnableNewIR(true);
+    }
     config->SetModel(pdmodel_path, pdiparams_path);
-    config->SwitchIrOptim(true);
+    // config->SwitchIrOptim(true);
     config->EnableUseGpu(8192, 0);
     // std::cout << "IR Optim is: " << config->ir_optim() << std::endl;
     // config->EnableMKLDNN();
-    config->EnableMemoryOptim();
+    // config->EnableMemoryOptim();
     // config->EnableProfile();
     predictor = paddle_infer::CreatePredictor(*config);
+    // printf("***** created paddle predictor\n");
   }
   /* water se_e2_a
   tensorflow::DT_DOUBLE = 2
@@ -586,6 +628,7 @@ void DeepPotPD::init(const std::string& model,
   //       " supported "
   //       "See https://deepmd.rtfd.io/compatability/ for details.");
   // }
+  // printf("***** initialized finished\n");
 }
 
 DeepPotPD::~DeepPotPD() {}
@@ -677,6 +720,7 @@ void DeepPotPD::compute(ENERGYVTYPE& dener,
                         const std::vector<VALUETYPE>& fparam_,
                         const std::vector<VALUETYPE>& aparam_,
                         const bool atomic) {
+  // printf("compute 1\n");
   // if datype.size is 0, not clear nframes; but 1 is just ok
   int nframes = datype_.size() > 0 ? (dcoord_.size() / 3 / datype_.size()) : 1;
   atommap = deepmd::AtomMap(datype_.begin(), datype_.end());
@@ -713,31 +757,31 @@ void DeepPotPD::compute(ENERGYVTYPE& dener,
   }
 }
 
-template void DeepPotPD::compute<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    std::vector<double>& datom_energy_,
-    std::vector<double>& datom_virial_,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam,
-    const bool atomic);
+// template void DeepPotPD::compute<double, ENERGYTYPE>(
+//     ENERGYTYPE& dener,
+//     std::vector<double>& dforce_,
+//     std::vector<double>& dvirial,
+//     std::vector<double>& datom_energy_,
+//     std::vector<double>& datom_virial_,
+//     const std::vector<double>& dcoord_,
+//     const std::vector<int>& datype_,
+//     const std::vector<double>& dbox,
+//     const std::vector<double>& fparam,
+//     const std::vector<double>& aparam,
+//     const bool atomic);
 
-template void DeepPotPD::compute<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    std::vector<float>& datom_energy_,
-    std::vector<float>& datom_virial_,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam,
-    const bool atomic);
+// template void DeepPotPD::compute<float, ENERGYTYPE>(
+//     ENERGYTYPE& dener,
+//     std::vector<float>& dforce_,
+//     std::vector<float>& dvirial,
+//     std::vector<float>& datom_energy_,
+//     std::vector<float>& datom_virial_,
+//     const std::vector<float>& dcoord_,
+//     const std::vector<int>& datype_,
+//     const std::vector<float>& dbox,
+//     const std::vector<float>& fparam,
+//     const std::vector<float>& aparam,
+//     const bool atomic);
 
 template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -765,6 +809,16 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& aparam,
     const bool atomic);
 
+std::vector<int> createNlistTensor(const std::vector<std::vector<int>>& data) {
+  std::vector<int> ret;
+
+  for (const auto& row : data) {
+    ret.insert(ret.end(), row.begin(), row.end());
+  }
+
+  return ret;
+}
+
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPD::compute(ENERGYVTYPE& dener,
                         std::vector<VALUETYPE>& dforce_,
@@ -780,97 +834,139 @@ void DeepPotPD::compute(ENERGYVTYPE& dener,
                         const std::vector<VALUETYPE>& fparam_,
                         const std::vector<VALUETYPE>& aparam__,
                         const bool atomic) {
-  int nall = datype_.size();
-  // if nall==0, unclear nframes, but 1 is ok
-  int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
-  int nloc = nall - nghost;
-  std::vector<VALUETYPE> fparam;
-  std::vector<VALUETYPE> aparam_;
-  validate_fparam_aparam(nframes, (aparam_nall ? nall : nloc), fparam_,
-                         aparam__);
-  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-  tile_fparam_aparam(aparam_, nframes, (aparam_nall ? nall : nloc) * daparam,
-                     aparam__);
-  // std::vector<std::pair<std::string, Tensor>> input_tensors;
+  /*参考pytorch的推理代码如下*/
+  int natoms = datype_.size();
   // select real atoms
-  std::vector<VALUETYPE> dcoord, dforce, aparam, datom_energy, datom_virial;
+  std::vector<VALUETYPE> dcoord, dforce, aparam_, datom_energy, datom_virial;
   std::vector<int> datype, fwd_map, bkw_map;
   int nghost_real, nall_real, nloc_real;
-  select_real_atoms_coord(dcoord, datype, aparam, nghost_real, fwd_map, bkw_map,
-                          nall_real, nloc_real, dcoord_, datype_, aparam_,
-                          nghost, ntypes, nframes, daparam, nall, aparam_nall);
+  int nall = natoms;
+  select_real_atoms_coord(dcoord, datype, aparam_, nghost_real, fwd_map,
+                          bkw_map, nall_real, nloc_real, dcoord_, datype_, aparam__,
+                          nghost, ntypes, 1, daparam, nall, aparam_nall);
+  int nloc = nall_real - nghost_real;
+  int nframes = 1;
+  std::vector<VALUETYPE> coord_wrapped = dcoord;
+  auto coord_wrapped_Tensor = predictor->GetInputHandle("coord");
+  coord_wrapped_Tensor->Reshape({1, nall_real, 3});
+  coord_wrapped_Tensor->CopyFromCpu(coord_wrapped.data());
+
+  auto atype_Tensor = predictor->GetInputHandle("atype");
+  atype_Tensor->Reshape({1, nall_real});
+  atype_Tensor->CopyFromCpu(datype.data());
 
   if (ago == 0) {
-    atommap = deepmd::AtomMap(datype.begin(), datype.begin() + nloc_real);
-    assert(nloc_real == atommap.get_type().size());
-
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
-    nlist_data.shuffle(atommap);
-    nlist_data.make_inlist(nlist);
+    nlist_data.padding();
   }
+  std::vector<int> firstneigh = createNlistTensor(nlist_data.jlist);
+  auto firstneigh_tensor = predictor->GetInputHandle("nlist");
+  firstneigh_tensor->Reshape({1, nloc, firstneigh.size() / nloc});
+  firstneigh_tensor->CopyFromCpu(firstneigh.data());
 
-  if (dtype == paddle_infer::DataType::FLOAT64) {
-    if (atomic) {
-      run_model<double>(dener, dforce, dvirial, datom_energy, datom_virial,
-                        predictor, atommap, nframes, nghost_real);
-    } else {
-      run_model<double>(dener, dforce, dvirial, predictor, atommap,
-                        nframes, nghost_real);
-    }
-  } else {
-    if (atomic) {
-      run_model<float>(dener, dforce, dvirial, datom_energy, datom_virial,
-                       predictor, atommap, nframes, nghost_real);
-    } else {
-      run_model<float>(dener, dforce, dvirial, predictor, atommap,
-                       nframes, nghost_real);
-    }
+
+  if (!predictor->Run()) {
+    throw deepmd::deepmd_exception("Paddle inference failed");
   }
+  auto output_names = predictor->GetOutputNames();
 
+  auto print_shape = [](const std::vector<int> &shape, const std::string &name=""){
+    printf("shape of %s: [", name.c_str());
+    for (int i=0; i<shape.size(); ++i)
+    {
+      printf("%d%c", shape[i], ",]"[i==shape.size()-1]);
+    }
+    printf("\n");
+  };
+  auto output_e = predictor->GetOutputHandle(output_names[1]);
+  auto output_f = predictor->GetOutputHandle(output_names[2]);
+  auto output_virial_tensor = predictor->GetOutputHandle(output_names[3]);
+  // print_shape(output_e->shape(), "ener");
+  // print_shape(output_f->shape(), "force");
+  // print_shape(output_virial_tensor->shape(), "virial");
+  std::vector<int> output_energy_shape = output_e->shape();
+  int output_energy_size =
+      std::accumulate(output_energy_shape.begin(), output_energy_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<int> output_force_shape = output_f->shape();
+  int output_force_size =
+      std::accumulate(output_force_shape.begin(), output_force_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<int> output_virial_shape = output_virial_tensor->shape();
+  int output_virial_size =
+      std::accumulate(output_virial_shape.begin(), output_virial_shape.end(), 1,
+                      std::multiplies<int>());
+  std::vector<ENERGYTYPE> oe;
+  oe.resize(output_energy_size);
+  output_e->CopyToCpu(oe.data());
+
+  std::vector<VALUETYPE> of;
+  of.resize(output_force_size);
+  output_f->CopyToCpu(of.data());
+
+  std::vector<VALUETYPE> oav;
+  oav.resize(output_virial_size);
+  output_virial_tensor->CopyToCpu(oav.data());
+
+  dvirial.resize(nframes * 9);
+  dener.assign(oe.begin(), oe.end());
+  dforce.resize(nframes * 3 * nall);
+  for (int ii = 0; ii < nframes * nall * 3; ++ii) {
+    dforce[ii] = of[ii];
+  }
+  std::fill(dvirial.begin(), dvirial.end(), (VALUETYPE)0.);
+  dvirial.assign(oav.begin(), oav.end());
+  // for (int kk = 0; kk < nframes; ++kk) {
+  //   for (int ii = 0; ii < nall; ++ii) {
+  //     dvirial[kk * 9 + 0] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 0];
+  //     dvirial[kk * 9 + 1] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 1];
+  //     dvirial[kk * 9 + 2] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 2];
+  //     dvirial[kk * 9 + 3] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 3];
+  //     dvirial[kk * 9 + 4] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 4];
+  //     dvirial[kk * 9 + 5] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 5];
+  //     dvirial[kk * 9 + 6] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 6];
+  //     dvirial[kk * 9 + 7] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 7];
+  //     dvirial[kk * 9 + 8] += (VALUETYPE)1.0 * oav[kk * nall * 9 + 9 * ii + 8];
+  //   }
+  // }
   // bkw map
   dforce_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
-  datom_energy_.resize(static_cast<size_t>(nframes) * fwd_map.size());
-  datom_virial_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
   select_map<VALUETYPE>(dforce_, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
-  select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1, nframes,
-                        fwd_map.size(), nall_real);
-  select_map<VALUETYPE>(datom_virial_, datom_virial, bkw_map, 9, nframes,
-                        fwd_map.size(), nall_real);
 }
 
-template void DeepPotPD::compute<double, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<double>& dforce_,
-    std::vector<double>& dvirial,
-    std::vector<double>& datom_energy_,
-    std::vector<double>& datom_virial_,
-    const std::vector<double>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<double>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam_,
-    const bool atomic);
+// template void DeepPotPD::compute<double, ENERGYTYPE>(
+//     ENERGYTYPE& dener,
+//     std::vector<double>& dforce_,
+//     std::vector<double>& dvirial,
+//     std::vector<double>& datom_energy_,
+//     std::vector<double>& datom_virial_,
+//     const std::vector<double>& dcoord_,
+//     const std::vector<int>& datype_,
+//     const std::vector<double>& dbox,
+//     const int nghost,
+//     const InputNlist& lmp_list,
+//     const int& ago,
+//     const std::vector<double>& fparam,
+//     const std::vector<double>& aparam_,
+//     const bool atomic);
 
-template void DeepPotPD::compute<float, ENERGYTYPE>(
-    ENERGYTYPE& dener,
-    std::vector<float>& dforce_,
-    std::vector<float>& dvirial,
-    std::vector<float>& datom_energy_,
-    std::vector<float>& datom_virial_,
-    const std::vector<float>& dcoord_,
-    const std::vector<int>& datype_,
-    const std::vector<float>& dbox,
-    const int nghost,
-    const InputNlist& lmp_list,
-    const int& ago,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam_,
-    const bool atomic);
+// template void DeepPotPD::compute<float, ENERGYTYPE>(
+//     ENERGYTYPE& dener,
+//     std::vector<float>& dforce_,
+//     std::vector<float>& dvirial,
+//     std::vector<float>& datom_energy_,
+//     std::vector<float>& datom_virial_,
+//     const std::vector<float>& dcoord_,
+//     const std::vector<int>& datype_,
+//     const std::vector<float>& dbox,
+//     const int nghost,
+//     const InputNlist& lmp_list,
+//     const int& ago,
+//     const std::vector<float>& fparam,
+//     const std::vector<float>& aparam_,
+//     const bool atomic);
 
 template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
@@ -906,110 +1002,108 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
 
 // mixed type
 
-// template <typename VALUETYPE, typename ENERGYVTYPE>
-// void DeepPotPD::compute_mixed_type(ENERGYVTYPE& dener,
-//                                    std::vector<VALUETYPE>& dforce_,
-//                                    std::vector<VALUETYPE>& dvirial,
-//                                    std::vector<VALUETYPE>& datom_energy_,
-//                                    std::vector<VALUETYPE>& datom_virial_,
-//                                    const int& nframes,
-//                                    const std::vector<VALUETYPE>& dcoord_,
-//                                    const std::vector<int>& datype_,
-//                                    const std::vector<VALUETYPE>& dbox,
-//                                    const std::vector<VALUETYPE>& fparam_,
-//                                    const std::vector<VALUETYPE>& aparam_,
-//                                    const bool atomic) {
-//   int nloc = datype_.size() / nframes;
-//   // here atommap only used to get nloc
-//   atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
-//   std::vector<VALUETYPE> fparam;
-//   std::vector<VALUETYPE> aparam;
-//   validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
-//   tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-//   tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
+template <typename VALUETYPE, typename ENERGYVTYPE>
+void DeepPotPD::compute_mixed_type(ENERGYVTYPE& dener,
+                                   std::vector<VALUETYPE>& dforce_,
+                                   std::vector<VALUETYPE>& dvirial,
+                                   std::vector<VALUETYPE>& datom_energy_,
+                                   std::vector<VALUETYPE>& datom_virial_,
+                                   const int& nframes,
+                                   const std::vector<VALUETYPE>& dcoord_,
+                                   const std::vector<int>& datype_,
+                                   const std::vector<VALUETYPE>& dbox,
+                                   const std::vector<VALUETYPE>& fparam_,
+                                   const std::vector<VALUETYPE>& aparam_,
+                                   const bool atomic) {
+  int nloc = datype_.size() / nframes;
+  // here atommap only used to get nloc
+  atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
+  std::vector<VALUETYPE> fparam;
+  std::vector<VALUETYPE> aparam;
+  validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
+  tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
+  tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
 
-//   // std::vector<std::pair<std::string, Tensor>> input_tensors;
+  if (dtype == paddle_infer::DataType::FLOAT64) {
+    int nloc = predictor_input_tensors_mixed_type<double>(
+        predictor, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
+        fparam, aparam, atommap, aparam_nall);
+    if (atomic) {
+      run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_, predictor,
+                        atommap, nframes);
+    } else {
+      run_model<double>(dener, dforce_, dvirial, predictor,
+                        atommap, nframes);
+    }
+  } else {
+    int nloc = predictor_input_tensors_mixed_type<double>(
+        predictor, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
+        fparam, aparam, atommap, aparam_nall);
+    if (atomic) {
+      run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_, predictor,
+                       atommap, nframes);
+    } else {
+      run_model<float>(dener, dforce_, dvirial, predictor, atommap,
+                       nframes);
+    }
+  }
+}
 
-//   if (dtype == paddle_infer::DataType::FLOAT64) {
-//     // int nloc = session_input_tensors_mixed_type<double>(
-//     //     input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-//     //     fparam, aparam, atommap, "", aparam_nall);
-//     if (atomic) {
-//       run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_, predictor,
-//                         atommap, nframes);
-//     } else {
-//       run_model<double>(dener, dforce_, dvirial, predictor,
-//                         atommap, nframes);
-//     }
-//   } else {
-//     // int nloc = session_input_tensors_mixed_type<float>(
-//     //     input_tensors, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-//     //     fparam, aparam, atommap, "", aparam_nall);
-//     if (atomic) {
-//       run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_, predictor,
-//                        atommap, nframes);
-//     } else {
-//       run_model<float>(dener, dforce_, dvirial, atommap, predictor,
-//                        nframes);
-//     }
-//   }
-// }
+template void DeepPotPD::compute_mixed_type<double, ENERGYTYPE>(
+    ENERGYTYPE& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam,
+    const bool atomic);
 
-// template void DeepPotPD::compute_mixed_type<double, ENERGYTYPE>(
-//     ENERGYTYPE& dener,
-//     std::vector<double>& dforce_,
-//     std::vector<double>& dvirial,
-//     std::vector<double>& datom_energy_,
-//     std::vector<double>& datom_virial_,
-//     const int& nframes,
-//     const std::vector<double>& dcoord_,
-//     const std::vector<int>& datype_,
-//     const std::vector<double>& dbox,
-//     const std::vector<double>& fparam,
-//     const std::vector<double>& aparam,
-//     const bool atomic);
+template void DeepPotPD::compute_mixed_type<float, ENERGYTYPE>(
+    ENERGYTYPE& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam,
+    const bool atomic);
 
-// template void DeepPotPD::compute_mixed_type<float, ENERGYTYPE>(
-//     ENERGYTYPE& dener,
-//     std::vector<float>& dforce_,
-//     std::vector<float>& dvirial,
-//     std::vector<float>& datom_energy_,
-//     std::vector<float>& datom_virial_,
-//     const int& nframes,
-//     const std::vector<float>& dcoord_,
-//     const std::vector<int>& datype_,
-//     const std::vector<float>& dbox,
-//     const std::vector<float>& fparam,
-//     const std::vector<float>& aparam,
-//     const bool atomic);
+template void DeepPotPD::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial,
+    std::vector<double>& datom_energy_,
+    std::vector<double>& datom_virial_,
+    const int& nframes,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam,
+    const bool atomic);
 
-// template void DeepPotPD::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
-//     std::vector<ENERGYTYPE>& dener,
-//     std::vector<double>& dforce_,
-//     std::vector<double>& dvirial,
-//     std::vector<double>& datom_energy_,
-//     std::vector<double>& datom_virial_,
-//     const int& nframes,
-//     const std::vector<double>& dcoord_,
-//     const std::vector<int>& datype_,
-//     const std::vector<double>& dbox,
-//     const std::vector<double>& fparam,
-//     const std::vector<double>& aparam,
-//     const bool atomic);
-
-// template void DeepPotPD::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
-//     std::vector<ENERGYTYPE>& dener,
-//     std::vector<float>& dforce_,
-//     std::vector<float>& dvirial,
-//     std::vector<float>& datom_energy_,
-//     std::vector<float>& datom_virial_,
-//     const int& nframes,
-//     const std::vector<float>& dcoord_,
-//     const std::vector<int>& datype_,
-//     const std::vector<float>& dbox,
-//     const std::vector<float>& fparam,
-//     const std::vector<float>& aparam,
-//     const bool atomic);
+template void DeepPotPD::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& dener,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial,
+    std::vector<float>& datom_energy_,
+    std::vector<float>& datom_virial_,
+    const int& nframes,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam,
+    const bool atomic);
 
 
 template <class VT>
@@ -1018,7 +1112,8 @@ VT DeepPotPD::get_scalar(const std::string& name) const {
 }
 
 void DeepPotPD::get_type_map(std::string& type_map) {
-  type_map = predictor_get_scalar<std::string>(predictor, "generated_tensor_12");
+  type_map = "O H ";
+  // type_map = predictor_get_scalar<std::string>(predictor, "type_map");
 }
 
 // forward to template method
@@ -1084,34 +1179,34 @@ void DeepPotPD::computew(std::vector<double>& ener,
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
           nghost, inlist, ago, fparam, aparam, atomic);
 }
-// void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
-//                                     std::vector<double>& force,
-//                                     std::vector<double>& virial,
-//                                     std::vector<double>& atom_energy,
-//                                     std::vector<double>& atom_virial,
-//                                     const int& nframes,
-//                                     const std::vector<double>& coord,
-//                                     const std::vector<int>& atype,
-//                                     const std::vector<double>& box,
-//                                     const std::vector<double>& fparam,
-//                                     const std::vector<double>& aparam,
-//                                     const bool atomic) {
-//   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-//                      coord, atype, box, fparam, aparam, atomic);
-// }
-// void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
-//                                     std::vector<float>& force,
-//                                     std::vector<float>& virial,
-//                                     std::vector<float>& atom_energy,
-//                                     std::vector<float>& atom_virial,
-//                                     const int& nframes,
-//                                     const std::vector<float>& coord,
-//                                     const std::vector<int>& atype,
-//                                     const std::vector<float>& box,
-//                                     const std::vector<float>& fparam,
-//                                     const std::vector<float>& aparam,
-//                                     const bool atomic) {
-//   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-//                      coord, atype, box, fparam, aparam, atomic);
-// }
+void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
+                                    std::vector<double>& force,
+                                    std::vector<double>& virial,
+                                    std::vector<double>& atom_energy,
+                                    std::vector<double>& atom_virial,
+                                    const int& nframes,
+                                    const std::vector<double>& coord,
+                                    const std::vector<int>& atype,
+                                    const std::vector<double>& box,
+                                    const std::vector<double>& fparam,
+                                    const std::vector<double>& aparam,
+                                    const bool atomic) {
+  compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
+                     coord, atype, box, fparam, aparam, atomic);
+}
+void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
+                                    std::vector<float>& force,
+                                    std::vector<float>& virial,
+                                    std::vector<float>& atom_energy,
+                                    std::vector<float>& atom_virial,
+                                    const int& nframes,
+                                    const std::vector<float>& coord,
+                                    const std::vector<int>& atype,
+                                    const std::vector<float>& box,
+                                    const std::vector<float>& fparam,
+                                    const std::vector<float>& aparam,
+                                    const bool atomic) {
+  compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
+                     coord, atype, box, fparam, aparam, atomic);
+}
 #endif

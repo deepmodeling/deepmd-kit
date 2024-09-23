@@ -24,8 +24,8 @@ if(ENABLE_PYTORCH
   target_compile_definitions(${libname} PRIVATE BUILD_PYTORCH)
 endif()
 if(ENABLE_PADDLE AND NOT BUILD_PY_IF)
-  target_link_libraries(${libname} PRIVATE "${PADDLE_LIBRARIES}")
-  target_compile_definitions(${libname} PRIVATE BUILD_PADDLE)
+  target_link_libraries(${libname} PUBLIC "${PADDLE_LIBRARIES}")
+  target_compile_definitions(${libname} PUBLIC BUILD_PADDLE)
 endif()
 
 target_include_directories(

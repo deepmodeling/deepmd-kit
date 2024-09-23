@@ -22,7 +22,9 @@ export LAMMPS_DIR="/workspace/hesensen/deepmd_backend/deepmd_paddle_new/source/b
 export LAMMPS_SOURCE_ROOT="/workspace/hesensen/deepmd_backend/deepmd_paddle_new/source/build_lammps/lammps-stable_29Aug2024/"
 
 # 设置推理时的 GPU 卡号
-export CUDA_VISIBLE_DEVICES=6
+export CUDA_VISIBLE_DEVICES=3
+# export FLAGS_benchmark=1
+# export GLOG_v=6
 
 # PADDLE_DIR 设置为第二步 clone下来的 Paddle 目录
 export PADDLE_DIR="/workspace/hesensen/PaddleScience_enn_debug/Paddle/"
@@ -43,11 +45,11 @@ export LD_LIBRARY_PATH=${PADDLE_INFERENCE_DIR}/third_party/install/mkldnn/lib:$L
 export LD_LIBRARY_PATH=${PADDLE_INFERENCE_DIR}/third_party/install/mklml/lib:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=${DEEPMD_DIR}/source/build:$LD_LIBRARY_PATH
 export LIBRARY_PATH=${DEEPMD_DIR}/deepmd/op:$LIBRARY_PATH
-
-cd ${DEEPMD_DIR}/source
-rm -rf build # 若改动CMakeLists.txt，则需要打开该注释
-mkdir build
-cd -
+# export FLAGS_check_nan_inf=1
+# cd ${DEEPMD_DIR}/source
+# rm -rf build # 若改动CMakeLists.txt，则需要打开该注释
+# mkdir build
+# cd -
 
 # DEEPMD_INSTALL_DIR 设置为 deepmd-lammps 的目标安装目录，可自行设置任意路径
 # export DEEPMD_INSTALL_DIR="path/to/deepmd_root"
@@ -84,6 +86,8 @@ cmake -DCMAKE_PREFIX_PATH=/workspace/hesensen/PaddleScience_enn_debug/Paddle/bui
 	-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 	-D USE_TF_PYTHON_LIBS=TRUE \
 	-D LAMMPS_SOURCE_ROOT=${LAMMPS_SOURCE_ROOT} \
+	-D ENABLE_IPI=OFF \
+	-D PADDLE_LIBRARIES=/workspace/hesensen/PaddleScience_enn_debug/Paddle/build/paddle_inference_install_dir/paddle/lib/libpaddle_inference.so \
 	${CUDA_ARGS} \
 	-D LAMMPS_VERSION=stable_29Aug2024 \
 	..
@@ -104,9 +108,12 @@ make no-extra-fix
 make yes-extra-fix
 make no-user-deepmd
 make yes-user-deepmd
-make serial -j
+# make serial -j
+make mpi -j 20
 export PATH=${LAMMPS_DIR}/src:$PATH
 
 cd ${DEEPMD_DIR}/examples/water/lmp
 
-lmp_serial -in paddle_in.lammps
+echo "START INFERENCE..."
+# lmp_serial -in paddle_in.lammps 2>&1 | tee paddle_infer.log
+mpirun -np 1 lmp_mpi -in paddle_in.lammps 2>&1 | tee paddle_infer.log

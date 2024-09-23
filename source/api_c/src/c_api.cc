@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#include "c_api.h"
 
 #include <numeric>
 #include <string>
@@ -10,6 +9,7 @@
 #include "DeepTensor.h"
 #include "c_api_internal.h"
 #include "common.h"
+// #include "/workspace/hesensen/deepmd_backend/deepmd_paddle_new/source/api_c/include/c_api.h"
 
 extern "C" {
 
