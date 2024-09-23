@@ -484,11 +484,7 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
-                            if _new_fitting and (
-                                (".fitting_net." in item_key)
-                                or (".out_bias" in item_key)
-                                or (".out_std" in item_key)
-                            ):
+                            if _new_fitting and (".descriptor." not in item_key):
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
