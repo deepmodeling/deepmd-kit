@@ -142,4 +142,4 @@ def get_pd_version(pd_path: Optional[Union[str, Path]]) -> str:
     spec = importlib.util.spec_from_file_location("paddle.version", version_file)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.__version__
+    return module.full_version
