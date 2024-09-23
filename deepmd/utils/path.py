@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import itertools
 import os
 from abc import (
     ABC,
@@ -373,7 +374,11 @@ class DPH5Path(DPPath):
             list of paths
         """
         # got paths starts with current path first, which is faster
-        subpaths = [ii for ii in self._keys if ii.startswith(self._name)]
+        subpaths = [
+            ii
+            for ii in itertools.chain(self._keys, self._new_keys)
+            if ii.startswith(self._name)
+        ]
         return [
             type(self)(f"{self.root_path}#{pp}", mode=self.mode)
             for pp in globfilter(subpaths, self._connect_path(pattern))

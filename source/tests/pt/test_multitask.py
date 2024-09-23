@@ -31,6 +31,7 @@ from deepmd.utils.compat import (
 from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
+    model_dpa2tebd,
     model_se_e2_a,
 )
 
@@ -269,6 +270,45 @@ class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
         ]
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.stat_files = "DPA2"
+        os.makedirs(self.stat_files, exist_ok=True)
+        self.config = multitask_DPA2
+        self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (
+            data_file
+        )
+        self.config["training"]["data_dict"]["model_1"]["validation_data"][
+            "systems"
+        ] = data_file
+        self.config["training"]["data_dict"]["model_1"]["stat_file"] = (
+            f"{self.stat_files}/model_1"
+        )
+        self.config["training"]["data_dict"]["model_2"]["training_data"]["systems"] = (
+            data_file
+        )
+        self.config["training"]["data_dict"]["model_2"]["validation_data"][
+            "systems"
+        ] = data_file
+        self.config["training"]["data_dict"]["model_2"]["stat_file"] = (
+            f"{self.stat_files}/model_2"
+        )
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.origin_config = deepcopy(self.config)
+        self.config["model"], self.shared_links = preprocess_shared_params(
+            self.config["model"]
+        )
+
+    def tearDown(self) -> None:
+        MultiTaskTrainTest.tearDown(self)
+
+
+class TestMultiTaskDPA2Tebd(unittest.TestCase, MultiTaskTrainTest):
+    def setUp(self):
+        multitask_DPA2 = deepcopy(multitask_template)
+        multitask_DPA2["model"]["shared_dict"]["my_descriptor"] = model_dpa2tebd[
+            "descriptor"
+        ]
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.stat_files = "DPA2Tebd"
         os.makedirs(self.stat_files, exist_ok=True)
         self.config = multitask_DPA2
         self.config["training"]["data_dict"]["model_1"]["training_data"]["systems"] = (

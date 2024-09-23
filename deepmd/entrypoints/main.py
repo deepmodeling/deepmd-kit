@@ -24,6 +24,9 @@ from deepmd.entrypoints.gui import (
 from deepmd.entrypoints.neighbor_stat import (
     neighbor_stat,
 )
+from deepmd.entrypoints.show import (
+    show,
+)
 from deepmd.entrypoints.test import (
     test,
 )
@@ -81,5 +84,7 @@ def main(args: argparse.Namespace):
         start_dpgui(**dict_args)
     elif args.command == "convert-backend":
         convert_backend(**dict_args)
+    elif args.command == "show":
+        show(**dict_args)
     else:
         raise ValueError(f"Unknown command: {args.command}")

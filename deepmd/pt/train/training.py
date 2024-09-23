@@ -1030,10 +1030,13 @@ class Trainer:
             if dist.is_available() and dist.is_initialized()
             else self.wrapper
         )
-        module.train_infos["lr"] = lr
+        module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
+        optim_state_dict = deepcopy(self.optimizer.state_dict())
+        for item in optim_state_dict["param_groups"]:
+            item["lr"] = float(item["lr"])
         torch.save(
-            {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
+            {"model": module.state_dict(), "optimizer": optim_state_dict},
             save_path,
         )
         checkpoint_dir = save_path.parent

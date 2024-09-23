@@ -478,7 +478,7 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if atomic_output.get_data()[kk].intensive:
+            if atomic_output is not None and atomic_output.get_data()[kk].intensive:
                 task_dim = stats_input[kk].shape[1]
                 assert merged_natoms[kk].shape == (nf[kk], ntypes)
                 stats_input[kk] = (

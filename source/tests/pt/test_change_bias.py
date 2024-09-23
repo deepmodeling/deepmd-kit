@@ -92,7 +92,9 @@ class TestChangeBias(unittest.TestCase):
         run_dp(
             f"dp --pt change-bias {self.model_path!s} -s {self.data_file[0]} -o {self.model_path_data_bias!s}"
         )
-        state_dict = torch.load(str(self.model_path_data_bias), map_location=DEVICE)
+        state_dict = torch.load(
+            str(self.model_path_data_bias), map_location=DEVICE, weights_only=True
+        )
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(model_params)
         wrapper = ModelWrapper(model_for_wrapper)
@@ -114,7 +116,7 @@ class TestChangeBias(unittest.TestCase):
             f"dp --pt change-bias {self.model_path!s} -f {tmp_file.name} -o {self.model_path_data_file_bias!s}"
         )
         state_dict = torch.load(
-            str(self.model_path_data_file_bias), map_location=DEVICE
+            str(self.model_path_data_file_bias), map_location=DEVICE, weights_only=True
         )
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(model_params)
@@ -134,7 +136,9 @@ class TestChangeBias(unittest.TestCase):
         run_dp(
             f"dp --pt change-bias {self.model_path!s} -b {' '.join([str(_) for _ in user_bias])} -o {self.model_path_user_bias!s}"
         )
-        state_dict = torch.load(str(self.model_path_user_bias), map_location=DEVICE)
+        state_dict = torch.load(
+            str(self.model_path_user_bias), map_location=DEVICE, weights_only=True
+        )
         model_params = state_dict["model"]["_extra_state"]["model_params"]
         model_for_wrapper = get_model_for_wrapper(model_params)
         wrapper = ModelWrapper(model_for_wrapper)

@@ -733,16 +733,24 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         stddev: List[np.ndarray],
     ) -> None:
         """Update mean and stddev for descriptor."""
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+        descrpt_list = [self.repinit, self.repformers]
+        if self.use_three_body:
+            descrpt_list.append(self.repinit_three_body)
+        for ii, descrpt in enumerate(descrpt_list):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
     def get_stat_mean_and_stddev(self) -> Tuple[List[np.ndarray], List[np.ndarray]]:
         """Get mean and stddev for descriptor."""
-        return [self.repinit.mean, self.repformers.mean], [
+        mean_list = [self.repinit.mean, self.repformers.mean]
+        stddev_list = [
             self.repinit.stddev,
             self.repformers.stddev,
         ]
+        if self.use_three_body:
+            mean_list.append(self.repinit_three_body.mean)
+            stddev_list.append(self.repinit_three_body.stddev)
+        return mean_list, stddev_list
 
     def call(
         self,

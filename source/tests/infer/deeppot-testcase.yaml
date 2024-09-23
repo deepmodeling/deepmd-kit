@@ -6,6 +6,44 @@ rcut: 6.0
 type_map: ["O", "H"]
 dim_fparam: 0
 dim_aparam: 0
+model_def_script:
+  {
+    "data_bias_nsample": 10,
+    "data_stat_nbatch": 10,
+    "data_stat_protect": 0.01,
+    "descriptor":
+      {
+        "activation_function": "tanh",
+        "axis_neuron": 4,
+        "exclude_types": [],
+        "neuron": [2, 4, 8],
+        "precision": "default",
+        "rcut": 6.0,
+        "rcut_smth": 0.5,
+        "resnet_dt": False,
+        "seed": 1,
+        "sel": [46, 92],
+        "set_davg_zero": False,
+        "trainable": True,
+        "type": "se_e2_a",
+        "type_one_side": False,
+      },
+    "fitting_net":
+      {
+        "activation_function": "tanh",
+        "atom_ener": [],
+        "neuron": [6, 6, 6],
+        "numb_aparam": 0,
+        "numb_fparam": 0,
+        "precision": "default",
+        "rcond": 0.001,
+        "resnet_dt": True,
+        "seed": 1,
+        "trainable": True,
+        "type": "ener",
+      },
+    "type_map": ["O", "H"],
+  }
 results:
   - coord:
       [

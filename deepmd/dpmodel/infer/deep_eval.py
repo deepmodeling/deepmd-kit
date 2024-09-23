@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -372,3 +373,7 @@ class DeepEval(DeepEvalBackend):
             return [nframes, natoms, *odef.shape, 1]
         else:
             raise RuntimeError("unknown category")
+
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        return json.loads(self.model.get_model_def_script())
