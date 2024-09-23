@@ -36,6 +36,8 @@ if INSTALLED_JAX:
         jnp,
     )
     from deepmd.jax.utils.type_embed import TypeEmbedNet as TypeEmbedNetJAX
+else:
+    TypeEmbedNetJAX = object
 
 
 @parameterized(

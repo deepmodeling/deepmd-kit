@@ -2,7 +2,6 @@
 import sys
 import unittest
 
-import array_api_strict as xp
 import numpy as np
 
 from deepmd.common import (
@@ -69,6 +68,8 @@ class TestActivationFunctionConsistent(unittest.TestCase):
         sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
     )
     def test_arary_api_strict(self):
+        import array_api_strict as xp
+
         xp.set_array_api_strict_flags(
             api_version=get_activation_fn_dp.array_api_version
         )
