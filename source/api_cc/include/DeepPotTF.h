@@ -335,25 +335,28 @@ class DeepPotTF : public DeepPotBase {
                            const std::vector<float>& fparam,
                            const std::vector<float>& aparam,
                            const bool atomic);
+
+  template <typename VALUETYPE>
   void extend(int& extend_inum,
               std::vector<int>& extend_ilist,
               std::vector<int>& extend_numneigh,
-              std::vector<vector<int>>& extend_neigh,
+              std::vector<std::vector<int>>& extend_neigh,
               std::vector<int*>& extend_firstneigh,
-              std::vector<double>& extend_dcoord,
+              std::vector<VALUETYPE>& extend_dcoord,
               std::vector<int>& extend_atype,
               int& extend_nghost,
               std::map<int, int>& new_idx_map,
               std::map<int, int>& old_idx_map,
               const InputNlist& lmp_list,
-              const std::vector<double>& dcoord,
+              const std::vector<VALUETYPE>& dcoord,
               const std::vector<int>& atype,
               const int nghost,
-              const std::vector<double>& spin,
+              const std::vector<VALUETYPE>& spin,
               const int numb_types,
               const int numb_types_spin,
-              const std::vector<double>& virtual_len,
-              const std::vector<double>& spin_norm;);
+              const std::vector<VALUETYPE>& virtual_len,
+              const std::vector<VALUETYPE>& spin_norm);
+  void cum_sum(std::map<int, int> &, std::map<int, int> &);
 
  private:
   tensorflow::Session* session;
@@ -362,6 +365,9 @@ class DeepPotTF : public DeepPotBase {
   bool inited;
   template <class VT>
   VT get_scalar(const std::string& name) const;
+  template <class VT>
+  void get_vector(std::vector<VT>& vec, const std::string& name) const;
+
   double rcut;
   int dtype;
   double cell_size;
@@ -369,14 +375,14 @@ class DeepPotTF : public DeepPotBase {
   std::string model_version;
   int ntypes;
   int ntypes_spin;
-  std::vector<double> virtual_len;
-  std::vector<double> spin_norm;
+  // std::vector<double> virtual_len;
+  // std::vector<double> spin_norm;
   int extend_inum;
   std::vector<int> extend_ilist;
   std::vector<int> extend_numneigh;
   std::vector<std::vector<int>> extend_neigh;
   std::vector<int*> extend_firstneigh;
-  std::vector<double> extend_dcoord;
+  // std::vector<double> extend_dcoord;
   std::vector<int> extend_dtype;
   int extend_nghost;
   // for spin systems, search new index of atoms by their old index
