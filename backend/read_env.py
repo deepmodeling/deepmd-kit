@@ -134,7 +134,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
         )
     else:
         cmake_args.append("-DENABLE_PADDLE=OFF")
-        pt_version = None
+        pd_version = None
 
     cmake_args = [
         "-DBUILD_PY_IF:BOOL=TRUE",
@@ -147,6 +147,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
         extra_scripts,
         tf_version,
         pt_version,
+        pd_version,
     )
 
 
