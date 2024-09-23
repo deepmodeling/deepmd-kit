@@ -40,15 +40,15 @@ def load_library(module_name: str) -> bool:
         except OSError as e:
             # check: CXX11_ABI_FLAG; version
             # from our op
-            PT_VERSION = GLOBAL_CONFIG["pt_version"]
-            PT_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["pt_cxx11_abi_flag"])
+            PD_VERSION = GLOBAL_CONFIG["pd_version"]
+            PD_CXX11_ABI_FLAG = int(GLOBAL_CONFIG["pd_cxx11_abi_flag"])
             # from paddle
             # strip the local version
-            pt_py_version = Version(paddle.__version__).public
-            # pt_cxx11_abi_flag = int(paddle.compiled_with_cxx11_abi())
-            pt_cxx11_abi_flag = 0
+            pd_py_version = Version(paddle.__version__).public
+            # pd_cxx11_abi_flag = int(paddle.compiled_with_cxx11_abi())
+            pd_cxx11_abi_flag = 0
 
-            if PT_CXX11_ABI_FLAG != pt_cxx11_abi_flag:
+            if PD_CXX11_ABI_FLAG != pd_cxx11_abi_flag:
                 raise RuntimeError(
                     "This deepmd-kit package was compiled with "
                     "CXX11_ABI_FLAG=%d, but Paddle runtime was compiled "
@@ -57,21 +57,21 @@ def load_library(module_name: str) -> bool:
                     "You need to rebuild deepmd-kit against this Paddle "
                     "runtime."
                     % (
-                        PT_CXX11_ABI_FLAG,
-                        pt_cxx11_abi_flag,
+                        PD_CXX11_ABI_FLAG,
+                        pd_cxx11_abi_flag,
                         module_name,
                     )
                 ) from e
 
             # different versions may cause incompatibility, see TF
-            if PT_VERSION != pt_py_version:
+            if PD_VERSION != pd_py_version:
                 raise RuntimeError(
                     "The version of Paddle used to compile this "
-                    f"deepmd-kit package is {PT_VERSION}, but the version of Paddle "
-                    f"runtime you are using is {pt_py_version}. These two versions are "
+                    f"deepmd-kit package is {PD_VERSION}, but the version of Paddle "
+                    f"runtime you are using is {pd_py_version}. These two versions are "
                     f"incompatible and thus an error is raised when loading {module_name}. "
-                    f"You need to install Paddle {PT_VERSION}, or rebuild deepmd-kit "
-                    f"against Paddle {pt_py_version}.\nIf you are using a wheel from "
+                    f"You need to install Paddle {PD_VERSION}, or rebuild deepmd-kit "
+                    f"against Paddle {pd_py_version}.\nIf you are using a wheel from "
                     "PyPI, you may consider to install deepmd-kit execuating "
                     "`DP_ENABLE_Paddle=1 pip install deepmd-kit --no-binary deepmd-kit` "
                     "instead."
@@ -82,7 +82,7 @@ def load_library(module_name: str) -> bool:
                 "You need to rebuild deepmd-kit against this Paddle "
                 "runtime."
             )
-            if PT_CXX11_ABI_FLAG == 1:
+            if PD_CXX11_ABI_FLAG == 1:
                 # #1791
                 error_message += (
                     "\nWARNING: devtoolset on RHEL6 and RHEL7 does not support _GLIBCXX_USE_CXX11_ABI=1. "
@@ -93,7 +93,7 @@ def load_library(module_name: str) -> bool:
     return False
 
 
-ENABLE_CUSTOMIZED_OP = load_library("deepmd_op_pt")
+ENABLE_CUSTOMIZED_OP = load_library("deepmd_op_pd")
 
 __all__ = [
     "ENABLE_CUSTOMIZED_OP",

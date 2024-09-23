@@ -14,5 +14,6 @@ except Exception as e:
 
 import paddle
 
+# enable primitive mode for eager/static graph
 paddle.framework.core.set_prim_eager_enabled(True)
 paddle.framework.core._set_prim_all_enabled(True)
