@@ -5,8 +5,12 @@ from typing import (
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    support_array_api,
+)
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
     NativeOP,
@@ -92,16 +96,18 @@ class TypeEmbedNet(NativeOP):
             bias=self.use_tebd_bias,
         )
 
+    @support_array_api(version="2022.12")
     def call(self) -> np.ndarray:
         """Compute the type embedding network."""
+        sample_array = self.embedding_net[0]["w"]
+        xp = array_api_compat.array_namespace(sample_array)
         if not self.use_econf_tebd:
-            embed = self.embedding_net(
-                np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
-            )
+            embed = self.embedding_net(xp.eye(self.ntypes, dtype=sample_array.dtype))
         else:
             embed = self.embedding_net(self.econf_tebd)
         if self.padding:
-            embed = np.pad(embed, ((0, 1), (0, 0)), mode="constant")
+            embed_pad = xp.zeros((1, embed.shape[-1]), dtype=embed.dtype)
+            embed = xp.concatenate([embed, embed_pad], axis=0)
         return embed
 
     @classmethod
