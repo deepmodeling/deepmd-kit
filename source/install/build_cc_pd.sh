@@ -78,8 +78,7 @@ export LIBRARY_PATH=${DEEPMD_DIR}/deepmd/op:$LIBRARY_PATH
 BUILD_TMP_DIR=${SCRIPT_PATH}/../build
 mkdir -p ${BUILD_TMP_DIR}
 cd ${BUILD_TMP_DIR}
-cmake -DCMAKE_PREFIX_PATH=/workspace/hesensen/PaddleScience_enn_debug/Paddle/build/paddle_inference_install_dir/paddle \
-	-D ENABLE_TENSORFLOW=OFF \
+cmake -D ENABLE_TENSORFLOW=OFF \
 	-D ENABLE_PYTORCH=OFF \
 	-D ENABLE_PADDLE=ON \
 	-D PADDLE_LIB=${PADDLE_INFERENCE_DIR} \
@@ -87,7 +86,6 @@ cmake -DCMAKE_PREFIX_PATH=/workspace/hesensen/PaddleScience_enn_debug/Paddle/bui
 	-D USE_TF_PYTHON_LIBS=TRUE \
 	-D LAMMPS_SOURCE_ROOT=${LAMMPS_SOURCE_ROOT} \
 	-D ENABLE_IPI=OFF \
-	-D PADDLE_LIBRARIES=/workspace/hesensen/PaddleScience_enn_debug/Paddle/build/paddle_inference_install_dir/paddle/lib/libpaddle_inference.so \
 	${CUDA_ARGS} \
 	-D LAMMPS_VERSION=stable_29Aug2024 \
 	..

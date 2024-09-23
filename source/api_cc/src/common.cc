@@ -929,7 +929,6 @@ int deepmd::session_get_dtype(tensorflow::Session* session,
 #endif
 
 #ifdef BUILD_PADDLE
-
 template <typename MODELTYPE, typename VALUETYPE>
 int deepmd::predictor_input_tensors(
     const std::shared_ptr<paddle_infer::Predictor>& predictor,
@@ -1487,6 +1486,21 @@ void deepmd::select_map_inv(typename std::vector<VT>::iterator out,
     }
   }
 }
+
+#ifdef BUILD_TENSORFLOW
+template int deepmd::session_get_scalar<int>(Session*,
+                                             const std::string,
+                                             const std::string);
+
+template bool deepmd::session_get_scalar<bool>(Session*,
+                                               const std::string,
+                                               const std::string);
+
+template void deepmd::session_get_vector<int>(std::vector<int>&,
+                                              Session*,
+                                              const std::string,
+                                              const std::string);
+#endif
 
 #ifdef BUILD_PADDLE
 template int deepmd::predictor_get_scalar<int>(const std::shared_ptr<paddle_infer::Predictor>& predictor,
