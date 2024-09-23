@@ -3,6 +3,10 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from typing import (
+    Any,
+    Optional,
+)
 
 import ml_dtypes
 import numpy as np
@@ -57,6 +61,24 @@ class NativeOP(ABC):
     def __call__(self, *args, **kwargs):
         """Forward pass in NumPy implementation."""
         return self.call(*args, **kwargs)
+
+
+def to_numpy_array(x: Any) -> Optional[np.ndarray]:
+    """Convert an array to a NumPy array.
+
+    Parameters
+    ----------
+    x : Any
+        The array to be converted.
+
+    Returns
+    -------
+    Optional[np.ndarray]
+        The NumPy array.
+    """
+    if x is None:
+        return None
+    return np.asarray(x)
 
 
 __all__ = [

@@ -35,9 +35,10 @@ from deepmd.backend.tensorflow import (
 
 INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
+INSTALLED_JAX = Backend.get_backend("jax")().is_available()
 
-if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
-    raise ImportError("TensorFlow or PyTorch should be tested in the CI")
+if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_JAX):
+    raise ImportError("TensorFlow or PyTorch or JAX should be tested in the CI")
 
 
 if INSTALLED_TF:
@@ -57,6 +58,7 @@ __all__ = [
     "CommonTest",
     "INSTALLED_TF",
     "INSTALLED_PT",
+    "INSTALLED_JAX",
 ]
 
 
@@ -71,6 +73,8 @@ class CommonTest(ABC):
     """Native DP model class."""
     pt_class: ClassVar[Optional[type]]
     """PyTorch model class."""
+    jax_class: ClassVar[Optional[type]]
+    """JAX model class."""
     args: ClassVar[Optional[Union[Argument, List[Argument]]]]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
@@ -79,6 +83,9 @@ class CommonTest(ABC):
     """Whether to skip the TensorFlow model."""
     skip_pt: ClassVar[bool] = not INSTALLED_PT
     """Whether to skip the PyTorch model."""
+    # we may usually skip jax before jax is fully supported
+    skip_jax: ClassVar[bool] = True
+    """Whether to skip the JAX model."""
     rtol = 1e-10
     """Relative tolerance for comparing the return value. Override for float32."""
     atol = 1e-10
@@ -149,12 +156,23 @@ class CommonTest(ABC):
             The object of PT
         """
 
+    def eval_jax(self, jax_obj: Any) -> Any:
+        """Evaluate the return value of JAX.
+
+        Parameters
+        ----------
+        jax_obj : Any
+            The object of JAX
+        """
+        raise NotImplementedError("Not implemented")
+
     class RefBackend(Enum):
         """Reference backend."""
 
         TF = 1
         DP = 2
         PT = 3
+        JAX = 5
 
     @abstractmethod
     def extract_ret(self, ret: Any, backend: RefBackend) -> Tuple[np.ndarray, ...]:
@@ -215,6 +233,11 @@ class CommonTest(ABC):
         data = obj.serialize()
         return ret, data
 
+    def get_jax_ret_serialization_from_cls(self, obj):
+        ret = self.eval_jax(obj)
+        data = obj.serialize()
+        return ret, data
+
     def get_reference_backend(self):
         """Get the reference backend.
 
@@ -226,6 +249,8 @@ class CommonTest(ABC):
             return self.RefBackend.TF
         if not self.skip_pt:
             return self.RefBackend.PT
+        if not self.skip_jax:
+            return self.RefBackend.JAX
         raise ValueError("No available reference")
 
     def get_reference_ret_serialization(self, ref: RefBackend):
@@ -351,6 +376,40 @@ class CommonTest(ABC):
         ret1, data1 = self.get_pt_ret_serialization_from_cls(obj1)
         obj2 = self.pt_class.deserialize(data1)
         ret2, data2 = self.get_pt_ret_serialization_from_cls(obj2)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+            else:
+                self.assertEqual(rr1, rr2)
+
+    def test_jax_consistent_with_ref(self):
+        """Test whether JAX and reference are consistent."""
+        if self.skip_jax:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.JAX:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        jax_obj = self.jax_class.deserialize(data1)
+        ret2 = self.eval_jax(jax_obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.JAX)
+        data2 = jax_obj.serialize()
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+
+    def test_jax_self_consistent(self):
+        """Test whether JAX is self consistent."""
+        if self.skip_jax:
+            self.skipTest("Unsupported backend")
+        obj1 = self.init_backend_cls(self.jax_class)
+        ret1, data1 = self.get_jax_ret_serialization_from_cls(obj1)
+        obj1 = self.jax_class.deserialize(data1)
+        ret2, data2 = self.get_jax_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):

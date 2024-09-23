@@ -132,6 +132,9 @@ cu12 = [
     "nvidia-cudnn-cu12<9",
     "nvidia-cuda-nvcc-cu12",
 ]
+jax = [
+    "jax>=0.4.33",
+]
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
