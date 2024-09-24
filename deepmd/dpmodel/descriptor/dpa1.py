@@ -901,10 +901,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # nfnl x nnei x 1
         sw = xp.where(nlist_mask[:, :, None], sw, xp.full_like(sw, 0.0))
         nall = atype_embd_ext.shape[1]
-        nlist_ = nlist + xp.reshape(
+        nfidx = xp.reshape(
             xp.repeat(xp.arange(nf) * nall, nloc * nnei), (nf * nloc, nnei)
         )
-        nlist_masked = xp.where(nlist_mask, nlist_, xp.full_like(nlist, 0))
+        nlist_ = nlist + nfidx
+        nlist_masked = xp.where(nlist_mask, nlist_, nfidx)
         # index = xp.tile(xp.reshape(nlist_masked,(nf, -1, 1)), (1, 1, self.tebd_dim))
         # nfnl x nnei x tebd_dim
         # atype_embd_nlist = xp.take_along_axis(atype_embd_ext, index, axis=1)
