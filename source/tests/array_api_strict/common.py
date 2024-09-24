@@ -1,25 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    overload,
 )
 
+import array_api_strict
 import numpy as np
 
-from deepmd.jax.env import (
-    jnp,
-)
 
-
-@overload
-def to_jax_array(array: np.ndarray) -> jnp.ndarray: ...
-
-
-@overload
-def to_jax_array(array: None) -> None: ...
-
-
-def to_jax_array(array: Optional[np.ndarray]) -> Optional[jnp.ndarray]:
+def to_array_api_strict_array(array: Optional[np.ndarray]):
     """Convert a numpy array to a JAX array.
 
     Parameters
@@ -34,4 +22,4 @@ def to_jax_array(array: Optional[np.ndarray]) -> Optional[jnp.ndarray]:
     """
     if array is None:
         return None
-    return jnp.array(array)
+    return array_api_strict.asarray(array)

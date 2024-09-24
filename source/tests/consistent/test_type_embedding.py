@@ -13,6 +13,7 @@ from deepmd.utils.argcheck import (
 )
 
 from .common import (
+    INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
@@ -38,6 +39,12 @@ if INSTALLED_JAX:
     from deepmd.jax.utils.type_embed import TypeEmbedNet as TypeEmbedNetJAX
 else:
     TypeEmbedNetJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ..array_api_strict.utils.type_embed import TypeEmbedNet as TypeEmbedNetStrict
+else:
+    TypeEmbedNetStrict = None
 
 
 @parameterized(
@@ -72,6 +79,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     dp_class = TypeEmbedNetDP
     pt_class = TypeEmbedNetPT
     jax_class = TypeEmbedNetJAX
+    array_api_strict_class = TypeEmbedNetStrict
     args = type_embedding_args()
     skip_jax = not INSTALLED_JAX
 
@@ -120,6 +128,13 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             if isinstance(x, np.ndarray):
                 raise ValueError("Output is numpy array")
         return [np.array(x) if isinstance(x, jnp.ndarray) else x for x in (out,)]
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        out = array_api_strict_obj()
+        return [
+            np.array(x) if isinstance(x, array_api_strict.ndarray) else x
+            for x in (out,)
+        ]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         return (ret[0],)

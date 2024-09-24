@@ -16,15 +16,16 @@ from deepmd.dpmodel.utils.network import (
     make_fitting_network,
     make_multilayer_network,
 )
-from deepmd.jax.common import (
-    to_jax_array,
+
+from ..common import (
+    to_array_api_strict_array,
 )
 
 
 class NativeLayer(NativeLayerDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"}:
-            value = to_jax_array(value)
+            value = to_array_api_strict_array(value)
         return super().__setattr__(name, value)
 
 
