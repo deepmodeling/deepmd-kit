@@ -40,8 +40,6 @@ if INSTALLED_JAX:
 else:
     TypeEmbedNetJAX = object
 if INSTALLED_ARRAY_API_STRICT:
-    import array_api_strict
-
     from ..array_api_strict.utils.type_embed import TypeEmbedNet as TypeEmbedNetStrict
 else:
     TypeEmbedNetStrict = None
@@ -133,8 +131,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         out = array_api_strict_obj()
         return [
-            np.asarray(x) if hasattr(x, "__array_namespace__") else x
-            for x in (out,)
+            np.asarray(x) if hasattr(x, "__array_namespace__") else x for x in (out,)
         ]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
