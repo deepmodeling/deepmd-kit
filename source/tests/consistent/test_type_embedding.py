@@ -133,7 +133,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         out = array_api_strict_obj()
         return [
-            np.array(x) if isinstance(x, array_api_strict.ndarray) else x
+            np.asarray(x) if hasattr(x, "__array_namespace__") else x
             for x in (out,)
         ]
 
