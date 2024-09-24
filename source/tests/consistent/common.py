@@ -295,7 +295,7 @@ class CommonTest(ABC):
             return self.get_jax_ret_serialization_from_cls(obj)
         if ref == self.RefBackend.ARRAY_API_STRICT:
             obj = self.init_backend_cls(self.array_api_strict_class)
-            return self.get_array_api_ret_serialization_from_cls(obj)
+            return self.get_array_api_strict_ret_serialization_from_cls(obj)
         raise ValueError("No available reference")
 
     def test_tf_consistent_with_ref(self):

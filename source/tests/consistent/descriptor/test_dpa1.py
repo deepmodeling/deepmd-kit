@@ -39,7 +39,7 @@ else:
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.dpa1 import DescrptDPA1 as DescriptorDPA1JAX
 else:
-    DescrptDPA1JAX = None
+    DescriptorDPA1JAX = None
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.dpa1 import DescrptDPA1 as DescriptorDPA1Strict
 else:

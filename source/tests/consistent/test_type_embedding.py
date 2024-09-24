@@ -82,6 +82,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     array_api_strict_class = TypeEmbedNetStrict
     args = type_embedding_args()
     skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     @property
     def addtional_data(self) -> dict:
