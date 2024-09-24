@@ -36,7 +36,7 @@ def dynamic_metadata(
     settings: Optional[Dict[str, object]] = None,
 ):
     assert field in ["optional-dependencies", "entry-points", "scripts"]
-    _, _, find_libpython_requires, extra_scripts, tf_version, pt_version = (
+    _, _, find_libpython_requires, extra_scripts, tf_version, pt_version, pd_version = (
         get_argument_from_env()
     )
     with Path("pyproject.toml").open("rb") as f:

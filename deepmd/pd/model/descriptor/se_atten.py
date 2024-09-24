@@ -484,9 +484,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist = paddle.where(exclude_mask != 0, nlist, -1)
+        nlist = paddle.where(exclude_mask != 0, nlist, paddle.full_like(nlist, -1))
         nlist_mask = nlist != -1
-        nlist = paddle.where(nlist == -1, 0, nlist)
+        nlist = paddle.where(nlist == -1, paddle.zeros_like(nlist), nlist)
         sw = paddle.squeeze(sw, -1)
         # nf x nloc x nt -> nf x nloc x nnei x nt
         atype_tebd = extended_atype_embd[:, :nloc, :]
