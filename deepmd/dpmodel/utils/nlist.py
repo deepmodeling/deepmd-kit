@@ -273,7 +273,7 @@ def extend_coord_with_ghosts(
         maping extended index to the local index
 
     """
-    xp = array_api_compat.array_namespace(coord, atype, cell)
+    xp = array_api_compat.array_namespace(coord, atype)
     nf, nloc = atype.shape
     aidx = xp.tile(xp.arange(nloc)[xp.newaxis, :], (nf, 1))  # pylint: disable=no-explicit-dtype
     if cell is None:
