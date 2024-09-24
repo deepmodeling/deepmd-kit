@@ -21,7 +21,8 @@
     "activation_function": "tanh",
     "scaling_factor": 1.0,
     "normalize": true,
-    "temperature": 1.0
+    "temperature": 1.0,
+    "seed": 1
   },
   "fitting_net": {
     "neuron": [
