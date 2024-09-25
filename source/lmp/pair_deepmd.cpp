@@ -675,7 +675,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         if (!(eflag_atom || cvflag_atom)) {
           try {
             deep_pot_model_devi.compute(all_energy, all_force, all_force_mag,
-                                        all_virial, dcoord, dtype, dbox, dspin,
+                                        all_virial, dcoord, dspin, dtype, dbox, 
                                         nghost, lmp_list, ago, fparam, daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
             error->one(FLERR, e.what());
