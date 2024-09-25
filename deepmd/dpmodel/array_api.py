@@ -56,7 +56,10 @@ def xp_take_along_axis(arr, indices, axis):
     shape = [*shape, n]
 
     arr = xp.reshape(arr, (-1,))
-    indices = xp.reshape(indices, (-1, n))
+    if n != 0:
+        indices = xp.reshape(indices, (-1, n))
+    else:
+        indices = xp.reshape(indices, (0, 0))
 
     offset = (xp.arange(indices.shape[0]) * m)[:, xp.newaxis]
     indices = xp.reshape(offset + indices, (-1,))
