@@ -12,6 +12,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     support_array_api,
+    xp_take_along_axis,
 )
 
 
@@ -51,17 +52,8 @@ def _make_env_mat(
     mask = nlist >= 0
     nlist = nlist * xp.astype(mask, nlist.dtype)
     # nf x (nloc x nnei) x 3
-    # index = xp.reshape(nlist, (nf, -1, 1))
-    # index = xp.tile(xp.reshape(nlist, (nf, -1, 1)), (1, 1, 3))
-    # coord_r = xp.take_along_axis(coord,  xp.tile(index, (1, 1, 3)), 1)
-    # note: array api doesn't contain take_along_axis until the next version
-    # reimplement
-    nall = coord.shape[1]
-    index = xp.reshape(nlist, (nf * nloc * nnei,)) + xp.repeat(
-        (xp.arange(nf) * nall), nloc * nnei
-    )
-    coord_ = xp.reshape(coord, (-1, 3))
-    coord_r = xp.take(coord_, index, axis=0)
+    index = xp.tile(xp.reshape(nlist, (nf, -1, 1)), (1, 1, 3))
+    coord_r = xp_take_along_axis(coord, index, 1)
     # nf x nloc x nnei x 3
     coord_r = xp.reshape(coord_r, (nf, nloc, nnei, 3))
     # nf x nloc x 1 x 3

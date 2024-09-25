@@ -16,6 +16,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_take_along_axis,
+)
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
     EnvMat,
@@ -900,19 +903,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         nlist_mask = nlist != -1
         # nfnl x nnei x 1
         sw = xp.where(nlist_mask[:, :, None], sw, xp.full_like(sw, 0.0))
-        nall = atype_embd_ext.shape[1]
-        nfidx = xp.reshape(
-            xp.repeat(xp.arange(nf) * nall, nloc * nnei), (nf * nloc, nnei)
-        )
-        nlist_ = nlist + nfidx
-        nlist_masked = xp.where(nlist_mask, nlist_, nfidx)
-        # index = xp.tile(xp.reshape(nlist_masked,(nf, -1, 1)), (1, 1, self.tebd_dim))
+        nlist_masked = xp.where(nlist_mask, nlist, xp.zeros_like(nlist))
+        index = xp.tile(xp.reshape(nlist_masked, (nf, -1, 1)), (1, 1, self.tebd_dim))
         # nfnl x nnei x tebd_dim
-        # atype_embd_nlist = xp.take_along_axis(atype_embd_ext, index, axis=1)
-        index = xp.reshape(nlist_masked, [-1])
-        atype_embd_nlist = xp.take(
-            xp.reshape(atype_embd_ext, (nf * nall, self.tebd_dim)), index, axis=0
-        )
+        atype_embd_nlist = xp_take_along_axis(atype_embd_ext, index, axis=1)
         atype_embd_nlist = xp.reshape(
             atype_embd_nlist, (nf * nloc, nnei, self.tebd_dim)
         )

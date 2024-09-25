@@ -7,6 +7,10 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    xp_take_along_axis,
+)
+
 
 class AtomExcludeMask:
     """Computes the type exclusion mask for atoms."""
@@ -123,11 +127,7 @@ class PairExcludeMask:
         index = xp.reshape(
             xp.where(nlist == -1, xp.full_like(nlist, nall), nlist), (nf, nloc * nnei)
         )
-        # type_j = xp.take_along_axis(ae, index, axis=1).reshape(nf, nloc, nnei)
-        index = xp.reshape(index, [-1])
-        index += xp.repeat(xp.arange(nf) * (nall + 1), nloc * nnei)
-        type_j = xp.take(xp.reshape(ae, [-1]), index, axis=0)
-        type_j = xp.reshape(type_j, (nf, nloc, nnei))
+        type_j = xp_take_along_axis(ae, index, axis=1).reshape(nf, nloc, nnei)
         type_ij = type_i[:, :, None] + type_j
         # nf x (nloc x nnei)
         type_ij = xp.reshape(type_ij, (nf, nloc * nnei))

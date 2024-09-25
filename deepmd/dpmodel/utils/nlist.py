@@ -9,6 +9,10 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    xp_take_along_axis,
+)
+
 from .region import (
     normalize_coord,
     to_face_distance,
@@ -165,17 +169,17 @@ def nlist_distinguish_types(
     mask = nlist == -1
     tnlist_0 = nlist.copy()
     tnlist_0[mask] = 0
-    tnlist = xp.take_along_axis(tmp_atype, tnlist_0, axis=2).squeeze()
+    tnlist = xp_take_along_axis(tmp_atype, tnlist_0, axis=2).squeeze()
     tnlist = xp.where(mask, -1, tnlist)
     snsel = tnlist.shape[2]
     for ii, ss in enumerate(sel):
         pick_mask = (tnlist == ii).astype(xp.int32)
         sorted_indices = xp.argsort(-pick_mask, kind="stable", axis=-1)
         pick_mask_sorted = -xp.sort(-pick_mask, axis=-1)
-        inlist = xp.take_along_axis(nlist, sorted_indices, axis=2)
+        inlist = xp_take_along_axis(nlist, sorted_indices, axis=2)
         inlist = xp.where(~pick_mask_sorted.astype(bool), -1, inlist)
         ret_nlist.append(xp.split(inlist, [ss, snsel - ss], axis=-1)[0])
-    ret = xp.concatenate(ret_nlist, axis=-1)
+    ret = xp.concat(ret_nlist, axis=-1)
     return ret
 
 
