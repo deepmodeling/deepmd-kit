@@ -60,6 +60,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 resnet_dt=idt,
                 old_impl=False,
                 exclude_types=em,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.sea.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.sea.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
@@ -113,6 +114,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     precision=prec,
                     resnet_dt=idt,
                     old_impl=True,
+                    seed=GLOBAL_SEED,
                 ).to(env.DEVICE)
                 dd0_state_dict = dd0.sea.state_dict()
                 dd3_state_dict = dd3.sea.state_dict()
@@ -168,6 +170,7 @@ class TestDescrptSeA(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 old_impl=False,
+                seed=GLOBAL_SEED,
             )
             dd0.sea.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.sea.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)

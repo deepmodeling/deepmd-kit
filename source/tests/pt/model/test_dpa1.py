@@ -71,6 +71,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
                 old_impl=False,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
@@ -125,6 +126,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     resnet_dt=idt,
                     smooth_type_embedding=sm,
                     old_impl=True,
+                    seed=GLOBAL_SEED,
                 ).to(env.DEVICE)
                 dd0_state_dict = dd0.se_atten.state_dict()
                 dd3_state_dict = dd3.se_atten.state_dict()
@@ -210,6 +212,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
                 old_impl=False,
+                seed=GLOBAL_SEED,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
