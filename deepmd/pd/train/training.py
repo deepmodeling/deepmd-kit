@@ -401,7 +401,10 @@ class Trainer:
 
         # JIT
         if JIT:
-            self.model = paddle.jit.to_static(self.model, full_graph=False)
+            raise NotImplementedError(
+                "JIT is not supported yet when training with Paddle"
+            )
+            self.model = paddle.jit.to_static(self.model)
 
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model, self.loss, model_params=model_params)

@@ -3,6 +3,9 @@ import logging
 import os
 import queue
 import time
+from collections.abc import (
+    Iterator,
+)
 from multiprocessing.dummy import (
     Pool,
 )
@@ -95,10 +98,15 @@ class DpLoaderSet(Dataset):
                 type_map=type_map,
             )
 
-        with Pool(1) as pool:
-            self.systems: List[DeepmdDataSetForLoader] = pool.map(
-                construct_dataset, systems
+        with Pool(
+            os.cpu_count()
+            // (
+                int(os.environ["LOCAL_WORLD_SIZE"])
+                if dist.is_available() and dist.is_initialized()
+                else 1
             )
+        ) as pool:
+            self.systems = pool.map(construct_dataset, systems)
 
         self.sampler_list: List[DistributedBatchSampler] = []
         self.index = []
@@ -129,13 +137,21 @@ class DpLoaderSet(Dataset):
             if dist.is_available() and dist.is_initialized():
                 system_batch_sampler = DistributedBatchSampler(
                     system,
-                    shuffle=False,
+                    shuffle=(
+                        (not (dist.is_available() and dist.is_initialized()))
+                        and shuffle
+                    ),
+                    batch_size=int(batch_size),
                 )
                 self.sampler_list.append(system_batch_sampler)
             else:
                 system_batch_sampler = BatchSampler(
                     system,
-                    shuffle=shuffle,
+                    shuffle=(
+                        (not (dist.is_available() and dist.is_initialized()))
+                        and shuffle
+                    ),
+                    batch_size=int(batch_size),
                 )
                 self.sampler_list.append(system_batch_sampler)
             system_dataloader = DataLoader(
@@ -143,17 +159,32 @@ class DpLoaderSet(Dataset):
                 num_workers=0,  # Should be 0 to avoid too many threads forked
                 batch_sampler=system_batch_sampler,
                 collate_fn=collate_batch,
-                # shuffle=(not (dist.is_available() and dist.is_initialized()))
-                # and shuffle,
+                use_buffer_reader=False,
+                places=["cpu"],
             )
             self.dataloaders.append(system_dataloader)
             self.index.append(len(system_dataloader))
             self.total_batch += len(system_dataloader)
-        # Initialize iterator instances for DataLoader
+
+        class LazyIter:
+            """Lazy iterator to prevent fetching data when iter(item)."""
+
+            def __init__(self, item):
+                self.item = item
+
+            def __iter__(self):
+                # directly return
+                return self
+
+            def __next__(self):
+                if not isinstance(self.item, Iterator):
+                    # make iterator here lazily
+                    self.item = iter(self.item)
+                return next(self.item)
+
         self.iters = []
-        # with paddle.device("cpu"):
         for item in self.dataloaders:
-            self.iters.append(iter(item))
+            self.iters.append(LazyIter(item))
 
     def set_noise(self, noise_settings):
         # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
