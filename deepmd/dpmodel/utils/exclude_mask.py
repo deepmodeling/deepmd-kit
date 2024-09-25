@@ -127,7 +127,8 @@ class PairExcludeMask:
         index = xp.reshape(
             xp.where(nlist == -1, xp.full_like(nlist, nall), nlist), (nf, nloc * nnei)
         )
-        type_j = xp_take_along_axis(ae, index, axis=1).reshape(nf, nloc, nnei)
+        type_j = xp_take_along_axis(ae, index, axis=1)
+        type_j = xp.reshape(type_j, (nf, nloc, nnei))
         type_ij = type_i[:, :, None] + type_j
         # nf x (nloc x nnei)
         type_ij = xp.reshape(type_ij, (nf, nloc * nnei))
