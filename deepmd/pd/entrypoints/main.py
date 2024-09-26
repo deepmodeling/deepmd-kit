@@ -354,9 +354,6 @@ def freeze(FLAGS):
     ** atype [None, natoms] paddle.int64
     ** nlist [None, natoms, nnei] paddle.int32
     """
-    model.atomic_model.buffer_type_map.set_value(
-        paddle.to_tensor([ord(c) for c in model.atomic_model.type_map], dtype="int32")
-    )
     model = paddle.jit.to_static(
         model.forward_lower,
         full_graph=True,
@@ -366,12 +363,10 @@ def freeze(FLAGS):
             InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
         ],
     )
-    extra_files = {}
     paddle.jit.save(
         model,
         path=FLAGS.output,
         skip_prune_program=True,
-        # extra_files,
     )
     suffix = "json" if PIR_ENABLED.lower() in ["true", "1"] else "pdmodel"
     log.info(
@@ -445,19 +440,20 @@ def show(FLAGS):
 
 
 def change_bias(FLAGS):
-    if FLAGS.INPUT.endswith(".pdparams"):
+    if FLAGS.INPUT.endswith(".pd"):
         old_state_dict = paddle.load(FLAGS.INPUT)
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
-    # elif FLAGS.INPUT.endswith(".pdmodel"):
-    #     old_model = paddle.jit.load(FLAGS.INPUT[: -len(".pdmodel")])
+    # elif FLAGS.INPUT.endswith(".json"):
+    #     old_model = paddle.jit.load(FLAGS.INPUT[: -len(".json")])
     #     model_params_string = old_model.get_model_def_script()
     #     model_params = json.loads(model_params_string)
     #     old_state_dict = old_model.state_dict()
     #     model_state_dict = old_state_dict
     else:
         raise RuntimeError(
-            "The model provided must be a checkpoint file with a .pd extension"
+            "Paddle now do not support change bias directly from a freezed model file"
+            "Please provided a checkpoint file with a .pd extension"
             # "or a frozen model with a .pdparams extension"
         )
     multi_task = "model_dict" in model_params

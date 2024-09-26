@@ -58,17 +58,57 @@ class DPAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map
-        self.register_buffer(
-            "buffer_type_map",
-            paddle.to_tensor([ord(c) for c in self.type_map], dtype="int32"),
-        )
-        self.buffer_type_map.name = "type_map"
+
         self.ntypes = ntypes
         self.descriptor = descriptor
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
         super().init_out_stat()
+
+        # specify manually for access by name in C++ inference
+
+        # register 'type_map' as buffer
+        def string_to_array(s: str) -> int:
+            return [ord(c) for c in s]
+
+        self.register_buffer(
+            "buffer_type_map",
+            paddle.to_tensor(string_to_array(" ".join(self.type_map)), dtype="int32"),
+        )
+        self.buffer_type_map.name = "buffer_type_map"
+        # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
+        self.register_buffer(
+            "buffer_has_message_passing",
+            paddle.to_tensor([self.has_message_passing()], dtype="int32"),
+        )
+        self.buffer_has_message_passing.name = "buffer_has_message_passing"
+        # register 'ntypes' as buffer
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor([self.ntypes], dtype="int32")
+        )
+        self.buffer_ntypes.name = "buffer_ntypes"
+        # register 'rcut' as buffer
+        self.register_buffer(
+            "buffer_rcut", paddle.to_tensor([self.rcut], dtype="float64")
+        )
+        self.buffer_rcut.name = "buffer_rcut"
+        # register 'dfparam' as buffer
+        self.register_buffer(
+            "buffer_dfparam", paddle.to_tensor([self.get_dim_fparam()], dtype="int32")
+        )
+        self.buffer_dfparam.name = "buffer_dfparam"
+        # register 'daparam' as buffer
+        self.register_buffer(
+            "buffer_daparam", paddle.to_tensor([self.get_dim_aparam()], dtype="int32")
+        )
+        self.buffer_daparam.name = "buffer_daparam"
+        # register 'aparam_nall' as buffer
+        self.register_buffer(
+            "buffer_aparam_nall",
+            paddle.to_tensor([self.is_aparam_nall()], dtype="int32"),
+        )
+        self.buffer_aparam_nall.name = "buffer_aparam_nall"
 
     # @paddle.jit.export
     def fitting_output_def(self) -> FittingOutputDef:

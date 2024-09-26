@@ -6,22 +6,30 @@
 #include <stdexcept>
 #include <numeric>
 
-#include "AtomMap.h"
-#include "device.h"
 #include "common.h"
-#include "paddle/include/paddle_inference_api.h"
+#include "device.h"
 
 using namespace deepmd;
 
-DeepPotPD::DeepPotPD() : inited(false) {}
-
-DeepPotPD::DeepPotPD(const std::string& model,
-                 const int& gpu_rank,
-                 const std::string& file_content)
-    : inited(false) {
-  init(model, gpu_rank, file_content);
+std::vector<int> createNlistTensor(const std::vector<std::vector<int>>& data) {
+  std::vector<int> ret;
+  for (const auto& row : data) {
+    ret.insert(ret.end(), row.begin(), row.end());
+  }
+  return ret;
 }
 
+DeepPotPD::DeepPotPD() : inited(false) {}
+DeepPotPD::DeepPotPD(const std::string& model,
+                     const int& gpu_rank,
+                     const std::string& file_content)
+    : inited(false) {
+  try {
+    init(model, gpu_rank, file_content);
+  } catch (...) {
+    throw;
+  }
+}
 void DeepPotPD::init(const std::string& model,
                    const int& gpu_rank,
                    const std::string& file_content) {
@@ -32,92 +40,68 @@ void DeepPotPD::init(const std::string& model,
     return;
   }
   // deepmd::load_op_library();
-  int gpu_num = 1; // hard code here
+  int gpu_num = 1; // Only support 1 GPU now.
   if (gpu_num > 0) {
     gpu_id = gpu_rank % gpu_num;
   } else {
     gpu_id = 0;
   }
 
+  // initialize inference config
+  config = std::make_shared<paddle_infer::Config>();
+  config->DisableGlogInfo();
+  config->EnableNewExecutor(true);
+  config->EnableNewIR(true);
+
+  // loading inference model
   std::string pdmodel_path;
   std::string pdiparams_path;
-  bool use_paddle_inference = false;
-  bool use_pir = false;
-
   if (model.find(".json") != std::string::npos) {
-    use_pir = true;
     pdmodel_path = model;
-    std::string tmp = model;
-    pdiparams_path = tmp.replace(model.find(".json"), 5, std::string(".pdiparams"));
-    use_paddle_inference = true;
+    pdiparams_path = model;
+    pdiparams_path.replace(pdiparams_path.find(".json"), 5, std::string(".pdiparams"));
   } else if (model.find(".pdmodel") != std::string::npos){
     pdmodel_path = model;
-    std::string tmp = model;
-    pdiparams_path = tmp.replace(model.find(".pdmodel"), 8, std::string(".pdiparams"));
-    use_paddle_inference = true;
+    pdiparams_path = model;
+    pdiparams_path.replace(pdiparams_path.find(".pdmodel"), 8, std::string(".pdiparams"));
   } else {
-    throw "[Error] Not found any inference model in";
+    throw deepmd::deepmd_exception("Given inference model: " + model + " do not exist, please check it.");
+  }
+  config->SetModel(pdmodel_path, pdiparams_path);
+  config->EnableUseGpu(4096, 0); // annotate it if use cpu, default use gpu with 4G mem
+  gpu_enabled = config->use_gpu();
+  if (!gpu_enabled) {
+    config->DisableGpu();
+    std::cout << "load model from: " << model << " to cpu " << std::endl;
+  } else {
+    std::cout << "load model from: " << model << " to gpu " << gpu_id
+              << std::endl;
   }
 
-  int math_lib_num_threads = 1;
-
-  if (use_paddle_inference) {
-    config = std::make_shared<paddle_infer::Config>();
-    config->DisableGlogInfo();
-    // config->SwitchIrDebug(true);
-    if (use_pir) {
-      config->EnableNewExecutor(true);
-      config->EnableNewIR(true);
-    }
-    config->SetModel(pdmodel_path, pdiparams_path);
-    // config->SwitchIrOptim(true);
-    config->EnableUseGpu(8192, 0);
-    // config->EnableMKLDNN();
-    // config->EnableMemoryOptim();
-    // config->EnableProfile();
-    predictor = paddle_infer::CreatePredictor(*config);
+  // get_env_nthreads(num_intra_nthreads,
+  //                  num_inter_nthreads);  // need to be fixed as
+  //                                        // DP_INTRA_OP_PARALLELISM_THREADS
+  // both set to 1 now.
+  // num_intra_nthreads = 1;
+  num_inter_nthreads = 1;
+  if (num_inter_nthreads) {
+    config->SetCpuMathLibraryNumThreads(num_inter_nthreads);
   }
-  rcut = double(6.0);
-  ntypes = 2;
+
+  predictor = paddle_infer::CreatePredictor(*config);
+
+
+  // initialize hyper params from model buffers
   ntypes_spin = 0;
-  dfparam = 0;
-  daparam = 0;
-  aparam_nall = false;
-
+  DeepPotPD::get_buffer<int>("buffer_has_message_passing", do_message_passing);
+  DeepPotPD::get_buffer<double>("buffer_rcut", rcut);
+  DeepPotPD::get_buffer<int>("buffer_ntypes", ntypes);
+  DeepPotPD::get_buffer<int>("buffer_dfparam", dfparam);
+  DeepPotPD::get_buffer<int>("buffer_daparam", daparam);
+  DeepPotPD::get_buffer<int>("buffer_aparam_nall", aparam_nall);
   inited = true;
 }
-
 DeepPotPD::~DeepPotPD() {}
-
-template <typename VALUETYPE>
-void DeepPotPD::validate_fparam_aparam(
-    const int nframes,
-    const int& nloc,
-    const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam) const {
-  if (fparam.size() != dfparam && fparam.size() != nframes * dfparam) {
-    throw deepmd::deepmd_exception(
-        "the dim of frame parameter provided is not consistent with what the "
-        "model uses");
-  }
-
-  if (aparam.size() != daparam * nloc &&
-      aparam.size() != nframes * daparam * nloc) {
-    throw deepmd::deepmd_exception(
-        "the dim of atom parameter provided is not consistent with what the "
-        "model uses");
-  }
-}
-
-std::vector<int> createNlistTensor(const std::vector<std::vector<int>>& data) {
-  std::vector<int> ret;
-
-  for (const auto& row : data) {
-    ret.insert(ret.end(), row.begin(), row.end());
-  }
-
-  return ret;
-}
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPD::compute(ENERGYVTYPE& ener,
@@ -135,7 +119,6 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
                         const std::vector<VALUETYPE>& aparam,
                         const bool atomic) {
   int natoms = atype.size();
-
   // select real atoms
   std::vector<VALUETYPE> dcoord, dforce, aparam_, datom_energy, datom_virial;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -160,6 +143,9 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing == 1 && nghost > 0) {
+      throw deepmd::deepmd_exception(
+        "(do_message_passing == 1 && nghost > 0) is not supported yet."
+      );
       int nswap = lmp_list.nswap;
       auto sendproc_tensor = predictor->GetInputHandle("sendproc");
       sendproc_tensor->Reshape({nswap});
@@ -191,26 +177,28 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     }
   }
   std::vector<int> firstneigh = createNlistTensor(nlist_data.jlist);
-  auto firstneigh_tensor = predictor->GetInputHandle("nlist");
+  firstneigh_tensor = predictor->GetInputHandle("nlist");
   firstneigh_tensor->Reshape({1, nloc, (int)firstneigh.size() / (int)nloc});
   firstneigh_tensor->CopyFromCpu(firstneigh.data());
   bool do_atom_virial_tensor = atomic;
-  // paddle_infer::Tensor fparam_tensor;
-  // if (!fparam.empty()) {
-  //   fparam_tensor = predictor->GetInputHandle("fparam");
-  //   fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
-  //   fparam_tensor->CopyFromCpu((fparam.data()));
-  // }
-  // paddle_infer::Tensor aparam_tensor;
-  // if (!aparam_.empty()) {
-  //   aparam_tensor = predictor->GetInputHandle("aparam");
-  //   aparam_tensor->Reshape({1, lmp_list.inum,
-  //            static_cast<int>(aparam_.size()) / lmp_list.inum});
-  //   aparam_tensor->CopyFromCpu((aparam_.data()));
-  // }
+  std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
+  if (!fparam.empty()) {
+    throw deepmd::deepmd_exception("fparam is not supported as input yet.");
+    // fparam_tensor = predictor->GetInputHandle("fparam");
+    // fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
+    // fparam_tensor->CopyFromCpu((fparam.data()));
+  }
+  std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
+  if (!aparam_.empty()) {
+    throw deepmd::deepmd_exception("aparam is not supported as input yet.");
+    // aparam_tensor = predictor->GetInputHandle("aparam");
+    // aparam_tensor->Reshape({1, lmp_list.inum,
+    //          static_cast<int>(aparam_.size()) / lmp_list.inum});
+    // aparam_tensor->CopyFromCpu((aparam_.data()));
+  }
 
   if (!predictor->Run()) {
-    throw deepmd::deepmd_exception("Paddle inference failed");
+    throw deepmd::deepmd_exception("Paddle inference run failed");
   }
   auto output_names = predictor->GetOutputNames();
 
@@ -246,21 +234,21 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   select_map<VALUETYPE>(force, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
   if (atomic) {
-    auto atom_virial_ = predictor->GetOutputHandle("extended_virial");
-    auto atom_energy_ = predictor->GetOutputHandle("atom_energy");
-    datom_energy.resize(nall_real,
-                        0.0);  // resize to nall to be consistenet with TF.
-    atom_energy_->CopyToCpu(datom_energy.data());
-    atom_virial_->CopyToCpu(datom_virial.data());
-    atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
-    atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
-    select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
-                          fwd_map.size(), nall_real);
-    select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
-                          fwd_map.size(), nall_real);
+    throw "atomic virial is not supported as output yet.";
+    // auto atom_virial_ = predictor->GetOutputHandle("extended_virial");
+    // auto atom_energy_ = predictor->GetOutputHandle("atom_energy");
+    // datom_energy.resize(nall_real,
+    //                     0.0);  // resize to nall to be consistenet with TF.
+    // atom_energy_->CopyToCpu(datom_energy.data());
+    // atom_virial_->CopyToCpu(datom_virial.data());
+    // atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
+    // atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+    // select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
+    //                       fwd_map.size(), nall_real);
+    // select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
+    //                       fwd_map.size(), nall_real);
   }
 }
-
 template void DeepPotPD::compute<double, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& dener,
     std::vector<double>& force,
@@ -294,7 +282,6 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
     const bool atomic);
 
 // ENERGYVTYPE: std::vector<ENERGYTYPE> or ENERGYTYPE
-
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPD::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
@@ -329,20 +316,22 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   }
   std::unique_ptr<paddle_infer::Tensor> fparam_tensor;
   if (!fparam.empty()) {
-    fparam_tensor = predictor->GetInputHandle("box");
-    fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
-    fparam_tensor->CopyFromCpu((fparam.data()));
+    throw deepmd::deepmd_exception("fparam is not supported as input yet.");
+    // fparam_tensor = predictor->GetInputHandle("box");
+    // fparam_tensor->Reshape({1, static_cast<int>(fparam.size())});
+    // fparam_tensor->CopyFromCpu((fparam.data()));
   }
   std::unique_ptr<paddle_infer::Tensor> aparam_tensor;
-  if (!fparam.empty()) {
-    aparam_tensor = predictor->GetInputHandle("box");
-    aparam_tensor->Reshape({1, natoms, static_cast<int>(aparam.size()) / natoms});
-    aparam_tensor->CopyFromCpu((aparam.data()));
+  if (!aparam.empty()) {
+    throw deepmd::deepmd_exception("fparam is not supported as input yet.");
+    // aparam_tensor = predictor->GetInputHandle("box");
+    // aparam_tensor->Reshape({1, natoms, static_cast<int>(aparam.size()) / natoms});
+    // aparam_tensor->CopyFromCpu((aparam.data()));
   }
 
   bool do_atom_virial_tensor = atomic;
   if (!predictor->Run()) {
-    throw deepmd::deepmd_exception("Paddle inference failed");
+    throw deepmd::deepmd_exception("Paddle inference run failed");
   }
 
   auto output_names = predictor->GetOutputNames();
@@ -355,10 +344,11 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
   virial_->CopyToCpu(virial.data());
 
   if (atomic) {
-    auto atom_energy_ = predictor->GetOutputHandle(output_names[4]);
-    auto atom_virial_ = predictor->GetOutputHandle(output_names[5]);
-    atom_energy_->CopyToCpu(atom_energy.data());
-    atom_virial_->CopyToCpu(atom_virial.data());
+    throw deepmd::deepmd_exception("atomic virial is not supported as output yet.");
+    // auto atom_energy_ = predictor->GetOutputHandle(output_names[4]);
+    // auto atom_virial_ = predictor->GetOutputHandle(output_names[5]);
+    // atom_energy_->CopyToCpu(atom_energy.data());
+    // atom_virial_->CopyToCpu(atom_virial.data());
   }
 }
 
@@ -388,92 +378,35 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& aparam,
     const bool atomic);
 
-// mixed type
-
-template <typename VALUETYPE, typename ENERGYVTYPE>
-void DeepPotPD::compute_mixed_type(ENERGYVTYPE& dener,
-                                   std::vector<VALUETYPE>& dforce_,
-                                   std::vector<VALUETYPE>& dvirial,
-                                   std::vector<VALUETYPE>& datom_energy_,
-                                   std::vector<VALUETYPE>& datom_virial_,
-                                   const int& nframes,
-                                   const std::vector<VALUETYPE>& dcoord_,
-                                   const std::vector<int>& datype_,
-                                   const std::vector<VALUETYPE>& dbox,
-                                   const std::vector<VALUETYPE>& fparam_,
-                                   const std::vector<VALUETYPE>& aparam_,
-                                   const bool atomic) {
-  // int nloc = datype_.size() / nframes;
-  // // here atommap only used to get nloc
-  // atommap = deepmd::AtomMap(datype_.begin(), datype_.begin() + nloc);
-  // std::vector<VALUETYPE> fparam;
-  // std::vector<VALUETYPE> aparam;
-  // validate_fparam_aparam(nframes, nloc, fparam_, aparam_);
-  // tile_fparam_aparam(fparam, nframes, dfparam, fparam_);
-  // tile_fparam_aparam(aparam, nframes, nloc * daparam, aparam_);
-
-  // if (dtype == paddle_infer::DataType::FLOAT64) {
-  //   int nloc = predictor_input_tensors_mixed_type<double>(
-  //       predictor, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-  //       fparam, aparam, atommap, aparam_nall);
-  //   if (atomic) {
-  //     run_model<double>(dener, dforce_, dvirial, datom_energy_, datom_virial_, predictor,
-  //                       atommap, nframes);
-  //   } else {
-  //     run_model<double>(dener, dforce_, dvirial, predictor,
-  //                       atommap, nframes);
-  //   }
-  // } else {
-  //   int nloc = predictor_input_tensors_mixed_type<double>(
-  //       predictor, nframes, dcoord_, ntypes, datype_, dbox, cell_size,
-  //       fparam, aparam, atommap, aparam_nall);
-  //   if (atomic) {
-  //     run_model<float>(dener, dforce_, dvirial, datom_energy_, datom_virial_, predictor,
-  //                      atommap, nframes);
-  //   } else {
-  //     run_model<float>(dener, dforce_, dvirial, predictor, atommap,
-  //                      nframes);
-  //   }
-  // }
+/* general function except for string buffer */
+template<typename BUFFERVTYPE>
+void DeepPotPD::get_buffer(const std::string &buffer_name, std::vector<BUFFERVTYPE> &buffer_arr) {
+  auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
+  auto buffer_shape = buffer_tensor->shape();
+  int buffer_size = std::accumulate(buffer_shape.begin(), buffer_shape.end(), 1, std::multiplies<int>());
+  buffer_arr.resize(buffer_size);
+  buffer_tensor->CopyToCpu(buffer_arr.data());
 }
 
-template void DeepPotPD::compute_mixed_type<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& ener,
-    std::vector<double>& force,
-    std::vector<double>& virial,
-    std::vector<double>& atom_energy,
-    std::vector<double>& atom_virial,
-    const int& nframes,
-    const std::vector<double>& coord,
-    const std::vector<int>& dtype,
-    const std::vector<double>& box,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam,
-    const bool atomic);
-
-template void DeepPotPD::compute_mixed_type<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& ener,
-    std::vector<float>& force,
-    std::vector<float>& virial,
-    std::vector<float>& atom_energy,
-    std::vector<float>& atom_virial,
-    const int& nframes,
-    const std::vector<float>& coord,
-    const std::vector<int>& atype,
-    const std::vector<float>& box,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam,
-    const bool atomic);
-
-
-template <class VT>
-VT DeepPotPD::get_scalar(const std::string& name) const {
-  return predictor_get_scalar<VT>(predictor, name);
+template<typename BUFFERTYPE>
+void DeepPotPD::get_buffer(const std::string &buffer_name, BUFFERTYPE &buffer) {
+  std::vector<BUFFERTYPE> buffer_arr(1);
+  DeepPotPD::get_buffer<BUFFERTYPE>(buffer_name, buffer_arr);
+  buffer = buffer_arr[0];
 }
 
+/* type_map is regarded as a special string buffer
+that need to be postprocessed */
 void DeepPotPD::get_type_map(std::string& type_map) {
-  type_map = "O H ";
-  // type_map = predictor_get_scalar<std::string>(predictor, "type_map");
+  auto type_map_tensor = predictor->GetOutputHandle("buffer_type_map");
+  auto type_map_shape = type_map_tensor->shape();
+  int type_map_size = std::accumulate(type_map_shape.begin(), type_map_shape.end(), 1, std::multiplies<int>());
+
+  std::vector<int> type_map_arr(type_map_size, 0);
+  type_map_tensor->CopyToCpu(type_map_arr.data());
+  for (auto char_c: type_map_arr) {
+    type_map += std::string(1, char_c);
+  }
 }
 
 // forward to template method
@@ -551,8 +484,7 @@ void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<double>& fparam,
                                     const std::vector<double>& aparam,
                                     const bool atomic) {
-  compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-                     coord, atype, box, fparam, aparam, atomic);
+  throw deepmd::deepmd_exception("computew_mixed_type is not implemented in paddle backend yet");
 }
 void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<float>& force,
@@ -566,7 +498,6 @@ void DeepPotPD::computew_mixed_type(std::vector<double>& ener,
                                     const std::vector<float>& fparam,
                                     const std::vector<float>& aparam,
                                     const bool atomic) {
-  compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
-                     coord, atype, box, fparam, aparam, atomic);
+  throw deepmd::deepmd_exception("computew_mixed_type is not implemented in paddle backend yet");
 }
 #endif

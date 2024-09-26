@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
-// #include "paddle/include/paddle_inference_api.h"
-// #include "paddle/extension.h"
-// #include "paddle/phi/backends/all_context.h"
+#include <paddle/include/paddle_inference_api.h>
 
 #include "DeepPot.h"
-#include "common.h"
-#include "commonPD.h"
-#include "neighbor_list.h"
 
 namespace deepmd {
 /**
@@ -240,6 +235,16 @@ class DeepPotPD : public DeepPotBase {
   void get_type_map(std::string& type_map);
 
   /**
+   * @brief Get the type map (element name of the atom types) of this model.
+   * @param[out] type_map The type map of this model.
+   **/
+  template<typename BUFFERTYPE>
+  void get_buffer(const std::string &buffer_name, std::vector<BUFFERTYPE> &buffer_arr);
+
+  template<typename BUFFERTYPE>
+  void get_buffer(const std::string &buffer_name, BUFFERTYPE &buffer_arr);
+
+  /**
    * @brief Get whether the atom dimension of aparam is nall instead of fparam.
    * @param[out] aparam_nall whether the atom dimension of aparam is nall
    *instead of fparam.
@@ -328,65 +333,23 @@ class DeepPotPD : public DeepPotBase {
  private:
   int num_intra_nthreads, num_inter_nthreads;
   bool inited;
-
-  template <class VT>
-  VT get_scalar(const std::string& name) const;
-
   int ntypes;
   int ntypes_spin;
   int dfparam;
   int daparam;
-  bool aparam_nall;
+  int aparam_nall;
   // copy neighbor list info from host
-  std::shared_ptr<paddle_infer::Predictor> predictor = nullptr;
-  std::shared_ptr<paddle_infer::Config> config = nullptr;
+  std::shared_ptr<paddle_infer::Config> config;
+  std::shared_ptr<paddle_infer::Predictor> predictor;
   double rcut;
-  double cell_size;
   NeighborListData nlist_data;
   int max_num_neighbors;
-  InputNlist nlist;
-  AtomMap atommap;
-  int gpu_id = 0;
-  int do_message_passing = 0;  // 1:dpa2 model 0:others
-  bool gpu_enabled = true;
-  int dtype = paddle_infer::DataType::FLOAT64;
-  // paddle::Tensor firstneigh_tensor;
+  int gpu_id;
+  // use int instead bool for problems may meets with vector<bool>
+  int do_message_passing;  // 1:dpa2 model 0:others
+  bool gpu_enabled;
+  std::unique_ptr<paddle_infer::Tensor> firstneigh_tensor;
   // std::unordered_map<std::string, paddle::Tensor> comm_dict;
-  /**
-   * @brief Translate Paddle exceptions to the DeePMD-kit exception.
-   * @param[in] f The function to run.
-   * @example translate_error([&](){...});
-   */
-  // void translate_error(std::function<void()> f);
-  /**
-   * @brief Validate the size of frame and atomic parameters.
-   * @param[in] nframes The number of frames.
-   * @param[in] nloc The number of local atoms.
-   * @param[in] fparam The frame parameter.
-   * @param[in] aparam The atomic parameter.
-   * @tparam VALUETYPE The type of the parameters, double or float.
-   */
-  template <typename VALUETYPE>
-  void validate_fparam_aparam(const int nframes,
-                              const int& nloc,
-                              const std::vector<VALUETYPE>& fparam,
-                              const std::vector<VALUETYPE>& aparam) const;
-  /**
-   * @brief Tile the frame or atomic parameters if there is only
-   * a single frame of frame or atomic parameters.
-   * @param[out] out_param The tiled frame or atomic parameters.
-   * @param[in] nframes The number of frames.
-   * @param[in] dparam The dimension of the frame or atomic parameters in a
-   * frame.
-   * @param[in] param The frame or atomic parameters.
-   * @tparam VALUETYPE The type of the parameters, double or float.
-   */
-  template <typename VALUETYPE>
-  void tile_fparam_aparam(std::vector<VALUETYPE>& out_param,
-                          const int& nframes,
-                          const int& dparam,
-                          const std::vector<VALUETYPE>& param) const;
-
 };
 
 }  // namespace deepmd
