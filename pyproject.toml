@@ -414,4 +414,4 @@ plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
 [tool.pylint.'MESSAGES CONTROL']
 load-plugins = "deepmd_checker"
 disable = "all"
-enable = "EDP01,EDP02"
+enable = "E8001,E8002"
