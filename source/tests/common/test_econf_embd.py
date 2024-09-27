@@ -4,6 +4,7 @@ import unittest
 from deepmd.utils.econf_embd import (
     electronic_configuration_embedding,
     make_econf_embedding,
+    normalized_electronic_configuration_embedding,
     transform_to_spin_rep,
 )
 
@@ -55,3 +56,7 @@ class TestEConfEmbd(unittest.TestCase):
         expected_res = [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,-1,1,-1,1,-1,1,-1,1,1,1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]
         # fmt: on
         self.assertEqual(list(res), expected_res)
+        res = normalized_electronic_configuration_embedding["Fe"]
+        self.assertEqual(
+            list(res), [ii / len(expected_res) ** 0.5 for ii in expected_res]
+        )

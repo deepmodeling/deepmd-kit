@@ -4,6 +4,13 @@ from mendeleev import (
     element,
 )
 
+__all__ = [
+    "electronic_configuration_embedding",
+    "normalized_electronic_configuration_embedding",
+    "make_econf_embedding",
+    "transform_to_spin_rep",
+]
+
 ###
 # made by command
 # ret = make_econf_embedding(type_map, flatten=True)
@@ -171,6 +178,16 @@ maxm = 2 * maxl + 1
 
 type_map = list(electronic_configuration_embedding.keys())
 ECONF_DIM = electronic_configuration_embedding[type_map[0]].shape[0]
+
+
+def normalize_vec_length(res):
+    scale = 1.0 / np.sqrt(ECONF_DIM)
+    return {kk: scale * vv for kk, vv in res.items()}
+
+
+normalized_electronic_configuration_embedding = normalize_vec_length(
+    electronic_configuration_embedding
+)
 
 
 def make_empty_list_vec():

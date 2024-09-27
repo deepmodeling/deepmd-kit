@@ -222,7 +222,9 @@ class TypeEmbedNet(NativeOP):
 def get_econf_tebd(type_map, precision: str = "default"):
     from deepmd.utils.econf_embd import (
         ECONF_DIM,
-        electronic_configuration_embedding,
+    )
+    from deepmd.utils.econf_embd import (
+        normalized_electronic_configuration_embedding as electronic_configuration_embedding,
     )
     from deepmd.utils.econf_embd import type_map as periodic_table
 
