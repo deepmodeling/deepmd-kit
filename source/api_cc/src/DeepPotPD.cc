@@ -379,23 +379,6 @@ template void DeepPotPD::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& aparam,
     const bool atomic);
 
-/* general function except for string buffer */
-template<typename BUFFERVTYPE>
-void DeepPotPD::get_buffer(const std::string &buffer_name, std::vector<BUFFERVTYPE> &buffer_arr) {
-  auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
-  auto buffer_shape = buffer_tensor->shape();
-  int buffer_size = std::accumulate(buffer_shape.begin(), buffer_shape.end(), 1, std::multiplies<int>());
-  buffer_arr.resize(buffer_size);
-  buffer_tensor->CopyToCpu(buffer_arr.data());
-}
-
-template<typename BUFFERTYPE>
-void DeepPotPD::get_buffer(const std::string &buffer_name, BUFFERTYPE &buffer) {
-  std::vector<BUFFERTYPE> buffer_arr(1);
-  DeepPotPD::get_buffer<BUFFERTYPE>(buffer_name, buffer_arr);
-  buffer = buffer_arr[0];
-}
-
 /* type_map is regarded as a special string buffer
 that need to be postprocessed */
 void DeepPotPD::get_type_map(std::string& type_map) {
@@ -408,6 +391,23 @@ void DeepPotPD::get_type_map(std::string& type_map) {
   for (auto char_c: type_map_arr) {
     type_map += std::string(1, char_c);
   }
+}
+
+/* general function except for string buffer */
+template<typename BUFFERTYPE>
+void DeepPotPD::get_buffer(const std::string &buffer_name, std::vector<BUFFERTYPE> &buffer_array) {
+  auto buffer_tensor = predictor->GetOutputHandle(buffer_name);
+  auto buffer_shape = buffer_tensor->shape();
+  int buffer_size = std::accumulate(buffer_shape.begin(), buffer_shape.end(), 1, std::multiplies<int>());
+  buffer_array.resize(buffer_size);
+  buffer_tensor->CopyToCpu(buffer_array.data());
+}
+
+template<typename BUFFERTYPE>
+void DeepPotPD::get_buffer(const std::string &buffer_name, BUFFERTYPE &buffer_scalar) {
+  std::vector<BUFFERTYPE> buffer_array(1);
+  DeepPotPD::get_buffer<BUFFERTYPE>(buffer_name, buffer_array);
+  buffer_scalar = buffer_array[0];
 }
 
 // forward to template method
