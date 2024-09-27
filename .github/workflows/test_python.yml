@@ -28,7 +28,7 @@ jobs:
         source/install/uv_with_retry.sh pip install --system mpich
         source/install/uv_with_retry.sh pip install --system "torch==2.3.0+cpu.cxx11.abi" -i https://download.pytorch.org/whl/
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
-        source/install/uv_with_retry.sh pip install --system --only-binary=horovod -e .[cpu,test] horovod[tensorflow-cpu] mpi4py
+        source/install/uv_with_retry.sh pip install --system --only-binary=horovod -e .[cpu,test,jax] horovod[tensorflow-cpu] mpi4py
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
