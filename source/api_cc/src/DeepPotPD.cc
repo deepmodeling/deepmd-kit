@@ -39,8 +39,11 @@ void DeepPotPD::init(const std::string& model,
               << std::endl;
     return;
   }
+  // NOTE: There is no custom operators need to be loaded now.
   // deepmd::load_op_library();
-  int gpu_num = 1; // Only support 1 GPU now.
+
+  // NOTE: Only support 1 GPU now.
+  int gpu_num = 1;
   if (gpu_num > 0) {
     gpu_id = gpu_rank % gpu_num;
   } else {
@@ -74,14 +77,13 @@ void DeepPotPD::init(const std::string& model,
     config->DisableGpu();
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
-    std::cout << "load model from: " << model << " to gpu " << gpu_id
-              << std::endl;
+    std::cout << "load model from: " << model << " to gpu " << gpu_id << std::endl;
   }
 
+  // NOTE: Both set to 1 now.
   // get_env_nthreads(num_intra_nthreads,
   //                  num_inter_nthreads);  // need to be fixed as
   //                                        // DP_INTRA_OP_PARALLELISM_THREADS
-  // both set to 1 now.
   // num_intra_nthreads = 1;
   num_inter_nthreads = 1;
   if (num_inter_nthreads) {
@@ -89,7 +91,6 @@ void DeepPotPD::init(const std::string& model,
   }
 
   predictor = paddle_infer::CreatePredictor(*config);
-
 
   // initialize hyper params from model buffers
   ntypes_spin = 0;
@@ -172,7 +173,7 @@ void DeepPotPD::compute(ENERGYVTYPE& ener,
     }
     if (do_message_passing == 1 && nghost == 0) {
       throw deepmd::deepmd_exception(
-        "do_message_passing == 1 && nghost == 0"
+        "(do_message_passing == 1 && nghost == 0) is not supported yet."
       );
     }
   }
