@@ -229,9 +229,8 @@ def transform_to_spin_rep(res):
             raise ValueError(f"wrong input value {ii}")
 
     for kk, vv in res.items():
-        new_vv = np.array([], dtype=np.int32)
-        for ii in vv:
-            new_vv = np.append(new_vv, transform(ii))
+        transformed_list = [spin for ii in vv for spin in transform(ii)]
+        new_vv = np.array(transformed_list, dtype=np.int32)
         ret[kk] = new_vv
     return ret
 
