@@ -32,3 +32,23 @@ $ dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
 ```
 
 The output model is called `model_branch1.pth`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.
+
+:::
+
+:::{tab-item} Paddle {{ paddle_icon }}
+
+```bash
+$ dp --pd freeze -o model.json
+DEEPMD INFO    Paddle inference model has been exported to: model.json(.pdiparams)
+```
+
+in the folder where the model is trained. The output model is called `model.json` and `model.pdiparams`.
+
+In [multi-task mode](../train/multi-task-training-pt.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
+to specify which model branch you want to freeze:
+
+```bash
+$ dp --pd freeze -o model_branch1.json --head CHOSEN_BRANCH
+```
+
+The output model is called `model_branch1.json`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.

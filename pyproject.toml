@@ -204,7 +204,7 @@ replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 [tool.cibuildwheel]
 test-command = [
     "python -m deepmd -h",
-    """python -c "import deepmd.tf;import deepmd.pt" """,
+    """python -c "import deepmd.tf;import deepmd.pt;import deepmd.pd" """,
     "dp -h",
     "dp_ipi",
     "pytest {project}/source/tests/tf/test_lammps.py"
@@ -387,8 +387,10 @@ convention = "numpy"
 banned-module-level-imports = [
     "deepmd.tf",
     "deepmd.pt",
+    "deepmd.pd",
     "tensorflow",
     "torch",
+    "paddle",
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
@@ -398,9 +400,12 @@ banned-module-level-imports = [
 # Also ignore `E402` in all `__init__.py` files.
 "deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253"]
+"deepmd/pd/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
+"source/tests/pd/**" = ["TID253"]
 "source/tests/universal/pt/**" = ["TID253"]
+"source/tests/universal/pd/**" = ["TID253"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected

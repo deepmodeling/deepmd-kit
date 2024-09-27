@@ -1,7 +1,7 @@
-# Parallel training {{ tensorflow_icon }} {{ pytorch_icon }}
+# Parallel training {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 :::
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
@@ -187,3 +187,83 @@ torchrun --rdzv_endpoint=node0:12321 --nnodes=2 --nproc_per_node=4 --node_rank=1
 > **Note** for developers: `torchrun` by default passes settings as environment variables [(list here)](https://pytorch.org/docs/stable/elastic/run.html#environment-variables).
 
 > To check forward, backward, and communication time, please set env var `TORCH_CPP_LOG_LEVEL=INFO TORCH_DISTRIBUTED_DEBUG=DETAIL`. More details can be found [here](https://pytorch.org/docs/stable/distributed.html#logging).
+
+## Paddle Implementation {{ paddle_icon }}
+
+Currently, parallel training in paddle version is implemented in the form of Paddle Distributed Data Parallelism [DDP](https://paddle.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
+DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
+
+### Dataloader and Dataset
+
+One of the major differences between two backends during training is that the Paddle version employs a multi-threaded data loading utility [DataLoader](https://paddle.org/docs/stable/data.html).
+We utilize the Paddle framework and have designed and implemented a multiprocessing data processing and loading system called DpLoaderSet based on torch DataLoader and Dataset.
+
+First, we establish a DeepmdData class for each system, which is consistent with the TensorFlow version in this level. Then, we create a dataloader for each system, resulting in the same number of dataloaders as the number of systems. Next, we create a dataset for the dataloaders obtained in the previous step. This allows us to query the data for each system through this dataset, while the iteration pointers for each system are maintained by their respective dataloaders. Finally, a dataloader is created for the outermost dataset.
+
+We achieve custom sampling methods using a weighted sampler. The length of the sampler is set to total_batch_num \* num_workers.The parameter "num_workers" defines the number of threads involved in multi-threaded loading, which can be modified by setting the environment variable NUM_WORKERS (default: min(8, ncpus)).
+
+> **Note** The underlying dataloader will use a distributed sampler to ensure that each GPU receives batches with different content in parallel mode, which will use sequential sampler in serial mode. In the TensorFlow version, Horovod shuffles the dataset using different random seeds for the same purpose..
+
+```mermaid
+flowchart LR
+
+    subgraph systems
+        subgraph system1
+            direction LR
+            frame1[frame 1]
+            frame2[frame 2]
+        end
+
+        subgraph system2
+            direction LR
+            frame3[frame 3]
+            frame4[frame 4]
+            frame5[frame 5]
+        end
+    end
+
+    subgraph dataset
+        dataset1[dataset 1]
+        dataset2[dataset 2]
+    end
+    system1 -- frames --> dataset1
+    system2 --> dataset2
+
+    subgraph distribted sampler
+        ds1[distributed sampler 1]
+        ds2[distributed sampler 2]
+    end
+    dataset1 --> ds1
+    dataset2 --> ds2
+
+    subgraph dataloader
+        dataloader1[dataloader 1]
+        dataloader2[dataloader 2]
+    end
+    ds1 -- mini batch --> dataloader1
+    ds2 --> dataloader2
+
+    subgraph index[index on Rank 0]
+        dl11[dataloader 1, entry 1]
+        dl21[dataloader 2, entry 1]
+        dl22[dataloader 2, entry 2]
+    end
+    dataloader1 --> dl11
+    dataloader2 --> dl21
+    dataloader2 --> dl22
+
+    index -- for each step, choose 1 system --> WeightedSampler
+    --> dploaderset --> bufferedq[buffered queue] --> model
+```
+
+### How to use
+
+We use [`paddle.distributed.fleet`](https://www.paddlepaddle.org.cn/documentation/docs/zh/guides/06_distributed_training/cluster_quick_start_collective_cn.html) to launch a DDP training session.
+
+To start training with multiple GPUs in one node, set environment variable `CUDA_VISIBLE_DEVICES` as the list of GPUs you want to use:
+
+```bash
+# example for training with 4 gpus in one node
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+    python -m paddle.distributed.launch --gpus="0,1,2,3" dp --pd train input.json
+```
