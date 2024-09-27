@@ -6,8 +6,7 @@
 #include <mpi-ext.h>
 #endif
 #endif
-#include "paddle/extension.h"
-#include "paddle/include/paddle_inference_api.h"
+#include <torch/torch.h>
 
 #include <cstdint>
 

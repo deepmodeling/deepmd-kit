@@ -49,7 +49,6 @@ void DeepPot::init(const std::string& model,
   } else {
     throw deepmd::deepmd_exception("Unsupported model file format");
   }
-
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
