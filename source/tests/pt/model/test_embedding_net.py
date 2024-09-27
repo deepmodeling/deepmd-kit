@@ -39,6 +39,9 @@ from deepmd.tf.common import (
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from ..test_finetune import (
     energy_data_requirement,
 )
@@ -153,7 +156,7 @@ class TestSeA(unittest.TestCase):
             sel=self.sel,
             neuron=self.filter_neuron,
             axis_neuron=self.axis_neuron,
-            seed=1,
+            seed=GLOBAL_SEED,
         )
         dp_embedding, dp_force, dp_vars = base_se_a(
             descriptor=dp_d,

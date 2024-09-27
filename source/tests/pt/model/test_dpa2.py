@@ -20,6 +20,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -152,6 +155,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
                 old_impl=False,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             dd0.repinit.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -201,6 +205,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     add_tebd_to_repinit_out=False,
                     precision=prec,
                     old_impl=True,
+                    seed=GLOBAL_SEED,
                 ).to(env.DEVICE)
                 dd0_state_dict = dd0.state_dict()
                 dd3_state_dict = dd3.state_dict()
@@ -346,6 +351,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
                 old_impl=False,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             dd0.repinit.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
