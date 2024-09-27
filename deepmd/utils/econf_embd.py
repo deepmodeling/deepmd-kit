@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Dict,
+    List,
+)
+
 import numpy as np
 from mendeleev import (
     element,
@@ -222,7 +227,10 @@ def make_element_embedding_list_vec(
     return ret
 
 
-def make_econf_embedding(types, flatten=True):
+def make_econf_embedding(
+    types: List[str], flatten: bool = True
+) -> Dict[str, np.ndarray]:
+    """Make the electronic configuration embedding."""
     all_ret = {}
     for ii in types:
         ir = make_element_embedding_list_vec(ii)
@@ -232,7 +240,8 @@ def make_econf_embedding(types, flatten=True):
     return all_ret
 
 
-def transform_to_spin_rep(res):
+def transform_to_spin_rep(res: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    """Tranform electron occupation of 0/1/2 to -1,-1/-1,1/1,1."""
     ret = {}
 
     def transform(ii):
@@ -252,7 +261,8 @@ def transform_to_spin_rep(res):
     return ret
 
 
-def print_econf_embedding(res):
+def print_econf_embedding(res: Dict[str, np.ndarray]):
+    """Print electron configuration embedding."""
     for kk, vv in res.items():
         vvstr = ",".join([str(ii) for ii in vv])
         space = " " * (2 - len(kk))
