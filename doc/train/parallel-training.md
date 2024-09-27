@@ -267,3 +267,19 @@ To start training with multiple GPUs in one node, set environment variable `CUDA
 CUDA_VISIBLE_DEVICES=0,1,2,3 \
     python -m paddle.distributed.launch --gpus="0,1,2,3" dp --pd train input.json
 ```
+
+Suppose you have 2 nodes each with 4 GPUs and their ip address are: `192.168.1.2` and `192.168.1.3`, then you can use `paddle.distributed.launch` to launch a DDP training session:
+
+```bash
+# run in node 192.168.1.2
+python -m paddle.distributed.launch \
+    --gpus=0,1,2,3 \
+    --ips=192.168.1.2,192.168.1.3 \
+    dp --pd train input.json
+
+# then run in the other node 192.168.1.3
+python -m paddle.distributed.launch \
+    --gpus=0,1,2,3 \
+    --ips=192.168.1.2,192.168.1.3 \
+    dp --pd train input.json
+```
