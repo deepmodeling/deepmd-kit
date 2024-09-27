@@ -23,21 +23,23 @@ if(NOT DEEPMD_C_ROOT)
 endif()
 
 if(ENABLE_PADDLE)
-  if(NOT DEFINED PADDLE_LIB)
-    message(FATAL_ERROR "Make sure PADDLE_LIB is set when ENABLE_PADDLE=ON")
+  if(NOT DEFINED PADDLE_INFERENCE_DIR)
+    message(
+      FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when ENABLE_PADDLE=ON")
   endif()
 
-  set(PADDLE_LIB
-      ${PADDLE_LIB}
+  set(PADDLE_INFERENCE_DIR
+      ${PADDLE_INFERENCE_DIR}
       CACHE PATH "Path to 'paddle_inference_install_dir' or 'paddle_inference'")
 
   # used in api_cc
   set(PADDLE_LIBRARIES
-      "${PADDLE_LIB}/paddle/lib/libpaddle_inference.so"
+      "${PADDLE_INFERENCE_DIR}/paddle/lib/libpaddle_inference.so"
       CACHE PATH "Path to libpaddle_inference.so")
 
-  include_directories("${PADDLE_LIB}/")
-  set(PADDLE_LIB_THIRD_PARTY_PATH "${PADDLE_LIB}/third_party/install/")
+  include_directories("${PADDLE_INFERENCE_DIR}/")
+  set(PADDLE_LIB_THIRD_PARTY_PATH
+      "${PADDLE_INFERENCE_DIR}/third_party/install/")
 
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
   include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
@@ -48,7 +50,7 @@ if(ENABLE_PADDLE)
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
-  link_directories("${PADDLE_LIB}/paddle/lib")
+  link_directories("${PADDLE_INFERENCE_DIR}/paddle/lib")
 endif(ENABLE_PADDLE)
 
 if(BUILD_TESTING)
