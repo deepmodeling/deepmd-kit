@@ -77,33 +77,33 @@ class DPAtomicModel(BaseAtomicModel):
         # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
         self.register_buffer(
             "buffer_has_message_passing",
-            paddle.to_tensor([self.has_message_passing()], dtype="int32"),
+            paddle.to_tensor(self.has_message_passing(), dtype="int32"),
         )
         self.buffer_has_message_passing.name = "buffer_has_message_passing"
         # register 'ntypes' as buffer
         self.register_buffer(
-            "buffer_ntypes", paddle.to_tensor([self.ntypes], dtype="int32")
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int32")
         )
         self.buffer_ntypes.name = "buffer_ntypes"
         # register 'rcut' as buffer
         self.register_buffer(
-            "buffer_rcut", paddle.to_tensor([self.rcut], dtype="float64")
+            "buffer_rcut", paddle.to_tensor(self.rcut, dtype="float64")
         )
         self.buffer_rcut.name = "buffer_rcut"
         # register 'dfparam' as buffer
         self.register_buffer(
-            "buffer_dfparam", paddle.to_tensor([self.get_dim_fparam()], dtype="int32")
+            "buffer_dfparam", paddle.to_tensor(self.get_dim_fparam(), dtype="int32")
         )
         self.buffer_dfparam.name = "buffer_dfparam"
         # register 'daparam' as buffer
         self.register_buffer(
-            "buffer_daparam", paddle.to_tensor([self.get_dim_aparam()], dtype="int32")
+            "buffer_daparam", paddle.to_tensor(self.get_dim_aparam(), dtype="int32")
         )
         self.buffer_daparam.name = "buffer_daparam"
         # register 'aparam_nall' as buffer
         self.register_buffer(
             "buffer_aparam_nall",
-            paddle.to_tensor([self.is_aparam_nall()], dtype="int32"),
+            paddle.to_tensor(self.is_aparam_nall(), dtype="int32"),
         )
         self.buffer_aparam_nall.name = "buffer_aparam_nall"
 

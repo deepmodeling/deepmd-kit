@@ -3,11 +3,11 @@
 #include "DeepPotPD.h"
 
 #include <cstdint>
-#include <stdexcept>
 #include <numeric>
 
 #include "common.h"
 #include "device.h"
+#include "errors.h"
 
 using namespace deepmd;
 
