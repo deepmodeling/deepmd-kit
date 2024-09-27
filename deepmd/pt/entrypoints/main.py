@@ -354,6 +354,7 @@ def freeze(FLAGS):
         FLAGS.output,
         extra_files,
     )
+    log.info(f"Saved frozen model to {FLAGS.output}")
 
 
 def change_bias(FLAGS):
