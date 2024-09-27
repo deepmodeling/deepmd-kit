@@ -117,7 +117,7 @@ def get_pd_requirement(pd_version: str = "") -> dict:
             # https://peps.python.org/pep-0440/#version-matching
             f"paddle=={Version(pd_version).base_version}.*"
             if pd_version != ""
-            else "paddle>=3.0.0",
+            else "paddle>=3b",
         ],
     }
 
@@ -138,7 +138,7 @@ def get_pd_version(pd_path: Optional[Union[str, Path]]) -> str:
     """
     if pd_path is None or pd_path == "":
         return ""
-    version_file = Path(pd_path) / "version.py"
+    version_file = Path(pd_path) / "version" / "__init__.py"
     spec = importlib.util.spec_from_file_location("paddle.version", version_file)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

@@ -58,7 +58,6 @@ class DPAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map
-
         self.ntypes = ntypes
         self.descriptor = descriptor
         self.rcut = self.descriptor.get_rcut()
@@ -66,15 +65,13 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net = fitting
         super().init_out_stat()
 
-        # specify manually for access by name in C++ inference
-
         # register 'type_map' as buffer
-        def string_to_array(s: str) -> int:
+        def _string_to_array(s: str) -> List[int]:
             return [ord(c) for c in s]
 
         self.register_buffer(
             "buffer_type_map",
-            paddle.to_tensor(string_to_array(" ".join(self.type_map)), dtype="int32"),
+            paddle.to_tensor(_string_to_array(" ".join(self.type_map)), dtype="int32"),
         )
         self.buffer_type_map.name = "buffer_type_map"
         # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)

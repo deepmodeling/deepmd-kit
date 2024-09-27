@@ -15,6 +15,7 @@ from packaging.version import (
 
 from .find_paddle import (
     find_paddle,
+    get_pd_version,
 )
 from .find_pytorch import (
     find_pytorch,
@@ -27,7 +28,7 @@ from .find_tensorflow import (
 
 
 @lru_cache
-def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
+def get_argument_from_env() -> Tuple[str, list, list, dict, str, str, str]:
     """Get the arguments from environment variables.
 
     The environment variables are assumed to be not changed during the build.
@@ -46,6 +47,8 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
         The TensorFlow version.
     str
         The PyTorch version.
+    str
+        The Paddle version.
     """
     cmake_args = []
     extra_scripts = {}
@@ -125,7 +128,7 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
 
     if os.environ.get("DP_ENABLE_PADDLE", "0") == "1":
         pd_install_dir, _ = find_paddle()
-        pt_version = get_pt_version(pd_install_dir)
+        pd_version = get_pd_version(pd_install_dir)
         cmake_args.extend(
             [
                 "-DENABLE_PADDLE=ON",

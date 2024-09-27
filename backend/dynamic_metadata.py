@@ -9,6 +9,9 @@ from typing import (
     Optional,
 )
 
+from .find_paddle import (
+    get_pd_requirement,
+)
 from .find_pytorch import (
     get_pt_requirement,
 )
@@ -57,4 +60,5 @@ def dynamic_metadata(
             **optional_dependencies,
             **get_tf_requirement(tf_version),
             **get_pt_requirement(pt_version),
+            **get_pd_requirement(pd_version),
         }
