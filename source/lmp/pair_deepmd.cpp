@@ -603,7 +603,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
         } else {
           try {
-            std::cout << "calculate atomic energy" << std::endl;
             deep_pot.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
                              dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
                              fparam, daparam);
