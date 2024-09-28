@@ -579,9 +579,11 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
         } else {
           try {
-            deep_pot.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
-                             dtype, dbox, nghost, lmp_list, ago, fparam,
-                             daparam);
+            const vector<double> &dcoord_const = dcoord;
+            const vector<double> &dspin_const = dspin;
+            deep_pot.compute(dener, dforce, dforce_mag, dvirial, dcoord_const,
+                             dspin_const, dtype, dbox, nghost, lmp_list, ago,
+                             fparam, daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
             error->one(FLERR, e.what());
           }
@@ -601,6 +603,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           }
         } else {
           try {
+            std::cout << "calculate atomic energy" << std::endl;
             deep_pot.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
                              dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
                              fparam, daparam);
@@ -675,7 +678,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         if (!(eflag_atom || cvflag_atom)) {
           try {
             deep_pot_model_devi.compute(all_energy, all_force, all_force_mag,
-                                        all_virial, dcoord, dspin, dtype, dbox, 
+                                        all_virial, dcoord, dspin, dtype, dbox,
                                         nghost, lmp_list, ago, fparam, daparam);
           } catch (deepmd_compat::deepmd_exception &e) {
             error->one(FLERR, e.what());
