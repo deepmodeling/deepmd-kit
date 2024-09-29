@@ -3,10 +3,10 @@
     "model": {
         "shared_dict": {
             "type_map_all": [
-        				"C",
-        				"H",
-        				"N",
-        				"O"
+        		 "C",
+        		 "H",
+        		 "N",
+        		 "O"
             ],
             "dpa1_descriptor": {
                 "type": "dpa1",
@@ -35,10 +35,10 @@
         "model_dict": {
             "H10C5N2O": {
                 "type_map": [
-          					"C",
-          					"H",
-          					"N",
-          					"O"
+          			 "C",
+          			 "H",
+          			 "N",
+          			 "O"
                 ],
                 "descriptor": {
                     "type": "dpa1",
@@ -76,10 +76,10 @@
             },
             "H8C4N2O": {
                 "type_map": [
-          					"C",
-          					"H",
-          					"N",
-          					"O"
+          			 "C",
+          			 "H",
+          			 "N",
+          			 "O"
                 ],
                 "descriptor": {
                     "type": "dpa1",
@@ -131,8 +131,8 @@
             "limit_pref_e": 1,
             "start_pref_f": 1000,
             "limit_pref_f": 1,
-            "start_pref_v": 0.02,
-            "limit_pref_v": 1
+            "start_pref_v": 0,
+            "limit_pref_v": 0
         },
         "H8C4N2O": {
             "type": "ener",
@@ -140,8 +140,8 @@
             "limit_pref_e": 1,
             "start_pref_f": 1000,
             "limit_pref_f": 1,
-            "start_pref_v": 0.02,
-            "limit_pref_v": 1,
+            "start_pref_v": 0,
+            "limit_pref_v": 0,
             "start_pref_h": 10,
             "limit_pref_h": 1
         }
