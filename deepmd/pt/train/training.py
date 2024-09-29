@@ -28,7 +28,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
-    EnergyHessianStdLoss,  # anchor added
+    EnergyHessianStdLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -70,7 +70,7 @@ from deepmd.utils.data import (
 )
 from deepmd.pt.model.model import (
     make_hessian_model
-)  # anchor added
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -276,7 +276,7 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
-        # anchor added: loss_param_tmp for Hessian activation
+        # loss_param_tmp for Hessian activation
         loss_param_tmp = None
         if not self.multi_task:
             loss_param_tmp = config["loss"]
@@ -1227,7 +1227,7 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
-def whether_hessian(loss_params):  # anchor created
+def whether_hessian(loss_params):
     loss_type = loss_params.get("type", "ener")
     if loss_type == "ener":
         if loss_params["start_pref_h"] > 0.0:
@@ -1238,7 +1238,7 @@ def whether_hessian(loss_params):  # anchor created
 
 def get_loss(loss_params, start_lr, _ntypes, _model):
     loss_type = loss_params.get("type", "ener")
-    if whether_hessian(loss_params):  # anchor added
+    if whether_hessian(loss_params):
         loss_params["starter_learning_rate"] = start_lr
         return EnergyHessianStdLoss(**loss_params)
     elif loss_type == "ener":
@@ -1283,10 +1283,10 @@ def get_single_model(
 
 def get_model_for_wrapper(
         _model_params,
-        _loss_params=None,  # anchor added
+        _loss_params=None,
 ):
     if "model_dict" not in _model_params:
-        if _loss_params is not None:  # anchor added
+        if _loss_params is not None:
             if whether_hessian(_loss_params):
                 _model_params["hessian_mode"] = True
         _model = get_single_model(
@@ -1296,13 +1296,13 @@ def get_model_for_wrapper(
         _model = {}
         model_keys = list(_model_params["model_dict"])
         for _model_key in model_keys:
-            if _loss_params is not None:  # anchor added
+            if _loss_params is not None:
                 if whether_hessian(_loss_params):
                     _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
-    return _model  # anchor noted: original return _model only
+    return _model
 
 
 def model_change_out_bias(
