@@ -1,13 +1,13 @@
 # Fit energy Hessian
 
-To train a model that takes Hessian matrices, i.e., the second order derivates of energies w.r.t coordinates as input, you only need to prepare full hessian matrices and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
+To train a model that takes Hessian matrices, i.e., the second order derivatives of energies w.r.t coordinates as input, you only need to prepare full Hessian matrices and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
  
-Note that fitting energy Hessian is only supported in the **PyTorch** backend as for now.
+Note that fitting energy Hessians is only supported in the **PyTorch** backend as of now.
 
 
 ## Energy Hessian Loss
 
-If you want to train with Hessian, you are expected to add the start and limit prefactors of Hessian, i.e.,`start_pref_h` and `limit_pref_h` to the `loss` section in the `input.json`:
+If you want to train with Hessians, you are expected to add the start and limit prefactors of Hessians, i.e.,`start_pref_h` and `limit_pref_h` to the `loss` section in the `input.json`:
 
 ```json
     "loss": {
@@ -25,7 +25,7 @@ If you want to train with Hessian, you are expected to add the start and limit p
 
 The options `start_pref_e`, `limit_pref_e`, `start_pref_f`, `limit_pref_f`, `start_pref_v`, and `limit_pref_v`,  determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.
 
-If one does not want to train with virial, then he/she may set the virial prefactors `start_pref_v` and `limit_pref_v` to 0.
+If one does not want to train with virial, they may set the virial prefactors `start_pref_v` and `limit_pref_v` to 0.
 
 
 ## Hessian format in PyTorch
@@ -41,10 +41,10 @@ set.*/force.npy
 set.*/hessian.npy
 ```
 
-This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
+This system contains `Nframes` frames with the same atom number `Natoms`, the total number of elements contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
 
 | ID             | Property         | Raw file      | Unit    | Shape                                   | Description                                                       |
 | -------------- | ---------------- | ------------- | ------- | --------------------------------------- | ----------------------------------------------------------------- |
-| hessian        | Hessian matrices | hessian.npy   | eV/Å^2  | Nframes \* (Natoms \* 3 \* Natoms \* 3) | Second-order derivates of energies w.r.t coordinates.            |
+| hessian        | Hessian matrices | hessian.npy   | eV/Å^2  | Nframes \* (Natoms \* 3 \* Natoms \* 3) | Second-order derivatives of energies w.r.t coordinates.            |
 
 Note that the `hessian.npy` should contain the **full** Hessian matrices with shape of `(3Natoms * 3Natoms)` for each frame, rather than the upper or lower triangular matrices with shape of `(3Natoms * (3Natoms + 1) / 2)` for each frame.
