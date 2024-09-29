@@ -79,14 +79,14 @@
     "training": {
         "training_data": {
             "systems": [
-                "/home/admin/workspace/yuzhaoxi/hessian/data/test_sys/H8C4N2O"
+                "../data/H8C4N2O"
             ],
             "batch_size": 1,
             "_comment": "that's all"
         },
         "validation_data": {
             "systems": [
-                "/home/admin/workspace/yuzhaoxi/hessian/data/test_sys/H10C5N2O"
+                "../data/H10C5N2O"
             ],
             "batch_size": 1,
             "_comment": "that's all"
