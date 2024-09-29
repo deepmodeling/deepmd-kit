@@ -22,11 +22,11 @@ from .deep_eval import (
 )
 from deepmd.pt.model.model import (
     get_model,
-)  # anchor added
+)
 
 
 class DeepPot(DeepEval):
-    def __init__(self, *args, **kwargs):  # anchor added
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     """Potential energy model.
 
@@ -71,7 +71,7 @@ class DeepPot(DeepEval):
                         r_differentiable=True,
                         c_differentiable=True,
                         atomic=True,
-                        r_hessian=True,  # anchor added: if type of model is EHM
+                        r_hessian=True,
                     ),
                 ]
             )
@@ -237,20 +237,20 @@ class DeepPot(DeepEval):
                 virial,
                 atomic_energy,
                 atomic_virial,
-                # hessian,  # anchor added
+                # hessian,
             )
         else:
             result = (
                 energy,
                 force,
                 virial,
-                # hessian,  # anchor added
+                # hessian,
             )
         if self.deep_eval.get_has_spin():
             force_mag = results["energy_derv_r_mag"].reshape(nframes, natoms, 3)
             mask_mag = results["mask_mag"].reshape(nframes, natoms, 1)
             result = (*list(result), force_mag, mask_mag)
-        if "energy_derv_r_derv_r" in list(results.keys()):  # anchor added
+        if "energy_derv_r_derv_r" in list(results.keys()):
             hessian = results["energy_derv_r_derv_r"].reshape(nframes, 3 * natoms, 3 * natoms)
             result += (hessian, )
         return result
