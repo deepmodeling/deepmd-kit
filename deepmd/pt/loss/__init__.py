@@ -1,4 +1,4 @@
-# PDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 from .denoise import (
     DenoiseLoss,
 )
