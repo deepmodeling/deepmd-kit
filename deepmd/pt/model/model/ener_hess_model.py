@@ -23,16 +23,16 @@ from .make_model import (
 )
 from .make_hessian_model import (
     make_hessian_model,
-)  # anchor added
-import numpy as np  # anchor added
+)
+import numpy as np
 
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
-DPEnergyModel_ = make_hessian_model(DPEnergyModel_)  # anchor added
+DPEnergyModel_ = make_hessian_model(DPEnergyModel_)
 
 
 @BaseModel.register("ener_hess")
-class EnergyHessianModel(DPModelCommon, DPEnergyModel_):  # anchor created
+class EnergyHessianModel(DPModelCommon, DPEnergyModel_):
     model_type = "ener_hess"
 
     def __init__(
@@ -57,7 +57,7 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):  # anchor created
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
             output_def["atom_virial"].squeeze(-3)
-        output_def["hessian"] = deepcopy(out_def_data["energy_derv_r_derv_r"])  # anchor added
+        output_def["hessian"] = deepcopy(out_def_data["energy_derv_r_derv_r"])
         if "mask" in out_def_data:
             output_def["mask"] = deepcopy(out_def_data["mask"])
         return output_def
@@ -71,7 +71,7 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):  # anchor created
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
     ) -> Dict[str, torch.Tensor]:
-        self.requires_hessian("energy")  # anchor added
+        self.requires_hessian("energy")
         model_ret = self.forward_common(
             coord,
             atype,
@@ -96,8 +96,8 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):  # anchor created
                 model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
-            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"]  # anchor added squeeze?
-            model_predict["hessian"].squeeze(-2)  # anchor added: no need to squeeze
+            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"]
+            model_predict["hessian"].squeeze(-2)
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
@@ -143,4 +143,3 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):  # anchor created
         else:
             model_predict = model_ret
         return model_predict
-
