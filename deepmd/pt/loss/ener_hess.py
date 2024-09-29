@@ -1,5 +1,5 @@
 # PDX-License-Identifier: LGPL-3.0-or-later
-# anchor created
+
 from typing import (
     List,
     Optional,
@@ -20,7 +20,7 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-import numpy as np  # anchor added
+import numpy as np
 
 
 class EnergyHessianStdLoss(TaskLoss):
@@ -323,7 +323,7 @@ class EnergyHessianStdLoss(TaskLoss):
                 mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
                 more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
 
-        if self.has_h and "hessian" in model_pred and "hessian" in label:  # anchor added; sth to be corrected
+        if self.has_h and "hessian" in model_pred and "hessian" in label:
             find_hessian = label.get("find_hessian", 0.0)
             pref_h = pref_h * find_hessian
             diff_h = label["hessian"].reshape(-1,) - model_pred["hessian"].reshape(-1,)  # tbd
@@ -397,7 +397,7 @@ class EnergyHessianStdLoss(TaskLoss):
                     high_prec=False,
                 )
             )
-        if self.has_h:  # anchor created
+        if self.has_h:
             label_requirement.append(
                 DataRequirementItem(
                     "hessian",
