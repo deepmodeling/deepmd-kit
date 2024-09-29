@@ -15,20 +15,6 @@ from deepmd.dpmodel import (
 )
 
 
-def compute_hessian(func, inputs):  # anchor created
-    device = torch.device('cuda:0')
-    inputs.to(device)
-    inputs = inputs.requires_grad_(True)
-    y = func(inputs)
-    grads = torch.autograd.grad(y, inputs, create_graph=True)[0]
-    n = len(inputs)
-    hessian = torch.zeros(n, n, device=device)
-    for i in range(n):
-        grad2 = torch.autograd.grad(grads[i], inputs, retain_graph=True, create_graph=True)[0]
-        hessian[i] = grad2
-    return hessian
-
-
 def make_hessian_model(T_Model):
     """Make a model that can compute Hessian.
 
@@ -188,17 +174,14 @@ def make_hessian_model(T_Model):
             # fparam: Optional[torch.Tensor] = None,  # nfp
             # aparam: Optional[torch.Tensor] = None,  # (nloc x nap)
             wc = wrapper_class_forward_energy(self, ci, atype, box, fparam, aparam)
-            # hess = torch.autograd.functional.hessian(
-            #     wc,
-            #     coord,
-            #     create_graph=False,
-            #     # create_graph=True,  # anchor changed to: FloatingPointError when nopbc
-            # )
-            hess = compute_hessian(wc, coord)  # anchor trying: identical to t.ag.f.hessian
+            hess = torch.autograd.functional.hessian(
+                wc,
+                coord,
+                create_graph=True,
+            )
             return hess
 
     class wrapper_class_forward_energy:
-        # torch.autograd.set_detect_anomaly(True)  # anchor added
         def __init__(
             self,
             obj: CM,
