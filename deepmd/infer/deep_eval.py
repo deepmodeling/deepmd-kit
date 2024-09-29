@@ -79,7 +79,7 @@ class DeepEvalBackend(ABC):
         # old models in v1
         "global_polar": "global_polar",
         "wfc": "wfc",
-        "energy_derv_r_derv_r": "hessian",  # anchor added
+        "energy_derv_r_derv_r": "hessian",
     }
 
     @abstractmethod
