@@ -24,7 +24,6 @@ class TensorLoss(TaskLoss):
         label_name: str,
         pref_atomic: float = 0.0,
         pref: float = 0.0,
-        pref_t_f: float=0.0,  # anchor added
         inference=False,
         **kwargs,
     ):
@@ -42,8 +41,6 @@ class TensorLoss(TaskLoss):
             The prefactor of the weight of atomic loss. It should be larger than or equal to 0.
         pref : float
             The prefactor of the weight of global loss. It should be larger than or equal to 0.
-        pref_t_f : float  # anchor added
-            The prefactor of the weight of first derivative loss of tensor. It should be larger than or equal to 0.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
         **kwargs
@@ -55,7 +52,6 @@ class TensorLoss(TaskLoss):
         self.label_name = label_name
         self.local_weight = pref_atomic
         self.global_weight = pref
-        self.t_f_weight = pref_t_f  # anchor added
         self.inference = inference
 
         assert (
@@ -63,7 +59,6 @@ class TensorLoss(TaskLoss):
         ), "Can not assign negative weight to `pref` and `pref_atomic`"
         self.has_local_weight = self.local_weight > 0.0 or inference
         self.has_global_weight = self.global_weight > 0.0 or inference
-        self.has_t_f_weight = self.t_f_weight > 0.0 or inference  # anchor added
         assert self.has_local_weight or self.has_global_weight, AssertionError(
             "Can not assian zero weight both to `pref` and `pref_atomic`"
         )
@@ -95,8 +90,6 @@ class TensorLoss(TaskLoss):
         del learning_rate, mae
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
-        # print(f"--model_pred in forward in tensor.py: {model_pred.keys()}")  # anchor
-        # print(f"--label in forward in tensor.py: {label.keys()}")  # anchor
         if (
             self.has_local_weight
             and self.tensor_name in model_pred
@@ -155,37 +148,6 @@ class TensorLoss(TaskLoss):
             more_loss[f"rmse_global_{self.tensor_name}"] = self.display_if_exist(
                 rmse_global.detach(), find_global
             )
-        if (
-            self.has_t_f_weight
-            and "force" in model_pred
-            and self.label_name + "_force" in label
-        ):  # anchor added
-            find_t_f = label.get(f"find_{self.label_name}_force", 0.0)
-            t_f_weight = self.t_f_weight * find_t_f
-            t_f_pred = model_pred["force"].reshape(
-                [-1, natoms, self.tensor_size * 3]
-            )
-            # print(f"--t_f_pred in forward in tensor.py of {t_f_pred.shape}")
-            t_f_label = label[self.label_name + "_force"].reshape(
-                [-1, natoms, self.tensor_size * 3]
-            )
-            # print(f"--t_f_label in forward in tensor.py of {t_f_label.shape}")
-            diff = (t_f_pred - t_f_label).reshape(
-                -1, self.tensor_size * 3
-            )
-            # print(f"--diff in forward in tensor.py of {diff.shape}")
-            if "mask" in model_pred:
-                diff = diff[model_pred["mask"].reshape([-1]).bool()]
-            l2_t_f_loss = torch.mean(torch.square(diff))
-            if not self.inference:
-                more_loss[f"l2_{self.tensor_name}_force_loss"] = self.display_if_exist(
-                    l2_t_f_loss.detach(), find_t_f
-                )
-            loss += t_f_weight * l2_t_f_loss
-            rmse_t_f = l2_t_f_loss.sqrt()
-            more_loss[f"rmse_{self.tensor_name}_force"] = self.display_if_exist(
-                rmse_t_f.detach(), find_t_f
-            )
         return model_pred, loss, more_loss
 
     @property
@@ -208,16 +170,6 @@ class TensorLoss(TaskLoss):
                     self.label_name,
                     ndof=self.tensor_size,
                     atomic=False,
-                    must=False,
-                    high_prec=False,
-                )
-            )
-        if self.has_t_f_weight:  # anchor
-            label_requirement.append(
-                DataRequirementItem(
-                    self.label_name + "_force",
-                    ndof=self.tensor_size*3,
-                    atomic=True,
                     must=False,
                     high_prec=False,
                 )
