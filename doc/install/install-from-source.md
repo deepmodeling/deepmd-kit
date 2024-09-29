@@ -145,7 +145,7 @@ One should remember to activate the virtual environment every time he/she uses D
 
 Check the compiler version on your machine
 
-```
+```bash
 gcc --version
 ```
 
@@ -422,10 +422,10 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 
 :::{tab-item} Paddle {{ paddle_icon }}
 
-I assume you have installed the Paddle (either Python or C++ interface) to `$paddle_root`, then execute CMake
+I assume you have compiled the Paddle inference library(C++ interface) to `$PADDLE_INFERENCE_DIR`, then execute CMake
 
 ```bash
-cmake -DENABLE_PYTORCH=TRUE -DCMAKE_PREFIX_PATH=$paddle_root -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DENABLE_PADDLE=ON -DCMAKE_PREFIX_PATH=$PADDLE_INFERENCE_DIR -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 
 :::
