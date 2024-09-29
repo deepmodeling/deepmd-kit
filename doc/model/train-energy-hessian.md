@@ -1,6 +1,6 @@
 # Fit energy Hessian
 
-To train a model that takes Hessian matrices, i.e., the second order deriviates of energies w.r.t coordinates as input, you only need to prepare full hessian matries and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
+To train a model that takes Hessian matrices, i.e., the second order derivates of energies w.r.t coordinates as input, you only need to prepare full hessian matrices and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
  
 Note that fitting energy Hessian is only supported in the **PyTorch** backend as for now.
 
@@ -45,6 +45,6 @@ This system contains `Nframes` frames with the same atom number `Natoms`, the to
 
 | ID             | Property         | Raw file      | Unit    | Shape                                   | Description                                                       |
 | -------------- | ---------------- | ------------- | ------- | --------------------------------------- | ----------------------------------------------------------------- |
-| hessian        | Hessian matrices | hessian.npy   | eV/Å^2  | Nframes \* (Natoms \* 3 \* Natoms \* 3) | Second-order deriviates of energies w.r.t coordinates.            |
+| hessian        | Hessian matrices | hessian.npy   | eV/Å^2  | Nframes \* (Natoms \* 3 \* Natoms \* 3) | Second-order derivates of energies w.r.t coordinates.            |
 
 Note that the `hessian.npy` should contain the **full** Hessian matrices with shape of `(3Natoms * 3Natoms)` for each frame, rather than the upper or lower triangular matrices with shape of `(3Natoms * (3Natoms + 1) / 2)` for each frame.
