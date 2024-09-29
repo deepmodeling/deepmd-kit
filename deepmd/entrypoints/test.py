@@ -46,7 +46,7 @@ from deepmd.utils.weight_avg import (
 )
 from deepmd.pt.model.model import (
     get_model,
-)  # anchor added
+)
 
 if TYPE_CHECKING:
     from deepmd.infer.deep_tensor import (
@@ -157,7 +157,7 @@ def test(
                 append_detail=(cc != 0),
             )
         elif isinstance(dp, DeepDipole):
-            err = test_dipole(dp, data, system, numb_test, detail_file, atomic, append_detail=(cc != 0))  # anchor added
+            err = test_dipole(dp, data, numb_test, detail_file, atomic)
         elif isinstance(dp, DeepPolar):
             err = test_polar(dp, data, numb_test, detail_file, atomic=atomic)
         elif isinstance(dp, DeepGlobalPolar):  # should not appear in this new version
@@ -246,7 +246,8 @@ def save_txt_file(
         np.savetxt(fp, data, header=header)
 
 
-def whether_hessian(dp: "DeepPot"):  # anchor created
+def whether_hessian(dp: "DeepPot"):
+    # If model type is EnergyHessianModel, return True and print hessian loss info
     if "Hessian" in str(type(get_model(dp.deep_eval.input_param))):
         return True
     else:
@@ -302,7 +303,7 @@ def test_ener(
     if dp.has_spin:
         data.add("spin", 3, atomic=True, must=True, high_prec=False)
         data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
-    if whether_hessian(dp):  # anchor added
+    if whether_hessian(dp):
         data.add("hessian", 1, atomic=True, must=True, high_prec=False)
 
     test_data = data.get_test()
@@ -353,7 +354,7 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
-    if whether_hessian(dp):  # anchor added
+    if whether_hessian(dp):
         hessian = ret[-1]
         hessian = hessian.reshape([numb_test, -1])
     if has_atom_ener:
@@ -420,9 +421,9 @@ def test_ener(
     mae_va = mae_v / natoms
     rmse_va = rmse_v / natoms
     if whether_hessian(dp):
-        diff_h = hessian - test_data["hessian"][:numb_test]  # anchor added
-        mae_h = mae(diff_h)  # anchor added
-        rmse_h = rmse(diff_h)  # anchor added
+        diff_h = hessian - test_data["hessian"][:numb_test]
+        mae_h = mae(diff_h)
+        rmse_h = rmse(diff_h)
     if has_atom_ener:
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
@@ -456,8 +457,8 @@ def test_ener(
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
     if whether_hessian(dp):
-        log.info(f"Hessian MAE        : {mae_h:e} eV/A^2")  # anchor added: if EHM
-        log.info(f"Hessian RMSE       : {rmse_h:e} eV/A^2")  # anchor added
+        log.info(f"Hessian MAE        : {mae_h:e} eV/A^2")
+        log.info(f"Hessian RMSE       : {rmse_h:e} eV/A^2")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -592,7 +593,7 @@ def test_ener(
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
         }
-    if whether_hessian(dp):  # anchor added
+    if whether_hessian(dp):
         dict_to_return["mae_h"] = (mae_h, hessian.size)
         dict_to_return["rmse_h"] = (rmse_h, hessian.size)
     return dict_to_return
@@ -622,9 +623,9 @@ def print_ener_sys_avg(avg: Dict[str, float]):
     log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
-    if "rmse_h" in avg.keys():  # anchor added
-        log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/A^2")  # anchor added
-        log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/A^2")  # anchor added
+    if "rmse_h" in avg.keys():
+        log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/A^2")
+        log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/A^2")
 
 
 def test_dos(
@@ -815,13 +816,9 @@ def run_test(dp: "DeepTensor", test_data: dict, numb_test: int, test_sys: Deepmd
     else:
         box = None
     atype = test_data["type"][0]
-    # print(f"test_data in run_test in test.py: {test_data.keys()}")  # anchor added
-    if "find_dipole_force" in test_data.keys():
-        if test_data["find_dipole_force"]:
-            prediction = dp.eval_full(coord, box, atype)
-    else:
-        prediction = dp.eval(coord, box, atype).reshape([numb_test, -1])
-    return prediction, numb_test, atype
+    prediction = dp.eval(coord, box, atype)
+
+    return prediction.reshape([numb_test, -1]), numb_test, atype
 
 
 def test_wfc(
@@ -1031,11 +1028,9 @@ def print_polar_sys_avg(avg):
 def test_dipole(
     dp: "DeepDipole",
     data: DeepmdData,
-    system: str,  # anchor added
     numb_test: int,
     detail_file: Optional[str],
     atomic: bool,
-    append_detail: bool = False,  # anchor added
 ) -> Tuple[List[np.ndarray], List[int]]:
     """Test energy type model.
 
@@ -1065,27 +1060,8 @@ def test_dipole(
         high_prec=False,
         type_sel=dp.get_sel_type(),
     )
-    data.add(
-        "dipole_force",
-        9,
-        atomic=True,
-        must=False,
-        high_prec=False,
-        type_sel=dp.get_sel_type(),
-    )  # anchor added
     test_data = data.get_test()
-
-    preds, numb_test, atype = run_test(dp, test_data, numb_test, data)  # anchor: dipole --> preds
-    if "find_dipole_force" in test_data.keys():  # anchor added
-        if test_data["find_dipole_force"]:
-            if atomic:
-                dipole, dipole_force, dipole_virial, atomic_dipole, atomic_dipole_virial = preds
-            else:
-                dipole, dipole_force, dipole_virial = preds
-            rmse_t_f = rmse(dipole_force.reshape(dipole.shape[0], -1) - test_data["dipole_force"][:numb_test])
-    else:
-        dipole = preds
-        rmse_t_f = None
+    dipole, numb_test, atype = run_test(dp, test_data, numb_test, data)
 
     sel_type = dp.get_sel_type()
     sel_natoms = 0
@@ -1110,14 +1086,8 @@ def test_dipole(
     if not atomic:
         log.info(f"Dipole  RMSE/sqrtN : {rmse_fs:e}")
         log.info(f"Dipole  RMSE/N     : {rmse_fa:e}")
-    if rmse_t_f:  # anchor added
-        log.info(f"Dipole Derivative RMSE : {rmse_t_f:e}")
     log.info("The unit of error is the same as the unit of provided label.")
 
-    dict_to_return = {"rmse": (rmse_f, dipole.size)}
-    if "find_dipole_force" in test_data.keys():  # anchor added
-        if test_data["find_dipole_force"]:
-            dict_to_return["rmse_t_f"] = (rmse_t_f, dipole_force.size)
     if detail_file is not None:
         detail_path = Path(detail_file)
         if not atomic:
@@ -1128,7 +1098,7 @@ def test_dipole(
                 ),
                 axis=1,
             )
-            header_text = f"{system}: data_x data_y data_z pred_x pred_y pred_z"  # anchor inserted system
+            header_text = "data_x data_y data_z pred_x pred_y pred_z"
         else:
             pe = np.concatenate(
                 (
@@ -1140,48 +1110,22 @@ def test_dipole(
                 axis=1,
             )
             header_text = [
-                f"{system}: {letter}{number}"  # anchor inserted system
+                f"{letter}{number}"
                 for number in range(1, sel_natoms + 1)
                 for letter in ["data_x", "data_y", "data_z"]
             ] + [
-                f"{system}: {letter}{number}"  # anchor inserted system
+                f"{letter}{number}"
                 for number in range(1, sel_natoms + 1)
                 for letter in ["pred_x", "pred_y", "pred_z"]
             ]
             header_text = " ".join(header_text)
 
-        # np.savetxt(
-        #     detail_path.with_suffix(".out"),
-        #     pe,
-        #     header=header_text,
-        # )  # anchor commented out
-        save_txt_file(
+        np.savetxt(
             detail_path.with_suffix(".out"),
             pe,
             header=header_text,
-            append=append_detail,
-        )  # anchor changed np.davetxt to
-        # dict_to_return = {"rmse": (rmse_f, dipole.size)}
-        if "find_dipole_force" in test_data.keys():  # anchor added
-            if test_data["find_dipole_force"]:
-                pf = np.concatenate(
-                    (
-                        np.reshape(test_data["dipole_force"][:numb_test], [-1, 9]),
-                        np.reshape(dipole_force, [-1, 9])
-                    ),
-                    axis=1,
-                )
-                save_txt_file(
-                    detail_path.with_suffix(".f.out"),
-                    pf,
-                    header=f"{system}: "
-                           f"data_fxx data_fxy data_fxz data_fyx data_fyy data_fyz "
-                           f"data_fzx data_fzy data_fzz pred_fxx pred_fxy pred_fxz "
-                           f"pred_fyx pred_fyy pred_fyz pred_fzx pred_fzy pred_fzz",
-                    append=append_detail,
-                )
-
-    return dict_to_return
+        )
+    return {"rmse": (rmse_f, dipole.size)}
 
 
 def print_dipole_sys_avg(avg):
@@ -1192,7 +1136,4 @@ def print_dipole_sys_avg(avg):
     avg : np.ndarray
         array with summaries
     """
-    log.info(f"Dipole  RMSE         : {avg['rmse']:e}")  # anchor del eV/A
-    if "rmse_t_f" in avg.keys():
-        log.info(f"Dipole Derivative RMSE : {avg['rmse_t_f']:e}")
-
+    log.info(f"Dipole  RMSE         : {avg['rmse']:e} eV/A")
