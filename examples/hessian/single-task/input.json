@@ -70,8 +70,8 @@
         "limit_pref_e": 1,
         "start_pref_f": 1000,
         "limit_pref_f": 1,
-        "start_pref_v": 10,
-        "limit_pref_v": 1,
+        "start_pref_v": 0,
+        "limit_pref_v": 0,
         "start_pref_h": 10,
         "limit_pref_h": 1,
         "_comment": " that's all"
