@@ -385,8 +385,8 @@ class LayerNorm(NativeLayer):
             The serialized layer.
         """
         data = {
-            "w": np.array(self.w),
-            "b": np.array(self.b),
+            "w": to_numpy_array(self.w),
+            "b": to_numpy_array(self.b),
         }
         return {
             "@class": "LayerNorm",

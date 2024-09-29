@@ -20,6 +20,20 @@ from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
+from deepmd.jax.env import (
+    nnx,
+)
+
+
+class ArrayAPIParam(nnx.Param):
+    def __array_namespace__(self, *args, **kwargs):
+        return self.value.__array_namespace__(*args, **kwargs)
+
+    def __dlpack__(self, *args, **kwargs):
+        return self.value.__dlpack__(*args, **kwargs)
+
+    def __dlpack_device__(self, *args, **kwargs):
+        return self.value.__dlpack_device__(*args, **kwargs)
 
 
 @flax_module
@@ -27,6 +41,8 @@ class NativeLayer(NativeLayerDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"}:
             value = to_jax_array(value)
+            if value is not None:
+                value = ArrayAPIParam(value)
         return super().__setattr__(name, value)
 
 
