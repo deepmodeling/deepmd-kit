@@ -1,4 +1,4 @@
-# PDX-License-Identifier: LGPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """The model that takes the coordinates, cell and atom types as input
 and predicts some property. The models are automatically generated from
 atomic models by the `deepmd.dpmodel.make_model` method.
