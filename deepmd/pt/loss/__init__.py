@@ -10,7 +10,7 @@ from .ener import (
 )
 from .ener_hess import(
     EnergyHessianStdLoss,
-)  # anchor added
+)
 from .ener_spin import (
     EnergySpinLoss,
 )
@@ -24,7 +24,7 @@ from .tensor import (
 __all__ = [
     "DenoiseLoss",
     "EnergyStdLoss",
-    "EnergyHessianStdLoss",  # anchor added
+    "EnergyHessianStdLoss",
     "EnergySpinLoss",
     "TensorLoss",
     "TaskLoss",
