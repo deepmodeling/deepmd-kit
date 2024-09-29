@@ -13,6 +13,7 @@ from deepmd.dpmodel.descriptor.dpa1 import (
     NeighborGatedAttentionLayer as NeighborGatedAttentionLayerDP,
 )
 from deepmd.jax.common import (
+    flax_module,
     to_jax_array,
 )
 from deepmd.jax.utils.exclude_mask import (
@@ -28,6 +29,7 @@ from deepmd.jax.utils.type_embed import (
 )
 
 
+@flax_module
 class GatedAttentionLayer(GatedAttentionLayerDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"in_proj", "out_proj"}:
@@ -35,6 +37,7 @@ class GatedAttentionLayer(GatedAttentionLayerDP):
         return super().__setattr__(name, value)
 
 
+@flax_module
 class NeighborGatedAttentionLayer(NeighborGatedAttentionLayerDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name == "attention_layer":
@@ -44,6 +47,7 @@ class NeighborGatedAttentionLayer(NeighborGatedAttentionLayerDP):
         return super().__setattr__(name, value)
 
 
+@flax_module
 class NeighborGatedAttention(NeighborGatedAttentionDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name == "attention_layers":
@@ -53,6 +57,7 @@ class NeighborGatedAttention(NeighborGatedAttentionDP):
         return super().__setattr__(name, value)
 
 
+@flax_module
 class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"mean", "stddev"}:
@@ -71,6 +76,7 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
         return super().__setattr__(name, value)
 
 
+@flax_module
 class DescrptDPA1(DescrptDPA1DP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name == "se_atten":

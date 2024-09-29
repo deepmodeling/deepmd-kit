@@ -5,10 +5,12 @@ from typing import (
 
 from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask as PairExcludeMaskDP
 from deepmd.jax.common import (
+    flax_module,
     to_jax_array,
 )
 
 
+@flax_module
 class PairExcludeMask(PairExcludeMaskDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"type_mask"}:

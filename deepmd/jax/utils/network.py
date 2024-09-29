@@ -17,10 +17,12 @@ from deepmd.dpmodel.utils.network import (
     make_multilayer_network,
 )
 from deepmd.jax.common import (
+    flax_module,
     to_jax_array,
 )
 
 
+@flax_module
 class NativeLayer(NativeLayerDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"}:
@@ -28,11 +30,22 @@ class NativeLayer(NativeLayerDP):
         return super().__setattr__(name, value)
 
 
-NativeNet = make_multilayer_network(NativeLayer, NativeOP)
-EmbeddingNet = make_embedding_network(NativeNet, NativeLayer)
-FittingNet = make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)
+@flax_module
+class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
+    pass
 
 
+@flax_module
+class EmbeddingNet(make_embedding_network(NativeNet, NativeLayer)):
+    pass
+
+
+@flax_module
+class FittingNet(make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)):
+    pass
+
+
+@flax_module
 class NetworkCollection(NetworkCollectionDP):
     NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
         "network": NativeNet,
@@ -41,5 +54,6 @@ class NetworkCollection(NetworkCollectionDP):
     }
 
 
+@flax_module
 class LayerNorm(LayerNormDP, NativeLayer):
     pass
