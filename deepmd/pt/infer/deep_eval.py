@@ -87,7 +87,7 @@ class DeepEval(DeepEvalBackend):
     def __init__(
         self,
         model_file: str,
-        output_def: ModelOutputDef,  # anchor noted: not callable
+        output_def: ModelOutputDef,
         *args: Any,
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
@@ -119,7 +119,7 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if "Hessian" not in str(type(model)):  # anchor added: make_hessian_model is not jitable
+            if "Hessian" not in str(type(model)):
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
@@ -314,7 +314,7 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
-                    OutputVariableCategory.DERV_R_DERV_R,  # anchor added
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
 
@@ -525,7 +525,7 @@ class DeepEval(DeepEvalBackend):
             # Something wrong here?
             # return [nframes, *shape, natoms, 1]
             return [nframes, natoms, *odef.shape, 1]
-        elif odef.category == OutputVariableCategory.DERV_R_DERV_R:  # anchor added
+        elif odef.category == OutputVariableCategory.DERV_R_DERV_R:
             return [nframes, 3 * natoms, 3 * natoms]
             # return [nframes, *odef.shape, 3 * natoms, 3 * natoms]
         else:
