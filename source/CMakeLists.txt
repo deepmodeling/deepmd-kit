@@ -51,6 +51,7 @@ if(ENABLE_PADDLE)
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
   link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
   link_directories("${PADDLE_INFERENCE_DIR}/paddle/lib")
+  add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1)
 endif(ENABLE_PADDLE)
 
 if(BUILD_TESTING)
