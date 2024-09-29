@@ -78,7 +78,7 @@ def to_numpy_array(x: Any) -> Optional[np.ndarray]:
     """
     if x is None:
         return None
-    return np.from_dlpack(x)
+    return np.asarray(x)
 
 
 __all__ = [
