@@ -1850,8 +1850,8 @@ def loss_ener():
     doc_limit_pref_f = limit_pref("force")
     doc_start_pref_v = start_pref("virial", abbr="v")
     doc_limit_pref_v = limit_pref("virial")
-    doc_start_pref_h = start_pref("hessian", abbr="h")  # anchor added
-    doc_limit_pref_h = limit_pref("hessian")  # anchor added
+    doc_start_pref_h = start_pref("hessian", abbr="h")  # prefactor of hessian
+    doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
     doc_limit_pref_ae = limit_pref("atomic energy")
     doc_start_pref_pf = start_pref(
@@ -1912,14 +1912,14 @@ def loss_ener():
             optional=True,
             default=0.00,
             doc=doc_start_pref_h,
-        ),  # anchor added
+        ),
         Argument(
             "limit_pref_h",
             [float, int],
             optional=True,
             default=0.00,
             doc=doc_limit_pref_h,
-        ),  # anchor added
+        ),
         Argument(
             "start_pref_ae",
             [float, int],
@@ -1980,15 +1980,15 @@ def loss_ener():
     ]
 
 @loss_args_plugin.register("ener_hess")
-def loss_ener_hess():  # anchor added
+def loss_ener_hess():  # loss of fitting EnergyHessianModel
     doc_start_pref_e = start_pref("energy", abbr="e")
     doc_limit_pref_e = limit_pref("energy")
     doc_start_pref_f = start_pref("force", abbr="f")
     doc_limit_pref_f = limit_pref("force")
     doc_start_pref_v = start_pref("virial", abbr="v")
     doc_limit_pref_v = limit_pref("virial")
-    doc_start_pref_h = start_pref("hessian", abbr="h")  # anchor added
-    doc_limit_pref_h = limit_pref("hessian")  # anchor added
+    doc_start_pref_h = start_pref("hessian", abbr="h")
+    doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
     doc_limit_pref_ae = limit_pref("atomic energy")
     doc_start_pref_pf = start_pref(
@@ -2049,14 +2049,14 @@ def loss_ener_hess():  # anchor added
             optional=True,
             default=0.00,
             doc=doc_start_pref_h,
-        ),  # anchor added
+        ),
         Argument(
             "limit_pref_h",
             [float, int],
             optional=True,
             default=0.00,
             doc=doc_limit_pref_h,
-        ),  # anchor added
+        ),
         Argument(
             "start_pref_ae",
             [float, int],
@@ -2126,8 +2126,8 @@ def loss_ener_spin():
     doc_limit_pref_fm = limit_pref("force_magnetic")
     doc_start_pref_v = start_pref("virial")
     doc_limit_pref_v = limit_pref("virial")
-    doc_start_pref_h = start_pref("hessian")  # anchor added
-    doc_limit_pref_h = limit_pref("hessian")  # anchor added
+    doc_start_pref_h = start_pref("hessian")
+    doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atom_ener")
     doc_limit_pref_ae = limit_pref("atom_ener")
     doc_start_pref_pf = start_pref("atom_pref")
@@ -2197,14 +2197,14 @@ def loss_ener_spin():
             optional=True,
             default=0.00,
             doc=doc_start_pref_h,
-        ),  # anchor added
+        ),
         Argument(
             "limit_pref_h",
             [float, int],
             optional=True,
             default=0.00,
             doc=doc_limit_pref_h,
-        ),  # anchor added
+        ),
         Argument(
             "start_pref_ae",
             [float, int],
@@ -2336,13 +2336,6 @@ def loss_tensor():
             default=None,
             doc=doc_local_weight,
         ),
-        Argument(
-            "pref_t_f",
-            [float, int],
-            optional=True,
-            default=None,
-            doc=doc_global_weight,
-        )  # anchor added: pref_t_f stands for first-order derivative of tensor
     ]
 
 
