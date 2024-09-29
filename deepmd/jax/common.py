@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Any,
     Optional,
     overload,
 )
@@ -69,9 +70,14 @@ def flax_module(
         metas.add(type(nnx.Module))
 
     class MixedMetaClass(*metas):
-        pass
+        def __call__(self, *args, **kwargs):
+            return type(nnx.Module).__call__(self, *args, **kwargs)
 
     class FlaxModule(module, nnx.Module, metaclass=MixedMetaClass):
-        pass
+        def __init_subclass__(cls, **kwargs) -> None:
+            return super().__init_subclass__(**kwargs)
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            return super().__setattr__(name, value)
 
     return FlaxModule

@@ -35,12 +35,10 @@ class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
     pass
 
 
-@flax_module
 class EmbeddingNet(make_embedding_network(NativeNet, NativeLayer)):
     pass
 
 
-@flax_module
 class FittingNet(make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)):
     pass
 
@@ -54,6 +52,5 @@ class NetworkCollection(NetworkCollectionDP):
     }
 
 
-@flax_module
 class LayerNorm(LayerNormDP, NativeLayer):
     pass
