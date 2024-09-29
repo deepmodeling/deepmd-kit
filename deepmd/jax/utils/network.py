@@ -26,6 +26,9 @@ from deepmd.jax.env import (
 
 
 class ArrayAPIParam(nnx.Param):
+    def __array__(self, *args, **kwargs):
+        return self.value.__array__(*args, **kwargs)
+
     def __array_namespace__(self, *args, **kwargs):
         return self.value.__array_namespace__(*args, **kwargs)
 
