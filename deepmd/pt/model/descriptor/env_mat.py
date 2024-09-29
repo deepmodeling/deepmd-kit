@@ -22,9 +22,12 @@ def _make_env_mat(
     mask = nlist >= 0
     # nlist = nlist * mask  ## this impl will contribute nans in Hessian calculation.
     nlist = torch.where(mask, nlist, nall - 1)
+    nlist = torch.where(mask, nlist, nall)
     coord_l = coord[:, :natoms].view(bsz, -1, 1, 3)
     index = nlist.view(bsz, -1).unsqueeze(-1).expand(-1, -1, 3)
     coord_r = torch.gather(coord, 1, index)
+    coord_pad = torch.concat([coord, coord[:, -1:, :] + rcut], dim=1)
+    coord_r = torch.gather(coord_pad, 1, index)
     coord_r = coord_r.view(bsz, natoms, nnei, 3)
     diff = coord_r - coord_l
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
@@ -53,7 +56,6 @@ def prod_env_mat(
     protection: float = 0.0,
 ):
     """Generate smooth environment matrix from atom coordinates and other context.
-
     Args:
     - extended_coord: Copied atom coordinates with shape [nframes, nall*3].
     - atype: Atom types with shape [nframes, nloc].
@@ -63,7 +65,6 @@ def prod_env_mat(
     - rcut_smth: Smooth hyper-parameter for pair force & energy.
     - radial_only: Whether to return a full description or a radial-only descriptor.
     - protection: Protection parameter to prevent division by zero errors during calculations.
-
     Returns
     -------
     - env_mat: Shape is [nframes, natoms[1]*nnei*4].
