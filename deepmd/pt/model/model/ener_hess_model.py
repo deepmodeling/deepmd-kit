@@ -24,7 +24,6 @@ from .make_model import (
 from .make_hessian_model import (
     make_hessian_model,
 )
-import numpy as np
 
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
