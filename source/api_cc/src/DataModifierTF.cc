@@ -52,8 +52,8 @@ void DipoleChargeModifierTF::init(const std::string& model,
     std::string str = "/gpu:0";
     // See
     // https://github.com/tensorflow/tensorflow/blame/8fac27b486939f40bc8e362b94a16a4a8bb51869/tensorflow/core/protobuf/config.proto#L80
-    options.config.mutable_gpu_options()->visible_device_list =
-        std::to_string(gpu_rank % gpu_num);
+    options.config.mutable_gpu_options()->set_visible_device_list(
+        std::to_string(gpu_rank % gpu_num));
     graph::SetDefaultDevice(str, graph_def);
   }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
