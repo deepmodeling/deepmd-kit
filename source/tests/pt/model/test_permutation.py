@@ -88,6 +88,7 @@ model_zbl = {
         "temperature": 1.0,
         "set_davg_zero": True,
         "type_one_side": True,
+        "seed": 1,
     },
     "fitting_net": {
         "neuron": [24, 24, 24],
@@ -155,6 +156,7 @@ model_dpa2 = {
             "update_g2_has_attn": True,
             "attn2_has_gate": True,
         },
+        "seed": 1,
         "add_tebd_to_repinit_out": False,
     },
     "fitting_net": {
@@ -207,6 +209,7 @@ model_dpa2tebd = {
             "g1_out_conv": True,
             "g1_out_mlp": True,
         },
+        "seed": 1,
         "add_tebd_to_repinit_out": False,
     },
     "fitting_net": {
@@ -235,6 +238,7 @@ model_dpa1 = {
         "temperature": 1.0,
         "set_davg_zero": True,
         "type_one_side": True,
+        "seed": 1,
     },
     "fitting_net": {
         "neuron": [24, 24, 24],
@@ -264,6 +268,7 @@ model_hybrid = {
                 "scaling_factor": 1.0,
                 "normalize": True,
                 "temperature": 1.0,
+                "seed": 1,
             },
             {
                 "type": "dpa2",
@@ -296,6 +301,7 @@ model_hybrid = {
                     "update_g2_has_attn": True,
                     "attn2_has_gate": True,
                 },
+                "seed": 1,
                 "add_tebd_to_repinit_out": False,
             },
         ],
