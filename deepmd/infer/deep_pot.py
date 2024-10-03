@@ -20,9 +20,6 @@ from deepmd.dpmodel.output_def import (
 from .deep_eval import (
     DeepEval,
 )
-from deepmd.pt.model.model import (
-    get_model,
-)
 
 
 class DeepPot(DeepEval):
