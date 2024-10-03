@@ -248,10 +248,9 @@ def save_txt_file(
 
 def whether_hessian(dp: "DeepPot"):
     # If model type is EnergyHessianModel, return True and print hessian loss info
-    if "Hessian" in str(type(get_model(dp.deep_eval.input_param))):
-        return True
-    else:
-        return False
+def whether_hessian(dp: "DeepPot"):
+    # If model type is EnergyHessianModel, return True and print hessian loss info
+    return "Hessian" in str(type(get_model(dp.deep_eval.input_param)))
 
 
 def test_ener(
