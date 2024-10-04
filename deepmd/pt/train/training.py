@@ -68,9 +68,6 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-from deepmd.pt.model.model import (
-    make_hessian_model
-)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
