@@ -6,9 +6,9 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Iterator,
     Tuple,
 )
+from collections.abc import Iterator
 
 import numpy as np
 

@@ -6,8 +6,8 @@ import re
 from typing import (
     Dict,
     Optional,
-    Sequence,
 )
+from collections.abc import Sequence
 
 import numpy as np
 

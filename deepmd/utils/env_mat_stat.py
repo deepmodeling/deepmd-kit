@@ -9,10 +9,10 @@ from collections import (
 )
 from typing import (
     Dict,
-    Iterator,
     List,
     Optional,
 )
+from collections.abc import Iterator
 
 import numpy as np
 

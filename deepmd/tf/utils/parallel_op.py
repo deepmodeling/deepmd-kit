@@ -3,10 +3,10 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Generator,
     Optional,
     Tuple,
 )
+from collections.abc import Generator
 
 from deepmd.tf.env import (
     tf,
