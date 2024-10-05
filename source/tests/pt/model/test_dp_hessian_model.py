@@ -3,9 +3,6 @@ import unittest
 
 import numpy as np
 
-from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
-from deepmd.dpmodel.fitting import EnergyFittingNet as DPEnergyFittingNet
-from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
@@ -24,9 +21,6 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 
-from ...seed import (
-    GLOBAL_SEED,
-)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
     TestCaseSingleFrameWithoutNlist,
