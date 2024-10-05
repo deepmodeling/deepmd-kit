@@ -6,42 +6,18 @@
       "H"
     ],
     "descriptor": {
-      "type": "dpa2",
-      "repinit": {
-        "tebd_dim": 8,
-        "rcut": 9.0,
-        "rcut_smth": 8.0,
-        "nsel": 120,
-        "neuron": [
-          25,
-          50,
-          100
-        ],
-        "axis_neuron": 12,
-        "activation_function": "tanh"
-      },
-      "repformer": {
-        "rcut": 4.0,
-        "rcut_smth": 3.5,
-        "nsel": 40,
-        "nlayers": 12,
-        "g1_dim": 128,
-        "g2_dim": 32,
-        "attn2_hidden": 32,
-        "attn2_nhead": 4,
-        "attn1_hidden": 128,
-        "attn1_nhead": 4,
-        "axis_neuron": 4,
-        "update_h2": false,
-        "update_g1_has_conv": true,
-        "update_g1_has_grrg": true,
-        "update_g1_has_drrd": true,
-        "update_g1_has_attn": true,
-        "update_g2_has_g1g1": true,
-        "update_g2_has_attn": true,
-        "attn2_has_gate": true
-      },
-      "add_tebd_to_repinit_out": false
+      "type": "se_e3_tebd",
+      "sel": 40,
+      "rcut_smth": 0.5,
+      "rcut": 4.0,
+      "neuron": [
+        2,
+        4,
+        8
+      ],
+      "tebd_dim": 8,
+      "tebd_input_mode": "concat",
+      "activation_function": "tanh"
     },
     "fitting_net": {
       "neuron": [
@@ -58,7 +34,7 @@
   "learning_rate": {
     "type": "exp",
     "decay_steps": 5000,
-    "start_lr": 0.0002,
+    "start_lr": 0.001,
     "stop_lr": 3.51e-08,
     "_comment": "that's all"
   },
@@ -73,7 +49,7 @@
     "_comment": " that's all"
   },
   "training": {
-    "stat_file": "./dpa2.hdf5",
+    "stat_file": "./se_e3_tebd.hdf5",
     "training_data": {
       "systems": [
         "../data/data_0",
@@ -88,15 +64,14 @@
         "../data/data_3"
       ],
       "batch_size": 1,
+      "numb_btch": 3,
       "_comment": "that's all"
     },
     "numb_steps": 1000000,
-    "warmup_steps": 0,
-    "gradient_max_norm": 5.0,
     "seed": 10,
     "disp_file": "lcurve.out",
     "disp_freq": 100,
-    "save_freq": 2000,
+    "save_freq": 1000,
     "_comment": "that's all"
   }
 }

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import sys
 import unittest
 
 import numpy as np
@@ -12,6 +13,7 @@ from ..seed import (
     GLOBAL_SEED,
 )
 from .common import (
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     parameterized,
@@ -27,6 +29,10 @@ if INSTALLED_TF:
     from deepmd.tf.common import get_activation_func as get_activation_fn_tf
     from deepmd.tf.env import (
         tf,
+    )
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
     )
 
 
@@ -57,3 +63,23 @@ class TestActivationFunctionConsistent(unittest.TestCase):
                 ActivationFn_pt(self.activation)(to_torch_tensor(self.random_input))
             )
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
+
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_arary_api_strict(self):
+        import array_api_strict as xp
+
+        xp.set_array_api_strict_flags(
+            api_version=get_activation_fn_dp.array_api_version
+        )
+        input = xp.asarray(self.random_input)
+        test = get_activation_fn_dp(self.activation)(input)
+        np.testing.assert_allclose(self.ref, np.array(test), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self):
+        input = jnp.from_dlpack(self.random_input)
+        test = get_activation_fn_dp(self.activation)(input)
+        self.assertTrue(isinstance(test, jnp.ndarray))
+        np.testing.assert_allclose(self.ref, np.from_dlpack(test), atol=1e-10)

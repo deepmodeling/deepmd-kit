@@ -37,8 +37,12 @@
       "update_g1_has_attn": true,
       "update_g2_has_g1g1": true,
       "update_g2_has_attn": true,
-      "attn2_has_gate": true
+      "attn2_has_gate": true,
+      "use_sqrt_nnei": false,
+      "g1_out_conv": false,
+      "g1_out_mlp": false
     },
+    "seed": 1,
     "add_tebd_to_repinit_out": false
   },
   "fitting_net": {

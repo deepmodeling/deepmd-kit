@@ -164,11 +164,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
+  c10::optional<torch::Tensor> mapping_tensor;
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-    if (do_message_passing == 1) {
+    if (do_message_passing == 1 && nghost > 0) {
       int nswap = lmp_list.nswap;
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
@@ -196,11 +197,16 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       comm_dict.insert("recv_num", recvnum_tensor);
       comm_dict.insert("communicator", communicator_tensor);
     }
+    if (do_message_passing == 1 && nghost == 0) {
+      // for the situation that no ghost atoms (e.g. serial nopbc)
+      // set the mapping arange(nloc) is enough
+      auto option = torch::TensorOptions().device(device).dtype(torch::kInt64);
+      mapping_tensor = at::arange(nloc_real, option).unsqueeze(0);
+    }
   }
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = atomic;
-  c10::optional<torch::Tensor> optional_tensor;
   c10::optional<torch::Tensor> fparam_tensor;
   if (!fparam.empty()) {
     fparam_tensor =
@@ -219,15 +225,15 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      (do_message_passing == 1)
+      (do_message_passing == 1 && nghost > 0)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                            firstneigh_tensor, optional_tensor, fparam_tensor,
+                            firstneigh_tensor, mapping_tensor, fparam_tensor,
                             aparam_tensor, do_atom_virial_tensor, comm_dict)
                 .toGenericDict()
           : module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
-                            firstneigh_tensor, optional_tensor, fparam_tensor,
+                            firstneigh_tensor, mapping_tensor, fparam_tensor,
                             aparam_tensor, do_atom_virial_tensor)
                 .toGenericDict();
   c10::IValue energy_ = outputs.at("energy");

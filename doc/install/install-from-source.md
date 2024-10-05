@@ -40,7 +40,7 @@ pip install --upgrade pip
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
-The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.2 or later is supported.
+The full instruction to install TensorFlow can be found on the official [TensorFlow website](https://www.tensorflow.org/install/pip). TensorFlow 2.7 or later is supported.
 
 ```bash
 pip install --upgrade tensorflow
@@ -108,7 +108,8 @@ Check the compiler version on your machine
 gcc --version
 ```
 
-The compiler GCC 4.8 or later is supported in the DeePMD-kit.
+By default, DeePMD-kit uses C++ 14, so the compiler needs to support C++ 14 (GCC 5 or later).
+The backend package may use a higher C++ standard version, and thus require a higher compiler version (for example, GCC 7 for C++ 17).
 
 ::::{tab-set}
 
@@ -136,18 +137,80 @@ pip install .
 
 One may set the following environment variables before executing `pip`:
 
-| Environment variables                               | Allowed value         | Default value          | Usage                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------- | --------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DP_VARIANT                                          | `cpu`, `cuda`, `rocm` | `cpu`                  | Build CPU variant or GPU variant with CUDA or ROCM support.                                                                                                                                                                                                                                                                                                                                                                                         |
-| CUDAToolkit_ROOT                                    | Path                  | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                                                                                                                                                                                                                                                                           |
-| ROCM_ROOT                                           | Path                  | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                                                                                                                                                                                                                                                                             |
-| DP_ENABLE_TENSORFLOW                                | 0, 1                  | 1                      | {{ tensorflow_icon }} Enable the TensorFlow backend.                                                                                                                                                                                                                                                                                                                                                                                                |
-| DP_ENABLE_PYTORCH                                   | 0, 1                  | 0                      | {{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.                                                                                                                                                                                                                                                                                               |
-| TENSORFLOW_ROOT                                     | Path                  | Detected automatically | {{ tensorflow_icon }} The path to TensorFlow Python library. By default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against. |
-| PYTORCH_ROOT                                        | Path                  | Detected automatically | {{ pytorch_icon }} The path to PyTorch Python library. By default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.   |
-| DP_ENABLE_NATIVE_OPTIMIZATION                       | 0, 1                  | 0                      | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                                                                                                                                                                                                                                                                   |
-| CMAKE_ARGS                                          | str                   | -                      | Additional CMake arguments                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| &lt;LANG&gt;FLAGS (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str                   | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                                                                                                                                                                                                                                                                  |
+:::{envvar} DP_VARIANT
+
+**Choices**: `cpu`, `cuda`, `rocm`; **Default**: `cpu`
+
+Build CPU variant or GPU variant with CUDA or ROCM support.
+:::
+
+:::{envvar} CUDAToolkit_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+:::
+
+:::{envvar} ROCM_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look for `ROCM_PATH`; if `ROCM_PATH` is also not set, it will be detected using `hipconfig --rocmpath`.
+
+:::
+
+:::{envvar} DP_ENABLE_TENSORFLOW
+
+**Choices**: `0`, `1`; **Default**: `1`
+
+{{ tensorflow_icon }} Enable the TensorFlow backend.
+:::
+
+:::{envvar} DP_ENABLE_PYTORCH
+
+**Choices**: `0`, `1`; **Default**: `0`
+
+{{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
+:::
+
+:::{envvar} TENSORFLOW_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+{{ tensorflow_icon }} The path to TensorFlow Python library. If not given, by default the installer only finds TensorFlow under user site-package directory (`site.getusersitepackages()`) or system site-package directory (`sysconfig.get_path("purelib")`) due to limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest TensorFlow (or the environment variable `TENSORFLOW_VERSION` if given) from PyPI will be built against.
+:::
+
+:::{envvar} PYTORCH_ROOT
+
+**Type**: Path; **Default**: Detected automatically
+
+{{ pytorch_icon }} The path to PyTorch Python library. If not given, by default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.
+:::
+
+:::{envvar} DP_ENABLE_NATIVE_OPTIMIZATION
+
+**Choices**: `0`, `1`; **Default**: `0`
+
+Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.
+:::
+
+:::{envvar} CMAKE_ARGS
+
+**Type**: string
+
+Control high (double) or low (float) precision of training.
+:::
+
+:::{envvar} <LANG>FLAGS
+
+`<LANG>`=`CXX`, `CUDA` or `HIP`
+
+**Type**: string
+
+Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html) for details.
+:::
+
+Other [CMake environment variables](https://cmake.org/cmake/help/latest/manual/cmake-env-variables.7.html) may also be critical.
 
 To test the installation, one should first jump out of the source directory
 
@@ -163,20 +226,8 @@ dp -h
 
 It will print the help information like
 
-```text
-usage: dp [-h] {train,freeze,test} ...
+```{program-output} dp -h
 
-DeePMD-kit: A deep learning package for many-body potential energy
-representation and molecular dynamics
-
-optional arguments:
-  -h, --help           show this help message and exit
-
-Valid subcommands:
-  {train,freeze,test}
-    train              train a model
-    freeze             freeze the model
-    test               test the model
 ```
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}
@@ -303,23 +354,126 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 
 ::::
 
-One may add the following arguments to `cmake`:
+One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
 
-| CMake Aurgements                                                             | Allowed value     | Default value          | Usage                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------- | ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| -DENABLE_TENSORFLOW=&lt;value&gt;                                            | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} Whether building the TensorFlow backend.                                                                                                                                    |
-| -DENABLE_PYTORCH=&lt;value&gt;                                               | `TRUE` or `FALSE` | `FALSE`                | {{ pytorch_icon }} Whether building the PyTorch backend.                                                                                                                                          |
-| -DTENSORFLOW_ROOT=&lt;value&gt;                                              | Path              | -                      | {{ tensorflow_icon }} The Path to TensorFlow's C++ interface.                                                                                                                                     |
-| -DCMAKE_INSTALL_PREFIX=&lt;value&gt;                                         | Path              | -                      | The Path where DeePMD-kit will be installed.                                                                                                                                                      |
-| -DUSE_CUDA_TOOLKIT=&lt;value&gt;                                             | `TRUE` or `FALSE` | `FALSE`                | If `TRUE`, Build GPU support with CUDA toolkit.                                                                                                                                                   |
-| -DCUDAToolkit_ROOT=&lt;value&gt;                                             | Path              | Detected automatically | The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.                                                                                                         |
-| -DUSE_ROCM_TOOLKIT=&lt;value&gt;                                             | `TRUE` or `FALSE` | `FALSE`                | If `TRUE`, Build GPU support with ROCM toolkit.                                                                                                                                                   |
-| -DCMAKE_HIP_COMPILER_ROCM_ROOT=&lt;value&gt;                                 | Path              | Detected automatically | The path to the ROCM toolkit directory.                                                                                                                                                           |
-| -DLAMMPS_SOURCE_ROOT=&lt;value&gt;                                           | Path              | -                      | Only neccessary for LAMMPS plugin mode. The path to the [LAMMPS source code](install-lammps.md). LAMMPS 8Apr2021 or later is supported. If not assigned, the plugin mode will not be enabled.     |
-| -DUSE_TF_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required). And there's no need for building TensorFlow's C++ interface. |
-| -DUSE_PT_PYTHON_LIBS=&lt;value&gt;                                           | `TRUE` or `FALSE` | `FALSE`                | {{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required). And there's no need for downloading PyTorch's C++ libraries.          |
-| -DENABLE_NATIVE_OPTIMIZATION=&lt;value&gt;                                   | `TRUE` or `FALSE` | `FALSE`                | Enable compilation optimization for the native machine's CPU type. Do not enable it if generated code will run on different CPUs.                                                                 |
-| -DCMAKE\_&lt;LANG&gt;\_FLAGS=&lt;value&gt; (`<LANG>`=`CXX`, `CUDA` or `HIP`) | str               | -                      | Default compilation flags to be used when compiling `<LANG>` files. See [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).                                |
+:::{cmake:variable} ENABLE_TENSORFLOW
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ tensorflow_icon }} Whether building the TensorFlow backend.
+
+:::
+
+:::{cmake:variable} ENABLE_PYTORCH
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} Whether building the PyTorch backend.
+
+:::
+
+:::{cmake:variable} TENSORFLOW_ROOT
+
+**Type**: `PATH`
+
+{{ tensorflow_icon }} The Path to TensorFlow's C++ interface.
+
+:::
+
+:::{cmake:variable} CMAKE_INSTALL_PREFIX
+
+**Type**: `PATH`
+
+The Path where DeePMD-kit will be installed.
+See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html).
+
+:::
+
+:::{cmake:variable} USE_CUDA_TOOLKIT
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+If `TRUE`, Build GPU support with CUDA toolkit.
+
+:::
+
+:::{cmake:variable} CUDAToolkit_ROOT
+
+**Type**: `PATH`, **Default**: [Search automatically](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html)
+
+The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
+See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html).
+
+:::
+
+:::{cmake:variable} USE_ROCM_TOOLKIT
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+If `TRUE`, Build GPU support with ROCM toolkit.
+
+:::
+
+:::{cmake:variable} CMAKE_HIP_COMPILER_ROCM_ROOT
+
+**Type**: `PATH`, **Default**: [Search automatically](https://rocm.docs.amd.com/en/latest/conceptual/cmake-packages.html)
+
+The path to the ROCM toolkit directory.
+See also [ROCm documentation](https://rocm.docs.amd.com/en/latest/conceptual/cmake-packages.html).
+
+:::
+
+:::{cmake:variable} LAMMPS_SOURCE_ROOT
+
+**Type**: `PATH`
+
+Only neccessary for using [LAMMPS plugin mode](./install-lammps.md#install-lammps-plugin-mode).
+The path to the [LAMMPS source code](install-lammps.md).
+LAMMPS 8Apr2021 or later is supported.
+If not assigned, the plugin mode will not be enabled.
+
+:::
+
+:::{cmake:variable} USE_TF_PYTHON_LIBS
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required).
+There's no need for building TensorFlow's C++ interface.
+
+:::
+
+:::{cmake:variable} USE_PT_PYTHON_LIBS
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required).
+There's no need for downloading PyTorch's C++ libraries.
+
+:::
+
+:::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+Enable compilation optimization for the native machine's CPU type.
+Do not enable it if generated code will run on different CPUs.
+
+:::
+
+<!-- prettier-ignore -->
+:::{cmake:variable} CMAKE_<LANG>_FLAGS
+
+(`<LANG>`=`CXX`, `CUDA` or `HIP`)
+
+**Type**: `STRING`
+
+Default compilation flags to be used when compiling `<LANG>` files.
+See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).
+
+:::
+
+---
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
 

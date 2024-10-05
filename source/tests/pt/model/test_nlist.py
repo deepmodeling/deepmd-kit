@@ -7,6 +7,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.nlist import (
+    build_directional_neighbor_list,
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -62,6 +63,7 @@ class TestNeighList(unittest.TestCase):
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
+        # test normal sel
         nlist = build_neighbor_list(
             ecoord,
             eatype,
@@ -70,13 +72,28 @@ class TestNeighList(unittest.TestCase):
             sum(self.nsel),
             distinguish_types=False,
         )
-        torch.testing.assert_close(nlist[0], nlist[1])
         nlist_mask = nlist[0] == -1
         nlist_loc = mapping[0][nlist[0]]
         nlist_loc[nlist_mask] = -1
         torch.testing.assert_close(
             torch.sort(nlist_loc, dim=-1)[0],
             torch.sort(self.ref_nlist, dim=-1)[0],
+        )
+        # test a very large sel
+        nlist = build_neighbor_list(
+            ecoord,
+            eatype,
+            self.nloc,
+            self.rcut,
+            sum(self.nsel) + 300,  # +300, real nnei==224
+            distinguish_types=False,
+        )
+        nlist_mask = nlist[0] == -1
+        nlist_loc = mapping[0][nlist[0]]
+        nlist_loc[nlist_mask] = -1
+        torch.testing.assert_close(
+            torch.sort(nlist_loc, descending=True, dim=-1)[0][:, : sum(self.nsel)],
+            torch.sort(self.ref_nlist, descending=True, dim=-1)[0],
         )
 
     def test_build_type(self):
@@ -218,3 +235,54 @@ class TestNeighList(unittest.TestCase):
             rtol=self.prec,
             atol=self.prec,
         )
+
+    def test_build_directional_nlist(self):
+        """Directional nlist is tested against the standard nlist implementation."""
+        ecoord, eatype, mapping = extend_coord_with_ghosts(
+            self.coord, self.atype, self.cell, self.rcut
+        )
+        for distinguish_types, mysel in zip([True, False], [sum(self.nsel), 300]):
+            # full neighbor list
+            nlist_full = build_neighbor_list(
+                ecoord,
+                eatype,
+                self.nloc,
+                self.rcut,
+                sum(self.nsel),
+                distinguish_types=distinguish_types,
+            )
+            # central as part of the system
+            nlist = build_directional_neighbor_list(
+                ecoord[:, 3:6],
+                eatype[:, 1:2],
+                torch.concat(
+                    [
+                        ecoord[:, 0:3],
+                        torch.zeros(
+                            [self.nf, 3], dtype=dtype, device=env.DEVICE
+                        ),  # placeholder
+                        ecoord[:, 6:],
+                    ],
+                    dim=1,
+                ),
+                torch.concat(
+                    [
+                        eatype[:, 0:1],
+                        -1
+                        * torch.ones(
+                            [self.nf, 1], dtype=int, device=env.DEVICE
+                        ),  # placeholder
+                        eatype[:, 2:],
+                    ],
+                    dim=1,
+                ),
+                self.rcut,
+                mysel,
+                distinguish_types=distinguish_types,
+            )
+            torch.testing.assert_close(nlist[0], nlist[1])
+            torch.testing.assert_close(nlist[0], nlist[2])
+            torch.testing.assert_close(
+                torch.sort(nlist[0], descending=True, dim=-1)[0][:, : sum(self.nsel)],
+                torch.sort(nlist_full[0][1:2], descending=True, dim=-1)[0],
+            )

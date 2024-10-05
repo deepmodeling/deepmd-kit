@@ -12,7 +12,7 @@ In the documentation, TensorFlow {{ tensorflow_icon }} and PyTorch {{ pytorch_ic
 - Model filename extension: `.pb`
 - Checkpoint filename extension: `.meta`, `.index`, `.data-00000-of-00001`
 
-[TensorFlow](https://tensorflow.org) 2.2 or above is required.
+[TensorFlow](https://tensorflow.org) 2.7 or above is required, since NumPy 1.21 or above is required.
 DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`tf.compat.v1`) in the graph mode.
 
 ### PyTorch {{ pytorch_icon }}

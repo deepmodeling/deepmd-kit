@@ -17,6 +17,9 @@ from .ener_spin import (
 from .loss import (
     TaskLoss,
 )
+from .property import (
+    PropertyLoss,
+)
 from .tensor import (
     TensorLoss,
 )
@@ -29,5 +32,6 @@ __all__ = [
     "TensorLoss",
     "TaskLoss",
     "DOSLoss",
+    "PropertyLoss",
 ]
 

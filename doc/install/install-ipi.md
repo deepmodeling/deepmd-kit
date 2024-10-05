@@ -4,7 +4,7 @@ The i-PI works in a client-server model. The i-PI provides the server for integr
 To use i-PI with already existing drivers, install and update using Pip:
 
 ```bash
-pip install -U i-PI
+pip install -U ipi
 ```
 
 Test with Pytest:

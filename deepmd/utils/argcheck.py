@@ -4,6 +4,7 @@ import logging
 import warnings
 from typing import (
     Callable,
+    Dict,
     List,
     Optional,
 )
@@ -649,6 +650,120 @@ def descrpt_se_atten_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e3_tebd", doc=doc_only_pt_supported)
+def descrpt_se_e3_tebd_args():
+    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_rcut = "The cut-off radius."
+    doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
+    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_seed = "Random seed for parameter initialization"
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
+    doc_smooth = "Whether to use smooth process in calculation when using stripped type embedding. Whether to dot smooth factor (both neighbors j and k) on the network output (out_jk) of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding."
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed angular information as the union input for the embedding network. "
+        "The input is `input_jk = concat([angle_jk, tebd_j, tebd_k])`. "
+        "The output is `out_jk = embeding(input_jk)` for the three-body representation of atom i with neighbors j and k."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the angular embedding network output. "
+        "The input is `input_t = concat([tebd_j, tebd_k])`."
+        "The output is `out_jk = embeding_t(input_t) * embeding_s(angle_jk) + embeding_s(angle_jk)` for the three-body representation of atom i with neighbors j and k."
+    )
+
+    return [
+        Argument(
+            "sel", [int, List[int], str], optional=True, default="auto", doc=doc_sel
+        ),
+        Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
+        Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
+        Argument(
+            "neuron", List[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+        ),
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_tebd_input_mode,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
+        Argument(
+            "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
+        Argument(
+            "smooth",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_smooth,
+        ),
+        Argument(
+            "exclude_types",
+            List[List[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=True,
+        ),
+    ]
+
+
 @descrpt_args_plugin.register("se_atten_v2")
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
@@ -839,6 +954,17 @@ def dpa2_repinit_args():
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
+    doc_use_three_body = (
+        "Whether to concatenate three-body representation in the output descriptor."
+    )
+    doc_three_body_neuron = (
+        "Number of neurons in each hidden layers of the three-body embedding net."
+        "When two layers are of the same size or one layer is twice as large as the previous layer, "
+        "a skip connection is built."
+    )
+    doc_three_body_sel = "Maximally possible number of selected neighbors in the three-body representation."
+    doc_three_body_rcut = "The cut-off radius in the three-body representation."
+    doc_three_body_rcut_smth = "Where to start smoothing in the three-body representation. For example the 1/r term is smoothed from `three_body_rcut` to `three_body_rcut_smth`."
 
     return [
         # repinit args
@@ -901,6 +1027,37 @@ def dpa2_repinit_args():
             default=False,
             doc=doc_resnet_dt,
         ),
+        Argument(
+            "use_three_body",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_three_body,
+        ),
+        Argument(
+            "three_body_neuron",
+            list,
+            optional=True,
+            default=[2, 4, 8],
+            doc=doc_three_body_neuron,
+        ),
+        Argument(
+            "three_body_rcut",
+            float,
+            optional=True,
+            default=4.0,
+            doc=doc_three_body_rcut,
+        ),
+        Argument(
+            "three_body_rcut_smth",
+            float,
+            optional=True,
+            default=0.5,
+            doc=doc_three_body_rcut_smth,
+        ),
+        Argument(
+            "three_body_sel", int, optional=True, default=40, doc=doc_three_body_sel
+        ),
     ]
 
 
@@ -921,6 +1078,9 @@ def dpa2_repformer_args():
     doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
     doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
     doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
+    doc_use_sqrt_nnei = "Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly."
+    doc_g1_out_conv = "Whether to put the convolutional update of g1 separately outside the concatenated MLP update."
+    doc_g1_out_mlp = "Whether to put the self MLP update of g1 separately outside the concatenated MLP update."
     doc_update_h2 = "Update the h2 rep."
     doc_attn1_hidden = (
         "The hidden dimension of localized self-attention to update the g1 rep."
@@ -1040,6 +1200,27 @@ def dpa2_repformer_args():
             optional=True,
             default=True,
             doc=doc_update_g2_has_attn,
+        ),
+        Argument(
+            "use_sqrt_nnei",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_use_sqrt_nnei,
+        ),
+        Argument(
+            "g1_out_conv",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_g1_out_conv,
+        ),
+        Argument(
+            "g1_out_mlp",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_g1_out_mlp,
         ),
         Argument(
             "update_h2",
@@ -1349,6 +1530,47 @@ def fitting_dos():
     ]
 
 
+@fitting_args_plugin.register("property", doc=doc_only_pt_supported)
+def fitting_property():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built"
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_task_dim = "The dimension of outputs of fitting net"
+    doc_intensive = "Whether the fitting property is intensive"
+    doc_bias_method = "The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'. If 'no_bias' is used, no bias will be added to the atomic output."
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "neuron",
+            List[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
+        Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
+        Argument(
+            "bias_method", str, optional=True, default="normal", doc=doc_bias_method
+        ),
+    ]
+
+
 @fitting_args_plugin.register("polar")
 def fitting_polar():
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
@@ -1533,6 +1755,7 @@ def model_args(exclude_hybrid=False):
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+    doc_preset_out_bias = "The preset bias of the atomic output. Note that the set_davg_zero should be set to true. The bias is provided as a dict. Taking the energy model that has three atom types for example, the `preset_out_bias` may be given as `{ 'energy': [null, 0., 1.] }`. In this case the energy bias of type 1 and 2 are set to 0. and 1., respectively. A dipole model with two atom types may set `preset_out_bias` as `{ 'dipole': [null, [0., 1., 2.]] }`"
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -1599,6 +1822,13 @@ def model_args(exclude_hybrid=False):
                 optional=True,
                 default=[],
                 doc=doc_only_pt_supported + doc_atom_exclude_types,
+            ),
+            Argument(
+                "preset_out_bias",
+                Dict[str, List[Optional[Union[float, List[float]]]]],
+                optional=True,
+                default=None,
+                doc=doc_only_pt_supported + doc_preset_out_bias,
             ),
             Argument(
                 "srtab_add_bias",
@@ -2314,6 +2544,36 @@ def loss_dos():
             optional=True,
             default=0.00,
             doc=doc_limit_pref_acdf,
+        ),
+    ]
+
+
+@loss_args_plugin.register("property")
+def loss_property():
+    doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
+    doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
+        ),
+        Argument(
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
         ),
     ]
 

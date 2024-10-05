@@ -29,6 +29,7 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
     EnergyHessianStdLoss,
+    PropertyLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -496,7 +497,7 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
-                            if _new_fitting and ".fitting_net." in item_key:
+                            if _new_fitting and (".descriptor." not in item_key):
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
@@ -1042,10 +1043,13 @@ class Trainer:
             if dist.is_available() and dist.is_initialized()
             else self.wrapper
         )
-        module.train_infos["lr"] = lr
+        module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
+        optim_state_dict = deepcopy(self.optimizer.state_dict())
+        for item in optim_state_dict["param_groups"]:
+            item["lr"] = float(item["lr"])
         torch.save(
-            {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
+            {"model": module.state_dict(), "optimizer": optim_state_dict},
             save_path,
         )
         checkpoint_dir = save_path.parent
@@ -1260,6 +1264,10 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["label_name"] = label_name
         loss_params["tensor_name"] = label_name
         return TensorLoss(**loss_params)
+    elif loss_type == "property":
+        task_dim = _model.get_task_dim()
+        loss_params["task_dim"] = task_dim
+        return PropertyLoss(**loss_params)
     else:
         raise NotImplementedError
 

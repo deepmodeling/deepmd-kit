@@ -1,5 +1,9 @@
 # Running MD with GROMACS
 
+:::{note}
+See [Environment variables](../env.md) for the runtime environment variables.
+:::
+
 ## DP/MM Simulation
 
 This part gives a simple tutorial on how to run a DP/MM simulation for methane in water, which means using DP for methane and TIP3P for water. All relevant files can be found in `examples/methane`.

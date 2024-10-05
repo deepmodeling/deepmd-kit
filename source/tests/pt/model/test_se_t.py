@@ -63,6 +63,7 @@ class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 exclude_types=em,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.seat.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.seat.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
@@ -131,6 +132,7 @@ class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.sel,
                 precision=prec,
                 resnet_dt=idt,
+                seed=GLOBAL_SEED,
             )
             dd0.seat.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.seat.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)

@@ -25,7 +25,7 @@ cmake \
 	-D USE_TF_PYTHON_LIBS=TRUE \
 	-D CMAKE_INSTALL_PREFIX=${INSTALL_PREFIX} \
 	-D BUILD_TESTING:BOOL=TRUE \
-	-D LAMMPS_VERSION=stable_2Aug2023_update3 \
+	-D LAMMPS_VERSION=stable_29Aug2024_update1 \
 	${CUDA_ARGS} ..
 cmake --build . -j${NPROC}
 cmake --install .

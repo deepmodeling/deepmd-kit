@@ -16,7 +16,7 @@ For CUDA only:
 # https://stackoverflow.com/a/41901923/9567349
 import sys
 
-if sys.version_info[0] < 3:
+if sys.version_info[0] < 3:  # noqa: UP036
     raise Exception("Python 3 or a more recent version is required.")
 
 # The script should only rely on the stardard Python libraries.

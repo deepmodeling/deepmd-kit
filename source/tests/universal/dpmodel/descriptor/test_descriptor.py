@@ -11,6 +11,7 @@ from deepmd.dpmodel.descriptor import (
     DescrptSeA,
     DescrptSeR,
     DescrptSeT,
+    DescrptSeTTebd,
 )
 from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
@@ -164,6 +165,68 @@ DescriptorParamSeTList = parameterize_func(
 DescriptorParamSeT = DescriptorParamSeTList[0]
 
 
+def DescriptorParamSeTTebd(
+    ntypes,
+    rcut,
+    rcut_smth,
+    sel,
+    type_map,
+    env_protection=0.0,
+    exclude_types=[],
+    tebd_dim=4,
+    tebd_input_mode="concat",
+    concat_output_tebd=True,
+    resnet_dt=True,
+    set_davg_zero=True,
+    smooth=True,
+    use_econf_tebd=False,
+    use_tebd_bias=False,
+    precision="float64",
+):
+    input_dict = {
+        "ntypes": ntypes,
+        "rcut": rcut,
+        "rcut_smth": rcut_smth,
+        "sel": sel,  # use a small sel for efficiency
+        "type_map": type_map,
+        "seed": GLOBAL_SEED,
+        "tebd_dim": tebd_dim,
+        "tebd_input_mode": tebd_input_mode,
+        "concat_output_tebd": concat_output_tebd,
+        "resnet_dt": resnet_dt,
+        "exclude_types": exclude_types,
+        "env_protection": env_protection,
+        "set_davg_zero": set_davg_zero,
+        "smooth": smooth,
+        "use_econf_tebd": use_econf_tebd,
+        "use_tebd_bias": use_tebd_bias,
+        "precision": precision,
+    }
+    return input_dict
+
+
+DescriptorParamSeTTebdList = parameterize_func(
+    DescriptorParamSeTTebd,
+    OrderedDict(
+        {
+            "tebd_dim": (4,),
+            "tebd_input_mode": ("concat", "strip"),
+            "resnet_dt": (True,),
+            "exclude_types": ([], [[0, 1]]),
+            "env_protection": (0.0,),
+            "set_davg_zero": (False,),
+            "smooth": (True, False),
+            "concat_output_tebd": (True,),
+            "use_econf_tebd": (False, True),
+            "use_tebd_bias": (False,),
+            "precision": ("float64",),
+        }
+    ),
+)
+# to get name for the default function
+DescriptorParamSeTTebd = DescriptorParamSeTTebdList[0]
+
+
 def DescriptorParamDPA1(
     ntypes,
     rcut,
@@ -260,6 +323,7 @@ def DescriptorParamDPA2(
     repinit_tebd_input_mode="concat",
     repinit_set_davg_zero=False,
     repinit_type_one_side=False,
+    repinit_use_three_body=False,
     repformer_direct_dist=False,
     repformer_update_g1_has_conv=True,
     repformer_update_g1_has_drrd=True,
@@ -274,6 +338,9 @@ def DescriptorParamDPA2(
     repformer_set_davg_zero=False,
     repformer_trainable_ln=True,
     repformer_ln_eps=1e-5,
+    repformer_use_sqrt_nnei=False,
+    repformer_g1_out_conv=False,
+    repformer_g1_out_mlp=False,
     smooth=True,
     add_tebd_to_repinit_out=True,
     use_econf_tebd=False,
@@ -297,6 +364,10 @@ def DescriptorParamDPA2(
                 "set_davg_zero": repinit_set_davg_zero,
                 "activation_function": "tanh",
                 "type_one_side": repinit_type_one_side,
+                "use_three_body": repinit_use_three_body,
+                "three_body_sel": min(sum(sel) // 2, 10),
+                "three_body_rcut": rcut / 2,
+                "three_body_rcut_smth": rcut_smth / 2,
             }
         ),
         # kwargs for repformer
@@ -329,6 +400,9 @@ def DescriptorParamDPA2(
                 "set_davg_zero": repformer_set_davg_zero,
                 "trainable_ln": repformer_trainable_ln,
                 "ln_eps": repformer_ln_eps,
+                "use_sqrt_nnei": repformer_use_sqrt_nnei,
+                "g1_out_conv": repformer_g1_out_conv,
+                "g1_out_mlp": repformer_g1_out_mlp,
             }
         ),
         # kwargs for descriptor
@@ -354,6 +428,7 @@ DescriptorParamDPA2List = parameterize_func(
             "repinit_tebd_input_mode": ("concat", "strip"),
             "repinit_set_davg_zero": (True,),
             "repinit_type_one_side": (False,),
+            "repinit_use_three_body": (True, False),
             "repformer_direct_dist": (False,),
             "repformer_update_g1_has_conv": (True,),
             "repformer_update_g1_has_drrd": (True,),
@@ -368,6 +443,9 @@ DescriptorParamDPA2List = parameterize_func(
             "repformer_set_davg_zero": (True,),
             "repformer_trainable_ln": (True,),
             "repformer_ln_eps": (1e-5,),
+            "repformer_use_sqrt_nnei": (True,),
+            "repformer_g1_out_conv": (True,),
+            "repformer_g1_out_mlp": (True,),
             "smooth": (True, False),
             "exclude_types": ([], [[0, 1]]),
             "precision": ("float64",),
@@ -411,15 +489,34 @@ def DescriptorParamHybridMixed(ntypes, rcut, rcut_smth, sel, type_map, **kwargs)
     return input_dict
 
 
+def DescriptorParamHybridMixedTTebd(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
+    ddsub0 = {
+        "type": "dpa1",
+        **DescriptorParamDPA1(ntypes, rcut, rcut_smth, sum(sel), type_map, **kwargs),
+    }
+    ddsub1 = {
+        "type": "se_e3_tebd",
+        **DescriptorParamSeTTebd(
+            ntypes, rcut / 2, rcut_smth / 2, min(sum(sel) // 2, 10), type_map, **kwargs
+        ),
+    }  # use a small sel for efficiency
+    input_dict = {
+        "list": [ddsub0, ddsub1],
+    }
+    return input_dict
+
+
 @parameterized(
     (
         (DescriptorParamSeA, DescrptSeA),
         (DescriptorParamSeR, DescrptSeR),
         (DescriptorParamSeT, DescrptSeT),
+        (DescriptorParamSeTTebd, DescrptSeTTebd),
         (DescriptorParamDPA1, DescrptDPA1),
         (DescriptorParamDPA2, DescrptDPA2),
         (DescriptorParamHybrid, DescrptHybrid),
         (DescriptorParamHybridMixed, DescrptHybrid),
+        (DescriptorParamHybridMixedTTebd, DescrptHybrid),
     )  # class_param & class
 )
 @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")

@@ -1,7 +1,7 @@
 Training Parameters
 ======================================
 .. note::
-   One can load, modify, and export the input file by using our effective web-based tool `DP-GUI <https://deepmodeling.com/dpgui/input/deepmd-kit-2.0>`_ online or hosted using the :ref:`command line interface <cli>` :code:`dp gui`. All training parameters below can be set in DP-GUI. By clicking "SAVE JSON", one can download the input file for further training.
+   One can load, modify, and export the input file by using our effective web-based tool `DP-GUI <https://dpgui.deepmodeling.com/input/deepmd-kit-2.0>`_ online or hosted using the :ref:`command line interface <cli>` :code:`dp gui`. All training parameters below can be set in DP-GUI. By clicking "SAVE JSON", one can download the input file for further training.
 
 .. note::
    One can benefit from IntelliSense and validation when

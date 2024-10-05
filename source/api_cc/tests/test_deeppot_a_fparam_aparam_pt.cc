@@ -95,7 +95,7 @@ class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
     }
   };
 
-  void TearDown() override { remove("fparam_aparam.pb"); };
+  void TearDown() override {};
 };
 
 TYPED_TEST_SUITE(TestInferDeepPotAFParamAParamPt, ValueTypes);

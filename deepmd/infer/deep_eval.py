@@ -74,6 +74,8 @@ class DeepEvalBackend(ABC):
         "dipole_derv_c_redu": "virial",
         "dos": "atom_dos",
         "dos_redu": "dos",
+        "property": "atom_property",
+        "property_redu": "property",
         "mask_mag": "mask_mag",
         "mask": "mask",
         # old models in v1
@@ -282,6 +284,10 @@ class DeepEvalBackend(ABC):
     @abstractmethod
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""
+
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        raise NotImplementedError("Not implemented in this backend.")
 
 
 class DeepEval(ABC):
@@ -545,3 +551,7 @@ class DeepEval(ABC):
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""
         return self.deep_eval.get_ntypes_spin()
+
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        return self.deep_eval.get_model_def_script()

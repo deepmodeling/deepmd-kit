@@ -108,14 +108,6 @@ def get_leading_dims(
     return list(vshape[: (len(vshape) - len(vdef.shape))])
 
 
-def get_atom_axis(
-    vdef: torch.Tensor,
-):
-    """Get the axis of atoms."""
-    atom_axis = -(len(vdef.shape) + 1)
-    return atom_axis
-
-
 def take_deriv(
     vv: torch.Tensor,
     svv: torch.Tensor,
@@ -179,7 +171,10 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
-            model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
+            if vdef.intensive:
+                model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
+            else:
+                model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 dr, dc = take_deriv(

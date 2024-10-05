@@ -45,6 +45,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    cli
    third-party/index
    nvnmd/index
+   env
    troubleshooting/index
 
 
@@ -55,7 +56,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    :caption: Tutorial
 
    Tutorials <https://tutorials.deepmodeling.com/>
-   Publications <https://deepmodeling.com/blog/papers/deepmd-kit/>
+   Publications <https://blogs.deepmodeling.com/papers/deepmd-kit/>
 
 .. _developer-guide:
 

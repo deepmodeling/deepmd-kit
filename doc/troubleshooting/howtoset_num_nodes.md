@@ -30,12 +30,12 @@ For CPU devices, TensorFlow and PyTorch use multiple streams to run independent 
 export DP_INTER_OP_PARALLELISM_THREADS=3
 ```
 
-However, for GPU devices, TensorFlow uses only one compute stream and multiple copy streams.
-Note that some of DeePMD-kit OPs do not have GPU support, so it is still encouraged to set environmental variables even if one has a GPU.
+However, for GPU devices, TensorFlow and PyTorch use only one compute stream and multiple copy streams.
+Note that some of DeePMD-kit OPs do not have GPU support, so it is still encouraged to set environment variables even if one has a GPU.
 
-## Parallelism within an individual operators
+## Parallelism within individual operators
 
-For CPU devices, `DP_INTRA_OP_PARALLELISM_THREADS` controls parallelism within TensorFlow (when TensorFlow is built against Eigen) and PyTorch native OPs.
+For CPU devices, {envvar}`DP_INTRA_OP_PARALLELISM_THREADS` controls parallelism within TensorFlow (when TensorFlow is built against Eigen) and PyTorch native OPs.
 
 ```bash
 export DP_INTRA_OP_PARALLELISM_THREADS=2
@@ -49,7 +49,7 @@ It may also control parallelism for NumPy when NumPy is built against OpenMP, so
 export OMP_NUM_THREADS=2
 ```
 
-There are several other environmental variables for OpenMP, such as `KMP_BLOCKTIME`.
+There are several other environment variables for OpenMP, such as `KMP_BLOCKTIME`.
 
 ::::{tab-set}
 
@@ -70,7 +70,7 @@ See [PyTorch documentation](https://pytorch.org/tutorials/recipes/recipes/tuning
 There is no one general parallel configuration that works for all situations, so you are encouraged to tune parallel configurations yourself after empirical testing.
 
 Here are some empirical examples.
-If you wish to use 3 cores of 2 CPUs on one node, you may set the environmental variables and run DeePMD-kit as follows:
+If you wish to use 3 cores of 2 CPUs on one node, you may set the environment variables and run DeePMD-kit as follows:
 
 ::::{tab-set}
 
