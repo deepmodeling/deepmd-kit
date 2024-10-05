@@ -10,7 +10,7 @@ You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/cond
 :::
 
 :::{note}
-Python 3.8 or above is required for Python interface.
+Python 3.9 or above is required for Python interface.
 :::
 
 - [Install off-line packages](#install-off-line-packages)
