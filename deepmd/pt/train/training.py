@@ -1226,11 +1226,7 @@ def get_additional_data_requirement(_model):
 
 def whether_hessian(loss_params):
     loss_type = loss_params.get("type", "ener")
-    if loss_type == "ener":
-        if loss_params["start_pref_h"] > 0.0:
-            return True
-    else:
-        return False
+    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
 
 
 def get_loss(loss_params, start_lr, _ntypes, _model):
