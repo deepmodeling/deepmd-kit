@@ -184,6 +184,8 @@ class DeepPot(DeepEval):
         atomic_virial
             The atomic virial of the system, in shape (nframes, natoms, 9). Only returned
             when atomic is True.
+        hessian
+            The Hessian matrix of the system, in shape (nframes, 3 * natoms, 3 * natoms). Returned when available.
         """
         # This method has been used by:
         # documentation python.md
@@ -234,14 +236,12 @@ class DeepPot(DeepEval):
                 virial,
                 atomic_energy,
                 atomic_virial,
-                # hessian,
             )
         else:
             result = (
                 energy,
                 force,
                 virial,
-                # hessian,
             )
         if self.deep_eval.get_has_spin():
             force_mag = results["energy_derv_r_mag"].reshape(nframes, natoms, 3)
