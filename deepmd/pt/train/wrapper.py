@@ -194,4 +194,3 @@ class ModelWrapper(torch.nn.Module):
             "train_infos": self.train_infos,
         }
         return state
-
