@@ -547,8 +547,6 @@ def test_ener(
             pred_h_triu = hessian[:, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]].reshape(-1, 1)
             h = np.concatenate(
                 (
-                # np.reshape(test_data["hessian"][:numb_test], [-1, 1]),
-                # np.reshape(hessian, [-1, 1]),
                 data_h_triu,
                 pred_h_triu,
             ),
