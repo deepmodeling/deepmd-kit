@@ -22,7 +22,6 @@ from deepmd.pt.utils.utils import (
 )
 
 from .test_env_mat import (
-    TestCaseSingleFrameWithNlist,
     TestCaseSingleFrameWithoutNlist,
 )
 
