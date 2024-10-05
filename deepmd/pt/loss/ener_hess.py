@@ -20,7 +20,6 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-import numpy as np
 
 
 class EnergyHessianStdLoss(TaskLoss):
