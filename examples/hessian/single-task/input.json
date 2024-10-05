@@ -91,7 +91,7 @@
             "batch_size": 1,
             "_comment": "that's all"
         },
-        "numb_steps": 1,
+        "numb_steps": 1000000,
         "warmup_steps": 0,
         "gradient_max_norm": 5.0,
         "seed": 10,
