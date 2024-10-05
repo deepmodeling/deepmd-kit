@@ -2,7 +2,6 @@
 import unittest
 
 import numpy as np
-import torch
 
 from deepmd.dpmodel.descriptor import DescrptSeA as DPDescrptSeA
 from deepmd.dpmodel.fitting import EnergyFittingNet as DPEnergyFittingNet
