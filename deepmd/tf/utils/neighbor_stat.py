@@ -5,7 +5,6 @@ from collections.abc import (
 )
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -63,7 +62,7 @@ class NeighborStatOP:
         atype: tf.Tensor,
         cell: tf.Tensor,
         pbc: tf.Tensor,
-    ) -> Tuple[tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         """Calculate the nearest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -189,7 +188,7 @@ class NeighborStat(BaseNeighborStat):
             self.op = self.build()
         self.sub_sess = tf.Session(graph=sub_graph, config=default_tf_session_config)
 
-    def build(self) -> Tuple[tf.Tensor, tf.Tensor]:
+    def build(self) -> tuple[tf.Tensor, tf.Tensor]:
         """Build the graph.
 
         Returns
@@ -217,7 +216,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Produce data.
 
         Parameters

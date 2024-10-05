@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -64,7 +62,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             The cut-off radius
     rcut_smth
             From where the environment matrix should be smoothed
-    sel : Union[List[int], int]
+    sel : Union[list[int], int]
             list[int]: sel[i] specifies the maxmum number of type i atoms in the cut-off radius
             int: the total maxmum number of atoms in the cut-off radius
     ntypes : int
@@ -86,7 +84,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    exclude_types : List[Tuple[int, int]]
+    exclude_types : list[tuple[int, int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     precision
@@ -95,7 +93,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     seed
             Random seed for initializing the network parameters.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     concat_output_tebd: bool
             Whether to concat type embedding at the output of the descriptor.
@@ -112,7 +110,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [2, 4, 8],
         tebd_dim: int = 8,
@@ -121,11 +119,11 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         set_davg_zero: bool = True,
         activation_function: str = "tanh",
         env_protection: float = 0.0,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        type_map: Optional[list[str]] = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
         use_tebd_bias=False,
@@ -178,7 +176,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_ttebd.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.se_ttebd.get_sel()
 
@@ -186,7 +184,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.se_ttebd.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -240,7 +238,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -253,12 +251,12 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self.se_ttebd.mean = mean
         self.se_ttebd.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -412,9 +410,9 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -447,7 +445,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [25, 50, 100],
         tebd_dim: int = 8,
@@ -456,10 +454,10 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         activation_function="tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         smooth: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -541,7 +539,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -610,7 +608,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
@@ -622,7 +620,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)

@@ -4,7 +4,6 @@ from collections.abc import (
 )
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -54,7 +53,7 @@ class NeighborStatOP(torch.nn.Module):
         coord: torch.Tensor,
         atype: torch.Tensor,
         cell: Optional[torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -141,7 +140,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 
         Yields

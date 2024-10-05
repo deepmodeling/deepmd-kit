@@ -4,9 +4,6 @@ from collections.abc import (
 )
 from typing import (
     TYPE_CHECKING,
-    Dict,
-    List,
-    Tuple,
     Union,
 )
 
@@ -40,7 +37,7 @@ if TYPE_CHECKING:
 
 
 class EnvMatStat(BaseEnvMatStat):
-    def compute_stat(self, env_mat: Dict[str, torch.Tensor]) -> Dict[str, StatItem]:
+    def compute_stat(self, env_mat: dict[str, torch.Tensor]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
         Parameters
@@ -50,7 +47,7 @@ class EnvMatStat(BaseEnvMatStat):
 
         Returns
         -------
-        Dict[str, StatItem]
+        dict[str, StatItem]
             The statistics of the environment matrix.
         """
         stats = {}
@@ -80,18 +77,18 @@ class EnvMatStatSe(EnvMatStat):
         )  # se_r=1, se_a=4
 
     def iter(
-        self, data: List[Dict[str, Union[torch.Tensor, List[Tuple[int, int]]]]]
-    ) -> Iterator[Dict[str, StatItem]]:
+        self, data: list[dict[str, Union[torch.Tensor, list[tuple[int, int]]]]]
+    ) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
         Parameters
         ----------
-        data : List[Dict[str, Union[torch.Tensor, List[Tuple[int, int]]]]]
+        data : list[dict[str, Union[torch.Tensor, list[tuple[int, int]]]]]
             The data.
 
         Yields
         ------
-        Dict[str, StatItem]
+        dict[str, StatItem]
             The statistics of the environment matrix.
         """
         zero_mean = torch.zeros(

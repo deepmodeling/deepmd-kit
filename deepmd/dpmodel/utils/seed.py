@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
     overload,
@@ -12,10 +11,10 @@ def child_seed(seed: None, idx: int) -> None: ...
 
 
 @overload
-def child_seed(seed: Union[int, List[int]], idx: int) -> List[int]: ...
+def child_seed(seed: Union[int, list[int]], idx: int) -> list[int]: ...
 
 
-def child_seed(seed: Optional[Union[int, List[int]]], idx: int) -> Optional[List[int]]:
+def child_seed(seed: Optional[Union[int, list[int]]], idx: int) -> Optional[list[int]]:
     """Generate a child seed from a parent seed.
 
     Parameters
@@ -27,7 +26,7 @@ def child_seed(seed: Optional[Union[int, List[int]]], idx: int) -> Optional[List
 
     Returns
     -------
-    Optional[List[int]]
+    Optional[list[int]]
         The child seed.
     """
     # See https://numpy.org/doc/stable/reference/random/parallel.html#sequence-of-integer-seeds

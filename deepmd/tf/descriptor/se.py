@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
 from typing import (
-    List,
     Optional,
-    Set,
-    Tuple,
 )
 
 from deepmd.dpmodel.utils.network import (
@@ -80,7 +77,7 @@ class DescrptSe(Descriptor):
         self.rij = tf.identity(self.rij, name="o_rij" + suffix)
         self.nlist = tf.identity(self.nlist, name="o_nlist" + suffix)
 
-    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> tuple[str]:
         """Get names of tensors.
 
         Parameters
@@ -90,7 +87,7 @@ class DescrptSe(Descriptor):
 
         Returns
         -------
-        Tuple[str]
+        tuple[str]
             Names of tensors
         """
         return (
@@ -157,9 +154,9 @@ class DescrptSe(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -190,11 +187,11 @@ class DescrptSe(Descriptor):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
-        excluded_types: Set[Tuple[int, int]] = set(),
+        excluded_types: set[tuple[int, int]] = set(),
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -207,7 +204,7 @@ class DescrptSe(Descriptor):
             The dimension of elements
         in_dim : int
             The input dimension
-        neuron : List[int]
+        neuron : list[int]
             The neuron list
         activation_function : str
             The activation function
@@ -215,7 +212,7 @@ class DescrptSe(Descriptor):
             Whether to use resnet
         variables : dict
             The input variables
-        excluded_types : Set[Tuple[int, int]], optional
+        excluded_types : set[tuple[int, int]], optional
             The excluded types
         suffix : str, optional
             The suffix of the scope

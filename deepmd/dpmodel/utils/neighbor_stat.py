@@ -4,7 +4,6 @@ from collections.abc import (
 )
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -49,7 +48,7 @@ class NeighborStatOP(NativeOP):
         coord: np.ndarray,
         atype: np.ndarray,
         cell: Optional[np.ndarray],
-    ) -> Tuple[float, np.ndarray]:
+    ) -> tuple[float, np.ndarray]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -132,7 +131,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 
         Yields

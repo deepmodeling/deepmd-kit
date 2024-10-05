@@ -8,9 +8,6 @@ from abc import (
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Tuple,
-)
 
 import numpy as np
 
@@ -48,7 +45,7 @@ class NeighborStat(ABC):
         self.ntypes = ntypes
         self.mixed_type = mixed_type
 
-    def get_stat(self, data: DeepmdDataSystem) -> Tuple[float, np.ndarray]:
+    def get_stat(self, data: DeepmdDataSystem) -> tuple[float, np.ndarray]:
         """Get the data statistics of the training data, including nearest nbor distance between atoms, max nbor size of atoms.
 
         Parameters
@@ -91,7 +88,7 @@ class NeighborStat(ABC):
     @abstractmethod
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 
         Yields

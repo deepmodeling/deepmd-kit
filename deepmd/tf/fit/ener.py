@@ -2,7 +2,6 @@
 import logging
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
 )
 
@@ -149,7 +148,7 @@ class EnerFitting(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -157,23 +156,23 @@ class EnerFitting(Fitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
+        trainable: Optional[list[bool]] = None,
         seed: Optional[int] = None,
-        atom_ener: List[float] = [],
+        atom_ener: list[float] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: Optional[list[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Optional[Spin] = None,
         mixed_types: bool = False,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -942,7 +941,7 @@ class EnerFitting(Fitting):
         return data
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         data_requirement = []
         if self.numb_fparam > 0:
@@ -963,8 +962,8 @@ class EnerFitting(Fitting):
 def change_energy_bias_lower(
     data: DeepmdDataSystem,
     dp: DeepEval,
-    origin_type_map: List[str],
-    full_type_map: List[str],
+    origin_type_map: list[str],
+    full_type_map: list[str],
     bias_atom_e: np.ndarray,
     bias_adjust_mode="change-by-statistic",
     ntest=10,

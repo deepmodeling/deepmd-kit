@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    Tuple,
     overload,
 )
 
@@ -29,7 +28,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: Literal[False] = ...,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 @overload
@@ -38,7 +37,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: Literal[True] = ...,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 @overload
@@ -47,7 +46,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: bool = False,
-) -> Tuple[np.ndarray, ...]: ...
+) -> tuple[np.ndarray, ...]: ...
 
 
 def calc_model_devi_f(
@@ -55,7 +54,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: bool = False,
-) -> Tuple[np.ndarray, ...]:
+) -> tuple[np.ndarray, ...]:
     """Calculate model deviation of force.
 
     Parameters
@@ -141,7 +140,7 @@ def calc_model_devi_v(
     vs: np.ndarray,
     real_v: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculate model deviation of virial.
 
     Parameters

@@ -6,8 +6,6 @@ from copy import (
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
 )
 
@@ -31,7 +29,7 @@ from .....utils import (
 class ModelTestCase:
     """Common test case for model."""
 
-    expected_type_map: List[str]
+    expected_type_map: list[str]
     """Expected type map."""
     expected_rcut: float
     """Expected cut-off radius."""
@@ -39,15 +37,15 @@ class ModelTestCase:
     """Expected number (dimension) of frame parameters."""
     expected_dim_aparam: int
     """Expected number (dimension) of atomic parameters."""
-    expected_sel_type: List[int]
+    expected_sel_type: list[int]
     """Expected selected atom types."""
     expected_aparam_nall: bool
     """Expected shape of atomic parameters."""
-    expected_model_output_type: List[str]
+    expected_model_output_type: list[str]
     """Expected output type for the model."""
-    model_output_equivariant: List[str]
+    model_output_equivariant: list[str]
     """Outputs that are equivariant to the input rotation."""
-    expected_sel: List[int]
+    expected_sel: list[int]
     """Expected number of neighbors."""
     expected_has_message_passing: bool
     """Expected whether having message passing."""
@@ -55,11 +53,11 @@ class ModelTestCase:
     """Class wrapper for forward method."""
     forward_wrapper_cpu_ref: Callable[[Any], Any]
     """Convert model to CPU method."""
-    aprec_dict: Dict[str, Optional[float]]
+    aprec_dict: dict[str, Optional[float]]
     """Dictionary of absolute precision in each test."""
-    rprec_dict: Dict[str, Optional[float]]
+    rprec_dict: dict[str, Optional[float]]
     """Dictionary of relative precision in each test."""
-    epsilon_dict: Dict[str, Optional[float]]
+    epsilon_dict: dict[str, Optional[float]]
     """Dictionary of epsilons in each test."""
 
     def test_get_type_map(self):

@@ -2,10 +2,7 @@
 import warnings
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -100,7 +97,7 @@ class DescrptSeAMask(DescrptSeA):
             Random seed for initializing the network parameters.
     type_one_side
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
@@ -120,13 +117,13 @@ class DescrptSeAMask(DescrptSeA):
 
     def __init__(
         self,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         type_one_side: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
@@ -271,7 +268,7 @@ class DescrptSeAMask(DescrptSeA):
         natoms: tf.Tensor,
         box_: tf.Tensor,
         mesh: tf.Tensor,
-        input_dict: Dict[str, Any],
+        input_dict: dict[str, Any],
         reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
@@ -384,7 +381,7 @@ class DescrptSeAMask(DescrptSeA):
         self,
         atom_ener: tf.Tensor,
         natoms: tf.Tensor,
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -430,9 +427,9 @@ class DescrptSeAMask(DescrptSeA):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
