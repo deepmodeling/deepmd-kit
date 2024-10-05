@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Iterator,
+)
 from typing import (
     TYPE_CHECKING,
     Dict,
@@ -6,7 +9,6 @@ from typing import (
     Tuple,
     Union,
 )
-from collections.abc import Iterator
 
 import numpy as np
 import torch

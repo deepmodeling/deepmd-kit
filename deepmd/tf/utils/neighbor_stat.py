@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Iterator,
+)
 from typing import (
     Optional,
     Tuple,
 )
-from collections.abc import Iterator
 
 import numpy as np
 

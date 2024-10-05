@@ -3,6 +3,9 @@
 
 import json
 import warnings
+from collections.abc import (
+    Sequence,
+)
 from pathlib import (
     Path,
 )
@@ -12,7 +15,6 @@ from typing import (
     Optional,
     Union,
 )
-from collections.abc import Sequence
 
 import numpy as np
 

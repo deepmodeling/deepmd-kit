@@ -5,10 +5,12 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Iterator,
+)
 from typing import (
     Tuple,
 )
-from collections.abc import Iterator
 
 import numpy as np
 
