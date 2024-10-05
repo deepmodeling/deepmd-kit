@@ -545,8 +545,6 @@ def test_ener(
             _n_frames_, _n_hessian_ = test_data['hessian'][:numb_test].shape
             _n_atoms_ = np.int32(np.sqrt(_n_hessian_) / 3)  # n_hessian = 3na*3na
             triu_indices = np.triu_indices(_n_atoms_ * 3)  # upper triangle hessian indices
-            data_h = test_data["hessian"][:numb_test].reshape(-1, _n_atoms_ * _n_atoms_ * 9)
-            pred_h = hessian.reshape(-1, _n_atoms_ * _n_atoms_ * 9)
             data_h_triu = test_data["hessian"][:numb_test][:, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]].reshape(-1, 1)
             pred_h_triu = hessian[:, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]].reshape(-1, 1)
             h = np.concatenate(
