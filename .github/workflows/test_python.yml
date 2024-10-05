@@ -34,7 +34,7 @@ jobs:
         # existing TensorFlow package. Currently, it uses
         # TensorFlow in the build dependency, but if it
         # changes, setting `TENSORFLOW_ROOT`.
-        TENSORFLOW_VERSION: ${{ matrix.python == '3.8' && '2.13.1' || '2.16.1' }}
+        TENSORFLOW_VERSION: 2.16.1
         DP_ENABLE_PYTORCH: 1
         DP_BUILD_TESTING: 1
         UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/njzjz/simple https://pypi.anaconda.org/mpi4py/simple"
