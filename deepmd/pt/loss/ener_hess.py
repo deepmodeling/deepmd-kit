@@ -427,7 +427,7 @@ class EnergyHessianStdLoss(TaskLoss):
                     repeat=3,
                 )
             )
-        if self.has_gf > 0:
+        if self.has_gf:
             label_requirement.append(
                 DataRequirementItem(
                     "drdq",
