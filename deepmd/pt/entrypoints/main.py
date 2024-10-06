@@ -8,7 +8,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -485,7 +484,7 @@ def change_bias(FLAGS):
 
 
 @record
-def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
+def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

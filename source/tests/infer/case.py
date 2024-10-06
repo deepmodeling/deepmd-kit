@@ -27,7 +27,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Dict,
     Optional,
 )
 
@@ -175,12 +174,12 @@ class Case:
 
 
 @lru_cache
-def get_cases() -> Dict[str, Case]:
+def get_cases() -> dict[str, Case]:
     """Get all test cases.
 
     Returns
     -------
-    Dict[str, Case]
+    dict[str, Case]
         A dictionary containing all test cases.
 
     Examples

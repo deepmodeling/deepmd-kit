@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
@@ -47,12 +46,12 @@ class DipoleFittingSeA(Fitting):
             The dimension of the descrptor :math:`\mathcal{D}`
     embedding_width
             The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
-    neuron : List[int]
+    neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    sel_type : List[int]
+    sel_type : list[int]
             The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
     seed : int
             Random seed for initializing the network parameters.
@@ -65,7 +64,7 @@ class DipoleFittingSeA(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -74,15 +73,15 @@ class DipoleFittingSeA(Fitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: Optional[list[int]] = None,
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""

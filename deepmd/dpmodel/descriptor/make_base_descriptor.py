@@ -5,9 +5,7 @@ from abc import (
 )
 from typing import (
     Callable,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -61,7 +59,7 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected neighboring atoms for each type."""
             pass
 
@@ -79,7 +77,7 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the name to each type of atoms."""
             pass
 
@@ -124,7 +122,7 @@ def make_base_descriptor(
 
         @abstractmethod
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -143,7 +141,7 @@ def make_base_descriptor(
 
         def compute_input_stats(
             self,
-            merged: Union[Callable[[], List[dict]], List[dict]],
+            merged: Union[Callable[[], list[dict]], list[dict]],
             path: Optional[DPPath] = None,
         ):
             """Update mean and stddev for descriptor elements."""
@@ -188,9 +186,9 @@ def make_base_descriptor(
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[List[str]],
+            type_map: Optional[list[str]],
             local_jdata: dict,
-        ) -> Tuple[dict, Optional[float]]:
+        ) -> tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters

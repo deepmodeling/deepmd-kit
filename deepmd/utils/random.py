@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    Tuple,
     Union,
 )
 
@@ -12,7 +11,7 @@ _RANDOM_GENERATOR = np.random.RandomState()
 
 def choice(
     a: Union[np.ndarray, int],
-    size: Optional[Union[int, Tuple[int, ...]]] = None,
+    size: Optional[Union[int, tuple[int, ...]]] = None,
     replace: bool = True,
     p: Optional[np.ndarray] = None,
 ):

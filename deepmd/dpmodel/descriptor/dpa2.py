@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -70,7 +68,7 @@ class RepinitArgs:
         rcut: float,
         rcut_smth: float,
         nsel: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 16,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -79,7 +77,7 @@ class RepinitArgs:
         resnet_dt: bool = False,
         type_one_side: bool = False,
         use_three_body: bool = False,
-        three_body_neuron: List[int] = [2, 4, 8],
+        three_body_neuron: list[int] = [2, 4, 8],
         three_body_sel: int = 40,
         three_body_rcut: float = 4.0,
         three_body_rcut_smth: float = 0.5,
@@ -371,14 +369,14 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         concat_output_tebd: bool = True,
         precision: str = "float64",
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
@@ -394,7 +392,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters.
         smooth : bool, optional
             Whether to use smoothness in processes such as attention weights calculation.
-        exclude_types : List[List[int]], optional
+        exclude_types : list[list[int]], optional
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float, optional
@@ -410,7 +408,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             Whether to use electronic configuration type embedding.
         use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-        type_map : List[str], Optional
+        type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
         Returns
@@ -602,7 +600,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -610,7 +608,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -660,7 +658,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -723,14 +721,14 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
     def set_stat_mean_and_stddev(
         self,
-        mean: List[np.ndarray],
-        stddev: List[np.ndarray],
+        mean: list[np.ndarray],
+        stddev: list[np.ndarray],
     ) -> None:
         """Update mean and stddev for descriptor."""
         descrpt_list = [self.repinit, self.repformers]
@@ -740,7 +738,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
-    def get_stat_mean_and_stddev(self) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    def get_stat_mean_and_stddev(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
         """Get mean and stddev for descriptor."""
         mean_list = [self.repinit.mean, self.repformers.mean]
         stddev_list = [
@@ -1015,9 +1013,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

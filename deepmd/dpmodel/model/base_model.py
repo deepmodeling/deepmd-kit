@@ -7,10 +7,7 @@ from abc import (
 )
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
-    Type,
 )
 
 from deepmd.utils.data_system import (
@@ -22,7 +19,7 @@ from deepmd.utils.plugin import (
 )
 
 
-def make_base_model() -> Type[object]:
+def make_base_model() -> type[object]:
     class BaseBaseModel(ABC, PluginVariant, make_plugin_registry("model")):
         """Base class for final exported model that will be directly used for inference.
 
@@ -67,7 +64,7 @@ def make_base_model() -> Type[object]:
             pass
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
 
         @abstractmethod
@@ -83,7 +80,7 @@ def make_base_model() -> Type[object]:
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -99,7 +96,7 @@ def make_base_model() -> Type[object]:
             """
 
         @abstractmethod
-        def model_output_type(self) -> List[str]:
+        def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
 
         @abstractmethod
@@ -166,9 +163,9 @@ def make_base_model() -> Type[object]:
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[List[str]],
+            type_map: Optional[list[str]],
             local_jdata: dict,
-        ) -> Tuple[dict, Optional[float]]:
+        ) -> tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -60,9 +58,9 @@ class DescrptLocFrame(Descriptor):
     def __init__(
         self,
         rcut: float,
-        sel_a: List[int],
-        sel_r: List[int],
-        axis_rule: List[int],
+        sel_a: list[int],
+        sel_r: list[int],
+        axis_rule: list[int],
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -142,7 +140,7 @@ class DescrptLocFrame(Descriptor):
         """Returns the output dimension of this descriptor."""
         return self.ndescrpt
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns
         -------
         nlist
@@ -320,7 +318,7 @@ class DescrptLocFrame(Descriptor):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -437,9 +435,9 @@ class DescrptLocFrame(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

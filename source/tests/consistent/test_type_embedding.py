@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -96,7 +95,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
 
         self.ntypes = 2
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return [
             obj.build(
                 obj.ntypes,
@@ -121,7 +120,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
                 raise ValueError("Output is numpy array")
         return [np.array(x) if isinstance(x, jnp.ndarray) else x for x in (out,)]
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

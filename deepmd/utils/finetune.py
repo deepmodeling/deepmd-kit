@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    List,
-    Tuple,
-)
 
 log = logging.getLogger(__name__)
 
@@ -11,8 +7,8 @@ log = logging.getLogger(__name__)
 class FinetuneRuleItem:
     def __init__(
         self,
-        p_type_map: List[str],
-        type_map: List[str],
+        p_type_map: list[str],
+        type_map: list[str],
         model_branch: str = "Default",
         random_fitting: bool = False,
         resuming: bool = False,
@@ -74,21 +70,21 @@ class FinetuneRuleItem:
 
 
 def get_index_between_two_maps(
-    old_map: List[str],
-    new_map: List[str],
+    old_map: list[str],
+    new_map: list[str],
 ):
     """Returns the mapping index of types in new_map to those in the old_map.
 
     Parameters
     ----------
-    old_map : List[str]
+    old_map : list[str]
         The old list of atom type names.
-    new_map : List[str]
+    new_map : list[str]
         The new list of atom type names.
 
     Returns
     -------
-    index_map: List[int]
+    index_map: list[int]
         List contains `len(new_map)` indices, where `index_map[i]` is the index of `new_map[i]` in `old_map`.
         If `new_map[i]` is not in the `old_map`, the index will be `i - len(new_map)`.
     has_new_type: bool
@@ -112,21 +108,21 @@ def get_index_between_two_maps(
 
 
 def map_atom_exclude_types(
-    atom_exclude_types: List[int],
-    remap_index: List[int],
+    atom_exclude_types: list[int],
+    remap_index: list[int],
 ):
     """Return the remapped atom_exclude_types according to remap_index.
 
     Parameters
     ----------
-    atom_exclude_types : List[int]
+    atom_exclude_types : list[int]
         Exclude the atomic contribution of the given types.
-    remap_index : List[int]
+    remap_index : list[int]
         The indices in the old type list that correspond to the types in the new type list.
 
     Returns
     -------
-    remapped_atom_exclude_types: List[int]
+    remapped_atom_exclude_types: list[int]
         Remapped atom_exclude_types that only keeps the types in the new type list.
 
     """
@@ -137,22 +133,22 @@ def map_atom_exclude_types(
 
 
 def map_pair_exclude_types(
-    pair_exclude_types: List[Tuple[int, int]],
-    remap_index: List[int],
+    pair_exclude_types: list[tuple[int, int]],
+    remap_index: list[int],
 ):
     """Return the remapped atom_exclude_types according to remap_index.
 
     Parameters
     ----------
-    pair_exclude_types : List[Tuple[int, int]]
+    pair_exclude_types : list[tuple[int, int]]
         Exclude the pair of atoms of the given types from computing the output
         of the atomic model.
-    remap_index : List[int]
+    remap_index : list[int]
         The indices in the old type list that correspond to the types in the new type list.
 
     Returns
     -------
-    remapped_pair_exclude_typess: List[Tuple[int, int]]
+    remapped_pair_exclude_typess: list[tuple[int, int]]
         Remapped pair_exclude_types that only keeps the types in the new type list.
 
     """
