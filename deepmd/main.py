@@ -14,10 +14,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -57,10 +54,10 @@ class RawTextArgumentDefaultsHelpFormatter(
     """This formatter is used to print multile-line help message with default value."""
 
 
-BACKENDS: Dict[str, Type[Backend]] = Backend.get_backends_by_feature(
+BACKENDS: dict[str, type[Backend]] = Backend.get_backends_by_feature(
     Backend.Feature.ENTRY_POINT
 )
-BACKEND_TABLE: Dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
+BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
 
 
 class BackendOption(argparse.Action):
@@ -130,7 +127,7 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    BACKEND_ALIAS: Dict[str, List[str]] = defaultdict(list)
+    BACKEND_ALIAS: dict[str, list[str]] = defaultdict(list)
     for alias, backend in BACKEND_TABLE.items():
         BACKEND_ALIAS[backend].append(alias)
     for backend, alias in BACKEND_ALIAS.items():
@@ -856,12 +853,12 @@ def main_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse arguments and convert argument strings to objects.
 
     Parameters
     ----------
-    args : List[str]
+    args : list[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
 
@@ -880,12 +877,12 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main(args: Optional[List[str]] = None):
+def main(args: Optional[list[str]] = None):
     """DeePMD-kit new entry point.
 
     Parameters
     ----------
-    args : List[str]
+    args : list[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
 

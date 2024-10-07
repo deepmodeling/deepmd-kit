@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "SimulationRegion.h"
+#include "errors.h"
 #include "neighbor_list.h"
 
 using namespace deepmd;
@@ -95,6 +96,12 @@ void deepmd::compute_cell_info(
   }
   cell_info[21] = (cell_info[3 + 0]) * (cell_info[3 + 1]) *
                   (cell_info[3 + 2]);  // loc_cellnum
+  if (cell_info[21] <= 0) {
+    throw deepmd::deepmd_exception(
+        "loc_cellnum should be positive but is " +
+        std::to_string(cell_info[21]) +
+        ". You may give a PBC box with zero volume.");
+  }
   cell_info[22] = (2 * cell_info[12 + 0] + cell_info[3 + 0]) *
                   (2 * cell_info[12 + 1] + cell_info[3 + 1]) *
                   (2 * cell_info[12 + 2] + cell_info[3 + 2]);  // total_cellnum

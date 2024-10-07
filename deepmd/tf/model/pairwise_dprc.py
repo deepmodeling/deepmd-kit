@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -53,7 +50,7 @@ class PairwiseDPRc(Model):
         qm_model: dict,
         qmmm_model: dict,
         type_embedding: Union[dict, TypeEmbedNet],
-        type_map: List[str],
+        type_map: list[str],
         data_stat_nbatch: int = 10,
         data_stat_nsample: int = 10,
         data_stat_protect: float = 1e-2,
@@ -373,7 +370,7 @@ class PairwiseDPRc(Model):
         box: tf.Tensor,
         mesh: tf.Tensor,
         **kwargs,
-    ) -> Dict[str, tf.Tensor]:
+    ) -> dict[str, tf.Tensor]:
         """Generate the feed_dict for current descriptor.
 
         Parameters
@@ -416,9 +413,9 @@ class PairwiseDPRc(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -442,7 +439,7 @@ class PairwiseDPRc(Model):
         return local_jdata, min_nbor_dist
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         data_requirement = []
         data_requirement.append(

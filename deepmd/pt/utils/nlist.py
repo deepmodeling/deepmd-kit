@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -21,7 +19,7 @@ def extend_input_and_build_neighbor_list(
     coord,
     atype,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     mixed_types: bool = False,
     box: Optional[torch.Tensor] = None,
 ):
@@ -55,7 +53,7 @@ def build_neighbor_list(
     atype: torch.Tensor,
     nloc: int,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
     """Build neightbor list for a single frame. keeps nsel neighbors.
@@ -71,7 +69,7 @@ def build_neighbor_list(
         number of local atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -137,7 +135,7 @@ def _trim_mask_distinguish_nlist(
     rr: torch.Tensor,
     nlist: torch.Tensor,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     distinguish_types: bool,
 ) -> torch.Tensor:
     """Trim the size of nlist, mask if any central atom is virtual, distinguish types if necessary."""
@@ -178,7 +176,7 @@ def build_directional_neighbor_list(
     coord_neig: torch.Tensor,
     atype_neig: torch.Tensor,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
     """Build directional neighbor list.
@@ -205,7 +203,7 @@ def build_directional_neighbor_list(
         if type < 0 the atom is treated as virtual atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -277,7 +275,7 @@ def build_directional_neighbor_list(
 def nlist_distinguish_types(
     nlist: torch.Tensor,
     atype: torch.Tensor,
-    sel: List[int],
+    sel: list[int],
 ):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
@@ -327,9 +325,9 @@ def get_multiple_nlist_key(
 def build_multiple_neighbor_list(
     coord: torch.Tensor,
     nlist: torch.Tensor,
-    rcuts: List[float],
-    nsels: List[int],
-) -> Dict[str, torch.Tensor]:
+    rcuts: list[float],
+    nsels: list[int],
+) -> dict[str, torch.Tensor]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
@@ -341,14 +339,14 @@ def build_multiple_neighbor_list(
     nlist : torch.Tensor
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
-    rcuts : List[float]
+    rcuts : list[float]
         list of cut-off radius in ascending order.
-    nsels : List[int]
+    nsels : list[int]
         maximal number of neighbors in ascending order.
 
     Returns
     -------
-    nlist_dict : Dict[str, torch.Tensor]
+    nlist_dict : dict[str, torch.Tensor]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 

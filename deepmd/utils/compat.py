@@ -3,14 +3,15 @@
 
 import json
 import warnings
+from collections.abc import (
+    Sequence,
+)
 from pathlib import (
     Path,
 )
 from typing import (
     Any,
-    Dict,
     Optional,
-    Sequence,
     Union,
 )
 
@@ -22,13 +23,13 @@ from deepmd.common import (
 
 
 def convert_input_v0_v1(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
-) -> Dict[str, Any]:
+    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> dict[str, Any]:
     """Convert input from v0 format to v1.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         loaded json/yaml file
     warning : bool, optional
         whether to show deprecation warning, by default True
@@ -37,7 +38,7 @@ def convert_input_v0_v1(
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         converted output
     """
     output = {}
@@ -63,19 +64,19 @@ def _warning_input_v0_v1(fname: Optional[Union[str, Path]]):
     warnings.warn(msg)
 
 
-def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
+def _model(jdata: dict[str, Any], smooth: bool) -> dict[str, dict[str, Any]]:
     """Convert data to v1 input for non-smooth model.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
     smooth : bool
         whether to use smooth or non-smooth descriptor version
 
     Returns
     -------
-    Dict[str, Dict[str, Any]]
+    dict[str, dict[str, Any]]
         dictionary with model input parameters and sub-dictionaries for descriptor and
         fitting net
     """
@@ -87,17 +88,17 @@ def _model(jdata: Dict[str, Any], smooth: bool) -> Dict[str, Dict[str, Any]]:
     return model
 
 
-def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
+def _nonsmth_descriptor(jdata: dict[str, Any]) -> dict[str, Any]:
     """Convert data to v1 input for non-smooth descriptor.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         dict with descriptor parameters
     """
     descriptor = {}
@@ -106,17 +107,17 @@ def _nonsmth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return descriptor
 
 
-def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
+def _smth_descriptor(jdata: dict[str, Any]) -> dict[str, Any]:
     """Convert data to v1 input for smooth descriptor.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         dict with descriptor parameters
     """
     descriptor = {}
@@ -136,17 +137,17 @@ def _smth_descriptor(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return descriptor
 
 
-def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
+def _fitting_net(jdata: dict[str, Any]) -> dict[str, Any]:
     """Convert data to v1 input for fitting net.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         dict with fitting net parameters
     """
     fitting_net = {}
@@ -163,17 +164,17 @@ def _fitting_net(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return fitting_net
 
 
-def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
+def _learning_rate(jdata: dict[str, Any]) -> dict[str, Any]:
     """Convert data to v1 input for learning rate section.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         dict with learning rate parameters
     """
     learning_rate = {}
@@ -182,20 +183,20 @@ def _learning_rate(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return learning_rate
 
 
-def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
+def _loss(jdata: dict[str, Any]) -> dict[str, Any]:
     """Convert data to v1 input for loss function.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         dict with loss function parameters
     """
-    loss: Dict[str, Any] = {}
+    loss: dict[str, Any] = {}
     _jcopy(
         jdata,
         loss,
@@ -215,17 +216,17 @@ def _loss(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return loss
 
 
-def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
+def _training(jdata: dict[str, Any]) -> dict[str, Any]:
     """Convert data to v1 input for training.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         parsed input json/yaml data
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         dict with training parameters
     """
     training = {}
@@ -250,14 +251,14 @@ def _training(jdata: Dict[str, Any]) -> Dict[str, Any]:
     return training
 
 
-def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
+def _jcopy(src: dict[str, Any], dst: dict[str, Any], keys: Sequence[str]):
     """Copy specified keys from one dict to another.
 
     Parameters
     ----------
-    src : Dict[str, Any]
+    src : dict[str, Any]
         source dictionary
-    dst : Dict[str, Any]
+    dst : dict[str, Any]
         destination dictionary, will be modified in place
     keys : Sequence[str]
         list of keys to copy
@@ -267,12 +268,12 @@ def _jcopy(src: Dict[str, Any], dst: Dict[str, Any], keys: Sequence[str]):
             dst[k] = src[k]
 
 
-def remove_decay_rate(jdata: Dict[str, Any]):
+def remove_decay_rate(jdata: dict[str, Any]):
     """Convert decay_rate to stop_lr.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         input data
     """
     lr = jdata["learning_rate"]
@@ -287,8 +288,8 @@ def remove_decay_rate(jdata: Dict[str, Any]):
 
 
 def convert_input_v1_v2(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
-) -> Dict[str, Any]:
+    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> dict[str, Any]:
     tr_cfg = jdata["training"]
     tr_data_keys = {
         "systems",
@@ -334,15 +335,15 @@ def _warning_input_v1_v2(fname: Optional[Union[str, Path]]):
 
 
 def deprecate_numb_test(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
-) -> Dict[str, Any]:
+    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> dict[str, Any]:
     """Deprecate `numb_test` since v2.1. It has taken no effect since v2.0.
 
     See `#1243 <https://github.com/deepmodeling/deepmd-kit/discussions/1243>`_.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         loaded json/yaml file
     warning : bool, optional
         whether to show deprecation warning, by default True
@@ -351,7 +352,7 @@ def deprecate_numb_test(
 
     Returns
     -------
-    Dict[str, Any]
+    dict[str, Any]
         converted output
     """
     try:
@@ -372,8 +373,8 @@ def deprecate_numb_test(
 
 
 def update_deepmd_input(
-    jdata: Dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
-) -> Dict[str, Any]:
+    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+) -> dict[str, Any]:
     def is_deepmd_v0_input(jdata):
         return "model" not in jdata.keys()
 

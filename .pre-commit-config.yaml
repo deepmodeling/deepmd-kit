@@ -29,7 +29,7 @@ repos:
         exclude: ^source/3rdparty
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Ruff version.
-    rev: v0.6.7
+    rev: v0.6.8
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -52,10 +52,10 @@ repos:
       - id: blacken-docs
   # C++
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v18.1.8
+    rev: v19.1.0
     hooks:
       - id: clang-format
-        exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
+        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$)
   # markdown, yaml, CSS, javascript
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
@@ -146,7 +146,7 @@ repos:
         exclude: .pre-commit-config.yaml|source/lmp
   # customized pylint rules
   - repo: https://github.com/pylint-dev/pylint/
-    rev: v3.3.0
+    rev: v3.3.1
     hooks:
       - id: pylint
         entry: env PYTHONPATH=source/checker pylint

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -46,7 +45,7 @@ def eval_model(
     model,
     coords: Union[np.ndarray, torch.Tensor],
     cells: Optional[Union[np.ndarray, torch.Tensor]],
-    atom_types: Union[np.ndarray, torch.Tensor, List[int]],
+    atom_types: Union[np.ndarray, torch.Tensor, list[int]],
     spins: Optional[Union[np.ndarray, torch.Tensor]] = None,
     atomic: bool = False,
     infer_batch_size: int = 2,

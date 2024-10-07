@@ -2,8 +2,6 @@
 import copy
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -105,9 +103,9 @@ class InvarFitting(GeneralFitting):
             And the aparam will not be used as the atomic parameters for embedding.
     mixed_types
             If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
-    exclude_types: List[int]
+    exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
     """
@@ -118,24 +116,24 @@ class InvarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         dim_out: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         bias_atom: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = None,
+        trainable: Optional[list[bool]] = None,
+        atom_ener: Optional[list[float]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: Optional[list[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = True,
-        exclude_types: List[int] = [],
-        type_map: Optional[List[str]] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        exclude_types: list[int] = [],
+        type_map: Optional[list[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -219,7 +217,7 @@ class InvarFitting(GeneralFitting):
         h2: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

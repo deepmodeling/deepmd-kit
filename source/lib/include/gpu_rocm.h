@@ -20,8 +20,10 @@
 #define gpuMemcpyDeviceToDevice hipMemcpyDeviceToDevice
 #define gpuMemset hipMemset
 
-#define DPErrcheck(res) \
-  { DPAssert((res), __FILE__, __LINE__); }
+#define DPErrcheck(res)                  \
+  {                                      \
+    DPAssert((res), __FILE__, __LINE__); \
+  }
 inline void DPAssert(hipError_t code,
                      const char *file,
                      int line,
@@ -39,8 +41,10 @@ inline void DPAssert(hipError_t code,
   }
 }
 
-#define nborErrcheck(res) \
-  { nborAssert((res), __FILE__, __LINE__); }
+#define nborErrcheck(res)                  \
+  {                                        \
+    nborAssert((res), __FILE__, __LINE__); \
+  }
 inline void nborAssert(hipError_t code,
                        const char *file,
                        int line,

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    List,
 )
 
 import torch
@@ -634,10 +633,10 @@ class RepformerLayer(torch.nn.Module):
         if self.update_h2:
             h2 = _apply_h_norm(h2)
 
-        g2_update: List[torch.Tensor] = [g2]
-        h2_update: List[torch.Tensor] = [h2]
-        g1_update: List[torch.Tensor] = [g1]
-        g1_mlp: List[torch.Tensor] = [g1]
+        g2_update: list[torch.Tensor] = [g2]
+        h2_update: list[torch.Tensor] = [h2]
+        g1_update: list[torch.Tensor] = [g1]
+        g1_mlp: list[torch.Tensor] = [g1]
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -704,7 +703,7 @@ class RepformerLayer(torch.nn.Module):
     @torch.jit.export
     def list_update_res_avg(
         self,
-        update_list: List[torch.Tensor],
+        update_list: list[torch.Tensor],
     ) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -713,7 +712,7 @@ class RepformerLayer(torch.nn.Module):
         return uu / (float(nitem) ** 0.5)
 
     @torch.jit.export
-    def list_update_res_incr(self, update_list: List[torch.Tensor]) -> torch.Tensor:
+    def list_update_res_incr(self, update_list: list[torch.Tensor]) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -722,7 +721,7 @@ class RepformerLayer(torch.nn.Module):
         return uu
 
     @torch.jit.export
-    def list_update(self, update_list: List[torch.Tensor]) -> torch.Tensor:
+    def list_update(self, update_list: list[torch.Tensor]) -> torch.Tensor:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":

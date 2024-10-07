@@ -4,7 +4,6 @@
 import logging
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -199,7 +198,7 @@ class PairTab:
 
                 self.vdata = np.concatenate((self.vdata, pad_extrapolation), axis=0)
 
-    def get(self) -> Tuple[np.array, np.array]:
+    def get(self) -> tuple[np.array, np.array]:
         """Get the serialized table."""
         return self.tab_info, self.tab_data
 

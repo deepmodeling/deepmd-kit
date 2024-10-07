@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -23,7 +21,7 @@ def extend_input_and_build_neighbor_list(
     coord,
     atype,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     mixed_types: bool = False,
     box: Optional[np.ndarray] = None,
 ):
@@ -56,7 +54,7 @@ def build_neighbor_list(
     atype: np.ndarray,
     nloc: int,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> np.ndarray:
     """Build neightbor list for a single frame. keeps nsel neighbors.
@@ -72,7 +70,7 @@ def build_neighbor_list(
         number of local atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -156,7 +154,7 @@ def build_neighbor_list(
 def nlist_distinguish_types(
     nlist: np.ndarray,
     atype: np.ndarray,
-    sel: List[int],
+    sel: list[int],
 ):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
@@ -191,9 +189,9 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
 def build_multiple_neighbor_list(
     coord: np.ndarray,
     nlist: np.ndarray,
-    rcuts: List[float],
-    nsels: List[int],
-) -> Dict[str, np.ndarray]:
+    rcuts: list[float],
+    nsels: list[int],
+) -> dict[str, np.ndarray]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
@@ -205,14 +203,14 @@ def build_multiple_neighbor_list(
     nlist : np.ndarray
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
-    rcuts : List[float]
+    rcuts : list[float]
         list of cut-off radius in ascending order.
-    nsels : List[int]
+    nsels : list[int]
         maximal number of neighbors in ascending order.
 
     Returns
     -------
-    nlist_dict : Dict[str, np.ndarray]
+    nlist_dict : dict[str, np.ndarray]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 

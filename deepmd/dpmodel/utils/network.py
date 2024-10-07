@@ -9,8 +9,6 @@ import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -86,7 +84,7 @@ class NativeLayer(NativeOP):
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
@@ -353,7 +351,7 @@ class LayerNorm(NativeLayer):
         uni_init: bool = True,
         trainable: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         self.eps = eps
         self.uni_init = uni_init
@@ -502,7 +500,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             The layers of the network.
         """
 
-        def __init__(self, layers: Optional[List[dict]] = None) -> None:
+        def __init__(self, layers: Optional[list[dict]] = None) -> None:
             super().__init__()
             if layers is None:
                 layers = []
@@ -612,11 +610,11 @@ def make_embedding_network(T_Network, T_NetworkLayer):
         def __init__(
             self,
             in_dim,
-            neuron: List[int] = [24, 48, 96],
+            neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
-            seed: Optional[Union[int, List[int]]] = None,
+            seed: Optional[Union[int, list[int]]] = None,
             bias: bool = True,
         ):
             layers = []
@@ -717,12 +715,12 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             self,
             in_dim,
             out_dim,
-            neuron: List[int] = [24, 48, 96],
+            neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
-            seed: Optional[Union[int, List[int]]] = None,
+            seed: Optional[Union[int, list[int]]] = None,
         ):
             super().__init__(
                 in_dim,
@@ -812,7 +810,7 @@ class NetworkCollection:
     """
 
     # subclass may override this
-    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+    NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
@@ -823,7 +821,7 @@ class NetworkCollection:
         ndim: int,
         ntypes: int,
         network_type: str = "network",
-        networks: List[Union[NativeNet, dict]] = [],
+        networks: list[Union[NativeNet, dict]] = [],
     ):
         self.ndim = ndim
         self.ntypes = ntypes

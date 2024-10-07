@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
@@ -162,7 +161,7 @@ class DescrptGaussianLcc(torch.nn.Module, BaseDescriptor):
         """Returns the output dimension of pair representation."""
         return self.pair_embed_dim
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         pass
 

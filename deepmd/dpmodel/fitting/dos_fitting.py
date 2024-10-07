@@ -2,7 +2,6 @@
 import copy
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
     Union,
 )
@@ -33,19 +32,19 @@ class DOSFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         numb_dos: int = 300,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         bias_dos: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
-        trainable: Union[bool, List[bool]] = True,
+        trainable: Union[bool, list[bool]] = True,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = False,
-        exclude_types: List[int] = [],
-        type_map: Optional[List[str]] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        exclude_types: list[int] = [],
+        type_map: Optional[list[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         if bias_dos is not None:
             self.bias_dos = bias_dos

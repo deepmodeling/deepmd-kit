@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -60,9 +59,9 @@ class PropertyFittingNet(InvarFitting):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     mixed_types
             If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
-    exclude_types: List[int]
+    exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -71,10 +70,10 @@ class PropertyFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         task_dim: int = 1,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         bias_atom_p: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
-        trainable: Union[bool, List[bool]] = True,
+        trainable: Union[bool, list[bool]] = True,
         intensive: bool = False,
         bias_method: str = "normal",
         resnet_dt: bool = True,
@@ -83,8 +82,8 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        exclude_types: List[int] = [],
-        type_map: Optional[List[str]] = None,
+        exclude_types: list[int] = [],
+        type_map: Optional[list[str]] = None,
         # not used
         seed: Optional[int] = None,
     ):

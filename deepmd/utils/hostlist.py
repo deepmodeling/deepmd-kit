@@ -1,12 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import socket
-from typing import (
-    List,
-    Tuple,
-)
 
 
-def get_host_names() -> Tuple[str, List[str]]:
+def get_host_names() -> tuple[str, list[str]]:
     """Get host names of all nodes in the cluster.
 
     If mpi4py is not installed or MPI is not used, then the
@@ -16,7 +12,7 @@ def get_host_names() -> Tuple[str, List[str]]:
     -------
     str
         Host name of the current node
-    List[str]
+    list[str]
         List of host names of all nodes in the cluster
     """
     host_name = socket.gethostname()

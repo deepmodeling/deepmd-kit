@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
 from typing import (
-    List,
     Optional,
-    Set,
-    Tuple,
 )
 
 import numpy as np
@@ -90,7 +87,7 @@ class DescrptSeT(DescrptSe):
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -98,17 +95,17 @@ class DescrptSeT(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -212,7 +209,7 @@ class DescrptSeT(DescrptSe):
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
 
         Returns
@@ -495,7 +492,7 @@ class DescrptSeT(DescrptSe):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -724,11 +721,11 @@ class DescrptSeT(DescrptSe):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
-        excluded_types: Set[Tuple[int, int]] = set(),
+        excluded_types: set[tuple[int, int]] = set(),
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -741,7 +738,7 @@ class DescrptSeT(DescrptSe):
             The dimension of elements
         in_dim : int
             The input dimension
-        neuron : List[int]
+        neuron : list[int]
             The neuron list
         activation_function : str
             The activation function
@@ -749,7 +746,7 @@ class DescrptSeT(DescrptSe):
             Whether to use resnet
         variables : dict
             The input variables
-        excluded_types : Set[Tuple[int, int]], optional
+        excluded_types : set[tuple[int, int]], optional
             The excluded types
         suffix : str, optional
             The suffix of the scope

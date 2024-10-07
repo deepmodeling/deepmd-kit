@@ -4,7 +4,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    List,
     Optional,
 )
 
@@ -131,7 +130,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
@@ -148,7 +147,7 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
             The dimension of elements
         in_dim : int
             The input dimension
-        neuron : List[int]
+        neuron : list[int]
             The neuron list
         activation_function : str
             The activation function
@@ -257,6 +256,6 @@ class Fitting(PluginVariant, make_plugin_registry("fitting")):
         return fitting_net_variables
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return []
