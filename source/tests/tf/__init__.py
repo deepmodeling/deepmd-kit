@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from ..common import (
+from ..utils import (
     TEST_DEVICE,
 )
 

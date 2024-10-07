@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import torch
 
-from ..common import (
+from ..utils import (
     TEST_DEVICE,
 )
 
