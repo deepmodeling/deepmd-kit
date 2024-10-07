@@ -57,7 +57,8 @@ if not hasattr(torch.ops.deepmd, "border_op"):
         argument8,
     ) -> torch.Tensor:
         raise NotImplementedError(
-            "border_op is not available since customized PyTorch OP library is not built when freezing the model."
+            "border_op is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for DPA-2 for details."
         )
 
     # Note: this hack cannot actually save a model that can be runned using LAMMPS.
