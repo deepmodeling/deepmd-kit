@@ -2,7 +2,6 @@
 from typing import (
     Any,
     ClassVar,
-    Dict,
 )
 
 from deepmd.dpmodel.common import (
@@ -35,7 +34,7 @@ FittingNet = make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)
 
 
 class NetworkCollection(NetworkCollectionDP):
-    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+    NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
