@@ -3,7 +3,6 @@ import collections
 import logging
 import warnings
 from functools import (
-    cache,
     cached_property,
 )
 from typing import (
