@@ -2,10 +2,7 @@
 import json
 import tempfile
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import torch
@@ -56,12 +53,12 @@ class FrozenModel(BaseModel):
         return self.model.get_rcut()
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.model.get_type_map()
 
     @torch.jit.export
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.model.get_sel()
 
@@ -76,7 +73,7 @@ class FrozenModel(BaseModel):
         return self.model.get_dim_aparam()
 
     @torch.jit.export
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -124,7 +121,7 @@ class FrozenModel(BaseModel):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         return self.model.forward(
             coord,
             atype,
@@ -177,9 +174,9 @@ class FrozenModel(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

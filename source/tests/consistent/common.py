@@ -14,10 +14,7 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 from uuid import (
@@ -75,7 +72,7 @@ class CommonTest(ABC):
     """PyTorch model class."""
     jax_class: ClassVar[Optional[type]]
     """JAX model class."""
-    args: ClassVar[Optional[Union[Argument, List[Argument]]]]
+    args: ClassVar[Optional[Union[Argument, list[Argument]]]]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
     """Whether to skip the native DP model."""
@@ -118,7 +115,7 @@ class CommonTest(ABC):
         return cls(**data, **self.addtional_data)
 
     @abstractmethod
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         """Build the TF graph.
 
         Parameters
@@ -175,7 +172,7 @@ class CommonTest(ABC):
         JAX = 5
 
     @abstractmethod
-    def extract_ret(self, ret: Any, backend: RefBackend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend: RefBackend) -> tuple[np.ndarray, ...]:
         """Extract the return value when comparing with other backends.
 
         Parameters
@@ -193,7 +190,7 @@ class CommonTest(ABC):
 
     def build_eval_tf(
         self, sess: "tf.Session", obj: Any, suffix: str
-    ) -> List[np.ndarray]:
+    ) -> list[np.ndarray]:
         """Build and evaluate the TF graph."""
         t_out, feed_dict = self.build_tf(obj, suffix)
 
@@ -489,7 +486,7 @@ def parameterized(*attrs: tuple, **subblock_attrs: tuple) -> Callable:
 
 def parameterize_func(
     func: Callable,
-    param_dict_list: Dict[str, Tuple],
+    param_dict_list: dict[str, tuple],
 ):
     """Parameterize functions with different default values.
 
@@ -497,7 +494,7 @@ def parameterize_func(
     ----------
     func : Callable
         The base function.
-    param_dict_list : Dict[str, Tuple]
+    param_dict_list : dict[str, Tuple]
         Dictionary of parameters with default values to be changed in base function, each of which is a tuple of choices.
 
     Returns

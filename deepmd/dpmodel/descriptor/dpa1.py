@@ -2,9 +2,7 @@
 from typing import (
     Any,
     Callable,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -171,7 +169,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version. True option is not implemented.)
             If mask the diagonal of attention weights
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -203,7 +201,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
             (Only support None to keep consistent with other backend references.)
@@ -227,9 +225,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -240,7 +238,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -256,9 +254,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         stripped_type_embedding: Optional[bool] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         ## seed, uniform_seed, not included.
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -333,7 +331,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.se_atten.get_sel()
 
@@ -341,7 +339,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.se_atten.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -395,7 +393,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -408,12 +406,12 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -588,9 +586,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -623,9 +621,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -635,7 +633,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -646,7 +644,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
         smooth: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -748,7 +746,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -817,7 +815,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
@@ -829,7 +827,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -981,7 +979,7 @@ class NeighborGatedAttention(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -1109,7 +1107,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -1215,7 +1213,7 @@ class GatedAttentionLayer(NativeOP):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()

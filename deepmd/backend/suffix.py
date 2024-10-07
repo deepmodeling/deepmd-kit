@@ -6,7 +6,6 @@ from pathlib import (
 )
 from typing import (
     Optional,
-    Type,
     Union,
 )
 
@@ -18,7 +17,7 @@ from deepmd.backend.backend import (
 def format_model_suffix(
     filename: str,
     feature: Optional[Backend.Feature] = None,
-    preferred_backend: Optional[Union[str, Type["Backend"]]] = None,
+    preferred_backend: Optional[Union[str, type["Backend"]]] = None,
     strict_prefer: Optional[bool] = None,
 ) -> str:
     """Check and format the suffixes of a filename.

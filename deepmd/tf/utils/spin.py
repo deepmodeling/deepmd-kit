@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
@@ -25,9 +24,9 @@ class Spin:
 
     def __init__(
         self,
-        use_spin: Optional[List[bool]] = None,
-        spin_norm: Optional[List[float]] = None,
-        virtual_len: Optional[List[float]] = None,
+        use_spin: Optional[list[bool]] = None,
+        spin_norm: Optional[list[float]] = None,
+        virtual_len: Optional[list[float]] = None,
     ) -> None:
         """Constructor."""
         self.use_spin = use_spin
@@ -74,14 +73,14 @@ class Spin:
         """Returns the number of atom types which contain spin."""
         return self.ntypes_spin
 
-    def get_use_spin(self) -> List[bool]:
+    def get_use_spin(self) -> list[bool]:
         """Returns the list of whether to use spin for each atom type."""
         return self.use_spin
 
-    def get_spin_norm(self) -> List[float]:
+    def get_spin_norm(self) -> list[float]:
         """Returns the list of magnitude of atomic spin for each atom type."""
         return self.spin_norm
 
-    def get_virtual_len(self) -> List[float]:
+    def get_virtual_len(self) -> list[float]:
         """Returns the list of distance between real atom and virtual atom for each atom type."""
         return self.virtual_len

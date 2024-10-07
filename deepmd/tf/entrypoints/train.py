@@ -9,7 +9,6 @@ import logging
 import time
 from typing import (
     Any,
-    Dict,
     Optional,
 )
 
@@ -186,12 +185,12 @@ def train(
     _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
+def _do_work(jdata: dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
     """Run serial model training.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         arguments read form json/yaml control file
     run_opt : RunOptions
         object with run configuration

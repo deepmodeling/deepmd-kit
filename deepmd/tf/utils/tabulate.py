@@ -5,9 +5,6 @@ from functools import (
 )
 from typing import (
     Callable,
-    Dict,
-    List,
-    Tuple,
 )
 
 import numpy as np
@@ -53,7 +50,7 @@ class DPTabulate:
             The graph_def of the original model
     type_one_side
             Try to build N_types tables. Otherwise, building N_types^2 tables
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
@@ -65,11 +62,11 @@ class DPTabulate:
     def __init__(
         self,
         descrpt: Descriptor,
-        neuron: List[int],
+        neuron: list[int],
         graph: tf.Graph,
         graph_def: tf.GraphDef,
         type_one_side: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_fn: Callable[[tf.Tensor], tf.Tensor] = tf.nn.tanh,
         suffix: str = "",
     ) -> None:
@@ -160,7 +157,7 @@ class DPTabulate:
 
     def build(
         self, min_nbor_dist: float, extrapolate: float, stride0: float, stride1: float
-    ) -> Tuple[Dict[str, int], Dict[str, int]]:
+    ) -> tuple[dict[str, int], dict[str, int]]:
         r"""Build the tables for model compression.
 
         Parameters

@@ -2,9 +2,7 @@
 import copy
 import itertools
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -73,7 +71,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     env_protection : float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     precision : str
@@ -82,7 +80,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     ntypes : int
             Number of element types.
@@ -93,17 +91,17 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         env_protection: float = 0.0,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        type_map: Optional[list[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
     ) -> None:
         del ntypes
@@ -174,7 +172,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         return self.get_dim_out()
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -235,11 +233,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -252,13 +250,13 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -399,9 +397,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

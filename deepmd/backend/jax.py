@@ -6,8 +6,6 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     ClassVar,
-    List,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -41,7 +39,7 @@ class JAXBackend(Backend):
         # | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = []
+    suffixes: ClassVar[list[str]] = []
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -66,7 +64,7 @@ class JAXBackend(Backend):
         raise NotImplementedError
 
     @property
-    def deep_eval(self) -> Type["DeepEvalBackend"]:
+    def deep_eval(self) -> type["DeepEvalBackend"]:
         """The Deep Eval backend of the backend.
 
         Returns
@@ -77,7 +75,7 @@ class JAXBackend(Backend):
         raise NotImplementedError
 
     @property
-    def neighbor_stat(self) -> Type["NeighborStat"]:
+    def neighbor_stat(self) -> type["NeighborStat"]:
         """The neighbor statistics of the backend.
 
         Returns

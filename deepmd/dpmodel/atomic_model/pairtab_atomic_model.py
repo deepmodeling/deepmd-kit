@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -57,10 +55,10 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, List[int]],
-        type_map: List[str],
+        sel: Union[int, list[int]],
+        type_map: list[str],
         rcond: Optional[float] = None,
-        atom_ener: Optional[List[float]] = None,
+        atom_ener: Optional[list[float]] = None,
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -109,10 +107,10 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [self.sel]
 
     def get_nsel(self) -> int:
@@ -140,7 +138,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return False
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -190,7 +188,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         mapping: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.reshape(nframes, -1, 3)
 
@@ -394,7 +392,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return 0
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

@@ -3,10 +3,11 @@
 
 import logging
 import re
-from typing import (
-    Dict,
-    Optional,
+from collections.abc import (
     Sequence,
+)
+from typing import (
+    Optional,
 )
 
 import numpy as np
@@ -234,7 +235,7 @@ def check_dim(raw_graph_node: tf.Tensor, old_graph_node: tf.Tensor, node_name: s
         )
 
 
-def load_transform_node(graph: tf.Graph) -> Dict[str, tf.Tensor]:
+def load_transform_node(graph: tf.Graph) -> dict[str, tf.Tensor]:
     """Load nodes and their names from graph to dict.
 
     Parameters
@@ -244,7 +245,7 @@ def load_transform_node(graph: tf.Graph) -> Dict[str, tf.Tensor]:
 
     Returns
     -------
-    Dict[str, tf.Tensor]
+    dict[str, tf.Tensor]
         mapping on graph node names and corresponding tensors
     """
     transform_node_pattern = re.compile(TRANSFER_PATTERN)

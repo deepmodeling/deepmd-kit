@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import warnings
 from typing import (
-    List,
     Optional,
 )
 
@@ -52,18 +51,18 @@ class PolarFittingSeA(Fitting):
             The dimension of the descrptor :math:`\mathcal{D}`
     embedding_width
             The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
-    neuron : List[int]
+    neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    sel_type : List[int]
+    sel_type : list[int]
             The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
     fit_diag : bool
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
-    diag_shift : List[float]
+    diag_shift : list[float]
             The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.
     seed : int
             Random seed for initializing the network parameters.
@@ -76,7 +75,7 @@ class PolarFittingSeA(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -85,19 +84,19 @@ class PolarFittingSeA(Fitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: Optional[list[float]] = None,
         shift_diag: bool = True,  # YWolfeee: will support the user to decide whether to use this function
-        # diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
+        # diag_shift : list[float] = None, YWolfeee: will not support the user to assign a shift
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -153,7 +152,7 @@ class PolarFittingSeA(Fitting):
         self.mixed_types = mixed_types
         self.type_map = type_map
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get selected atom types."""
         return self.sel_type
 
@@ -620,18 +619,18 @@ class GlobalPolarFittingSeA:
     ----------
     descrpt : tf.Tensor
             The descrptor
-    neuron : List[int]
+    neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    sel_type : List[int]
+    sel_type : list[int]
             The atom types selected to have an atomic polarizability prediction
     fit_diag : bool
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
-    diag_shift : List[float]
+    diag_shift : list[float]
             The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.
     seed : int
             Random seed for initializing the network parameters.
@@ -644,12 +643,12 @@ class GlobalPolarFittingSeA:
     def __init__(
         self,
         descrpt: tf.Tensor,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
-        diag_shift: Optional[List[float]] = None,
+        scale: Optional[list[float]] = None,
+        diag_shift: Optional[list[float]] = None,
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",

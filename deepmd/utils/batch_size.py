@@ -7,7 +7,6 @@ from abc import (
 )
 from typing import (
     Callable,
-    Tuple,
 )
 
 import array_api_compat
@@ -81,7 +80,7 @@ class AutoBatchSize(ABC):
 
     def execute(
         self, callable: Callable, start_index: int, natoms: int
-    ) -> Tuple[int, tuple]:
+    ) -> tuple[int, tuple]:
         """Excuate a method with given batch size.
 
         Parameters
@@ -153,7 +152,7 @@ class AutoBatchSize(ABC):
 
     def execute_all(
         self, callable: Callable, total_size: int, natoms: int, *args, **kwargs
-    ) -> Tuple[np.ndarray]:
+    ) -> tuple[np.ndarray]:
         """Excuate a method with all given data.
 
         This method is compatible with Array API.
@@ -174,7 +173,7 @@ class AutoBatchSize(ABC):
 
         def execute_with_batch_size(
             batch_size: int, start_index: int
-        ) -> Tuple[int, Tuple[np.ndarray]]:
+        ) -> tuple[int, tuple[np.ndarray]]:
             end_index = start_index + batch_size
             end_index = min(end_index, total_size)
             return (end_index - start_index), callable(

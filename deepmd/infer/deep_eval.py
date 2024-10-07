@@ -7,11 +7,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -111,7 +107,7 @@ class DeepEvalBackend(ABC):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -158,7 +154,7 @@ class DeepEvalBackend(ABC):
         """Get the number of atom types of this model."""
 
     @abstractmethod
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
 
     @abstractmethod
@@ -256,11 +252,11 @@ class DeepEvalBackend(ABC):
 
     @property
     @abstractmethod
-    def model_type(self) -> Type["DeepEval"]:
+    def model_type(self) -> type["DeepEval"]:
         """The the evaluator of the model type."""
 
     @abstractmethod
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -355,7 +351,7 @@ class DeepEval(ABC):
         """Get the number of atom types of this model."""
         return self.deep_eval.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.deep_eval.get_type_map()
 
@@ -372,7 +368,7 @@ class DeepEval(ABC):
         coords: np.ndarray,
         atom_types: np.ndarray,
         mixed_type: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if mixed_type or atom_types.ndim > 1:
             natoms = len(atom_types[0])
         else:
@@ -525,7 +521,7 @@ class DeepEval(ABC):
                 )
         return coords, cells, atom_types, fparam, aparam, nframes, natoms
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
