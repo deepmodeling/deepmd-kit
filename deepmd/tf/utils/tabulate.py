@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from functools import (
+    cached_property,
     lru_cache,
 )
 from typing import (
@@ -770,8 +771,7 @@ class DPTabulate:
             raise RuntimeError("Unsupported descriptor")
         return layer_size
 
-    @property
-    @lru_cache
+    @cached_property
     def _n_all_excluded(self) -> int:
         """Then number of types excluding all types."""
         return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))

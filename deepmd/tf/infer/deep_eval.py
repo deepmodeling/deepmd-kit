@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 from functools import (
-    cache,
+    cached_property,
 )
 from typing import (
     TYPE_CHECKING,
@@ -263,8 +263,7 @@ class DeepEval(DeepEvalBackend):
         else:
             self.modifier_type = None
 
-    @property
-    @cache
+    @cached_property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """Get type of model.
 
@@ -288,8 +287,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError(f"unknown model type {model_type}")
 
-    @property
-    @cache
+    @cached_property
     def model_version(self) -> str:
         """Get version of model.
 
@@ -307,8 +305,7 @@ class DeepEval(DeepEvalBackend):
             [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
 
-    @property
-    @cache
+    @cached_property
     def sess(self) -> tf.Session:
         """Get TF session."""
         # start a tf session associated to the graph
@@ -1192,8 +1189,7 @@ class DeepEvalOld:
 
         self.neighbor_list = neighbor_list
 
-    @property
-    @cache
+    @cached_property
     def model_type(self) -> str:
         """Get type of model.
 
@@ -1203,8 +1199,7 @@ class DeepEvalOld:
         [mt] = run_sess(self.sess, [t_mt], feed_dict={})
         return mt.decode("utf-8")
 
-    @property
-    @cache
+    @cached_property
     def model_version(self) -> str:
         """Get version of model.
 
@@ -1222,8 +1217,7 @@ class DeepEvalOld:
             [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
 
-    @property
-    @cache
+    @cached_property
     def sess(self) -> tf.Session:
         """Get TF session."""
         # start a tf session associated to the graph

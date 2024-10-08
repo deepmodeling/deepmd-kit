@@ -3,7 +3,7 @@ import collections
 import logging
 import warnings
 from functools import (
-    cache,
+    cached_property,
 )
 from typing import (
     Any,
@@ -238,8 +238,7 @@ class DeepmdDataSystem:
             for nn in test_system_data:
                 self.test_data[nn].append(test_system_data[nn])
 
-    @property
-    @cache
+    @cached_property
     def default_mesh(self) -> list[np.ndarray]:
         """Mesh for each system."""
         return [
