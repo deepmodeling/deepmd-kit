@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from functools import (
+    cache,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.common import (
@@ -30,9 +34,10 @@ class DPTestCase(BackendTestCase):
     def convert_from_numpy(cls, xx: np.ndarray) -> np.ndarray:
         return xx
 
-    @property
-    def deserialized_module(self):
-        return self.module.deserialize(self.module.serialize())
+    @classmethod
+    @cache
+    def deserialized_module(cls):
+        return cls.module.deserialize(cls.module.serialize())
 
     @property
     def modules_to_test(self):
