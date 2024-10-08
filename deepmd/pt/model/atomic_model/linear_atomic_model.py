@@ -333,7 +333,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.get("@version", 2), 2, 1)
+        check_version_compatibility(data.pop("@version", 2), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         models = [
