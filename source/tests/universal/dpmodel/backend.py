@@ -41,7 +41,9 @@ class DPTestCase(BackendTestCase):
 
     @property
     def deserialized_module(self):
-        return self._get_deserialized_module()
+        if hasattr(self.__class__, "module"):
+            return self._get_deserialized_module()
+        return self.module.deserialize(self.module.serialize())
 
     @property
     def modules_to_test(self):

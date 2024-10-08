@@ -30,7 +30,10 @@ class PTTestCase(BackendTestCase):
 
     @property
     def script_module(self):
-        return self._get_script_module()
+        if hasattr(self.__class__, "module"):
+            return self._get_script_module()
+        with torch.jit.optimized_execution(False):
+            return torch.jit.script(self.module)
 
     @classmethod
     @cache
@@ -39,7 +42,9 @@ class PTTestCase(BackendTestCase):
 
     @property
     def deserialized_module(self):
-        return self._get_deserialized_module()
+        if hasattr(self.__class__, "module"):
+            return self._get_deserialized_module()
+        return self.module.deserialize(self.module.serialize())
 
     @property
     def modules_to_test(self):
