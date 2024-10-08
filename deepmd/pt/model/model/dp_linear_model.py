@@ -156,7 +156,7 @@ class DPLinearModel(DPLinearModel_):
         local_jdata_cpy = local_jdata.copy()
         type_map = local_jdata_cpy["type_map"]
         min_nbor_dist = None
-        for idx,sub_model in enumerate(local_jdata_cpy["models"]):
+        for idx, sub_model in enumerate(local_jdata_cpy["models"]):
             if "tab_file" not in sub_model:
                 sub_model, temp_min = DPModelCommon.update_sel(
                     train_data, type_map, local_jdata["models"][idx]
