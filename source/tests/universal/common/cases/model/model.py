@@ -27,6 +27,7 @@ class EnerModelTest(ModelTestCase):
         cls.rprec_dict = {}
         cls.epsilon_dict = {}
 
+
 class LinearEnerModelTest(ModelTestCase):
     @classmethod
     def setUpClass(cls) -> None:

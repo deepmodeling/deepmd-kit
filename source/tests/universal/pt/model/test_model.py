@@ -19,8 +19,8 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.model import (
     DipoleModel,
     DOSModel,
-    DPZBLModel,
     DPLinearModel,
+    DPZBLModel,
     EnergyModel,
     PolarModel,
     PropertyModel,
@@ -44,11 +44,11 @@ from ...common.cases.model.model import (
     DipoleModelTest,
     DosModelTest,
     EnerModelTest,
+    LinearEnerModelTest,
     PolarModelTest,
     PropertyModelTest,
     SpinEnerModelTest,
     ZBLModelTest,
-    LinearEnerModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
@@ -806,6 +806,7 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
 
+
 @parameterized(
     des_parameterized=(
         (
@@ -860,7 +861,7 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
         if skiptest:
             raise cls.skipTest(cls, skip_reason)
 
-        ds1,ds2 = Descrpt(**cls.input_dict_ds), Descrpt(**cls.input_dict_ds)
+        ds1, ds2 = Descrpt(**cls.input_dict_ds), Descrpt(**cls.input_dict_ds)
         cls.input_dict_ft = FittingParam(
             ntypes=len(cls.expected_type_map),
             dim_descrpt=ds1.get_dim_out(),
