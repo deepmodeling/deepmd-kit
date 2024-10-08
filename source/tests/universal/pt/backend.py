@@ -24,14 +24,22 @@ class PTTestCase(BackendTestCase):
 
     @classmethod
     @cache
-    def script_module(cls):
+    def _get_script_module(cls):
         with torch.jit.optimized_execution(False):
             return torch.jit.script(cls.module)
 
+    @property
+    def script_module(self):
+        return self._get_script_module()
+
     @classmethod
     @cache
-    def deserialized_module(cls):
+    def _get_deserialized_module(cls):
         return cls.module.deserialize(cls.module.serialize())
+
+    @property
+    def deserialized_module(self):
+        return self._get_deserialized_module()
 
     @property
     def modules_to_test(self):

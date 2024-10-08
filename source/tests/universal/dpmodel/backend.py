@@ -36,8 +36,12 @@ class DPTestCase(BackendTestCase):
 
     @classmethod
     @cache
-    def deserialized_module(cls):
+    def _get_deserialized_module(cls):
         return cls.module.deserialize(cls.module.serialize())
+
+    @property
+    def deserialized_module(self):
+        return self._get_deserialized_module()
 
     @property
     def modules_to_test(self):
