@@ -52,3 +52,10 @@ class DPTestCase(BackendTestCase):
             self.deserialized_module,
         ]
         return modules
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if hasattr(cls, "module"):
+            del cls.module
+        cls._get_deserialized_module.cache_clear()
