@@ -885,7 +885,7 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
             type_map=cls.expected_type_map,
         )
         cls.module = DPLinearModel(
-            [dp_model1,dp_model2],
+            [dp_model1, dp_model2],
             type_map=cls.expected_type_map,
         )
         # only test jit API once for different models
