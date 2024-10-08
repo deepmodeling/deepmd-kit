@@ -1,0 +1,96 @@
+{
+  "_comment1": " model parameters",
+  "model": {
+    "type": "linear_ener",
+    "weights": "sum",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "models": [
+      {
+        "descriptor": {
+          "type": "se_atten",
+          "sel": [
+            46,
+            92
+          ],
+          "rcut_smth": 0.50,
+          "rcut": 6.00,
+          "neuron": [
+            25,
+            50,
+            100
+          ],
+          "resnet_dt": false,
+          "axis_neuron": 16,
+          "type_one_side": true,
+          "precision": "float64",
+          "seed": 1,
+          "_comment2": " that's all"
+        },
+        "fitting_net": {
+          "neuron": [
+            240,
+            240,
+            240
+          ],
+          "resnet_dt": true,
+          "precision": "float64",
+          "seed": 1,
+          "_comment3": " that's all"
+        },
+        "_comment4": " that's all"
+      },
+      {
+        "type": "pairtab",
+        "tab_file": "dftd3.txt",
+        "rcut": 10.0,
+        "sel": 534
+      }
+    ]
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-8,
+    "_comment5": "that's all"
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0,
+    "_comment6": " that's all"
+  },
+  "training": {
+    "training_data": {
+      "systems": [
+        "../data/data_0/",
+        "../data/data_1/",
+        "../data/data_2/"
+      ],
+      "batch_size": "auto",
+      "_comment7": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1,
+      "numb_btch": 3,
+      "_comment8": "that's all"
+    },
+    "numb_steps": 1000000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 1000,
+    "_comment9": "that's all"
+  },
+  "_comment10": "that's all"
+}
