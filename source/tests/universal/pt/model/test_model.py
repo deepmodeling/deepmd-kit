@@ -20,6 +20,7 @@ from deepmd.pt.model.model import (
     DipoleModel,
     DOSModel,
     DPZBLModel,
+    DPLinearModel,
     EnergyModel,
     PolarModel,
     PropertyModel,
@@ -47,6 +48,7 @@ from ...common.cases.model.model import (
     PropertyModelTest,
     SpinEnerModelTest,
     ZBLModelTest,
+    LinearEnerModelTest,
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
@@ -803,3 +805,99 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
+
+@parameterized(
+    des_parameterized=(
+        (
+            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
+            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+        ),  # descrpt_class_param & class
+        ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
+    ),
+    fit_parameterized=(
+        (
+            (DescriptorParamDPA1, DescrptDPA1),
+            (DescriptorParamDPA2, DescrptDPA2),
+        ),  # descrpt_class_param & class
+        (
+            *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
+        ),  # fitting_class_param & class
+    ),
+)
+class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase):
+    @property
+    def modules_to_test(self):
+        skip_test_jit = getattr(self, "skip_test_jit", False)
+        modules = PTTestCase.modules_to_test.fget(self)
+        if not skip_test_jit:
+            # for Model, we can test script module API
+            modules += [
+                self._script_module
+                if hasattr(self, "_script_module")
+                else self.script_module
+            ]
+        return modules
+
+    @classmethod
+    def setUpClass(cls):
+        LinearEnerModelTest.setUpClass()
+        (DescriptorParam, Descrpt) = cls.param[0]
+        (FittingParam, Fitting) = cls.param[1]
+        # set special precision
+        cls.aprec_dict["test_smooth"] = 1e-5
+        cls.input_dict_ds = DescriptorParam(
+            len(cls.expected_type_map),
+            cls.expected_rcut,
+            cls.expected_rcut / 2,
+            cls.expected_sel,
+            cls.expected_type_map,
+        )
+
+        # set skip tests
+        skiptest, skip_reason = skip_model_tests(cls)
+        if skiptest:
+            raise cls.skipTest(cls, skip_reason)
+
+        ds1,ds2 = Descrpt(**cls.input_dict_ds), Descrpt(**cls.input_dict_ds)
+        cls.input_dict_ft = FittingParam(
+            ntypes=len(cls.expected_type_map),
+            dim_descrpt=ds1.get_dim_out(),
+            mixed_types=ds1.mixed_types(),
+            type_map=cls.expected_type_map,
+        )
+        ft1 = Fitting(
+            **cls.input_dict_ft,
+        )
+        ft2 = Fitting(
+            **cls.input_dict_ft,
+        )
+        dp_model1 = DPAtomicModel(
+            ds1,
+            ft1,
+            type_map=cls.expected_type_map,
+        )
+        dp_model2 = DPAtomicModel(
+            ds2,
+            ft2,
+            type_map=cls.expected_type_map,
+        )
+        cls.module = DPLinearModel(
+            dp_model,
+            pt_model,
+            type_map=cls.expected_type_map,
+        )
+        # only test jit API once for different models
+        if (
+            DescriptorParam not in defalut_des_param
+            or FittingParam not in defalut_fit_param
+        ):
+            cls.skip_test_jit = True
+        else:
+            with torch.jit.optimized_execution(False):
+                cls._script_module = torch.jit.script(cls.module)
+        cls.output_def = cls.module.translated_output_def()
+        cls.expected_has_message_passing = ds1.has_message_passing()
+        cls.expected_dim_fparam = ft1.get_dim_fparam()
+        cls.expected_dim_aparam = ft1.get_dim_aparam()
