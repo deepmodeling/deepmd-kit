@@ -154,7 +154,13 @@ class DPLinearModel(DPLinearModel_):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["dpmodel"], min_nbor_dist = DPModelCommon.update_sel(
-            train_data, type_map, local_jdata["dpmodel"]
-        )
+        type_map = local_jdata_cpy["type_map"]
+        min_nbor_dist = None
+        for idx,sub_model in enumerate(local_jdata_cpy["models"]):
+            if "tab_file" not in sub_model:
+                sub_model, temp_min = DPModelCommon.update_sel(
+                    train_data, type_map, local_jdata["models"][idx]
+                )
+                if min_nbor_dist is None or temp_min <= min_nbor_dist:
+                    min_nbor_dist = temp_min
         return local_jdata_cpy, min_nbor_dist

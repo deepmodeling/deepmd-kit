@@ -125,7 +125,7 @@ def get_linear_model(model_params):
             fitting_net = sub_model_params.get("fitting_net", {})
             fitting_net["type"] = fitting_net.get("type", "ener")
             fitting_net["ntypes"] = descriptor.get_ntypes()
-            fitting_net["type_map"] = copy.deepcopy(sub_model_params["type_map"])
+            fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
             fitting_net["mixed_types"] = descriptor.mixed_types()
             if fitting_net["type"] in ["dipole", "polar"]:
                 fitting_net["embedding_width"] = descriptor.get_dim_emb()
