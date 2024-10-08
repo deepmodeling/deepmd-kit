@@ -369,7 +369,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     for _ in range(nmodels)
                 ]
             else:
-                raise ValueError("`weights` must be 'sum' or 'mean' when provided as a string.")
+                raise ValueError(
+                    "`weights` must be 'sum' or 'mean' when provided as a string."
+                )
         elif isinstance(self.weights, list):
             return [
                 torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
