@@ -344,7 +344,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return super().deserialize(data)
 
     def _compute_weight(
-        self, extended_coord, extended_atype, nlists_
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlists_: list[torch.Tensor],
     ) -> list[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
@@ -365,12 +368,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     / nmodels
                     for _ in range(nmodels)
                 ]
+            else:
+                raise ValueError("`weights` must be 'sum' or 'mean' when provided as a string.")
         elif isinstance(self.weights, list):
             return [
                 torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
                 * w
                 for w in self.weights
             ]
+        else:
+            raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
