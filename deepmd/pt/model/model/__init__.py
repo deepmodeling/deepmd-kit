@@ -36,14 +36,14 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .dp_linear_model import (
+    DPLinearModel,
+)
 from .dp_model import (
     DPModelCommon,
 )
 from .dp_zbl_model import (
     DPZBLModel,
-)
-from .dp_linear_model import(
-    DPLinearModel
 )
 from .ener_model import (
     EnergyModel,
@@ -107,17 +107,19 @@ def get_spin_model(model_params):
     backbone_model = get_standard_model(model_params)
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 
+
 def get_linear_model(model_params):
     model_params = copy.deepcopy(model_params)
     weights = model_params.get("weights", "mean")
-    list_of_models =[]
+    list_of_models = []
     ntypes = len(model_params["type_map"])
     for sub_model_params in model_params["models"]:
         if "descriptor" in sub_model_params:
-            
             # descriptor
             sub_model_params["descriptor"]["ntypes"] = ntypes
-            sub_model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+            sub_model_params["descriptor"]["type_map"] = copy.deepcopy(
+                model_params["type_map"]
+            )
             descriptor = BaseDescriptor(**sub_model_params["descriptor"])
             # fitting
             fitting_net = sub_model_params.get("fitting_net", {})
@@ -134,26 +136,33 @@ def get_linear_model(model_params):
                 if "ener" in fitting_net["type"]:
                     fitting_net["return_energy"] = True
             fitting = BaseFitting(**fitting_net)
-            list_of_models.append(DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"]))
+            list_of_models.append(
+                DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
+            )
 
-        else: # must be pairtab
-            assert "type" in sub_model_params and sub_model_params["type"] == "pairtab", "Sub-models in LinearEnergyModel must be a DPModel or a PairTable Model"
-            list_of_models.append(PairTabAtomicModel(
-            sub_model_params["tab_file"],
-            sub_model_params["rcut"],
-            sub_model_params["sel"],
-            type_map=model_params["type_map"],
-            ))
-        
+        else:  # must be pairtab
+            assert (
+                "type" in sub_model_params and sub_model_params["type"] == "pairtab"
+            ), "Sub-models in LinearEnergyModel must be a DPModel or a PairTable Model"
+            list_of_models.append(
+                PairTabAtomicModel(
+                    sub_model_params["tab_file"],
+                    sub_model_params["rcut"],
+                    sub_model_params["sel"],
+                    type_map=model_params["type_map"],
+                )
+            )
+
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
     return DPLinearModel(
-        models = list_of_models,
+        models=list_of_models,
         type_map=model_params["type_map"],
         weights=weights,
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+
 
 def get_zbl_model(model_params):
     model_params = copy.deepcopy(model_params)

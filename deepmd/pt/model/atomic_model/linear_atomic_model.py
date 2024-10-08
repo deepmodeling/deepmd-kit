@@ -56,7 +56,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
-        weights: Optional[Union[str,list[float]]]="mean",
+        weights: Optional[Union[str, list[float]]] = "mean",
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -93,11 +93,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)  # pylint: disable=no-explicit-dtype
 
         if isinstance(weights, str):
-            assert weights in ["sum","mean"]
+            assert weights in ["sum", "mean"]
         elif isinstance(weights, list):
             assert len(weights) == len(models)
         else:
-            raise ValueError(f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}.")
+            raise ValueError(
+                f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
+            )
         self.weights = weights
 
     def mixed_types(self) -> bool:
@@ -345,27 +347,30 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self, extended_coord, extended_atype, nlists_
     ) -> list[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
-
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         if isinstance(self.weights, str):
             if self.weights == "sum":
                 return [
-                    torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
+                    torch.ones(
+                        (nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE
+                    )
                     for _ in range(nmodels)
                 ]
             elif self.weights == "mean":
                 return [
-                    torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
+                    torch.ones(
+                        (nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE
+                    )
                     / nmodels
                     for _ in range(nmodels)
                 ]
         elif isinstance(self.weights, list):
             return [
-                torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE) * w
+                torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
+                * w
                 for w in self.weights
             ]
-                
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
