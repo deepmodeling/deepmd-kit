@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from functools import (
-    cache,
+    lru_cache,
 )
 
 import numpy as np
@@ -35,7 +35,7 @@ class DPTestCase(BackendTestCase):
         return xx
 
     @classmethod
-    @cache
+    @lru_cache(maxsize=1)
     def _get_deserialized_module(cls):
         return cls.module.deserialize(cls.module.serialize())
 

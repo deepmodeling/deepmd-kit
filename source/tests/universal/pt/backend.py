@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from functools import (
-    cache,
+    lru_cache,
 )
 
 import numpy as np
@@ -23,7 +23,7 @@ class PTTestCase(BackendTestCase):
     """PT module to test."""
 
     @classmethod
-    @cache
+    @lru_cache(maxsize=1)
     def _get_script_module(cls):
         with torch.jit.optimized_execution(False):
             return torch.jit.script(cls.module)
@@ -36,7 +36,7 @@ class PTTestCase(BackendTestCase):
             return torch.jit.script(self.module)
 
     @classmethod
-    @cache
+    @lru_cache(maxsize=1)
     def _get_deserialized_module(cls):
         return cls.module.deserialize(cls.module.serialize())
 
