@@ -47,13 +47,14 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
 
-        for od, mixed_types, nfp, nap, et, nn in itertools.product(
+        for od, mixed_types, nfp, nap, et, nn, use_aparam_as_mask in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
             [0, 4],
             [[], [0], [1]],
             [[4, 4, 4], []],
+            [True, False],
         ):
             ft0 = InvarFitting(
                 "foo",
@@ -66,6 +67,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 exclude_types=et,
                 neuron=nn,
                 seed=GLOBAL_SEED,
+                use_aparam_as_mask=use_aparam_as_mask,
             ).to(env.DEVICE)
             ft1 = DPInvarFitting.deserialize(ft0.serialize())
             ft2 = InvarFitting.deserialize(ft0.serialize())
@@ -153,12 +155,13 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_jit(
         self,
     ):
-        for od, mixed_types, nfp, nap, et in itertools.product(
+        for od, mixed_types, nfp, nap, et, use_aparam_as_mask in itertools.product(
             [1, 3],
             [True, False],
             [0, 3],
             [0, 4],
             [[], [0]],
+            [True, False],
         ):
             ft0 = InvarFitting(
                 "foo",
@@ -170,6 +173,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 mixed_types=mixed_types,
                 exclude_types=et,
                 seed=GLOBAL_SEED,
+                use_aparam_as_mask=use_aparam_as_mask,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
@@ -194,3 +198,34 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_allclose(
                 foo, np.reshape(ifn0[ii].detach().cpu().numpy(), foo.shape)
             )
+
+    def test_use_aparam_as_mask(self):
+        nap = 4
+        dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+
+        for od, mixed_types, nfp, et, nn in itertools.product(
+            [1, 3],
+            [True, False],
+            [0, 3],
+            [[], [0], [1]],
+            [[4, 4, 4], []],
+        ):
+            ft0 = InvarFitting(
+                "foo",
+                self.nt,
+                dd0.dim_out,
+                od,
+                numb_fparam=nfp,
+                numb_aparam=nap,
+                mixed_types=mixed_types,
+                exclude_types=et,
+                neuron=nn,
+                seed=GLOBAL_SEED,
+                use_aparam_as_mask=True,
+            ).to(env.DEVICE)
+            in_dim = ft0.dim_descrpt + ft0.numb_fparam
+            assert ft0.filter_layers[0].in_dim == in_dim
+
+            ft1 = InvarFitting.deserialize(ft0.serialize())
+            in_dim = ft1.dim_descrpt + ft1.numb_fparam
+            assert ft1.filter_layers[0].in_dim == in_dim
