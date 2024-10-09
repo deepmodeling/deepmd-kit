@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -42,7 +40,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -55,7 +53,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
         normalize=True,
@@ -66,10 +64,10 @@ class DescrptSeAttenV2(DescrptDPA1):
         ln_eps: Optional[float] = 1e-5,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
@@ -113,7 +111,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-        exclude_types : List[List[int]]
+        exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float
@@ -149,7 +147,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             Whether to use electronic configuration type embedding.
         use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-        type_map : List[str], Optional
+        type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
         spin
             (Only support None to keep consistent with other backend references.)

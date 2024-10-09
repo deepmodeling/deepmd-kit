@@ -28,7 +28,10 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Environment :: GPU :: NVIDIA CUDA :: 12 :: 12.2",
     "Intended Audience :: Science/Research",
-    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
@@ -51,7 +54,7 @@ dependencies = [
     'mendeleev',
     'array-api-compat',
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 keywords = ["deepmd"]
 
 [project.entry-points."lammps.plugins"]

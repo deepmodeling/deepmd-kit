@@ -7,10 +7,7 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -274,7 +271,7 @@ def test_ener(
     detail_file: Optional[str],
     has_atom_ener: bool,
     append_detail: bool = False,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -296,7 +293,7 @@ def test_ener(
 
     Returns
     -------
-    Tuple[List[np.ndarray], List[int]]
+    tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
     data.add("energy", 1, atomic=False, must=False, high_prec=True)
@@ -607,7 +604,7 @@ def test_ener(
     return dict_to_return
 
 
-def print_ener_sys_avg(avg: Dict[str, float]):
+def print_ener_sys_avg(avg: dict[str, float]):
     """Print errors summary for energy type potential.
 
     Parameters
@@ -644,7 +641,7 @@ def test_dos(
     detail_file: Optional[str],
     has_atom_dos: bool,
     append_detail: bool = False,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test DOS type model.
 
     Parameters
@@ -666,7 +663,7 @@ def test_dos(
 
     Returns
     -------
-    Tuple[List[np.ndarray], List[int]]
+    tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
     data.add("dos", dp.numb_dos, atomic=False, must=True, high_prec=True)
@@ -782,7 +779,7 @@ def test_dos(
     }
 
 
-def print_dos_sys_avg(avg: Dict[str, float]):
+def print_dos_sys_avg(avg: dict[str, float]):
     """Print errors summary for DOS type potential.
 
     Parameters
@@ -804,7 +801,7 @@ def test_property(
     detail_file: Optional[str],
     has_atom_property: bool,
     append_detail: bool = False,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test Property type model.
 
     Parameters
@@ -826,7 +823,7 @@ def test_property(
 
     Returns
     -------
-    Tuple[List[np.ndarray], List[int]]
+    tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
     data.add("property", dp.task_dim, atomic=False, must=True, high_prec=True)
@@ -936,7 +933,7 @@ def test_property(
     }
 
 
-def print_property_sys_avg(avg: Dict[str, float]):
+def print_property_sys_avg(avg: dict[str, float]):
     """Print errors summary for Property type potential.
 
     Parameters
@@ -986,7 +983,7 @@ def test_wfc(
     data: DeepmdData,
     numb_test: int,
     detail_file: Optional[str],
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -1002,7 +999,7 @@ def test_wfc(
 
     Returns
     -------
-    Tuple[List[np.ndarray], List[int]]
+    tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
     data.add(
@@ -1050,7 +1047,7 @@ def test_polar(
     detail_file: Optional[str],
     *,
     atomic: bool,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -1068,7 +1065,7 @@ def test_polar(
 
     Returns
     -------
-    Tuple[List[np.ndarray], List[int]]
+    tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
     data.add(
@@ -1191,7 +1188,7 @@ def test_dipole(
     numb_test: int,
     detail_file: Optional[str],
     atomic: bool,
-) -> Tuple[List[np.ndarray], List[int]]:
+) -> tuple[list[np.ndarray], list[int]]:
     """Test energy type model.
 
     Parameters
@@ -1209,7 +1206,7 @@ def test_dipole(
 
     Returns
     -------
-    Tuple[List[np.ndarray], List[int]]
+    tuple[list[np.ndarray], list[int]]
         arrays with results and their shapes
     """
     data.add(

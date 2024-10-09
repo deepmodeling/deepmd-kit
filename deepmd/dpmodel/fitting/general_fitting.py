@@ -5,8 +5,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -78,15 +76,15 @@ class GeneralFitting(NativeOP, BaseFitting):
     mixed_types
             If true, use a uniform fitting net for all atom types, otherwise use
             different fitting nets for different atom types.
-    exclude_types: List[int]
+    exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
-    remove_vaccum_contribution: List[bool], optional
+    remove_vaccum_contribution: list[bool], optional
         Remove vaccum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
         length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
-    seed: Optional[Union[int, List[int]]]
+    seed: Optional[Union[int, list[int]]]
         Random seed for initializing the network parameters.
     """
 
@@ -95,24 +93,24 @@ class GeneralFitting(NativeOP, BaseFitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         bias_atom_e: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
+        trainable: Optional[list[bool]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: Optional[list[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = True,
-        exclude_types: List[int] = [],
-        remove_vaccum_contribution: Optional[List[bool]] = None,
-        type_map: Optional[List[str]] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        exclude_types: list[int] = [],
+        remove_vaccum_contribution: Optional[list[bool]] = None,
+        type_map: Optional[list[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         self.var_name = var_name
         self.ntypes = ntypes
@@ -192,7 +190,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -201,12 +199,12 @@ class GeneralFitting(NativeOP, BaseFitting):
         """
         return [ii for ii in range(self.ntypes) if ii not in self.exclude_types]
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -261,7 +259,7 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def reinit_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
@@ -322,7 +320,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         h2: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

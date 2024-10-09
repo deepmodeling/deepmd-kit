@@ -4,11 +4,26 @@ DeePMD-kit has three levels of parallelism.
 To get the best performance, one should control the number of threads used by DeePMD-kit.
 One should make sure the product of the parallel numbers is less than or equal to the number of cores available.
 
-## MPI (optional)
+## MPI or multiprocessing (optional)
 
 Parallelism for MPI is optional and used for multiple nodes, multiple GPU cards, or sometimes multiple CPU cores.
 
-To enable MPI support for training, one should [install horovod](../install/install-from-source.md#install-horovod-and-mpi4py) in advance. Note that the parallelism mode is data parallelism, so it is not expected to see the training time per batch decreases.
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
+To enable MPI support for training in the TensorFlow interface, one should [install horovod](../install/install-from-source.md#install-horovod-and-mpi4py) in advance.
+
+:::
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+Multiprocessing support for training in the PyTorch backend is implemented with [torchrun](https://pytorch.org/docs/stable/elastic/run.html).
+
+:::
+::::
+
+Note that the parallelism mode is data parallelism, so it is not expected to see the training time per batch decreases.
+See [Parallel training](../train/parallel-training.md) for details.
 
 MPI support for inference is not directly supported by DeePMD-kit, but indirectly supported by the third-party software. For example, [LAMMPS enables running simulations in parallel](https://docs.lammps.org/Developer_parallel.html) using the MPI parallel communication standard with distributed data. That software has to build against MPI.
 
@@ -21,6 +36,8 @@ mpirun -np $num_nodes dp
 Note that `mpirun` here should be the same as the MPI used to build software. For example, one can use `mpirun --version` and `lmp -h` to see if `mpirun` and LAMMPS has the same MPI version.
 
 Sometimes, `$num_nodes` and the nodes information can be directly given by the HPC scheduler system, if the MPI used here is the same as the MPI used to build the scheduler system. Otherwise, one have to manually assign these information.
+
+Each process can use at most one GPU card.
 
 ## Parallelism between independent operators
 

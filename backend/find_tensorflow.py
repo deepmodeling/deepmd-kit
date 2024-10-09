@@ -17,9 +17,7 @@ from sysconfig import (
     get_path,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -29,7 +27,7 @@ from packaging.specifiers import (
 
 
 @lru_cache
-def find_tensorflow() -> Tuple[Optional[str], List[str]]:
+def find_tensorflow() -> tuple[Optional[str], list[str]]:
     """Find TensorFlow library.
 
     Tries to find TensorFlow in the order of:

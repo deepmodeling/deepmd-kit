@@ -4,7 +4,6 @@
 import bisect
 import logging
 from typing import (
-    List,
     Optional,
 )
 
@@ -53,7 +52,7 @@ class DeepmdData:
         sys_path: str,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set: bool = False,
@@ -134,7 +133,7 @@ class DeepmdData:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: Optional[list[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
@@ -304,11 +303,11 @@ class DeepmdData:
         else:
             return max(self.get_atom_type()) + 1
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
-    def get_atom_type(self) -> List[int]:
+    def get_atom_type(self) -> list[int]:
         """Get atom types."""
         return self.atom_type
 
@@ -751,7 +750,7 @@ class DataRequirementItem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: Optional[list[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,

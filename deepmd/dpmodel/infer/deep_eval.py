@@ -4,11 +4,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -109,7 +105,7 @@ class DeepEval(DeepEvalBackend):
         """Get the number of atom types of this model."""
         return len(self.type_map)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.type_map
 
@@ -122,7 +118,7 @@ class DeepEval(DeepEvalBackend):
         return self.dp.get_dim_aparam()
 
     @property
-    def model_type(self) -> Type["DeepEvalWrapper"]:
+    def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model_output_type()
         if "energy" in model_output_type:
@@ -138,7 +134,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError("Unknown model type")
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -168,7 +164,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -226,7 +222,7 @@ class DeepEval(DeepEvalBackend):
             )
         )
 
-    def _get_request_defs(self, atomic: bool) -> List[OutputVariableDef]:
+    def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
         """Get the requested output definitions.
 
         When atomic is True, all output_def are requested.
@@ -290,7 +286,7 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         atom_types: np.ndarray,
         mixed_type: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if mixed_type:
             natoms = len(atom_types[0])
         else:
@@ -307,7 +303,7 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: Optional[np.ndarray],
         atom_types: np.ndarray,
-        request_defs: List[OutputVariableDef],
+        request_defs: list[OutputVariableDef],
     ):
         model = self.dp
 

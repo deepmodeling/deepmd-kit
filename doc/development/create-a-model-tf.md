@@ -37,7 +37,7 @@ from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")
-def descrpt_some_args() -> List[Argument]:
+def descrpt_some_args() -> list[Argument]:
     return [
         Argument("arg1", bool, optional=False, doc="balabala"),
         Argument("arg2", float, optional=True, default=6.0, doc="haha"),

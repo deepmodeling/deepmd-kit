@@ -73,7 +73,7 @@ class SomeDescript(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
     ):
         pass
@@ -149,7 +149,7 @@ from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")
-def descrpt_some_args() -> List[Argument]:
+def descrpt_some_args() -> list[Argument]:
     return [
         Argument("arg1", bool, optional=False, doc="balabala"),
         Argument("arg2", float, optional=True, default=6.0, doc="haha"),

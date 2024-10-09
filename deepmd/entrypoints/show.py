@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    List,
-)
 
 from deepmd.infer.deep_eval import (
     DeepEval,
@@ -14,7 +11,7 @@ log = logging.getLogger(__name__)
 def show(
     *,
     INPUT: str,
-    ATTRIBUTES: List[str],
+    ATTRIBUTES: list[str],
     **kwargs,
 ):
     model = DeepEval(INPUT, head=0)

@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Tuple,
-)
 
 import numpy as np
 
@@ -13,7 +9,7 @@ class AtomExcludeMask:
     def __init__(
         self,
         ntypes: int,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.ntypes = ntypes
         self.exclude_types = exclude_types
@@ -59,7 +55,7 @@ class PairExcludeMask:
     def __init__(
         self,
         ntypes: int,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.ntypes = ntypes
         self.exclude_types = set()

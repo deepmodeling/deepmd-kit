@@ -8,7 +8,6 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
 )
 
@@ -80,7 +79,7 @@ class RunOptions:
 
     Attributes
     ----------
-    gpus: Optional[List[int]]
+    gpus: Optional[list[int]]
         list of GPUs if any are present else None
     is_chief: bool
         in distribured training it is true for tha main MPI process in serail it is
@@ -91,17 +90,17 @@ class RunOptions:
         index of the MPI task
     nodename: str
         name of the node
-    node_list_ : List[str]
+    node_list_ : list[str]
         the list of nodes of the current mpirun
     my_device: str
         deviice type - gpu or cpu
     """
 
-    gpus: Optional[List[int]]
+    gpus: Optional[list[int]]
     world_size: int
     my_rank: int
     nodename: str
-    nodelist: List[int]
+    nodelist: list[int]
     my_device: str
 
     _HVD: Optional["HVD"]

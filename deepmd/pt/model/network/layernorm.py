@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -45,7 +44,7 @@ class LayerNorm(nn.Module):
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.eps = eps
