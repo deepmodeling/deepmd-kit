@@ -24,9 +24,9 @@ from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
     model_hybrid,
+    model_linear,
     model_se_e2_a,
     model_zbl,
-    model_linear,
 )
 
 
@@ -188,6 +188,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
 
+
 class TestLinearEnergyModel(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/linear_energy.json")
@@ -202,6 +203,7 @@ class TestLinearEnergyModel(unittest.TestCase, DPTrainTest):
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
+
 
 class TestFparam(unittest.TestCase, DPTrainTest):
     """Test if `fparam` can be loaded correctly."""

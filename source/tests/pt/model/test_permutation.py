@@ -102,42 +102,40 @@ model_linear = {
     "type_map": ["O", "H"],
     "type": "linear_ener",
     "weights": "sum",
-    "models":[
+    "models": [
         {
-        "descriptor": {
-            "type": "se_atten",
-            "sel": 40,
-            "rcut_smth": 0.5,
-            "rcut": 4.0,
-            "neuron": [25, 50, 100],
-            "axis_neuron": 16,
-            "attn": 64,
-            "attn_layer": 2,
-            "attn_dotr": True,
-            "attn_mask": False,
-            "activation_function": "tanh",
-            "scaling_factor": 1.0,
-            "normalize": False,
-            "temperature": 1.0,
-            "set_davg_zero": True,
-            "type_one_side": True,
-            "seed": 1,
+            "descriptor": {
+                "type": "se_atten",
+                "sel": 40,
+                "rcut_smth": 0.5,
+                "rcut": 4.0,
+                "neuron": [25, 50, 100],
+                "axis_neuron": 16,
+                "attn": 64,
+                "attn_layer": 2,
+                "attn_dotr": True,
+                "attn_mask": False,
+                "activation_function": "tanh",
+                "scaling_factor": 1.0,
+                "normalize": False,
+                "temperature": 1.0,
+                "set_davg_zero": True,
+                "type_one_side": True,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "neuron": [24, 24, 24],
+                "resnet_dt": True,
+                "seed": 1,
+            },
         },
-        "fitting_net": {
-            "neuron": [24, 24, 24],
-            "resnet_dt": True,
-            "seed": 1,
-        }
-    },
-    {
-        "type": "pairtab",
-        "tab_file": f"{CUR_DIR}/water/data/d3/dftd3.txt",
-        "rcut": 10.0,
-        "sel": 534
-    }
-
+        {
+            "type": "pairtab",
+            "tab_file": f"{CUR_DIR}/water/data/d3/dftd3.txt",
+            "rcut": 10.0,
+            "sel": 534,
+        },
     ],
-    
     "data_stat_nbatch": 20,
 }
 
