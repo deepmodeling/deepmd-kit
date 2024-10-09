@@ -29,7 +29,7 @@ DPLinearModel_ = make_model(LinearEnergyAtomicModel)
 
 
 @BaseModel.register("linear_ener")
-class DPLinearModel(DPLinearModel_):
+class LinearEnergyModel(DPLinearModel_):
     model_type = "ener"
 
     def __init__(

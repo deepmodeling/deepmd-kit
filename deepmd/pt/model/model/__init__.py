@@ -37,7 +37,7 @@ from .dos_model import (
     DOSModel,
 )
 from .dp_linear_model import (
-    DPLinearModel,
+    LinearEnergyModel,
 )
 from .dp_model import (
     DPModelCommon,
@@ -155,7 +155,7 @@ def get_linear_model(model_params):
 
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
-    return DPLinearModel(
+    return LinearEnergyModel(
         models=list_of_models,
         type_map=model_params["type_map"],
         weights=weights,
@@ -326,4 +326,5 @@ __all__ = [
     "DPZBLModel",
     "make_model",
     "make_hessian_model",
+    "LinearEnergyModel",
 ]

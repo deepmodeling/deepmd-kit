@@ -19,7 +19,7 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.model import (
     DipoleModel,
     DOSModel,
-    DPLinearModel,
+    LinearEnergyModel,
     DPZBLModel,
     EnergyModel,
     PolarModel,
@@ -884,7 +884,7 @@ class TestLinearEnergyModelPT(unittest.TestCase, LinearEnerModelTest, PTTestCase
             ft2,
             type_map=cls.expected_type_map,
         )
-        cls.module = DPLinearModel(
+        cls.module = LinearEnergyModel(
             [dp_model1, dp_model2],
             type_map=cls.expected_type_map,
         )
