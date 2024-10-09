@@ -140,7 +140,7 @@ class DOSLoss(TaskLoss):
                 [-1, self.numb_dos]
             )
             if "mask" in model_pred:
-                diff = diff[model_pred["mask"].reshape([-1]).bool()]
+                diff = diff[model_pred["mask"].reshape([-1]).astype("bool")]
             l2_local_loss_dos = paddle.mean(paddle.square(diff))
             if not self.inference:
                 more_loss["l2_local_dos_loss"] = self.display_if_exist(
@@ -164,7 +164,7 @@ class DOSLoss(TaskLoss):
                 [-1, self.numb_dos]
             )
             if "mask" in model_pred:
-                diff = diff[model_pred["mask"].reshape([-1]).bool()]
+                diff = diff[model_pred["mask"].reshape([-1]).astype("bool")]
             l2_local_loss_cdf = paddle.mean(paddle.square(diff))
             if not self.inference:
                 more_loss["l2_local_cdf_loss"] = self.display_if_exist(

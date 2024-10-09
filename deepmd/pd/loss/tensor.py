@@ -107,7 +107,7 @@ class TensorLoss(TaskLoss):
                 [-1, self.tensor_size]
             )
             if "mask" in model_pred:
-                diff = diff[model_pred["mask"].reshape([-1]).bool()]
+                diff = diff[model_pred["mask"].reshape([-1]).astype("bool")]
             l2_local_loss = paddle.mean(paddle.square(diff))
             if not self.inference:
                 more_loss[f"l2_local_{self.tensor_name}_loss"] = self.display_if_exist(
@@ -133,9 +133,12 @@ class TensorLoss(TaskLoss):
             if "mask" in model_pred:
                 atom_num = model_pred["mask"].sum(-1, keepdim=True)
                 l2_global_loss = paddle.mean(
-                    paddle.sum(paddle.square(diff) * atom_num, axis=0) / atom_num.sum()
+                    paddle.sum(
+                        paddle.square(diff) * atom_num.astype(diff.dtype), axis=0
+                    )
+                    / atom_num.sum()
                 )
-                atom_num = paddle.mean(atom_num.float())
+                atom_num = paddle.mean(atom_num.astype(diff.dtype))
             else:
                 atom_num = natoms
                 l2_global_loss = paddle.mean(paddle.square(diff))

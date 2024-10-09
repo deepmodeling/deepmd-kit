@@ -183,7 +183,7 @@ def build_neighbor_list(
     - atype: shape is [nall]
     """
     nall = coord.numel() // 3
-    coord = coord.float()
+    coord = coord.astype(paddle.get_default_dtype())
     nlist = [[] for _ in range(nloc)]
     coord_l = coord.reshape([-1, 1, 3])[:nloc]
     coord_r = coord.reshape([1, -1, 3])

@@ -100,8 +100,7 @@ def build_neighbor_list(
     nall = coord.shape[1] // 3
     # fill virtual atoms with large coords so they are not neighbors of any
     # real atom.
-    # if coord.numel().item() > 0:
-    if True > 0:
+    if coord.numel() > 0:
         xmax = paddle.max(coord) + 2.0 * rcut
     else:
         xmax = paddle.zeros([], dtype=coord.dtype).to(device=coord.place) + 2.0 * rcut
