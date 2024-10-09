@@ -278,8 +278,7 @@ class Trainer:
         if not self.multi_task:
             loss_param_tmp = config["loss"]
         else:
-            for model_key in self.model_keys:
-                loss_param_tmp = config["loss_dict"][model_key]
+            loss_param_tmp = {model_key: config["loss_dict"][model_key] for model_key in self.model_keys}
 
         # Model
         dp_random.seed(training_params["seed"])
