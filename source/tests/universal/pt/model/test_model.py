@@ -19,9 +19,9 @@ from deepmd.pt.model.descriptor import (
 from deepmd.pt.model.model import (
     DipoleModel,
     DOSModel,
-    LinearEnergyModel,
     DPZBLModel,
     EnergyModel,
+    LinearEnergyModel,
     PolarModel,
     PropertyModel,
     SpinEnergyModel,

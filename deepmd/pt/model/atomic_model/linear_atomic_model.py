@@ -404,7 +404,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return torch.unique(
             torch.cat(
                 [
-                    torch.as_tensor(model.get_sel_type(), dtype=torch.int32, device=env.DEVICE)
+                    torch.as_tensor(
+                        model.get_sel_type(), dtype=torch.int32, device=env.DEVICE
+                    )
                     for model in self.models
                 ]
             )
