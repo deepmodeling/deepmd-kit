@@ -464,30 +464,29 @@ class GeneralFitting(Fitting):
                     dim=-1,
                 )
         # check aparam dim, concate to input descriptor
-        if not self.use_aparam_as_mask:
-            if self.numb_aparam > 0:
-                assert aparam is not None, "aparam should not be None"
-                assert self.aparam_avg is not None
-                assert self.aparam_inv_std is not None
-                if aparam.shape[-1] != self.numb_aparam:
-                    raise ValueError(
-                        f"get an input aparam of dim {aparam.shape[-1]}, ",
-                        f"which is not consistent with {self.numb_aparam}.",
-                    )
-                aparam = aparam.view([nf, -1, self.numb_aparam])
-                nb, nloc, _ = aparam.shape
-                t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
-                t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
-                aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
-                xx = torch.cat(
-                    [xx, aparam],
+        if not self.use_aparam_as_mask and self.numb_aparam > 0:
+            assert aparam is not None, "aparam should not be None"
+            assert self.aparam_avg is not None
+            assert self.aparam_inv_std is not None
+            if aparam.shape[-1] != self.numb_aparam:
+                raise ValueError(
+                    f"get an input aparam of dim {aparam.shape[-1]}, ",
+                    f"which is not consistent with {self.numb_aparam}.",
+                )
+            aparam = aparam.view([nf, -1, self.numb_aparam])
+            nb, nloc, _ = aparam.shape
+            t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
+            t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
+            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
+            xx = torch.cat(
+                [xx, aparam],
+                dim=-1,
+            )
+            if xx_zeros is not None:
+                xx_zeros = torch.cat(
+                    [xx_zeros, aparam],
                     dim=-1,
                 )
-                if xx_zeros is not None:
-                    xx_zeros = torch.cat(
-                        [xx_zeros, aparam],
-                        dim=-1,
-                    )
 
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
