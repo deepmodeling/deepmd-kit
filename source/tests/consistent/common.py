@@ -10,6 +10,9 @@ from abc import (
 from enum import (
     Enum,
 )
+from importlib.util import (
+    find_spec,
+)
 from typing import (
     Any,
     Callable,
@@ -33,6 +36,7 @@ from deepmd.backend.tensorflow import (
 INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
 INSTALLED_JAX = Backend.get_backend("jax")().is_available()
+INSTALLED_ARRAY_API_STRICT = find_spec("array_api_strict") is not None
 
 if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
     raise ImportError("TensorFlow or PyTorch should be tested in the CI")
@@ -56,6 +60,7 @@ __all__ = [
     "INSTALLED_TF",
     "INSTALLED_PT",
     "INSTALLED_JAX",
+    "INSTALLED_ARRAY_API_STRICT",
 ]
 
 
@@ -72,6 +77,7 @@ class CommonTest(ABC):
     """PyTorch model class."""
     jax_class: ClassVar[Optional[type]]
     """JAX model class."""
+    array_api_strict_class: ClassVar[Optional[type]]
     args: ClassVar[Optional[Union[Argument, list[Argument]]]]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
@@ -83,6 +89,8 @@ class CommonTest(ABC):
     # we may usually skip jax before jax is fully supported
     skip_jax: ClassVar[bool] = True
     """Whether to skip the JAX model."""
+    skip_array_api_strict: ClassVar[bool] = True
+    """Whether to skip the array_api_strict model."""
     rtol = 1e-10
     """Relative tolerance for comparing the return value. Override for float32."""
     atol = 1e-10
@@ -163,6 +171,16 @@ class CommonTest(ABC):
         """
         raise NotImplementedError("Not implemented")
 
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        """Evaluate the return value of array_api_strict.
+
+        Parameters
+        ----------
+        array_api_strict_obj : Any
+            The object of array_api_strict
+        """
+        raise NotImplementedError("Not implemented")
+
     class RefBackend(Enum):
         """Reference backend."""
 
@@ -170,6 +188,7 @@ class CommonTest(ABC):
         DP = 2
         PT = 3
         JAX = 5
+        ARRAY_API_STRICT = 6
 
     @abstractmethod
     def extract_ret(self, ret: Any, backend: RefBackend) -> tuple[np.ndarray, ...]:
@@ -235,6 +254,11 @@ class CommonTest(ABC):
         data = obj.serialize()
         return ret, data
 
+    def get_array_api_strict_ret_serialization_from_cls(self, obj):
+        ret = self.eval_array_api_strict(obj)
+        data = obj.serialize()
+        return ret, data
+
     def get_reference_backend(self):
         """Get the reference backend.
 
@@ -248,6 +272,8 @@ class CommonTest(ABC):
             return self.RefBackend.PT
         if not self.skip_jax:
             return self.RefBackend.JAX
+        if not self.skip_array_api_strict:
+            return self.RefBackend.ARRAY_API_STRICT
         raise ValueError("No available reference")
 
     def get_reference_ret_serialization(self, ref: RefBackend):
@@ -261,6 +287,12 @@ class CommonTest(ABC):
         if ref == self.RefBackend.PT:
             obj = self.init_backend_cls(self.pt_class)
             return self.get_pt_ret_serialization_from_cls(obj)
+        if ref == self.RefBackend.JAX:
+            obj = self.init_backend_cls(self.jax_class)
+            return self.get_jax_ret_serialization_from_cls(obj)
+        if ref == self.RefBackend.ARRAY_API_STRICT:
+            obj = self.init_backend_cls(self.array_api_strict_class)
+            return self.get_array_api_strict_ret_serialization_from_cls(obj)
         raise ValueError("No available reference")
 
     def test_tf_consistent_with_ref(self):
@@ -407,6 +439,40 @@ class CommonTest(ABC):
         ret1, data1 = self.get_jax_ret_serialization_from_cls(obj1)
         obj1 = self.jax_class.deserialize(data1)
         ret2, data2 = self.get_jax_ret_serialization_from_cls(obj1)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+            else:
+                self.assertEqual(rr1, rr2)
+
+    def test_array_api_strict_consistent_with_ref(self):
+        """Test whether array_api_strict and reference are consistent."""
+        if self.skip_array_api_strict:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.ARRAY_API_STRICT:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        array_api_strict_obj = self.array_api_strict_class.deserialize(data1)
+        ret2 = self.eval_array_api_strict(array_api_strict_obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.ARRAY_API_STRICT)
+        data2 = array_api_strict_obj.serialize()
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+
+    def test_array_api_strict_self_consistent(self):
+        """Test whether array_api_strict is self consistent."""
+        if self.skip_array_api_strict:
+            self.skipTest("Unsupported backend")
+        obj1 = self.init_backend_cls(self.array_api_strict_class)
+        ret1, data1 = self.get_array_api_strict_ret_serialization_from_cls(obj1)
+        obj1 = self.array_api_strict_class.deserialize(data1)
+        ret2, data2 = self.get_array_api_strict_ret_serialization_from_cls(obj1)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
