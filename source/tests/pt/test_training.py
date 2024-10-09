@@ -24,7 +24,6 @@ from .model.test_permutation import (
     model_dpa1,
     model_dpa2,
     model_hybrid,
-    model_linear,
     model_se_e2_a,
     model_zbl,
 )
@@ -187,7 +186,6 @@ class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
-
 
 
 class TestFparam(unittest.TestCase, DPTrainTest):
