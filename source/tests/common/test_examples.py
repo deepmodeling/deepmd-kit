@@ -36,6 +36,7 @@ input_files = (
     p_examples / "water" / "dplr" / "train" / "ener.json",
     p_examples / "water" / "d3" / "input_pt.json",
     p_examples / "water" / "linear" / "input.json",
+    p_examples / "water" / "linear" / "input_pt.json",
     p_examples / "nopbc" / "train" / "input.json",
     p_examples / "water_tensor" / "dipole" / "dipole_input.json",
     p_examples / "water_tensor" / "polar" / "polar_input.json",
