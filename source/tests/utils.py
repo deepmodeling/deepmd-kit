@@ -7,4 +7,4 @@ else:
     TEST_DEVICE = "cuda"
 
 # see https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
-CI = os.environ.get == "true"
+CI = os.environ.get("CI") == "true"
