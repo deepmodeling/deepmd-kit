@@ -5,6 +5,7 @@ import warnings
 from typing import (
     Callable,
     Optional,
+    Union,
 )
 
 from dargs import (
