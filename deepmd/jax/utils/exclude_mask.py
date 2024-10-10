@@ -3,21 +3,16 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
+from deepmd.dpmodel.utils.exclude_mask import PairExcludeMask as PairExcludeMaskDP
 from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
-from deepmd.jax.utils.network import (
-    EmbeddingNet,
-)
 
 
 @flax_module
-class TypeEmbedNet(TypeEmbedNetDP):
+class PairExcludeMask(PairExcludeMaskDP):
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"econf_tebd"}:
+        if name in {"type_mask"}:
             value = to_jax_array(value)
-        if name in {"embedding_net"}:
-            value = EmbeddingNet.deserialize(value.serialize())
         return super().__setattr__(name, value)

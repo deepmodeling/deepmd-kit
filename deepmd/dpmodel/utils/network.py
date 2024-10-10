@@ -146,15 +146,18 @@ class NativeLayer(NativeOP):
             num_out,
             **data,
         )
-        obj.w, obj.b, obj.idt = (
+        w, b, idt = (
             variables["w"],
             variables.get("b", None),
             variables.get("idt", None),
         )
-        if obj.b is not None:
-            obj.b = obj.b.ravel()
-        if obj.idt is not None:
-            obj.idt = obj.idt.ravel()
+        if b is not None:
+            b = b.ravel()
+        if idt is not None:
+            idt = idt.ravel()
+        obj.w = w
+        obj.b = b
+        obj.idt = idt
         obj.check_shape_consistency()
         return obj
 
@@ -175,8 +178,11 @@ class NativeLayer(NativeOP):
 
         def check_var(var):
             if var is not None:
+                # array api standard doesn't provide a API to get the dtype name
+                # this is really hacked
+                dtype_name = str(var.dtype).split(".")[-1]
                 # assertion "float64" == "double" would fail
-                assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
+                assert PRECISION_DICT[dtype_name] is PRECISION_DICT[precision]
 
         check_var(self.w)
         check_var(self.b)
@@ -249,7 +255,7 @@ class NativeLayer(NativeOP):
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
             y += x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
-            y += xp.concatenate([x, x], axis=-1)
+            y += xp.concat([x, x], axis=-1)
         return y
 
 
@@ -360,10 +366,11 @@ class LayerNorm(NativeLayer):
             precision=precision,
             seed=seed,
         )
-        self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
+        xp = array_api_compat.array_namespace(self.w, self.b)
+        self.w = xp.squeeze(self.w, 0)  # keep the weight shape to be [num_in]
         if self.uni_init:
-            self.w = np.ones_like(self.w)
-            self.b = np.zeros_like(self.b)
+            self.w = xp.ones_like(self.w)
+            self.b = xp.zeros_like(self.b)
         # only to keep consistent with other backends
         self.trainable = trainable
 
@@ -376,8 +383,8 @@ class LayerNorm(NativeLayer):
             The serialized layer.
         """
         data = {
-            "w": self.w,
-            "b": self.b,
+            "w": to_numpy_array(self.w),
+            "b": to_numpy_array(self.b),
         }
         return {
             "@class": "LayerNorm",
@@ -471,11 +478,12 @@ class LayerNorm(NativeLayer):
 
     @staticmethod
     def layer_norm_numpy(x, shape, weight=None, bias=None, eps=1e-5):
+        xp = array_api_compat.array_namespace(x)
         # mean and variance
-        mean = np.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
-        var = np.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        mean = xp.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        var = xp.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
         # normalize
-        x_normalized = (x - mean) / np.sqrt(var + eps)
+        x_normalized = (x - mean) / xp.sqrt(var + eps)
         # shift and scale
         if weight is not None and bias is not None:
             x_normalized = x_normalized * weight + bias

@@ -106,7 +106,7 @@ class TypeEmbedNet(NativeOP):
             embed = self.embedding_net(self.econf_tebd)
         if self.padding:
             embed_pad = xp.zeros((1, embed.shape[-1]), dtype=embed.dtype)
-            embed = xp.concatenate([embed, embed_pad], axis=0)
+            embed = xp.concat([embed, embed_pad], axis=0)
         return embed
 
     @classmethod

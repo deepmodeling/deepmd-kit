@@ -137,6 +137,7 @@ cu12 = [
 ]
 jax = [
     'jax>=0.4.33;python_version>="3.10"',
+    'flax>=0.8.0;python_version>="3.10"',
 ]
 
 [tool.deepmd_build_backend.scripts]
