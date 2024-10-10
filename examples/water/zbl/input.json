@@ -10,7 +10,7 @@
       "H"
     ],
     "descriptor": {
-      "type": "se_atten",
+      "type": "se_atten_v2",
       "sel": [
         46,
         92
