@@ -2,6 +2,7 @@
 """Module that sets tensorflow working environment and exports inportant constants."""
 
 import ctypes
+import logging
 import os
 import platform
 from importlib import (
@@ -75,17 +76,27 @@ if platform.system() == "Linux":
     dlopen_library("nvidia.cusparse.lib", "libcusparse.so*")
     dlopen_library("nvidia.cudnn.lib", "libcudnn.so*")
 
+
+FILTER_MSGS = [
+    "is deprecated and will be removed in a future version.",
+    "disable_mixed_precision_graph_rewrite() called when mixed precision is already disabled.",
+]
+
+
+class TFWarningFilter(logging.Filter):
+    def filter(self, record):
+        return not any(msg in record.getMessage().strip() for msg in FILTER_MSGS)
+
+
 # keras 3 is incompatible with tf.compat.v1
 # https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
 # 2024/04/24: deepmd.tf doesn't import tf.keras any more
 
 # import tensorflow v1 compatability
-try:
-    import tensorflow.compat.v1 as tf
+import tensorflow.compat.v1 as tf
 
-    tf.disable_v2_behavior()
-except ImportError:
-    import tensorflow as tf
+tf.get_logger().addFilter(TFWarningFilter())
+tf.disable_v2_behavior()
 try:
     import tensorflow.compat.v2 as tfv2
 except ImportError:
