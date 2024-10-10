@@ -37,6 +37,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def test_consistency(
         self,
     ):
+        # ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 1600 is different from 1604)
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
@@ -226,6 +227,10 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             in_dim = ft0.dim_descrpt + ft0.numb_fparam
             assert ft0.filter_layers[0].in_dim == in_dim
 
-            ft1 = InvarFitting.deserialize(ft0.serialize())
+            ft1 = DPInvarFitting.deserialize(ft0.serialize())
             in_dim = ft1.dim_descrpt + ft1.numb_fparam
             assert ft1.filter_layers[0].in_dim == in_dim
+
+            ft2 = InvarFitting.deserialize(ft0.serialize())
+            in_dim = ft2.dim_descrpt + ft2.numb_fparam
+            assert ft2.filter_layers[0].in_dim == in_dim
