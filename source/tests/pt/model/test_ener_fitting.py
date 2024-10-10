@@ -229,7 +229,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
             ft1 = DPInvarFitting.deserialize(ft0.serialize())
             in_dim = ft1.dim_descrpt + ft1.numb_fparam
-            assert ft1.filter_layers[0].in_dim == in_dim
+            assert ft1.nets[0].in_dim == in_dim
 
             ft2 = InvarFitting.deserialize(ft0.serialize())
             in_dim = ft2.dim_descrpt + ft2.numb_fparam
