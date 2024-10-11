@@ -236,7 +236,9 @@ def get_standard_model(model_params):
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
-    descriptor, fitting, fitting_net_type = _get_standard_model_components(model_params, ntypes)
+    descriptor, fitting, fitting_net_type = _get_standard_model_components(
+        model_params, ntypes
+    )
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
     preset_out_bias = model_params.get("preset_out_bias")
