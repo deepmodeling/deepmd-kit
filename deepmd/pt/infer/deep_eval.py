@@ -6,6 +6,7 @@ from typing import (
     Callable,
     Optional,
     Union,
+    List,
 )
 
 import numpy as np
