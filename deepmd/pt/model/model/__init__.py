@@ -94,7 +94,7 @@ def _get_standard_model_components(model_params, ntypes):
     fitting = BaseFitting(**fitting_net)
     return descriptor, fitting, fitting_net["type"]
 
-    
+
 def get_spin_model(model_params):
     model_params = copy.deepcopy(model_params)
     if not model_params["spin"]["use_spin"] or isinstance(
