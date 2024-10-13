@@ -9,11 +9,15 @@ from typing import (
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
@@ -283,11 +287,11 @@ class GeneralFitting(NativeOP, BaseFitting):
             "exclude_types": self.exclude_types,
             "nets": self.nets.serialize(),
             "@variables": {
-                "bias_atom_e": self.bias_atom_e,
-                "fparam_avg": self.fparam_avg,
-                "fparam_inv_std": self.fparam_inv_std,
-                "aparam_avg": self.aparam_avg,
-                "aparam_inv_std": self.aparam_inv_std,
+                "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "fparam_avg": to_numpy_array(self.fparam_avg),
+                "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
+                "aparam_avg": to_numpy_array(self.aparam_avg),
+                "aparam_inv_std": to_numpy_array(self.aparam_inv_std),
             },
             "type_map": self.type_map,
             # not supported
@@ -344,6 +348,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
+        xp = array_api_compat.array_namespace(descriptor, atype)
         nf, nloc, nd = descriptor.shape
         net_dim_out = self._net_out_dim()
         # check input dim
@@ -359,7 +364,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             # we consider it as always zero for convenience.
             # Needs a compute_input_stats for vaccum passed from the
             # descriptor.
-            xx_zeros = np.zeros_like(xx)
+            xx_zeros = xp.zeros_like(xx)
         else:
             xx_zeros = None
         # check fparam dim, concate to input descriptor
@@ -371,13 +376,15 @@ class GeneralFitting(NativeOP, BaseFitting):
                     "which is not consistent with {self.numb_fparam}.",
                 )
             fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
-            fparam = np.tile(fparam.reshape([nf, 1, self.numb_fparam]), [1, nloc, 1])
-            xx = np.concatenate(
+            fparam = xp.tile(
+                xp.reshape(fparam, [nf, 1, self.numb_fparam]), (1, nloc, 1)
+            )
+            xx = xp.concat(
                 [xx, fparam],
                 axis=-1,
             )
             if xx_zeros is not None:
-                xx_zeros = np.concatenate(
+                xx_zeros = xp.concat(
                     [xx_zeros, fparam],
                     axis=-1,
                 )
@@ -389,24 +396,24 @@ class GeneralFitting(NativeOP, BaseFitting):
                     "get an input aparam of dim {aparam.shape[-1]}, ",
                     "which is not consistent with {self.numb_aparam}.",
                 )
-            aparam = aparam.reshape([nf, nloc, self.numb_aparam])
+            aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
             aparam = (aparam - self.aparam_avg) * self.aparam_inv_std
-            xx = np.concatenate(
+            xx = xp.concat(
                 [xx, aparam],
                 axis=-1,
             )
             if xx_zeros is not None:
-                xx_zeros = np.concatenate(
+                xx_zeros = xp.concat(
                     [xx_zeros, aparam],
                     axis=-1,
                 )
 
         # calcualte the prediction
         if not self.mixed_types:
-            outs = np.zeros([nf, nloc, net_dim_out])  # pylint: disable=no-explicit-dtype
+            outs = xp.zeros([nf, nloc, net_dim_out])  # pylint: disable=no-explicit-dtype
             for type_i in range(self.ntypes):
-                mask = np.tile(
-                    (atype == type_i).reshape([nf, nloc, 1]), [1, 1, net_dim_out]
+                mask = xp.tile(
+                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 if self.remove_vaccum_contribution is not None and not (
@@ -415,15 +422,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                 ):
                     assert xx_zeros is not None
                     atom_property -= self.nets[(type_i,)](xx_zeros)
-                atom_property = atom_property + self.bias_atom_e[type_i]
-                atom_property = atom_property * mask
+                atom_property = atom_property + self.bias_atom_e[type_i, ...]
+                atom_property = atom_property * xp.astype(mask, atom_property.dtype)
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
-            outs = self.nets[()](xx) + self.bias_atom_e[atype]
+            outs = self.nets[()](xx) + xp.reshape(
+                xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
+                [nf, nloc, net_dim_out],
+            )
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
-        outs = outs * exclude_mask[:, :, None]
+        outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
         return {self.var_name: outs}
