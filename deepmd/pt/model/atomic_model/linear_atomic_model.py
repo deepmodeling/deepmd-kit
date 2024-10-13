@@ -48,12 +48,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     type_map : list[str]
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
+    weights : Optional[Union[str,list[float]]]
+        Weights of the models. If str, must be `sum` or `mean`. If list, must be a list of float.
     """
 
     def __init__(
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
+        weights: Optional[Union[str, list[float]]] = "mean",
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -88,6 +91,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
         )
         self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)  # pylint: disable=no-explicit-dtype
+
+        if isinstance(weights, str):
+            assert weights in ["sum", "mean"]
+        elif isinstance(weights, list):
+            assert len(weights) == len(models)
+        else:
+            raise ValueError(
+                f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
+            )
+        self.weights = weights
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -320,7 +333,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.get("@version", 2), 2, 1)
+        check_version_compatibility(data.pop("@version", 2), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
         models = [
@@ -331,16 +344,42 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return super().deserialize(data)
 
     def _compute_weight(
-        self, extended_coord, extended_atype, nlists_
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlists_: list[torch.Tensor],
     ) -> list[torch.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
-        return [
-            torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
-            / nmodels
-            for _ in range(nmodels)
-        ]
+        if isinstance(self.weights, str):
+            if self.weights == "sum":
+                return [
+                    torch.ones(
+                        (nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE
+                    )
+                    for _ in range(nmodels)
+                ]
+            elif self.weights == "mean":
+                return [
+                    torch.ones(
+                        (nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE
+                    )
+                    / nmodels
+                    for _ in range(nmodels)
+                ]
+            else:
+                raise ValueError(
+                    "`weights` must be 'sum' or 'mean' when provided as a string."
+                )
+        elif isinstance(self.weights, list):
+            return [
+                torch.ones((nframes, nloc, 1), dtype=torch.float64, device=env.DEVICE)
+                * w
+                for w in self.weights
+            ]
+        else:
+            raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -365,7 +404,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return torch.unique(
             torch.cat(
                 [
-                    torch.as_tensor(model.get_sel_type(), dtype=torch.int32)
+                    torch.as_tensor(
+                        model.get_sel_type(), dtype=torch.int64, device=env.DEVICE
+                    )
                     for model in self.models
                 ]
             )

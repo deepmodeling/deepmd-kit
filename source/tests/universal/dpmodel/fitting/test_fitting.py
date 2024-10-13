@@ -20,6 +20,7 @@ from ....seed import (
     GLOBAL_SEED,
 )
 from ....utils import (
+    CI,
     TEST_DEVICE,
 )
 from ...common.cases.fitting.fitting import (
@@ -236,7 +237,7 @@ FittingParamProperty = FittingParamPropertyList[0]
     ),  # class_param & class
     (True, False),  # mixed_types
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestFittingDP(unittest.TestCase, FittingTest, DPTestCase):
     def setUp(self):
         ((FittingParam, Fitting), self.mixed_types) = self.param

@@ -3,6 +3,7 @@ import inspect
 import itertools
 import os
 import sys
+import unittest
 from abc import (
     ABC,
     abstractmethod,
@@ -31,6 +32,11 @@ from dargs import (
 
 from deepmd.backend.tensorflow import (
     Backend,
+)
+
+from ..utils import (
+    CI,
+    TEST_DEVICE,
 )
 
 INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
@@ -340,6 +346,7 @@ class CommonTest(ABC):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_dp_consistent_with_ref(self):
         """Test whether DP and reference are consistent."""
         if self.skip_dp:
@@ -358,6 +365,7 @@ class CommonTest(ABC):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_dp_self_consistent(self):
         """Test whether DP is self consistent."""
         if self.skip_dp:
@@ -447,6 +455,7 @@ class CommonTest(ABC):
             else:
                 self.assertEqual(rr1, rr2)
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_array_api_strict_consistent_with_ref(self):
         """Test whether array_api_strict and reference are consistent."""
         if self.skip_array_api_strict:
@@ -465,6 +474,7 @@ class CommonTest(ABC):
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_array_api_strict_self_consistent(self):
         """Test whether array_api_strict is self consistent."""
         if self.skip_array_api_strict:

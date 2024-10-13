@@ -22,6 +22,7 @@ from .....seed import (
     GLOBAL_SEED,
 )
 from .....utils import (
+    CI,
     TEST_DEVICE,
 )
 
@@ -327,7 +328,7 @@ class ModelTestCase:
                 continue
             np.testing.assert_allclose(rr1, rr2, atol=aprec)
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_permutation(self):
         """Test permutation."""
         if getattr(self, "skip_test_permutation", False):
@@ -413,7 +414,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_trans(self):
         """Test translation."""
         if getattr(self, "skip_test_trans", False):
@@ -482,7 +483,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_rot(self):
         """Test rotation."""
         if getattr(self, "skip_test_rot", False):
@@ -672,7 +673,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_smooth(self):
         """Test smooth."""
         if getattr(self, "skip_test_smooth", False):
@@ -779,7 +780,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_autodiff(self):
         """Test autodiff."""
         if getattr(self, "skip_test_autodiff", False):
@@ -919,7 +920,7 @@ class ModelTestCase:
             # not support virial by far
             pass
 
-    @unittest.skipIf(TEST_DEVICE == "cpu", "Skip test on CPU.")
+    @unittest.skipIf(TEST_DEVICE == "cpu" and CI, "Skip test on CPU.")
     def test_device_consistence(self):
         """Test forward consistency between devices."""
         test_spin = getattr(self, "test_spin", False)
