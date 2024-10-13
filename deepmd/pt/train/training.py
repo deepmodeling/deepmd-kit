@@ -949,7 +949,7 @@ class Trainer:
                     p=np.array(self.model_prob),
                     size=self.world_size,
                     replace=True,
-                )
+                )  # pylint: disable=no-explicit-dtype
                 assert chosen_index_list.size == self.world_size
                 model_index = chosen_index_list[self.rank]
                 model_key = self.model_keys[model_index]
