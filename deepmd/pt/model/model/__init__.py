@@ -283,7 +283,7 @@ def get_standard_model(model_params):
         modelcls = DOSModel
     elif fitting_net["type"] in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
-        if "hessian_mode" in model_params.keys() and model_params["hessian_mode"]:
+        if "hessian_mode" in model_params and model_params["hessian_mode"]:
             modelcls = EnergyHessianModel
     elif fitting_net["type"] == "property":
         modelcls = PropertyModel
