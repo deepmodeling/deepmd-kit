@@ -18,12 +18,12 @@ class AtomExcludeMask:
     ):
         self.ntypes = ntypes
         self.exclude_types = exclude_types
-        self.type_mask = np.array(
+        type_mask = np.array(
             [1 if tt_i not in self.exclude_types else 0 for tt_i in range(ntypes)],
             dtype=np.int32,
         )
         # (ntypes)
-        self.type_mask = self.type_mask.reshape([-1])
+        self.type_mask = type_mask.reshape([-1])
 
     def get_exclude_types(self):
         return self.exclude_types
@@ -52,7 +52,9 @@ class AtomExcludeMask:
         """
         xp = array_api_compat.array_namespace(atype)
         nf, natom = atype.shape
-        return xp.reshape(self.type_mask[atype], (nf, natom))
+        return xp.reshape(
+            xp.take(self.type_mask, xp.reshape(atype, [-1]), axis=0), (nf, natom)
+        )
 
 
 class PairExcludeMask:
