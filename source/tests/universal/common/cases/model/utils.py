@@ -6,8 +6,6 @@ from copy import (
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
 )
 
@@ -24,6 +22,7 @@ from .....seed import (
     GLOBAL_SEED,
 )
 from .....utils import (
+    CI,
     TEST_DEVICE,
 )
 
@@ -31,7 +30,7 @@ from .....utils import (
 class ModelTestCase:
     """Common test case for model."""
 
-    expected_type_map: List[str]
+    expected_type_map: list[str]
     """Expected type map."""
     expected_rcut: float
     """Expected cut-off radius."""
@@ -39,15 +38,15 @@ class ModelTestCase:
     """Expected number (dimension) of frame parameters."""
     expected_dim_aparam: int
     """Expected number (dimension) of atomic parameters."""
-    expected_sel_type: List[int]
+    expected_sel_type: list[int]
     """Expected selected atom types."""
     expected_aparam_nall: bool
     """Expected shape of atomic parameters."""
-    expected_model_output_type: List[str]
+    expected_model_output_type: list[str]
     """Expected output type for the model."""
-    model_output_equivariant: List[str]
+    model_output_equivariant: list[str]
     """Outputs that are equivariant to the input rotation."""
-    expected_sel: List[int]
+    expected_sel: list[int]
     """Expected number of neighbors."""
     expected_has_message_passing: bool
     """Expected whether having message passing."""
@@ -55,11 +54,11 @@ class ModelTestCase:
     """Class wrapper for forward method."""
     forward_wrapper_cpu_ref: Callable[[Any], Any]
     """Convert model to CPU method."""
-    aprec_dict: Dict[str, Optional[float]]
+    aprec_dict: dict[str, Optional[float]]
     """Dictionary of absolute precision in each test."""
-    rprec_dict: Dict[str, Optional[float]]
+    rprec_dict: dict[str, Optional[float]]
     """Dictionary of relative precision in each test."""
-    epsilon_dict: Dict[str, Optional[float]]
+    epsilon_dict: dict[str, Optional[float]]
     """Dictionary of epsilons in each test."""
 
     def test_get_type_map(self):
@@ -329,7 +328,7 @@ class ModelTestCase:
                 continue
             np.testing.assert_allclose(rr1, rr2, atol=aprec)
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_permutation(self):
         """Test permutation."""
         if getattr(self, "skip_test_permutation", False):
@@ -415,7 +414,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_trans(self):
         """Test translation."""
         if getattr(self, "skip_test_trans", False):
@@ -484,7 +483,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_rot(self):
         """Test rotation."""
         if getattr(self, "skip_test_rot", False):
@@ -674,7 +673,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_smooth(self):
         """Test smooth."""
         if getattr(self, "skip_test_smooth", False):
@@ -781,7 +780,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_autodiff(self):
         """Test autodiff."""
         if getattr(self, "skip_test_autodiff", False):
@@ -921,7 +920,7 @@ class ModelTestCase:
             # not support virial by far
             pass
 
-    @unittest.skipIf(TEST_DEVICE == "cpu", "Skip test on CPU.")
+    @unittest.skipIf(TEST_DEVICE == "cpu" and CI, "Skip test on CPU.")
     def test_device_consistence(self):
         """Test forward consistency between devices."""
         test_spin = getattr(self, "test_spin", False)

@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    List,
     Optional,
 )
 
@@ -46,7 +45,7 @@ class PropertyFittingNet(InvarFitting):
         Embedding width per atom.
     task_dim : int
             The dimension of outputs of fitting net.
-    neuron : List[int]
+    neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     bias_atom_p : torch.Tensor, optional
         Average property per atom for each element.
@@ -78,7 +77,7 @@ class PropertyFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         task_dim: int = 1,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         bias_atom_p: Optional[torch.Tensor] = None,
         intensive: bool = False,
         bias_method: str = "normal",
@@ -149,4 +148,4 @@ class PropertyFittingNet(InvarFitting):
         return dd
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

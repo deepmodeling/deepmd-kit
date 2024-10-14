@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from functools import (
+    lru_cache,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.common import (
@@ -30,8 +34,15 @@ class DPTestCase(BackendTestCase):
     def convert_from_numpy(cls, xx: np.ndarray) -> np.ndarray:
         return xx
 
+    @classmethod
+    @lru_cache(maxsize=1)
+    def _get_deserialized_module(cls):
+        return cls.module.deserialize(cls.module.serialize())
+
     @property
     def deserialized_module(self):
+        if hasattr(self.__class__, "module"):
+            return self._get_deserialized_module()
         return self.module.deserialize(self.module.serialize())
 
     @property
@@ -41,3 +52,10 @@ class DPTestCase(BackendTestCase):
             self.deserialized_module,
         ]
         return modules
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if hasattr(cls, "module"):
+            del cls.module
+        cls._get_deserialized_module.cache_clear()

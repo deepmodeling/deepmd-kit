@@ -5,6 +5,7 @@ from typing import (
 
 from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
 from deepmd.jax.common import (
+    flax_module,
     to_jax_array,
 )
 from deepmd.jax.utils.network import (
@@ -12,6 +13,7 @@ from deepmd.jax.utils.network import (
 )
 
 
+@flax_module
 class TypeEmbedNet(TypeEmbedNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"econf_tebd"}:

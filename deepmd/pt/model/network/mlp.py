@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     ClassVar,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -83,7 +81,7 @@ class MLPLayer(nn.Module):
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         init: str = "default",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         # only use_timestep when skip connection is established.
@@ -297,7 +295,7 @@ FittingNet = make_fitting_network(EmbeddingNet, MLP, MLPLayer)
 class NetworkCollection(DPNetworkCollection, nn.Module):
     """PyTorch implementation of NetworkCollection."""
 
-    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+    NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": MLP,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,

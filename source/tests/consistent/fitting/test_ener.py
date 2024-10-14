@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -13,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -36,6 +37,22 @@ else:
 from deepmd.utils.argcheck import (
     fitting_ener,
 )
+
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import EnergyFittingNet as EnerFittingJAX
+else:
+    EnerFittingJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.fitting import (
+        EnergyFittingNet as EnerFittingStrict,
+    )
+else:
+    EnerFittingStrict = None
 
 
 @parameterized(
@@ -75,9 +92,25 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_pt
 
+    skip_jax = not INSTALLED_JAX
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            atom_ener,
+        ) = self.param
+        # TypeError: The array_api_strict namespace does not support the dtype 'bfloat16'
+        return not INSTALLED_ARRAY_API_STRICT or precision == "bfloat16"
+
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
+    jax_class = EnerFittingJAX
+    array_api_strict_class = EnerFittingStrict
     args = fitting_ener()
 
     def setUp(self):
@@ -106,7 +139,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             "mixed_types": mixed_types,
         }
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         (
             resnet_dt,
             precision,
@@ -158,7 +191,40 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam if numb_fparam else None,
         )["energy"]
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_jax(self, jax_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            atom_ener,
+        ) = self.param
+        return np.asarray(
+            jax_obj(
+                jnp.asarray(self.inputs),
+                jnp.asarray(self.atype.reshape(1, -1)),
+                fparam=jnp.asarray(self.fparam) if numb_fparam else None,
+            )["energy"]
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        array_api_strict.set_array_api_strict_flags(api_version="2023.12")
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            atom_ener,
+        ) = self.param
+        return np.asarray(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
+                fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
+            )["energy"]
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:
             # shape is not same
             ret = ret[0].reshape(-1, self.natoms[0], 1)

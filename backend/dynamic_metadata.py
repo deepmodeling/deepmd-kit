@@ -4,8 +4,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -30,13 +28,13 @@ else:
 __all__ = ["dynamic_metadata"]
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     return __all__
 
 
 def dynamic_metadata(
     field: str,
-    settings: Optional[Dict[str, object]] = None,
+    settings: Optional[dict[str, object]] = None,
 ):
     assert field in ["optional-dependencies", "entry-points", "scripts"]
     _, _, find_libpython_requires, extra_scripts, tf_version, pt_version, pd_version = (

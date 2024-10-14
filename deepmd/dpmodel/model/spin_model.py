@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -222,7 +220,7 @@ class SpinModel(NativeOP):
             )
         return aparam
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
         ntypes = len(tmap) // 2  # ignore the virtual type
@@ -244,7 +242,7 @@ class SpinModel(NativeOP):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.backbone_model.get_dim_aparam()
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
         Only atoms with selected atom types have atomic contribution
         to the result of the model.
@@ -258,7 +256,7 @@ class SpinModel(NativeOP):
         """
         return self.backbone_model.is_aparam_nall()
 
-    def model_output_type(self) -> List[str]:
+    def model_output_type(self) -> list[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
@@ -333,7 +331,7 @@ class SpinModel(NativeOP):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Return model prediction.
 
         Parameters
@@ -358,7 +356,7 @@ class SpinModel(NativeOP):
         Returns
         -------
         ret_dict
-            The result dict of type Dict[str,np.ndarray].
+            The result dict of type dict[str,np.ndarray].
             The keys are defined by the `ModelOutputDef`.
 
         """

@@ -18,8 +18,10 @@
 #define gpuMemset cudaMemset
 
 #define GPU_MAX_NBOR_SIZE 4096
-#define DPErrcheck(res) \
-  { DPAssert((res), __FILE__, __LINE__); }
+#define DPErrcheck(res)                  \
+  {                                      \
+    DPAssert((res), __FILE__, __LINE__); \
+  }
 inline void DPAssert(cudaError_t code,
                      const char *file,
                      int line,
@@ -54,8 +56,10 @@ inline void DPAssert(cudaError_t code,
   }
 }
 
-#define nborErrcheck(res) \
-  { nborAssert((res), __FILE__, __LINE__); }
+#define nborErrcheck(res)                  \
+  {                                        \
+    nborAssert((res), __FILE__, __LINE__); \
+  }
 inline void nborAssert(cudaError_t code,
                        const char *file,
                        int line,

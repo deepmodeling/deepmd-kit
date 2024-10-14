@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -51,7 +50,7 @@ class DOSModel(StandardModel):
         descriptor: dict,
         fitting_net: dict,
         type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         **kwargs,

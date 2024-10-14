@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -571,7 +570,7 @@ class TypeEmbedNet(nn.Module):
         bavg=0.0,
         stddev=1.0,
         precision="default",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
@@ -627,7 +626,7 @@ class TypeEmbedNet(nn.Module):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -660,7 +659,7 @@ class TypeEmbedNetConsistent(nn.Module):
         Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
         Whether to use bias in the type embedding layer.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
 
@@ -668,16 +667,16 @@ class TypeEmbedNetConsistent(nn.Module):
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
     ):
         """Construct a type embedding net."""
         super().__init__()
@@ -734,7 +733,7 @@ class TypeEmbedNetConsistent(nn.Module):
         return embed
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

@@ -13,8 +13,6 @@ from pathlib import (
 )
 from typing import (
     ClassVar,
-    Dict,
-    List,
     Optional,
 )
 
@@ -77,7 +75,7 @@ class DPPath(ABC):
         """
 
     @abstractmethod
-    def glob(self, pattern: str) -> List["DPPath"]:
+    def glob(self, pattern: str) -> list["DPPath"]:
         """Search path using the glob pattern.
 
         Parameters
@@ -87,12 +85,12 @@ class DPPath(ABC):
 
         Returns
         -------
-        List[DPPath]
+        list[DPPath]
             list of paths
         """
 
     @abstractmethod
-    def rglob(self, pattern: str) -> List["DPPath"]:
+    def rglob(self, pattern: str) -> list["DPPath"]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
 
@@ -103,7 +101,7 @@ class DPPath(ABC):
 
         Returns
         -------
-        List[DPPath]
+        list[DPPath]
             list of paths
         """
 
@@ -206,7 +204,7 @@ class DPOSPath(DPPath):
         with self.path.open("wb") as f:
             np.save(f, arr)
 
-    def glob(self, pattern: str) -> List["DPPath"]:
+    def glob(self, pattern: str) -> list["DPPath"]:
         """Search path using the glob pattern.
 
         Parameters
@@ -216,13 +214,13 @@ class DPOSPath(DPPath):
 
         Returns
         -------
-        List[DPPath]
+        list[DPPath]
             list of paths
         """
         # currently DPOSPath will only derivative DPOSPath
         return [type(self)(p, mode=self.mode) for p in self.path.glob(pattern)]
 
-    def rglob(self, pattern: str) -> List["DPPath"]:
+    def rglob(self, pattern: str) -> list["DPPath"]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
 
@@ -233,7 +231,7 @@ class DPOSPath(DPPath):
 
         Returns
         -------
-        List[DPPath]
+        list[DPPath]
             list of paths
         """
         return [type(self)(p, mode=self.mode) for p in self.path.rglob(pattern)]
@@ -360,7 +358,7 @@ class DPH5Path(DPPath):
         self.root.flush()
         self._new_keys.append(self._name)
 
-    def glob(self, pattern: str) -> List["DPPath"]:
+    def glob(self, pattern: str) -> list["DPPath"]:
         """Search path using the glob pattern.
 
         Parameters
@@ -370,7 +368,7 @@ class DPH5Path(DPPath):
 
         Returns
         -------
-        List[DPPath]
+        list[DPPath]
             list of paths
         """
         # got paths starts with current path first, which is faster
@@ -384,7 +382,7 @@ class DPH5Path(DPPath):
             for pp in globfilter(subpaths, self._connect_path(pattern))
         ]
 
-    def rglob(self, pattern: str) -> List["DPPath"]:
+    def rglob(self, pattern: str) -> list["DPPath"]:
         """This is like calling :meth:`DPPath.glob()` with `**/` added in front
         of the given relative pattern.
 
@@ -395,17 +393,17 @@ class DPH5Path(DPPath):
 
         Returns
         -------
-        List[DPPath]
+        list[DPPath]
             list of paths
         """
         return self.glob("**" + pattern)
 
     @property
-    def _keys(self) -> List[str]:
+    def _keys(self) -> list[str]:
         """Walk all groups and dataset."""
         return self._file_keys(self.root)
 
-    __file_new_keys: ClassVar[Dict[h5py.File, List[str]]] = {}
+    __file_new_keys: ClassVar[dict[h5py.File, list[str]]] = {}
 
     @property
     def _new_keys(self):
@@ -415,7 +413,7 @@ class DPH5Path(DPPath):
 
     @classmethod
     @lru_cache(None)
-    def _file_keys(cls, file: h5py.File) -> List[str]:
+    def _file_keys(cls, file: h5py.File) -> list[str]:
         """Walk all groups and dataset."""
         l = []
         file.visit(lambda x: l.append("/" + x))

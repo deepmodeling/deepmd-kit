@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
@@ -65,7 +64,7 @@ class DescrptSeAEbd(DescrptSeA):
             The activation function in the embedding net. Supported options are {0}
     precision
             The precision of the embedding net parameters. Supported options are {1}
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     """
@@ -74,8 +73,8 @@ class DescrptSeAEbd(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
@@ -87,7 +86,7 @@ class DescrptSeAEbd(DescrptSeA):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -600,7 +599,7 @@ class DescrptSeAEbd(DescrptSeA):
         return result, qmat
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         data_requirement = super().input_requirement
         if self.numb_aparam > 0:

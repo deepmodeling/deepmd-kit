@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-)
 
 import torch
 
@@ -151,7 +148,7 @@ class TensorLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
         if self.has_local_weight:

@@ -25,6 +25,7 @@ from ....consistent.common import (
     parameterized,
 )
 from ....utils import (
+    CI,
     TEST_DEVICE,
 )
 from ...common.cases.model.model import (
@@ -112,7 +113,7 @@ def skip_model_tests(test_obj):
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -200,7 +201,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):

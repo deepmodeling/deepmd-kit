@@ -3,9 +3,7 @@ import copy
 import itertools
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -108,7 +106,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     type_one_side
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -121,7 +119,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     spin
             The deepspin object.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     ntypes : int
             Number of element types.
@@ -147,22 +145,22 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         del ntypes
         ## seed, uniform_seed, not included.
@@ -282,7 +280,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -297,11 +295,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -314,7 +312,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
@@ -331,7 +329,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -473,9 +471,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

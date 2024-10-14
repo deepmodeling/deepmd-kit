@@ -10,7 +10,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    List,
     Optional,
 )
 
@@ -32,12 +31,12 @@ else:
     find_libpython = None
 
 
-def get_env(paths: List[Optional[str]]) -> str:
+def get_env(paths: list[Optional[str]]) -> str:
     """Get the environment variable from given paths."""
     return ":".join(p for p in paths if p is not None)
 
 
-def get_library_path(module: str, filename: str) -> List[str]:
+def get_library_path(module: str, filename: str) -> list[str]:
     """Get library path from a module.
 
     Parameters

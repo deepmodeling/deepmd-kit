@@ -3,7 +3,6 @@ import copy
 import logging
 from typing import (
     Callable,
-    List,
     Optional,
     Union,
 )
@@ -45,7 +44,7 @@ class DipoleFittingNet(GeneralFitting):
         Embedding width per atom.
     embedding_width : int
         The dimension of rotation matrix, m1.
-    neuron : List[int]
+    neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     resnet_dt : bool
         Using time-step in the ResNet construction.
@@ -70,7 +69,7 @@ class DipoleFittingNet(GeneralFitting):
     c_differentiable
         If the variable is differentiated with respect to the cell tensor (pbc case).
         Only reducible variable are differentiable.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
 
@@ -79,7 +78,7 @@ class DipoleFittingNet(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -87,11 +86,11 @@ class DipoleFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -151,7 +150,7 @@ class DipoleFittingNet(GeneralFitting):
 
     def compute_output_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -159,11 +158,11 @@ class DipoleFittingNet(GeneralFitting):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -197,4 +196,4 @@ class DipoleFittingNet(GeneralFitting):
         return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]
