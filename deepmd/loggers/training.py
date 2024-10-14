@@ -29,6 +29,6 @@ def format_training_message_per_task(
     rmse = dict(sorted(rmse.items()))
     return (
         f"batch {batch:7d}: {task_name}"
-        f"{', '.join([f'{kk} = {float(vv):8.2e}' for kk, vv in rmse.items()])}"
+        f"{', '.join([f'{kk} = {vv:8.2e}' for kk, vv in rmse.items()])}"
         f"{lr}"
     )
