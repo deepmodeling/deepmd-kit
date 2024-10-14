@@ -2,11 +2,11 @@
 from typing import (
     TYPE_CHECKING,
     Dict,
-    Iterator,
     List,
     Tuple,
     Union,
 )
+from collections.abc import Iterator
 
 import numpy as np
 import paddle

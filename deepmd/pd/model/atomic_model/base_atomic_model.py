@@ -479,7 +479,9 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(coord, atype, box, fparam=None, aparam=None):
-            with paddle.no_grad():  # it's essential for pure paddle forward function to use auto_batchsize
+            with (
+                paddle.no_grad()
+            ):  # it's essential for pure paddle forward function to use auto_batchsize
                 (
                     extended_coord,
                     extended_atype,

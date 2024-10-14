@@ -7,9 +7,9 @@ import logging
 from typing import (
     Dict,
     Optional,
-    OrderedDict,
     Union,
 )
+from collections import OrderedDict
 
 import paddle
 
