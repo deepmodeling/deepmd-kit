@@ -935,9 +935,9 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
       dforce_[3*ii + dd] = dforce_tmp[3 * new_idx + dd];
       datom_energy_[ii] = datom_energy_tmp[new_idx];
       datom_virial_[ii] = datom_virial_tmp[new_idx];
-      if (datype[ii] < ntypes_spin && ii < nloc) {
+      if (datype_[ii] < ntypes_spin && ii < nloc) {
         dforce_mag_[3*ii + dd] = dforce_tmp[3 * (new_idx + nloc) + dd];
-      } else if (datype[ii] < ntypes_spin) {
+      } else if (datype_[ii] < ntypes_spin) {
         dforce_mag_[3*ii + dd] = dforce_tmp[3 * (new_idx + nghost) + dd];
       } else {
         dforce_mag_[3*ii + dd] = 0.0;
