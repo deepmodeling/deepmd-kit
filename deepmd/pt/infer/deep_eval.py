@@ -641,7 +641,15 @@ class DeepEval(DeepEvalBackend):
         """
         model = self.dp.model["Default"]
         model.set_eval_descriptor_hook(True)
-        self.eval(coords, cells, atom_types, fparam, aparam, **kwargs)
+        self.eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=False,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
         descriptor = model.eval_descriptor()
         model.set_eval_descriptor_hook(False)
         return to_numpy_array(descriptor)
