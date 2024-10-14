@@ -857,8 +857,6 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
          extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
          new_idx_map, old_idx_map, lmp_list, dcoord_, datype_, nghost, dspin_,
          ntypes, ntypes_spin, virtual_len, spin_norm);
-  // extend_lmp_list = InputNlist(extend_inum, &extend_ilist[0],
-  //                              &extend_numneigh[0], &extend_firstneigh[0]);
   InputNlist extend_lmp_list(extend_inum, &extend_ilist[0],
                                             &extend_numneigh[0],
                                             &extend_firstneigh[0]);
@@ -916,23 +914,27 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   }
 
   // bkw map
-  std::vector<VALUETYPE> dforce_tmp;
+  std::vector<VALUETYPE> dforce_tmp, datom_energy_tmp, datom_virial_tmp;
   dforce_tmp.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
-  datom_energy_.resize(static_cast<size_t>(nframes) * fwd_map.size());
-  datom_virial_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+  datom_energy_tmp.resize(static_cast<size_t>(nframes) * fwd_map.size());
+  datom_virial_tmp.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
   select_map<VALUETYPE>(dforce_tmp, dforce, bkw_map, 3, nframes, fwd_map.size(),
                         nall_real);
-  select_map<VALUETYPE>(datom_energy_, datom_energy, bkw_map, 1, nframes,
+  select_map<VALUETYPE>(datom_energy_tmp, datom_energy, bkw_map, 1, nframes,
                         fwd_map.size(), nall_real);
-  select_map<VALUETYPE>(datom_virial_, datom_virial, bkw_map, 9, nframes,
+  select_map<VALUETYPE>(datom_virial_tmp, datom_virial, bkw_map, 9, nframes,
                         fwd_map.size(), nall_real);
   // backward force and mag.
   dforce_.resize(static_cast<size_t>(nframes) * nall * 3);
   dforce_mag_.resize(static_cast<size_t>(nframes) * nall * 3);
+  datom_energy_.resize(static_cast<size_t>(nframes) * nall);
+  datom_virial_.resize(static_cast<size_t>(nframes) * nall * 9);
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
       int new_idx = new_idx_map[ii];
       dforce_[3*ii + dd] = dforce_tmp[3 * new_idx + dd];
+      datom_energy_[ii] = datom_energy_tmp[new_idx];
+      datom_virial_[ii] = datom_virial_tmp[new_idx];
       if (datype[ii] < ntypes_spin && ii < nloc) {
         dforce_mag_[3*ii + dd] = dforce_tmp[3 * (new_idx + nloc) + dd];
       } else if (datype[ii] < ntypes_spin) {
