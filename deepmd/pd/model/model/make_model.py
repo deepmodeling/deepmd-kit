@@ -424,12 +424,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                         * paddle.ones(
                             [n_nf, n_nloc, nnei - n_nnei],
                             dtype=nlist.dtype,
-                        ),  # .to(device=nlist.place),
+                        ),
                     ],
                     axis=-1,
                 )
 
-            if True:  # TODO: Fix controlflow + backward in PIR static graph
+            if n_nnei > nnei or extra_nlist_sort:
                 n_nf, n_nloc, n_nnei = nlist.shape
                 m_real_nei = nlist >= 0
                 nlist = paddle.where(m_real_nei, nlist, paddle.zeros_like(nlist))
