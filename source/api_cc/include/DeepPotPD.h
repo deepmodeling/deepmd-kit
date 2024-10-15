@@ -239,16 +239,17 @@ class DeepPotPD : public DeepPotBase {
    * @param[in] buffer_name Buffer name.
    * @param[out] buffer_array Buffer array.
    **/
-  template<typename BUFFERTYPE>
-  void get_buffer(const std::string &buffer_name, std::vector<BUFFERTYPE> &buffer_array);
+  template <typename BUFFERTYPE>
+  void get_buffer(const std::string& buffer_name,
+                  std::vector<BUFFERTYPE>& buffer_array);
 
   /**
    * @brief Get the buffer of this model.
    * @param[in] buffer_name Buffer name.
    * @param[out] buffer_scalar Buffer scalar.
    **/
-  template<typename BUFFERTYPE>
-  void get_buffer(const std::string &buffer_name, BUFFERTYPE &buffer_scalar);
+  template <typename BUFFERTYPE>
+  void get_buffer(const std::string& buffer_name, BUFFERTYPE& buffer_scalar);
 
   /**
    * @brief Get whether the atom dimension of aparam is nall instead of fparam.
