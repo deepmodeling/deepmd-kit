@@ -509,8 +509,8 @@ VT DeepPotTF::get_scalar(const std::string& name) const {
 }
 
 template <class VT>
-void DeepPotTF::get_vector(std::vector<VT> &vec,
-                              const std::string &name) const {
+void DeepPotTF::get_vector(std::vector<VT>& vec,
+                           const std::string& name) const {
   session_get_vector<VT>(vec, session, name);
 }
 
@@ -857,9 +857,8 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
          extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
          new_idx_map, old_idx_map, lmp_list, dcoord_, datype_, nghost, dspin_,
          ntypes, ntypes_spin, virtual_len, spin_norm);
-  InputNlist extend_lmp_list(extend_inum, &extend_ilist[0],
-                                            &extend_numneigh[0],
-                                            &extend_firstneigh[0]);
+  InputNlist extend_lmp_list(extend_inum, &extend_ilist[0], &extend_numneigh[0],
+                             &extend_firstneigh[0]);
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
   validate_fparam_aparam(nframes, (aparam_nall ? nall : nloc), fparam_,
@@ -932,15 +931,15 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
       int new_idx = new_idx_map[ii];
-      dforce_[3*ii + dd] = dforce_tmp[3 * new_idx + dd];
+      dforce_[3 * ii + dd] = dforce_tmp[3 * new_idx + dd];
       datom_energy_[ii] = datom_energy_tmp[new_idx];
       datom_virial_[ii] = datom_virial_tmp[new_idx];
       if (datype_[ii] < ntypes_spin && ii < nloc) {
-        dforce_mag_[3*ii + dd] = dforce_tmp[3 * (new_idx + nloc) + dd];
+        dforce_mag_[3 * ii + dd] = dforce_tmp[3 * (new_idx + nloc) + dd];
       } else if (datype_[ii] < ntypes_spin) {
-        dforce_mag_[3*ii + dd] = dforce_tmp[3 * (new_idx + nghost) + dd];
+        dforce_mag_[3 * ii + dd] = dforce_tmp[3 * (new_idx + nghost) + dd];
       } else {
-        dforce_mag_[3*ii + dd] = 0.0;
+        dforce_mag_[3 * ii + dd] = 0.0;
       }
     }
   }
@@ -1264,7 +1263,7 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                      coord, atype, box, fparam, aparam, atomic);
 }
 
-void DeepPotTF::cum_sum(std::map<int, int> &sum, std::map<int, int> &vec) {
+void DeepPotTF::cum_sum(std::map<int, int>& sum, std::map<int, int>& vec) {
   sum[0] = 0;
   for (int ii = 1; ii < vec.size(); ++ii) {
     sum[ii] = sum[ii - 1] + vec[ii - 1];
@@ -1441,43 +1440,45 @@ void DeepPotTF::extend(int& extend_inum,
   }
 }
 
-template void DeepPotTF::extend<double>(int& extend_inum,
-                       std::vector<int>& extend_ilist,
-                       std::vector<int>& extend_numneigh,
-                       std::vector<std::vector<int>>& extend_neigh,
-                       std::vector<int*>& extend_firstneigh,
-                       std::vector<double>& extend_dcoord,
-                       std::vector<int>& extend_atype,
-                       int& extend_nghost,
-                       std::map<int, int>& new_idx_map,
-                       std::map<int, int>& old_idx_map,
-                       const InputNlist& lmp_list,
-                       const std::vector<double>& dcoord,
-                       const std::vector<int>& atype,
-                       const int nghost,
-                       const std::vector<double>& spin,
-                       const int numb_types,
-                       const int numb_types_spin,
-                       const std::vector<double>& virtual_len,
-                       const std::vector<double>& spin_norm);
+template void DeepPotTF::extend<double>(
+    int& extend_inum,
+    std::vector<int>& extend_ilist,
+    std::vector<int>& extend_numneigh,
+    std::vector<std::vector<int>>& extend_neigh,
+    std::vector<int*>& extend_firstneigh,
+    std::vector<double>& extend_dcoord,
+    std::vector<int>& extend_atype,
+    int& extend_nghost,
+    std::map<int, int>& new_idx_map,
+    std::map<int, int>& old_idx_map,
+    const InputNlist& lmp_list,
+    const std::vector<double>& dcoord,
+    const std::vector<int>& atype,
+    const int nghost,
+    const std::vector<double>& spin,
+    const int numb_types,
+    const int numb_types_spin,
+    const std::vector<double>& virtual_len,
+    const std::vector<double>& spin_norm);
 
-template void DeepPotTF::extend<float>(int& extend_inum,
-                       std::vector<int>& extend_ilist,
-                       std::vector<int>& extend_numneigh,
-                       std::vector<std::vector<int>>& extend_neigh,
-                       std::vector<int*>& extend_firstneigh,
-                       std::vector<float>& extend_dcoord,
-                       std::vector<int>& extend_atype,
-                       int& extend_nghost,
-                       std::map<int, int>& new_idx_map,
-                       std::map<int, int>& old_idx_map,
-                       const InputNlist& lmp_list,
-                       const std::vector<float>& dcoord,
-                       const std::vector<int>& atype,
-                       const int nghost,
-                       const std::vector<float>& spin,
-                       const int numb_types,
-                       const int numb_types_spin,
-                       const std::vector<float>& virtual_len,
-                       const std::vector<float>& spin_norm);
+template void DeepPotTF::extend<float>(
+    int& extend_inum,
+    std::vector<int>& extend_ilist,
+    std::vector<int>& extend_numneigh,
+    std::vector<std::vector<int>>& extend_neigh,
+    std::vector<int*>& extend_firstneigh,
+    std::vector<float>& extend_dcoord,
+    std::vector<int>& extend_atype,
+    int& extend_nghost,
+    std::map<int, int>& new_idx_map,
+    std::map<int, int>& old_idx_map,
+    const InputNlist& lmp_list,
+    const std::vector<float>& dcoord,
+    const std::vector<int>& atype,
+    const int nghost,
+    const std::vector<float>& spin,
+    const int numb_types,
+    const int numb_types_spin,
+    const std::vector<float>& virtual_len,
+    const std::vector<float>& spin_norm);
 #endif

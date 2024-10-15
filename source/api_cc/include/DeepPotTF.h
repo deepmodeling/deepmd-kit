@@ -356,7 +356,7 @@ class DeepPotTF : public DeepPotBase {
               const int numb_types_spin,
               const std::vector<VALUETYPE>& virtual_len,
               const std::vector<VALUETYPE>& spin_norm);
-  void cum_sum(std::map<int, int> &, std::map<int, int> &);
+  void cum_sum(std::map<int, int>&, std::map<int, int>&);
 
  private:
   tensorflow::Session* session;

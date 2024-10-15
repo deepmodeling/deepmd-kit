@@ -262,7 +262,7 @@ def freeze_graph(
         "fitting_attr/aparam_nall",
         "spin_attr/ntypes_spin",
         "spin_attr/virtual_len",
-        "spin_attr/spin_norm"
+        "spin_attr/spin_norm",
     ]
     different_set = set(output_node) - set(input_node)
     if different_set:
