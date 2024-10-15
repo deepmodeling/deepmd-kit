@@ -37,15 +37,15 @@ from deepmd.infer.deep_property import (
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
+from deepmd.pt.model.model import (
+    get_model,
+)
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DeepmdData,
 )
 from deepmd.utils.weight_avg import (
     weighted_average,
-)
-from deepmd.pt.model.model import (
-    get_model,
 )
 
 if TYPE_CHECKING:
