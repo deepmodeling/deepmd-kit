@@ -7,8 +7,8 @@ from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.model import (
-    EnergyModel,
     EnergyHessianModel,
+    EnergyModel,
 )
 from deepmd.pt.model.task.ener import (
     EnergyFittingNet,
