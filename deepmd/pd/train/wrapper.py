@@ -4,12 +4,14 @@ from __future__ import (
 )
 
 import logging
+from collections import (
+    OrderedDict,
+)
 from typing import (
     Dict,
     Optional,
     Union,
 )
-from collections import OrderedDict
 
 import paddle
 

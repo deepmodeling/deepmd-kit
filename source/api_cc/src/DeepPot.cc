@@ -44,7 +44,10 @@ void DeepPot::init(const std::string& model,
     backend = deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     backend = deepmd::DPBackend::TensorFlow;
-  } else if ((model.length() >= 5 && model.substr(model.length() - 5) == ".json") || (model.length() >= 8 && model.substr(model.length() - 8) == ".pdmodel")) {
+  } else if ((model.length() >= 5 &&
+              model.substr(model.length() - 5) == ".json") ||
+             (model.length() >= 8 &&
+              model.substr(model.length() - 8) == ".pdmodel")) {
     backend = deepmd::DPBackend::Paddle;
   } else {
     throw deepmd::deepmd_exception("Unsupported model file format");
