@@ -25,8 +25,7 @@ except AttributeError:
     ncpus = os.cpu_count()
 NUM_WORKERS = int(os.environ.get("NUM_WORKERS", min(0, ncpus)))
 # Make sure DDP uses correct device if applicable
-LOCAL_RANK = os.environ.get("LOCAL_RANK", None) or paddle.device.get_device()
-LOCAL_RANK = int(0 if LOCAL_RANK is None else paddle.distributed.get_rank())
+LOCAL_RANK = paddle.distributed.get_rank()
 
 if os.environ.get("DEVICE") == "cpu" or paddle.device.cuda.device_count() <= 0:
     DEVICE = "cpu"
