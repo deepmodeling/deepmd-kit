@@ -98,6 +98,7 @@ model_zbl = {
     "data_stat_nbatch": 20,
 }
 
+
 model_spin = {
     "type_map": ["O", "H", "B"],
     "descriptor": {

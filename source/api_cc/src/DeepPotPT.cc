@@ -164,7 +164,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
-  c10::optional<torch::Tensor> mapping_tensor;
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);

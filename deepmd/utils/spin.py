@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    List,
-    Tuple,
     Union,
 )
 
@@ -20,10 +18,10 @@ class Spin:
 
     Parameters
     ----------
-    use_spin: List[bool]
+    use_spin: list[bool]
                 A list of boolean values indicating whether to use atomic spin for each atom type.
                 True for spin and False for not. List of bool values with shape of [ntypes].
-    virtual_scale: List[float], float
+    virtual_scale: list[float], float
                 The scaling factor to determine the virtual distance
                 between a virtual atom representing spin and its corresponding real atom
                 for each atom type with spin. This factor is defined as the virtual distance
@@ -35,8 +33,8 @@ class Spin:
 
     def __init__(
         self,
-        use_spin: List[bool],
-        virtual_scale: Union[List[float], float],
+        use_spin: list[bool],
+        virtual_scale: Union[list[float], float],
     ) -> None:
         self.ntypes_real = len(use_spin)
         self.ntypes_spin = use_spin.count(True)
@@ -93,7 +91,7 @@ class Spin:
         """Returns the number of double real atom types for input placeholder."""
         return self.ntypes_input
 
-    def get_use_spin(self) -> List[bool]:
+    def get_use_spin(self) -> list[bool]:
         """Returns the list of whether to use spin for each atom type."""
         return self.use_spin
 
@@ -127,7 +125,7 @@ class Spin:
         """
         self.atom_exclude_types_p = self.placeholder_type.tolist()
 
-    def get_pair_exclude_types(self, exclude_types=None) -> List[Tuple[int, int]]:
+    def get_pair_exclude_types(self, exclude_types=None) -> list[tuple[int, int]]:
         """
         Return the pair-wise exclusion types for descriptor.
         The placeholder types for those without spin are excluded.
@@ -135,7 +133,7 @@ class Spin:
         if exclude_types is None:
             return self.pair_exclude_types
         else:
-            _exclude_types: List[Tuple[int, int]] = copy.deepcopy(
+            _exclude_types: list[tuple[int, int]] = copy.deepcopy(
                 self.pair_exclude_types
             )
             for tt in exclude_types:
@@ -143,7 +141,7 @@ class Spin:
                 _exclude_types.append((tt[0], tt[1]))
             return _exclude_types
 
-    def get_atom_exclude_types(self, exclude_types=None) -> List[int]:
+    def get_atom_exclude_types(self, exclude_types=None) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting before out_def.
         Both the placeholder types and spin types are excluded.
@@ -151,12 +149,12 @@ class Spin:
         if exclude_types is None:
             return self.atom_exclude_types_ps
         else:
-            _exclude_types: List[int] = copy.deepcopy(self.atom_exclude_types_ps)
+            _exclude_types: list[int] = copy.deepcopy(self.atom_exclude_types_ps)
             _exclude_types += exclude_types
             _exclude_types = list(set(_exclude_types))
             return _exclude_types
 
-    def get_atom_exclude_types_placeholder(self, exclude_types=None) -> List[int]:
+    def get_atom_exclude_types_placeholder(self, exclude_types=None) -> list[int]:
         """
         Return the atom-wise exclusion types for fitting after out_def.
         The placeholder types for those without spin are excluded.
@@ -164,7 +162,7 @@ class Spin:
         if exclude_types is None:
             return self.atom_exclude_types_p
         else:
-            _exclude_types: List[int] = copy.deepcopy(self.atom_exclude_types_p)
+            _exclude_types: list[int] = copy.deepcopy(self.atom_exclude_types_p)
             _exclude_types += exclude_types
             _exclude_types = list(set(_exclude_types))
             return _exclude_types

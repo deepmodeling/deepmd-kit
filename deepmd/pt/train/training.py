@@ -10,7 +10,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Dict,
 )
 
 import numpy as np
@@ -88,7 +87,7 @@ log = logging.getLogger(__name__)
 class Trainer:
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         training_data,
         stat_file_path=None,
         validation_data=None,
@@ -890,8 +889,9 @@ class Trainer:
                     )
                 # the first training time is not accurate
                 if (
-                    _step_id + 1
-                ) > self.disp_freq or self.num_steps < 2 * self.disp_freq:
+                    (_step_id + 1 - self.start_step) > self.disp_freq
+                    or self.num_steps - self.start_step < 2 * self.disp_freq
+                ):
                     self.total_train_time += train_time
 
                 if fout:
@@ -982,13 +982,14 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            if self.timing_in_training and self.num_steps // self.disp_freq > 0:
-                if self.num_steps >= 2 * self.disp_freq:
+            elapsed_batch = self.num_steps - self.start_step
+            if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
+                if self.start_step >= 2 * self.disp_freq:
                     log.info(
                         "average training time: %.4f s/batch (exclude first %d batches)",
                         self.total_train_time
                         / (
-                            self.num_steps // self.disp_freq * self.disp_freq
+                            elapsed_batch // self.disp_freq * self.disp_freq
                             - self.disp_freq
                         ),
                         self.disp_freq,
@@ -997,7 +998,7 @@ class Trainer:
                     log.info(
                         "average training time: %.4f s/batch",
                         self.total_train_time
-                        / (self.num_steps // self.disp_freq * self.disp_freq),
+                        / (elapsed_batch // self.disp_freq * self.disp_freq),
                     )
 
             if JIT:

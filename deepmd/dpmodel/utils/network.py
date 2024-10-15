@@ -9,8 +9,6 @@ import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -86,7 +84,7 @@ class NativeLayer(NativeOP):
         activation_function: Optional[str] = None,
         resnet: bool = False,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         prec = PRECISION_DICT[precision.lower()]
         self.precision = precision
@@ -148,15 +146,18 @@ class NativeLayer(NativeOP):
             num_out,
             **data,
         )
-        obj.w, obj.b, obj.idt = (
+        w, b, idt = (
             variables["w"],
             variables.get("b", None),
             variables.get("idt", None),
         )
-        if obj.b is not None:
-            obj.b = obj.b.ravel()
-        if obj.idt is not None:
-            obj.idt = obj.idt.ravel()
+        if b is not None:
+            b = b.ravel()
+        if idt is not None:
+            idt = idt.ravel()
+        obj.w = w
+        obj.b = b
+        obj.idt = idt
         obj.check_shape_consistency()
         return obj
 
@@ -177,8 +178,11 @@ class NativeLayer(NativeOP):
 
         def check_var(var):
             if var is not None:
+                # array api standard doesn't provide a API to get the dtype name
+                # this is really hacked
+                dtype_name = str(var.dtype).split(".")[-1]
                 # assertion "float64" == "double" would fail
-                assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
+                assert PRECISION_DICT[dtype_name] is PRECISION_DICT[precision]
 
         check_var(self.w)
         check_var(self.b)
@@ -251,7 +255,7 @@ class NativeLayer(NativeOP):
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
             y += x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
-            y += xp.concatenate([x, x], axis=-1)
+            y += xp.concat([x, x], axis=-1)
         return y
 
 
@@ -347,7 +351,7 @@ class LayerNorm(NativeLayer):
         uni_init: bool = True,
         trainable: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         self.eps = eps
         self.uni_init = uni_init
@@ -362,10 +366,11 @@ class LayerNorm(NativeLayer):
             precision=precision,
             seed=seed,
         )
-        self.w = self.w.squeeze(0)  # keep the weight shape to be [num_in]
+        xp = array_api_compat.array_namespace(self.w, self.b)
+        self.w = xp.squeeze(self.w, 0)  # keep the weight shape to be [num_in]
         if self.uni_init:
-            self.w = np.ones_like(self.w)
-            self.b = np.zeros_like(self.b)
+            self.w = xp.ones_like(self.w)
+            self.b = xp.zeros_like(self.b)
         # only to keep consistent with other backends
         self.trainable = trainable
 
@@ -378,8 +383,8 @@ class LayerNorm(NativeLayer):
             The serialized layer.
         """
         data = {
-            "w": self.w,
-            "b": self.b,
+            "w": to_numpy_array(self.w),
+            "b": to_numpy_array(self.b),
         }
         return {
             "@class": "LayerNorm",
@@ -473,11 +478,12 @@ class LayerNorm(NativeLayer):
 
     @staticmethod
     def layer_norm_numpy(x, shape, weight=None, bias=None, eps=1e-5):
+        xp = array_api_compat.array_namespace(x)
         # mean and variance
-        mean = np.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
-        var = np.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        mean = xp.mean(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
+        var = xp.var(x, axis=tuple(range(-len(shape), 0)), keepdims=True)
         # normalize
-        x_normalized = (x - mean) / np.sqrt(var + eps)
+        x_normalized = (x - mean) / xp.sqrt(var + eps)
         # shift and scale
         if weight is not None and bias is not None:
             x_normalized = x_normalized * weight + bias
@@ -494,7 +500,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             The layers of the network.
         """
 
-        def __init__(self, layers: Optional[List[dict]] = None) -> None:
+        def __init__(self, layers: Optional[list[dict]] = None) -> None:
             super().__init__()
             if layers is None:
                 layers = []
@@ -604,11 +610,11 @@ def make_embedding_network(T_Network, T_NetworkLayer):
         def __init__(
             self,
             in_dim,
-            neuron: List[int] = [24, 48, 96],
+            neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
-            seed: Optional[Union[int, List[int]]] = None,
+            seed: Optional[Union[int, list[int]]] = None,
             bias: bool = True,
         ):
             layers = []
@@ -709,12 +715,12 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             self,
             in_dim,
             out_dim,
-            neuron: List[int] = [24, 48, 96],
+            neuron: list[int] = [24, 48, 96],
             activation_function: str = "tanh",
             resnet_dt: bool = False,
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
-            seed: Optional[Union[int, List[int]]] = None,
+            seed: Optional[Union[int, list[int]]] = None,
         ):
             super().__init__(
                 in_dim,
@@ -804,7 +810,7 @@ class NetworkCollection:
     """
 
     # subclass may override this
-    NETWORK_TYPE_MAP: ClassVar[Dict[str, type]] = {
+    NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
@@ -815,7 +821,7 @@ class NetworkCollection:
         ndim: int,
         ntypes: int,
         network_type: str = "network",
-        networks: List[Union[NativeNet, dict]] = [],
+        networks: list[Union[NativeNet, dict]] = [],
     ):
         self.ndim = ndim
         self.ntypes = ntypes

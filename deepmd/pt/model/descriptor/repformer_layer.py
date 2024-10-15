@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -44,7 +43,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, List[int]]] = None,
+    seed: Optional[Union[int, list[int]]] = None,
 ) -> torch.Tensor:
     r"""
     Get residual tensor for one update vector.
@@ -160,7 +159,7 @@ class Atten2Map(torch.nn.Module):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -285,7 +284,7 @@ class Atten2MultiHeadApply(torch.nn.Module):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -370,7 +369,7 @@ class Atten2EquiVarApply(torch.nn.Module):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -443,7 +442,7 @@ class LocalAtten(torch.nn.Module):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -602,7 +601,7 @@ class RepformerLayer(torch.nn.Module):
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1132,10 +1131,10 @@ class RepformerLayer(torch.nn.Module):
         assert (nb, nloc) == g1.shape[:2]
         assert (nb, nloc, nnei) == h2.shape[:3]
 
-        g2_update: List[torch.Tensor] = [g2]
-        h2_update: List[torch.Tensor] = [h2]
-        g1_update: List[torch.Tensor] = [g1]
-        g1_mlp: List[torch.Tensor] = [g1] if not self.g1_out_mlp else []
+        g2_update: list[torch.Tensor] = [g2]
+        h2_update: list[torch.Tensor] = [h2]
+        g1_update: list[torch.Tensor] = [g1]
+        g1_mlp: list[torch.Tensor] = [g1] if not self.g1_out_mlp else []
         if self.g1_out_mlp:
             assert self.g1_self_mlp is not None
             g1_self_mlp = self.act(self.g1_self_mlp(g1))
@@ -1236,7 +1235,7 @@ class RepformerLayer(torch.nn.Module):
     @torch.jit.export
     def list_update_res_avg(
         self,
-        update_list: List[torch.Tensor],
+        update_list: list[torch.Tensor],
     ) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1245,7 +1244,7 @@ class RepformerLayer(torch.nn.Module):
         return uu / (float(nitem) ** 0.5)
 
     @torch.jit.export
-    def list_update_res_incr(self, update_list: List[torch.Tensor]) -> torch.Tensor:
+    def list_update_res_incr(self, update_list: list[torch.Tensor]) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1255,7 +1254,7 @@ class RepformerLayer(torch.nn.Module):
 
     @torch.jit.export
     def list_update_res_residual(
-        self, update_list: List[torch.Tensor], update_name: str = "g1"
+        self, update_list: list[torch.Tensor], update_name: str = "g1"
     ) -> torch.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1275,7 +1274,7 @@ class RepformerLayer(torch.nn.Module):
 
     @torch.jit.export
     def list_update(
-        self, update_list: List[torch.Tensor], update_name: str = "g1"
+        self, update_list: list[torch.Tensor], update_name: str = "g1"
     ) -> torch.Tensor:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)

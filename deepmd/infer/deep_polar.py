@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -51,7 +50,7 @@ class DeepGlobalPolar(OldDeepTensor):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,

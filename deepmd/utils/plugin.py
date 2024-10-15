@@ -8,9 +8,7 @@ from abc import (
 )
 from typing import (
     Callable,
-    Dict,
     Optional,
-    Type,
 )
 
 
@@ -19,7 +17,7 @@ class Plugin:
 
     Attributes
     ----------
-    plugins : Dict[str, object]
+    plugins : dict[str, object]
         plugins
 
     Examples
@@ -99,7 +97,7 @@ class PluginVariant(metaclass=VariantABCMeta):
     pass
 
 
-def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
+def make_plugin_registry(name: Optional[str] = None) -> type[object]:
     """Make a plugin registry.
 
     Parameters
@@ -141,7 +139,7 @@ def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
             return PR.__plugins.register(key)
 
         @classmethod
-        def get_class_by_type(cls, class_type: str) -> Type[object]:
+        def get_class_by_type(cls, class_type: str) -> type[object]:
             """Get the class by the plugin type."""
             if class_type in PR.__plugins.plugins:
                 return PR.__plugins.plugins[class_type]
@@ -154,7 +152,7 @@ def make_plugin_registry(name: Optional[str] = None) -> Type[object]:
                 raise RuntimeError(f"Unknown {name} type: {class_type}. {dym_message}")
 
         @classmethod
-        def get_plugins(cls) -> Dict[str, Type[object]]:
+        def get_plugins(cls) -> dict[str, type[object]]:
             """Get all the registered plugins."""
             return PR.__plugins.plugins
 

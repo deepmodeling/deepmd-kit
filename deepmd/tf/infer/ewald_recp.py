@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Tuple,
-)
 
 import numpy as np
 
@@ -54,7 +51,7 @@ class EwaldRecp:
 
     def eval(
         self, coord: np.ndarray, charge: np.ndarray, box: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate.
 
         Parameters

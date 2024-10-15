@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -141,7 +139,7 @@ class DescrptSeA(DescrptSe):
             Random seed for initializing the network parameters.
     type_one_side
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     set_davg_zero
@@ -154,7 +152,7 @@ class DescrptSeA(DescrptSe):
             Only for the purpose of backward compatibility, retrieves the old behavior of using the random seed
     env_protection: float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
     References
@@ -169,21 +167,21 @@ class DescrptSeA(DescrptSe):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         spin: Optional[Spin] = None,
         tebd_input_mode: str = "concat",
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
         **kwargs,
     ) -> None:
@@ -327,7 +325,7 @@ class DescrptSeA(DescrptSe):
         """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
         return self.filter_neuron[-1]
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
 
         Returns
@@ -696,7 +694,7 @@ class DescrptSeA(DescrptSe):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters

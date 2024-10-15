@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -51,7 +50,7 @@ class TypeEmbedNet(NativeOP):
         Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
         Whether to use bias in the type embedding layer.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
 
@@ -59,16 +58,16 @@ class TypeEmbedNet(NativeOP):
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
     ) -> None:
         self.ntypes = ntypes
         self.neuron = neuron
@@ -107,7 +106,7 @@ class TypeEmbedNet(NativeOP):
             embed = self.embedding_net(self.econf_tebd)
         if self.padding:
             embed_pad = xp.zeros((1, embed.shape[-1]), dtype=embed.dtype)
-            embed = xp.concatenate([embed, embed_pad], axis=0)
+            embed = xp.concat([embed, embed_pad], axis=0)
         return embed
 
     @classmethod
@@ -162,7 +161,7 @@ class TypeEmbedNet(NativeOP):
         }
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

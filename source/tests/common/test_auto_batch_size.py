@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import sys
 import unittest
+
+import array_api_strict as xp
 
 from deepmd.utils.batch_size import (
     AutoBatchSize,
@@ -9,11 +10,6 @@ from deepmd.utils.batch_size import (
 from deepmd.utils.errors import (
     OutOfMemoryError,
 )
-
-if sys.version_info >= (3, 9):
-    import array_api_strict as xp
-else:
-    raise unittest.SkipTest("array_api_strict doesn't support Python<=3.8")
 
 
 class CustomizedAutoBatchSizeCPU(AutoBatchSize):

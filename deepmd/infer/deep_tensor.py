@@ -3,9 +3,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -44,7 +42,7 @@ class DeepTensor(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: bool = True,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -119,7 +117,7 @@ class DeepTensor(DeepEval):
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
         **kwargs: dict,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         """Evaluate the model with interface similar to the energy model.
         Will return global tensor, component-wise force and virial
         and optionally atomic tensor and atomic virial.
@@ -250,7 +248,7 @@ class OldDeepTensor(DeepTensor):
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
         **kwargs: dict,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         """Unsupported method."""
         raise RuntimeError(
             "This model does not support eval_full method. Use eval instead."

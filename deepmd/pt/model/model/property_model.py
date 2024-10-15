@@ -3,7 +3,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
     Optional,
 )
 
@@ -56,7 +55,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -92,7 +91,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,

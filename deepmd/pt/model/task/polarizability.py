@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -47,7 +46,7 @@ class PolarFittingNet(GeneralFitting):
         Embedding width per atom.
     embedding_width : int
         The dimension of rotation matrix, m1.
-    neuron : List[int]
+    neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     resnet_dt : bool
         Using time-step in the ResNet construction.
@@ -69,11 +68,11 @@ class PolarFittingNet(GeneralFitting):
     fit_diag : bool
         Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to
         normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
         The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
 
     """
@@ -83,7 +82,7 @@ class PolarFittingNet(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -91,12 +90,12 @@ class PolarFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[Union[List[float], float]] = None,
+        scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -162,7 +161,7 @@ class PolarFittingNet(GeneralFitting):
             return super().__getitem__(key)
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -258,4 +257,4 @@ class PolarFittingNet(GeneralFitting):
         return {"polarizability": out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

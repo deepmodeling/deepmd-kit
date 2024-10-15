@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-    Set,
-    Tuple,
-)
 
 import numpy as np
 import torch
@@ -19,7 +14,7 @@ class AtomExcludeMask(torch.nn.Module):
     def __init__(
         self,
         ntypes: int,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         super().__init__()
         self.reinit(ntypes, exclude_types)
@@ -27,7 +22,7 @@ class AtomExcludeMask(torch.nn.Module):
     def reinit(
         self,
         ntypes: int,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.ntypes = ntypes
         self.exclude_types = exclude_types
@@ -72,7 +67,7 @@ class PairExcludeMask(torch.nn.Module):
     def __init__(
         self,
         ntypes: int,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         super().__init__()
         self.reinit(ntypes, exclude_types)
@@ -80,10 +75,10 @@ class PairExcludeMask(torch.nn.Module):
     def reinit(
         self,
         ntypes: int,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.ntypes = ntypes
-        self._exclude_types: Set[Tuple[int, int]] = set()
+        self._exclude_types: set[tuple[int, int]] = set()
         for tt in exclude_types:
             assert len(tt) == 2
             self._exclude_types.add((tt[0], tt[1]))

@@ -153,8 +153,6 @@ class TestDeepPot(unittest.TestCase):
 
     def test_descriptor(self):
         _, extension = self.param
-        if extension == ".pth":
-            self.skipTest("eval_descriptor not supported for PyTorch models")
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue

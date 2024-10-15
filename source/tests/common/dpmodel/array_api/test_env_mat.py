@@ -1,11 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import sys
 import unittest
 
-if sys.version_info >= (3, 9):
-    import array_api_strict as xp
-else:
-    raise unittest.SkipTest("array_api_strict doesn't support Python<=3.8")
+import array_api_strict as xp
 
 from deepmd.dpmodel.utils.env_mat import (
     compute_smooth_weight,

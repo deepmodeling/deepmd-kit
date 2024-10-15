@@ -7,10 +7,10 @@ from abc import (
 from collections import (
     defaultdict,
 )
-from typing import (
-    Dict,
+from collections.abc import (
     Iterator,
-    List,
+)
+from typing import (
     Optional,
 )
 
@@ -98,12 +98,12 @@ class EnvMatStat(ABC):
         super().__init__()
         self.stats = defaultdict(StatItem)
 
-    def compute_stats(self, data: List[Dict[str, np.ndarray]]) -> None:
+    def compute_stats(self, data: list[dict[str, np.ndarray]]) -> None:
         """Compute the statistics of the environment matrix.
 
         Parameters
         ----------
-        data : List[Dict[str, np.ndarray]]
+        data : list[dict[str, np.ndarray]]
             The environment matrix.
         """
         if len(self.stats) > 0:
@@ -113,17 +113,17 @@ class EnvMatStat(ABC):
                 self.stats[kk] += iter_stats[kk]
 
     @abstractmethod
-    def iter(self, data: List[Dict[str, np.ndarray]]) -> Iterator[Dict[str, StatItem]]:
+    def iter(self, data: list[dict[str, np.ndarray]]) -> Iterator[dict[str, StatItem]]:
         """Get the iterator of the environment matrix.
 
         Parameters
         ----------
-        data : List[Dict[str, np.ndarray]]
+        data : list[dict[str, np.ndarray]]
             The environment matrix.
 
         Yields
         ------
-        Dict[str, StatItem]
+        dict[str, StatItem]
             The statistics of the environment matrix.
         """
 
@@ -160,7 +160,7 @@ class EnvMatStat(ABC):
             )
 
     def load_or_compute_stats(
-        self, data: List[Dict[str, np.ndarray]], path: Optional[DPPath] = None
+        self, data: list[dict[str, np.ndarray]], path: Optional[DPPath] = None
     ) -> None:
         """Load the statistics of the environment matrix if it exists, otherwise compute and save it.
 
@@ -168,7 +168,7 @@ class EnvMatStat(ABC):
         ----------
         path : DPPath
             The path to load the statistics of the environment matrix.
-        data : List[Dict[str, np.ndarray]]
+        data : list[dict[str, np.ndarray]]
             The environment matrix.
         """
         if path is not None and path.is_dir():
@@ -180,7 +180,7 @@ class EnvMatStat(ABC):
                 self.save_stats(path)
                 log.info(f"Save stats to {path}.")
 
-    def get_avg(self, default: float = 0) -> Dict[str, float]:
+    def get_avg(self, default: float = 0) -> dict[str, float]:
         """Get the average of the environment matrix.
 
         Parameters
@@ -190,14 +190,14 @@ class EnvMatStat(ABC):
 
         Returns
         -------
-        Dict[str, float]
+        dict[str, float]
             The average of the environment matrix.
         """
         return {kk: vv.compute_avg(default=default) for kk, vv in self.stats.items()}
 
     def get_std(
         self, default: float = 1e-1, protection: float = 1e-2
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Get the standard deviation of the environment matrix.
 
         Parameters
@@ -209,7 +209,7 @@ class EnvMatStat(ABC):
 
         Returns
         -------
-        Dict[str, float]
+        dict[str, float]
             The standard deviation of the environment matrix.
         """
         return {
