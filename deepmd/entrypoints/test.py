@@ -45,7 +45,7 @@ from deepmd.utils.weight_avg import (
     weighted_average,
 )
 
-from .pt.model.model import (
+from ..pt.model.model import (
     get_model,
 )
 
