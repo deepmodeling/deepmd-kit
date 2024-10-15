@@ -18,9 +18,7 @@ from sysconfig import (
     get_path,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -30,7 +28,7 @@ from packaging.version import (
 
 
 @lru_cache
-def find_paddle() -> Tuple[Optional[str], List[str]]:
+def find_paddle() -> tuple[Optional[str], list[str]]:
     """Find PaddlePadle library.
 
     Tries to find PaddlePadle in the order of:
@@ -48,7 +46,7 @@ def find_paddle() -> Tuple[Optional[str], List[str]]:
     str, optional
         PaddlePadle library path if found.
     list of str
-        TensorFlow requirement if not found. Empty if found.
+        Paddle requirement if not found. Empty if found.
     """
     if os.environ.get("DP_ENABLE_PADDLE", "0") == "0":
         return None, []
@@ -117,7 +115,7 @@ def get_pd_requirement(pd_version: str = "") -> dict:
             # https://peps.python.org/pep-0440/#version-matching
             f"paddle=={Version(pd_version).base_version}.*"
             if pd_version != ""
-            else "paddle>=3b",
+            else "paddlepaddle-gpu>=3.0.0b1",
         ],
     }
 

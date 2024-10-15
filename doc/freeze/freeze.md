@@ -39,7 +39,7 @@ The output model is called `model_branch1.pth`, which is the specifically frozen
 
 ```bash
 $ dp --pd freeze -o model
-DEEPMD INFO    Paddle inference model has been exported to: model.json(.pdiparams)
+DEEPMD INFO    Paddle inference model has been exported to: model.json and model.pdiparams
 ```
 
 in the folder where the model is trained. The output model is called `model.json` and `model.pdiparams`.

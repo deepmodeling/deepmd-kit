@@ -113,7 +113,7 @@ python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/
 python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
 ```
 
-Follow [Paddle documentation](https://www.paddlepaddle.org.cn/documentation/docs/zh/guides/index_cn.html) to install Paddle built against different CUDA versions or without CUDA.
+Follow [Paddle documentation](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/install/pip/linux-pip.html) to install Paddle built against different CUDA versions or without CUDA.
 
 One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install Paddle from [conda-forge](https://conda-forge.org).
 
@@ -224,7 +224,7 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 
 **Choices**: `0`, `1`; **Default**: `0`
 
-{{ pytorch_icon }} Enable customized C++ OPs for the Paddle backend. Paddle can still run without customized C++ OPs, but features will be limited.
+{{ paddle_icon }} Enable customized C++ OPs for the Paddle backend. Paddle can still run without customized C++ OPs, but features will be limited.
 :::
 
 :::{envvar} TENSORFLOW_ROOT
@@ -362,9 +362,7 @@ You can also download libtorch prebuilt library from the [PyTorch website](https
 
 :::{tab-item} Paddle {{ paddle_icon }}
 
-If you have installed Paddle using pip, you can use libtorch inside the Paddle Python package.
-You can also download libtorch prebuilt library from the [Paddle website](https://www.paddlepaddle.org.cn/).
-
+If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
 :::
 
 ::::
@@ -425,7 +423,7 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 I assume you have compiled the Paddle inference library(C++ interface) to `$PADDLE_INFERENCE_DIR`, then execute CMake
 
 ```bash
-cmake -DENABLE_PADDLE=ON -DCMAKE_PREFIX_PATH=$PADDLE_INFERENCE_DIR -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+cmake -DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 
 :::

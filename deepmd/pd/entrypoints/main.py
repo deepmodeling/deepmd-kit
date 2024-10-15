@@ -3,12 +3,10 @@ import argparse
 import copy
 import json
 import logging
-import os
 from pathlib import (
     Path,
 )
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -16,6 +14,7 @@ from typing import (
 import h5py
 import paddle
 import paddle.distributed as dist
+import paddle.distributed.fleet as fleet
 import paddle.version
 
 from deepmd import (
@@ -102,11 +101,10 @@ def get_trainer(
     multi_task = "model_dict" in config.get("model", {})
 
     # Initialize DDP
-    local_rank = os.environ.get("LOCAL_RANK")
-    if local_rank is not None:
-        local_rank = int(local_rank)
+    world_size = dist.get_world_size()
+    if world_size > 1:
         assert paddle.version.nccl() != "0"
-        dist.init_parallel_env()
+        fleet.init(is_collective=True)
 
     def prepare_trainer_input_single(
         model_params_single, data_dict_single, rank=0, seed=None
@@ -576,7 +574,7 @@ def change_bias(FLAGS):
 
 
 # @record
-def main(args: Optional[Union[List[str], argparse.Namespace]] = None):
+def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

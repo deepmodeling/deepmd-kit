@@ -51,12 +51,12 @@ repos:
     hooks:
       - id: blacken-docs
   # C++
-  # - repo: https://github.com/pre-commit/mirrors-clang-format
-  #   rev: v18.1.8
-  #   hooks:
-  #     - id: clang-format
-  #       exclude: ^source/3rdparty|source/lib/src/gpu/cudart/.+\.inc
-  # markdown, yaml, CSS, javascript
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v19.1.1
+    hooks:
+      - id: clang-format
+        exclude: ^(source/3rdparty|source/lib/src/gpu/cudart/.+\.inc|.+\.ipynb$)
+  # # markdown, yaml, CSS, javascript
   # - repo: https://github.com/pre-commit/mirrors-prettier
   #   rev: v4.0.0-alpha.8
   #   hooks:

@@ -10,13 +10,14 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Dict,
 )
 
 import numpy as np
 import paddle
 import paddle.distributed as dist
-from paddle.distributed import DataParallel as DDP
+from paddle.distributed import (
+    fleet,
+)
 from paddle.io import (
     DataLoader,
 )
@@ -41,7 +42,6 @@ from deepmd.pd.model.model import (
 )
 from deepmd.pd.optimizer import (
     KFOptimizerWrapper,
-    LKFOptimizer,
 )
 from deepmd.pd.train.wrapper import (
     ModelWrapper,
@@ -56,7 +56,6 @@ from deepmd.pd.utils.dataloader import (
 from deepmd.pd.utils.env import (
     DEVICE,
     JIT,
-    LOCAL_RANK,
     NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
@@ -87,7 +86,7 @@ log = logging.getLogger(__name__)
 class Trainer:
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         training_data,
         stat_file_path=None,
         validation_data=None,
@@ -578,16 +577,6 @@ class Trainer:
                 resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
             )
 
-        if dist.is_available() and dist.is_initialized():
-            paddle.set_device(LOCAL_RANK)
-            # DDP will guarantee the model parameters are identical across all processes
-            self.wrapper = DDP(
-                self.wrapper,
-                device_ids=[LOCAL_RANK],
-                find_unused_parameters=True,
-                output_device=LOCAL_RANK,
-            )
-
         # TODO add lr warmups for multitask
         # author: iProzd
         def warm_up_linear(step, warmup_steps):
@@ -611,14 +600,17 @@ class Trainer:
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
         elif self.opt_type == "LKF":
-            self.optimizer = LKFOptimizer(
-                [{"params": self.wrapper.parameters()}],
-                0.98,
-                0.99870,
-                self.opt_param["kf_blocksize"],
-            )
+            raise NotImplementedError("LKF is not supported yet in Paddle backend.")
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
+
+        if dist.is_available() and dist.is_initialized():
+            # DDP will guarantee the model parameters are identical across all processes
+            self.wrapper = fleet.distributed_model(
+                self.wrapper,
+                # find_unused_parameters=True,
+            )
+            self.optimizer = fleet.distributed_optimizer(self.optimizer)
 
         # Get model prob for multi-task
         if self.multi_task:
@@ -941,9 +933,11 @@ class Trainer:
             # tensorboard
             if self.enable_tensorboard and _step_id % self.tensorboard_freq == 0:
                 writer.add_scalar(f"{task_key}/lr", cur_lr, _step_id)
-                writer.add_scalar(f"{task_key}/loss", loss, _step_id)
+                writer.add_scalar(f"{task_key}/loss", loss.item(), _step_id)
                 for item in more_loss:
-                    writer.add_scalar(f"{task_key}/{item}", more_loss[item], _step_id)
+                    writer.add_scalar(
+                        f"{task_key}/{item}", more_loss[item].item(), _step_id
+                    )
 
         self.t0 = time.time()
         self.total_train_time = 0.0
