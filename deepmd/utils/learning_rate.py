@@ -45,7 +45,7 @@ class LearningRateExp:
             self.decay_rate = decay_rate
         self.min_lr = stop_lr
 
-    def value(self, step) -> np.ndarray:
+    def value(self, step) -> np.float64:
         """Get the learning rate at the given step."""
         step_lr = self.start_lr * np.power(self.decay_rate, step // self.decay_steps)
         if step_lr < self.min_lr:
