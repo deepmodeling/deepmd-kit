@@ -189,7 +189,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
-            atom_ener,
+            numb_dos,
         ) = self.param
         return np.asarray(
             jax_obj(
@@ -206,7 +206,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
-            atom_ener,
+            numb_dos,
         ) = self.param
         return np.asarray(
             array_api_strict_obj(
