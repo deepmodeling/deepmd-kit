@@ -45,11 +45,11 @@ from .dp_model import (
 from .dp_zbl_model import (
     DPZBLModel,
 )
-from .ener_model import (
-    EnergyModel,
-)
 from .ener_hess_model import (
     EnergyHessianModel,
+)
+from .ener_model import (
+    EnergyModel,
 )
 from .frozen import (
     FrozenModel,
