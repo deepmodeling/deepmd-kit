@@ -742,25 +742,25 @@ def eval_model(
             np.concatenate(energy_out) if energy_out else np.zeros([nframes, 1])  # pylint: disable=no-explicit-dtype
         )
         atomic_energy_out = (
-            np.concatenate(atomic_energy_out)
+            np.concatenate(atomic_energy_out)  # pylint: disable=no-explicit-dtype
             if atomic_energy_out
-            else np.zeros([nframes, natoms, 1])  # pylint: disable=no-explicit-dtype
+            else np.zeros([nframes, natoms, 1])
         )
         force_out = (
             np.concatenate(force_out) if force_out else np.zeros([nframes, natoms, 3])  # pylint: disable=no-explicit-dtype
         )
         force_mag_out = (
-            np.concatenate(force_mag_out)
+            np.concatenate(force_mag_out)  # pylint: disable=no-explicit-dtype
             if force_mag_out
-            else np.zeros([nframes, natoms, 3])  # pylint: disable=no-explicit-dtype
+            else np.zeros([nframes, natoms, 3])
         )
         virial_out = (
             np.concatenate(virial_out) if virial_out else np.zeros([nframes, 3, 3])  # pylint: disable=no-explicit-dtype
         )
         atomic_virial_out = (
-            np.concatenate(atomic_virial_out)
+            np.concatenate(atomic_virial_out)  # pylint: disable=no-explicit-dtype
             if atomic_virial_out
-            else np.zeros([nframes, natoms, 3, 3])  # pylint: disable=no-explicit-dtype
+            else np.zeros([nframes, natoms, 3, 3])
         )
         updated_coord_out = (
             np.concatenate(updated_coord_out) if updated_coord_out else None
