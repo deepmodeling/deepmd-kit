@@ -25,9 +25,9 @@ from deepmd.loggers.training import (
 from deepmd.pt.loss import (
     DenoiseLoss,
     DOSLoss,
+    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
-    EnergyHessianStdLoss,
     PropertyLoss,
     TensorLoss,
 )
