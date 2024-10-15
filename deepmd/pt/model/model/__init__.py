@@ -308,4 +308,3 @@ __all__ = [
     "make_hessian_model",
     "LinearEnergyModel",
 ]
-
