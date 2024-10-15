@@ -527,12 +527,12 @@ extern void DP_DeepPotComputeNListf2SP(DP_DeepPot* dp,
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
- * @param[out] atomic_energy Output atomic energy. The array should be of
- *size natoms.
- * @param[out] atomic_virial Output atomic virial. The array should be of
- *size natoms x 9.
- * @warning The output arrays should be allocated before calling this
- *function. Pass NULL if not required.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  **/
 extern void DP_DeepPotComputeMixedType(DP_DeepPot* dp,
                                        const int nframes,
