@@ -3070,4 +3070,3 @@ def normalize(data, multi_task=False):
 
 if __name__ == "__main__":
     gen_doc()
-
