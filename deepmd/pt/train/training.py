@@ -1321,4 +1321,3 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
-
