@@ -647,7 +647,7 @@ class DeepmdData:
                         data = data.reshape(nframes, 3 * natoms, 3 * natoms)
                         # get idx_map for hessian
                         num_chunks, chunk_size = len(idx_map), 3
-                        idx_map_hess = np.arange(num_chunks * chunk_size)
+                        idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
                         idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
                         idx_map_hess = idx_map_hess[idx_map]
                         idx_map_hess = idx_map_hess.flatten()
