@@ -448,4 +448,3 @@ class EnergyHessianStdLoss(TaskLoss):
                 )
             )
         return label_requirement
-
