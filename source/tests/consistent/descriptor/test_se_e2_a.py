@@ -44,7 +44,7 @@ if INSTALLED_ARRAY_API_STRICT:
         DescrptSeA as DescrptSeAArrayAPIStrict,
     )
 else:
-    DescrptSeAArrayAPI = None
+    DescrptSeAArrayAPIStrict = None
 
 
 @parameterized(
@@ -131,7 +131,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return not type_one_side or not INSTALLED_JAX
+        return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
