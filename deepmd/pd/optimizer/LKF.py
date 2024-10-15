@@ -159,7 +159,6 @@ class LKFOptimizer(Optimizer):
                 else:
                     P.append(paddle.eye(param_num, dtype=data_type).to(device=device))
                     params_packed_index.append(param_num)
-
         self._state.setdefault("P", P)
         self._state.setdefault("weights_num", len(P))
         self._state.setdefault("params_packed_index", params_packed_index)
@@ -276,22 +275,22 @@ class LKFOptimizer(Optimizer):
 
         for param in self._params:
             if param.ndim > 1:
-                tmp = param.data.T.contiguous().reshape(param.data.numel().item(), 1)
+                tmp = param.data.T.contiguous().reshape([param.data.numel().item(), 1])
                 if param.grad is None:
                     tmp_grad = paddle.zeros_like(tmp)
                 else:
                     tmp_grad = (
                         (param.grad / self.grad_prefactor)
                         .T.contiguous()
-                        .reshape(param.grad.numel().item(), 1)
+                        .reshape([param.grad.numel().item(), 1])
                     )
             else:
-                tmp = param.data.reshape(param.data.numel().item(), 1)
+                tmp = param.data.reshape([param.data.numel().item(), 1])
                 if param.grad is None:
                     tmp_grad = paddle.zeros_like(tmp)
                 else:
                     tmp_grad = (param.grad / self.grad_prefactor).reshape(
-                        param.grad.numel().item(), 1
+                        [param.grad.numel().item(), 1]
                     )
 
             tmp = self.__split_weights(tmp)

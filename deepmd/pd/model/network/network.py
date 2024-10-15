@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -505,7 +504,6 @@ class NonLinear(nn.Layer):
 
     def forward(self, x):
         x = F.linear(x, self.layer1.weight)
-        # x = fused_ops.bias_torch_gelu(x, self.layer1.bias)
         x = nn.GELU()(x) + self.layer1.bias
         x = self.layer2(x)
         return x
@@ -610,7 +608,7 @@ class TypeEmbedNet(nn.Layer):
         bavg=0.0,
         stddev=1.0,
         precision="default",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
@@ -666,7 +664,7 @@ class TypeEmbedNet(nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -707,16 +705,16 @@ class TypeEmbedNetConsistent(nn.Layer):
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
     ):
         """Construct a type embedding net."""
         super().__init__()
@@ -778,7 +776,7 @@ class TypeEmbedNetConsistent(nn.Layer):
         return embed
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -1071,7 +1069,6 @@ class NeighborWiseAttention(nn.Layer):
 
         """
         out = input_G
-        # https://github.com/pytorch/pytorch/issues/39165#issuecomment-635472592
         for layer in self.attention_layers:
             out = layer(out, nei_mask, input_r=input_r, sw=sw)
         return out
@@ -2064,7 +2061,6 @@ class Evoformer3bEncoderLayer(nn.Layer):
         if self.pre_ln:
             x = self.final_layer_norm(x)
         x = F.linear(x, self.fc1.weight)
-        # x = fused_ops.bias_torch_gelu(x, self.fc1.bias)
         x = nn.GELU()(x) + self.fc1.bias
         x = F.dropout(x, p=self.activation_dropout, training=self.training)
         x = self.fc2(x)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import json
 
 import paddle
 
@@ -27,12 +26,7 @@ def serialize_from_file(model_file: str) -> dict:
     dict
         The serialized model data.
     """
-    if model_file.endswith(".pdparams"):
-        saved_model = paddle.jit.load(model_file)
-        model_def_script = json.loads(saved_model.model_def_script)
-        model = get_model(model_def_script)
-        model.set_state_dict(saved_model.state_dict())
-    elif model_file.endswith(".pdmodel"):
+    if model_file.endswith(".pd"):
         state_dict = paddle.load(model_file)
         if "model" in state_dict:
             state_dict = state_dict["model"]
@@ -42,14 +36,12 @@ def serialize_from_file(model_file: str) -> dict:
         modelwrapper.set_state_dict(state_dict)
         model = modelwrapper.model["Default"]
     else:
-        raise ValueError(
-            "Pypaddle backend only supports converting .pdparams or .pd file"
-        )
+        raise ValueError("Paddle backend only supports converting .pd file")
 
     model_dict = model.serialize()
     data = {
-        "backend": "Pypaddle",
-        "pt_version": paddle.__version__,
+        "backend": "Paddle",
+        "pt_version": paddle.version.commit,
         "model": model_dict,
         "model_def_script": model_def_script,
         "@variables": {},
@@ -69,12 +61,19 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     data : dict
         The dictionary to be deserialized.
     """
-    if not model_file.endswith(".pdparams"):
-        raise ValueError("Pypaddle backend only supports converting .pdparams file")
+    if not model_file.endswith(".pd"):
+        raise ValueError("Paddle backend only supports converting .pd file")
     model = BaseModel.deserialize(data["model"])
-    # JIT will happy in this way...
-    model.model_def_script = json.dumps(data["model_def_script"])
     if "min_nbor_dist" in data.get("@variables", {}):
-        model.min_nbor_dist = float(data["@variables"]["min_nbor_dist"])
+        model.min_nbor_dist = paddle.to_tensor(
+            float(data["@variables"]["min_nbor_dist"])
+        )
+    paddle.set_flags(
+        {
+            "FLAGS_save_cf_stack_op": 1,
+            "FLAGS_prim_enable_dynamic": 1,
+            "FLAGS_enable_pir_api": 1,
+        }
+    )
     model = paddle.jit.to_static(model)
     paddle.jit.save(model, model_file)

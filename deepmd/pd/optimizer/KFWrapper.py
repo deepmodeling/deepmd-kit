@@ -10,6 +10,24 @@ from paddle.optimizer import (
 )
 
 
+def _mask_update(tensor: paddle.Tensor, mask: paddle.Tensor, value: paddle.Tensor):
+    """
+    Paddle now not do not support updating a Tensor with another Tensor by mask,
+    so we use other API to achieve this.
+    """
+    mask_coord = paddle.concat(
+        paddle.nonzero(mask, as_tuple=True),
+        axis=1,
+    )
+    t = paddle.scatter_nd_add(
+        tensor * (~mask).astype(tensor.dtype),
+        mask_coord,
+        value,
+    )
+    paddle.assign(t, tensor)  # inplace update
+    return tensor
+
+
 class KFOptimizerWrapper:
     def __init__(
         self,
@@ -73,7 +91,8 @@ class KFOptimizerWrapper:
             error_tmp = Force_label[:, index[i]] - force_predict[:, index[i]]
             error_tmp = update_prefactor * error_tmp
             mask = error_tmp < 0
-            error_tmp[mask] = -1 * error_tmp[mask]
+            error_tmp = _mask_update(error_tmp, mask, -1 * error_tmp[mask])
+            # error_tmp[mask] = -1 * error_tmp[mask]
             error = error_tmp.mean() / natoms_sum
 
             if self.is_distributed:
@@ -81,9 +100,11 @@ class KFOptimizerWrapper:
                 error /= dist.get_world_size()
 
             tmp_force_predict = force_predict[:, index[i]] * update_prefactor
-            tmp_force_predict[mask] = -tmp_force_predict[mask]
+            tmp_force_predict = _mask_update(
+                tmp_force_predict, mask, -1 * tmp_force_predict[mask]
+            )
+            # tmp_force_predict[mask] = -tmp_force_predict[mask]
 
-            # In order to solve a pytorch bug, reference: https://github.com/pytorch/pytorch/issues/43259
             (tmp_force_predict.sum() + Etot_predict.sum() * 0).backward()
             error = error * math.sqrt(bs)
             self.optimizer.step(error)
@@ -123,7 +144,6 @@ class KFOptimizerWrapper:
             tmp_coord_predict = updated_coord[:, index[i]] * update_prefactor
             tmp_coord_predict[mask] = -update_prefactor * tmp_coord_predict[mask]
 
-            # In order to solve a pytorch bug, reference: https://github.com/pytorch/pytorch/issues/43259
             (tmp_coord_predict.sum() + updated_coord.sum() * 0).backward()
             error = error * math.sqrt(bs)
             self.optimizer.step(error)
@@ -138,8 +158,3 @@ class KFOptimizerWrapper:
         rng = np.random.default_rng()
         res = rng.choice(index, atoms_selected).reshape([-1, atoms_per_group])
         return res
-
-
-# with paddle.autograd.profiler.profile(enabled=True, use_cuda=True, record_shapes=False) as prof:
-#     the code u wanna profile
-# print(prof.key_averages().table(sort_by="self_cpu_time_total"))

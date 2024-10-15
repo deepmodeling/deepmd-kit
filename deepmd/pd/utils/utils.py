@@ -4,9 +4,6 @@ from __future__ import (
 )
 
 from typing import (
-    List,
-    Optional,
-    Union,
     overload,
 )
 
@@ -16,6 +13,9 @@ import paddle
 import paddle.nn.functional as F
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
+from deepmd.pd.model.network.init import (
+    PaddleGenerator,
+)
 
 from .env import (
     DEVICE,
@@ -24,18 +24,16 @@ from .env import PRECISION_DICT as PD_PRECISION_DICT
 
 
 class ActivationFn(paddle.nn.Layer):
-    def __init__(self, activation: Optional[str]):
+    def __init__(self, activation: str | None):
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         """Returns the tensor after applying activation function corresponding to `activation`."""
-        # See jit supported types: https://pypaddle.org/docs/stable/jit_language_reference.html#supported-type
-
         if self.activation.lower() == "relu":
             return F.relu(x)
         elif self.activation.lower() == "gelu" or self.activation.lower() == "gelu_tf":
-            return F.gelu(x, approximate="tanh")
+            return F.gelu(x, approximate=True)
         elif self.activation.lower() == "tanh":
             return paddle.tanh(x)
         elif self.activation.lower() == "relu6":
@@ -43,7 +41,7 @@ class ActivationFn(paddle.nn.Layer):
         elif self.activation.lower() == "softplus":
             return F.softplus(x)
         elif self.activation.lower() == "sigmoid":
-            return paddle.sigmoid(x)
+            return F.sigmoid(x)
         elif self.activation.lower() == "linear" or self.activation.lower() == "none":
             return x
         else:
@@ -102,9 +100,8 @@ def to_paddle_tensor(
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
     if xx.dtype == ml_dtypes.bfloat16:
-        # https://github.com/pypaddle/pypaddle/issues/109873
         xx = xx.astype(np.float32)
-    return paddle.to_tensor(xx, dtype=prec).to(device=DEVICE)
+    return paddle.to_tensor(xx, dtype=prec, place=DEVICE)
 
 
 def dict_to_device(sample_dict):
@@ -129,7 +126,7 @@ MIX_MULT_R = 0x4973F715
 XSHIFT = 16
 
 
-def hashmix(value: int, hash_const: List[int]):
+def hashmix(value: int, hash_const: list[int]):
     value ^= INIT_A
     hash_const[0] *= MULT_A
     value *= INIT_A
@@ -148,7 +145,7 @@ def mix(x: int, y: int):
     return result
 
 
-def mix_entropy(entropy_array: List[int]) -> int:
+def mix_entropy(entropy_array: list[int]) -> int:
     # https://github.com/numpy/numpy/blob/a4cddb60489f821a1a4dffc16cd5c69755d43bdb/numpy/random/bit_generator.pyx#L341-L374
     hash_const = [INIT_A]
     mixer = hashmix(entropy_array[0], hash_const)
@@ -158,13 +155,19 @@ def mix_entropy(entropy_array: List[int]) -> int:
 
 
 def get_generator(
-    seed: Optional[Union[int, List[int]]] = None,
-) -> Optional[paddle.Generator]:
-    if False:
-        if isinstance(seed, list):
-            seed = mix_entropy(seed)
-        generator = paddle.Generator(device=DEVICE)
-        generator.manual_seed(seed)
-        return generator
+    seed: int | list[int] | None = None,
+) -> PaddleGenerator | None:
+    if isinstance(seed, list):
+        seed = mix_entropy(seed)
+    if DEVICE == "cpu":
+        generator = paddle.framework.core.default_cpu_generator()
+    elif DEVICE == "gpu":
+        generator = paddle.framework.core.default_cuda_generator(0)
+    elif DEVICE.startswith("gpu:"):
+        generator = paddle.framework.core.default_cuda_generator(
+            int(DEVICE.split("gpu:")[1])
+        )
     else:
-        return None
+        raise ValueError("DEVICE should be cpu or gpu or gpu:x")
+    generator.manual_seed(seed)
+    return generator

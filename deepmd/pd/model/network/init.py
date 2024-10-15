@@ -5,12 +5,16 @@ from __future__ import (
 
 import math
 import warnings
-from typing import Optional as _Optional
+from typing import (
+    TypeAlias,
+)
 
 import paddle
 from paddle import (
     Tensor,
 )
+
+PaddleGenerator: TypeAlias = paddle.base.libpaddle.Generator
 
 # Copyright (c) 2024 The PyTorch Authors. All rights reserved.
 #
@@ -237,7 +241,7 @@ def normal_(
     tensor: Tensor,
     mean: float = 0.0,
     std: float = 1.0,
-    generator: _Optional[paddle.Generator] = None,
+    generator: PaddleGenerator | None = None,
 ) -> Tensor:
     r"""Fill the input Tensor with values drawn from the normal distribution.
 
@@ -267,7 +271,7 @@ def trunc_normal_(
     std: float = 1.0,
     a: float = -2.0,
     b: float = 2.0,
-    generator: _Optional[paddle.Generator] = None,
+    generator: PaddleGenerator | None = None,
 ) -> Tensor:
     r"""Fill the input Tensor with values drawn from a truncated normal distribution.
 
@@ -298,7 +302,7 @@ def kaiming_uniform_(
     a: float = 0,
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
-    generator: _Optional[paddle.Generator] = None,
+    generator: PaddleGenerator | None = None,
     reverse: bool = False,
 ):
     r"""Fill the input `Tensor` with values using a Kaiming uniform distribution.
@@ -359,7 +363,7 @@ def kaiming_normal_(
     a: float = 0,
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
-    generator: _Optional[paddle.Generator] = None,
+    generator: PaddleGenerator | None = None,
     reverse: bool = False,
 ):
     r"""Fill the input `Tensor` with values using a Kaiming normal distribution.
@@ -406,7 +410,7 @@ def kaiming_normal_(
 def xavier_uniform_(
     tensor: Tensor,
     gain: float = 1.0,
-    generator: _Optional[paddle.Generator] = None,
+    generator: PaddleGenerator | None = None,
     reverse: bool = False,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Xavier uniform distribution.
@@ -443,7 +447,7 @@ def xavier_uniform_(
 def xavier_normal_(
     tensor: Tensor,
     gain: float = 1.0,
-    generator: _Optional[paddle.Generator] = None,
+    generator: PaddleGenerator | None = None,
     reverse: bool = False,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Xavier normal distribution.

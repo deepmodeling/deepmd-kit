@@ -1,20 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-import tempfile
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import paddle
 
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
-)
-from deepmd.entrypoints.convert_backend import (
-    convert_backend,
 )
 from deepmd.pd.model.model.model import (
     BaseModel,
@@ -37,13 +30,10 @@ class FrozenModel(BaseModel):
     def __init__(self, model_file: str, **kwargs):
         super().__init__(**kwargs)
         self.model_file = model_file
-        if model_file.endswith(".pdmodel"):
-            self.model = paddle.jit.load(model_file[:-8])
+        if model_file.endswith(".json"):
+            self.model = paddle.jit.load(model_file.split(".json")[0])
         else:
-            # try to convert from other formats
-            with tempfile.NamedTemporaryFile(suffix=".pdparams") as f:
-                convert_backend(INPUT=model_file, OUTPUT=f.name)
-                self.model = paddle.jit.load(f.name)
+            raise NotImplementedError("Only support .json file")
 
     # @paddle.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
@@ -56,12 +46,12 @@ class FrozenModel(BaseModel):
         return self.model.get_rcut()
 
     # @paddle.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.model.get_type_map()
 
     # @paddle.jit.export
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.model.get_sel()
 
@@ -76,7 +66,7 @@ class FrozenModel(BaseModel):
         return self.model.get_dim_aparam()
 
     # @paddle.jit.export
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -124,7 +114,7 @@ class FrozenModel(BaseModel):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         return self.model.forward(
             coord,
             atype,
@@ -177,9 +167,9 @@ class FrozenModel(BaseModel):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

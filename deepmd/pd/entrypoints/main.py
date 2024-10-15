@@ -277,9 +277,7 @@ def train(FLAGS):
                 init_state_dict = init_state_dict["model"]
             config["model"] = init_state_dict["_extra_state"]["model_params"]
         else:
-            config["model"] = json.loads(
-                paddle.jit.load(FLAGS.init_frz_model).get_model_def_script()
-            )
+            raise NotImplementedError("FLAGS.init_model can not be empty.")
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
@@ -385,15 +383,9 @@ def show(FLAGS):
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_params = state_dict["_extra_state"]["model_params"]
-    # elif FLAGS.INPUT.split(".")[-1] == "pdmodel":
-    #     model_params_string = paddle.jit.load(
-    #         FLAGS.INPUT[: -len(".pdmodel")]
-    #     ).model_def_script
-    #     model_params = json.loads(model_params_string)
     else:
         raise RuntimeError(
             "The model provided must be a checkpoint file with a .pd extension"
-            # "or a frozen model with a .pdmodel extension"
         )
     model_is_multi_task = "model_dict" in model_params
     log.info("This is a multitask model") if model_is_multi_task else log.info(
@@ -449,17 +441,10 @@ def change_bias(FLAGS):
         old_state_dict = paddle.load(FLAGS.INPUT)
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
-    # elif FLAGS.INPUT.endswith(".json"):
-    #     old_model = paddle.jit.load(FLAGS.INPUT[: -len(".json")])
-    #     model_params_string = old_model.get_model_def_script()
-    #     model_params = json.loads(model_params_string)
-    #     old_state_dict = old_model.state_dict()
-    #     model_state_dict = old_state_dict
     else:
         raise RuntimeError(
             "Paddle now do not support change bias directly from a freezed model file"
             "Please provided a checkpoint file with a .pd extension"
-            # "or a frozen model with a .pdparams extension"
         )
     multi_task = "model_dict" in model_params
     model_branch = FLAGS.model_branch
@@ -486,8 +471,7 @@ def change_bias(FLAGS):
         wrapper = ModelWrapper(model)
         wrapper.set_state_dict(old_state_dict["model"])
     else:
-        # for .pdparams
-        model.set_state_dict(old_state_dict)
+        raise NotImplementedError("Only support .pd file")
 
     if FLAGS.bias_value is not None:
         # use user-defined bias
@@ -557,19 +541,8 @@ def change_bias(FLAGS):
             old_state_dict["_extra_state"] = model_state_dict["_extra_state"]
         paddle.save(old_state_dict, output_path)
     else:
-        raise NotImplementedError
-        # for .json
-        output_path = (
-            FLAGS.output
-            if FLAGS.output is not None
-            else FLAGS.INPUT.replace(".pdparams", "_updated.pdparams")
-        )
-        model = paddle.jit.to_static(model)
-        paddle.jit.save(
-            model,
-            output_path,
-            {},
-        )
+        raise NotImplementedError("Only support .pd file now")
+
     log.info(f"Saved model to {output_path}")
 
 
