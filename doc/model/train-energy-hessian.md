@@ -4,29 +4,27 @@ To train a model that takes Hessian matrices, i.e., the second order derivatives
 
 Note that fitting energy Hessians is only supported in the **PyTorch** backend as of now.
 
-
 ## Energy Hessian Loss
 
 If you want to train with Hessians, you are expected to add the start and limit prefactors of Hessians, i.e.,`start_pref_h` and `limit_pref_h` to the `loss` section in the `input.json`:
 
 ```json
-    "loss": {
-        "type": "ener",
-        "start_pref_e": 0.02,
-        "limit_pref_e": 1,
-        "start_pref_f": 1000,
-        "limit_pref_f": 1,
-        "start_pref_v": 0,
-        "limit_pref_v": 0,
-        "start_pref_h": 10,
-        "limit_pref_h": 1
-    },
+ "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0,
+    "start_pref_h": 10,
+    "limit_pref_h": 1
+ },
 ```
 
 The options `start_pref_e`, `limit_pref_e`, `start_pref_f`, `limit_pref_f`, `start_pref_v`, and `limit_pref_v`,  determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.
 
 If one does not want to train with virial, they may set the virial prefactors `start_pref_v` and `limit_pref_v` to 0.
-
 
 ## Hessian format in PyTorch
 
