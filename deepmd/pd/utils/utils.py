@@ -157,17 +157,20 @@ def mix_entropy(entropy_array: list[int]) -> int:
 def get_generator(
     seed: int | list[int] | None = None,
 ) -> PaddleGenerator | None:
-    if isinstance(seed, list):
-        seed = mix_entropy(seed)
-    if DEVICE == "cpu":
-        generator = paddle.framework.core.default_cpu_generator()
-    elif DEVICE == "gpu":
-        generator = paddle.framework.core.default_cuda_generator(0)
-    elif DEVICE.startswith("gpu:"):
-        generator = paddle.framework.core.default_cuda_generator(
-            int(DEVICE.split("gpu:")[1])
-        )
+    if seed is not None:
+        if isinstance(seed, list):
+            seed = mix_entropy(seed)
+        if DEVICE == "cpu":
+            generator = paddle.framework.core.default_cpu_generator()
+        elif DEVICE == "gpu":
+            generator = paddle.framework.core.default_cuda_generator(0)
+        elif DEVICE.startswith("gpu:"):
+            generator = paddle.framework.core.default_cuda_generator(
+                int(DEVICE.split("gpu:")[1])
+            )
+        else:
+            raise ValueError("DEVICE should be cpu or gpu or gpu:x")
+        generator.manual_seed(seed)
+        return generator
     else:
-        raise ValueError("DEVICE should be cpu or gpu or gpu:x")
-    generator.manual_seed(seed)
-    return generator
+        return None
