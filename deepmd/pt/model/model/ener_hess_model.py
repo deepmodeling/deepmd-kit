@@ -14,16 +14,16 @@ from deepmd.pt.model.atomic_model import (
 from deepmd.pt.model.model.model import (
     BaseModel,
 )
+
 from .dp_model import (
     DPModelCommon,
-)
-from .make_model import (
-    make_model,
 )
 from .make_hessian_model import (
     make_hessian_model,
 )
-
+from .make_model import (
+    make_model,
+)
 
 DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 DPEnergyModel_ = make_hessian_model(DPEnergyModel_)
