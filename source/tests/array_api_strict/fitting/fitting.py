@@ -3,6 +3,7 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
 
 from ..common import (
@@ -33,6 +34,12 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
 
 
 class EnergyFittingNet(EnergyFittingNetDP):
+    def __setattr__(self, name: str, value: Any) -> None:
+        value = setattr_for_general_fitting(name, value)
+        return super().__setattr__(name, value)
+
+
+class DOSFittingNet(DOSFittingNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
         value = setattr_for_general_fitting(name, value)
         return super().__setattr__(name, value)
