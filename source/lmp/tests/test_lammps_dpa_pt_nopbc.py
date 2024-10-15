@@ -695,6 +695,7 @@ def test_pair_deepmd_mpi(balance_args: list):
                 md_file,
                 f.name,
                 *balance_args,
+                "--nopbc",
             ]
         )
         arr = np.loadtxt(f.name, ndmin=1)

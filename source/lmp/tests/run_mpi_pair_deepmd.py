@@ -21,6 +21,7 @@ parser.add_argument("PBFILE2", type=str)
 parser.add_argument("MD_FILE", type=str)
 parser.add_argument("OUTPUT", type=str)
 parser.add_argument("--balance", action="store_true")
+parser.add_argument("--nopbc", action="store_true")
 
 args = parser.parse_args()
 data_file = args.DATAFILE
@@ -38,7 +39,10 @@ else:
     # 6 and 0 atoms
     lammps.processors("1 2 1")
 lammps.units("metal")
-lammps.boundary("p p p")
+if args.nopbc:
+    lammps.boundary("f f f")
+else:
+    lammps.boundary("p p p")
 lammps.atom_style("atomic")
 lammps.neighbor("2.0 bin")
 lammps.neigh_modify("every 10 delay 0 check no")
