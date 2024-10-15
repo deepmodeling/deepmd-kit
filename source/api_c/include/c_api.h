@@ -514,14 +514,14 @@ extern void DP_DeepPotComputeNListf2SP(DP_DeepPot* dp,
  * @param[in] dp The DP to use.
  * @param[in] nframes The number of frames.
  * @param[in] natoms The number of atoms.
- * @param[in] coord The coordinates of atoms. The array should be of size
- *natoms x 3.
- * @param[in] atype The atom types. The array should contain nframes x
- *natoms ints.
- * @param[in] box The cell of the region. The array should be of size 9.
- *Pass NULL if pbc is not used.
- * @param[in] fparam The frame parameters. The array can be of size nframes
- *x dim_fparam.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain nframes x natoms
+ *ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
  *dim_aparam.
  * @param[out] energy Output energy.
