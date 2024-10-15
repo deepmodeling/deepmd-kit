@@ -168,7 +168,6 @@ def nlist_distinguish_types(
     tnlist_0 = xp.where(mask, xp.zeros_like(nlist), nlist)
     tnlist = xp_take_along_axis(tmp_atype, tnlist_0, axis=2)
     tnlist = xp.where(mask, xp.full_like(tnlist, -1), tnlist)
-    snsel = tnlist.shape[2]
     for ii, ss in enumerate(sel):
         pick_mask = xp.astype(tnlist == ii, xp.int32)
         sorted_indices = xp.argsort(-pick_mask, stable=True, axis=-1)
