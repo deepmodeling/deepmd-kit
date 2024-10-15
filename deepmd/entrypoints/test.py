@@ -45,10 +45,6 @@ from deepmd.utils.weight_avg import (
     weighted_average,
 )
 
-from ..pt.model.model import (
-    get_model,
-)
-
 if TYPE_CHECKING:
     from deepmd.infer.deep_tensor import (
         DeepTensor,
