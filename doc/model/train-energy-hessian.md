@@ -30,7 +30,7 @@ If one does not want to train with virial, they may set the virial prefactors `s
 
 In the PyTorch backend, Hessian matrices are listed in `hessian.npy` files, and the data format may contain the following files:
 
-```
+```plaintext
 type.raw
 set.*/box.npy
 set.*/coord.npy
