@@ -113,7 +113,9 @@ def get_trainer(
         elif gloo_available:
             backend = "gloo"
         else:
-            raise RuntimeError("No suitable backend found. Neither NCCL nor Gloo is available.")
+            raise RuntimeError(
+                "No suitable backend found. Neither NCCL nor Gloo is available."
+            )
         dist.init_process_group(backend=backend)
 
     def prepare_trainer_input_single(
