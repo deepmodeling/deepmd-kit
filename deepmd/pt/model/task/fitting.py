@@ -211,41 +211,24 @@ class GeneralFitting(Fitting):
 
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
 
-        self.old_impl = kwargs.get("old_impl", False)
-        if self.old_impl:
-            filter_layers = []
-            for type_i in range(self.ntypes if not self.mixed_types else 1):
-                bias_type = 0.0
-                one = ResidualDeep(
-                    type_i,
-                    self.dim_descrpt,
+        self.filter_layers = NetworkCollection(
+            1 if not self.mixed_types else 0,
+            self.ntypes,
+            network_type="fitting_network",
+            networks=[
+                FittingNet(
+                    in_dim,
+                    net_dim_out,
                     self.neuron,
-                    bias_type,
-                    resnet_dt=self.resnet_dt,
+                    self.activation_function,
+                    self.resnet_dt,
+                    self.precision,
+                    bias_out=True,
+                    seed=child_seed(self.seed, ii),
                 )
-                filter_layers.append(one)
-            self.filter_layers_old = torch.nn.ModuleList(filter_layers)
-            self.filter_layers = None
-        else:
-            self.filter_layers = NetworkCollection(
-                1 if not self.mixed_types else 0,
-                self.ntypes,
-                network_type="fitting_network",
-                networks=[
-                    FittingNet(
-                        in_dim,
-                        net_dim_out,
-                        self.neuron,
-                        self.activation_function,
-                        self.resnet_dt,
-                        self.precision,
-                        bias_out=True,
-                        seed=child_seed(self.seed, ii),
-                    )
-                    for ii in range(self.ntypes if not self.mixed_types else 1)
-                ],
-            )
-            self.filter_layers_old = None
+                for ii in range(self.ntypes if not self.mixed_types else 1)
+            ],
+        )
         # set trainable
         for param in self.parameters():
             param.requires_grad = self.trainable
@@ -488,47 +471,33 @@ class GeneralFitting(Fitting):
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
             device=descriptor.device,
         )  # jit assertion
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            assert xx_zeros is None
-            if self.mixed_types:
-                atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[atype]
-                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-            else:
-                for type_i, filter_layer in enumerate(self.filter_layers_old):
-                    mask = atype == type_i
-                    atom_property = filter_layer(xx)
-                    atom_property = atom_property + self.bias_atom_e[type_i]
-                    atom_property = atom_property * mask.unsqueeze(-1)
-                    outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+        if self.mixed_types:
+            atom_property = (
+                self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
+            )
+            if xx_zeros is not None:
+                atom_property -= self.filter_layers.networks[0](xx_zeros)
+            outs = (
+                outs + atom_property
+            )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
-            if self.mixed_types:
-                atom_property = (
-                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
-                )
+            for type_i, ll in enumerate(self.filter_layers.networks):
+                mask = (atype == type_i).unsqueeze(-1)
+                mask = torch.tile(mask, (1, 1, net_dim_out))
+                atom_property = ll(xx)
                 if xx_zeros is not None:
-                    atom_property -= self.filter_layers.networks[0](xx_zeros)
+                    # must assert, otherwise jit is not happy
+                    assert self.remove_vaccum_contribution is not None
+                    if not (
+                        len(self.remove_vaccum_contribution) > type_i
+                        and not self.remove_vaccum_contribution[type_i]
+                    ):
+                        atom_property -= ll(xx_zeros)
+                atom_property = atom_property + self.bias_atom_e[type_i]
+                atom_property = atom_property * mask
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
-            else:
-                for type_i, ll in enumerate(self.filter_layers.networks):
-                    mask = (atype == type_i).unsqueeze(-1)
-                    mask = torch.tile(mask, (1, 1, net_dim_out))
-                    atom_property = ll(xx)
-                    if xx_zeros is not None:
-                        # must assert, otherwise jit is not happy
-                        assert self.remove_vaccum_contribution is not None
-                        if not (
-                            len(self.remove_vaccum_contribution) > type_i
-                            and not self.remove_vaccum_contribution[type_i]
-                        ):
-                            atom_property -= ll(xx_zeros)
-                    atom_property = atom_property + self.bias_atom_e[type_i]
-                    atom_property = atom_property * mask
-                    outs = (
-                        outs + atom_property
-                    )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
         mask = self.emask(atype)
         # nf x nloc x nod

@@ -66,7 +66,6 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 type_one_side=to,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
-                old_impl=False,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -138,7 +137,6 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 type_one_side=to,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
-                old_impl=False,
                 seed=GLOBAL_SEED,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)

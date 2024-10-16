@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from .atten_lcc import (
-    FittingNetAttenLcc,
-)
 from .base_fitting import (
     BaseFitting,
 )
@@ -32,7 +29,6 @@ from .type_predict import (
 )
 
 __all__ = [
-    "FittingNetAttenLcc",
     "DenoiseNet",
     "DipoleFittingNet",
     "EnergyFittingNet",

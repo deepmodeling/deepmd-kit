@@ -103,53 +103,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
             self.assertEqual(ft0.get_sel_type(), ft1.get_sel_type())
 
-    def test_new_old(
-        self,
-    ):
-        nf, nloc, nnei = self.nlist.shape
-        dd = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
-        rd0, _, _, _, _ = dd(
-            torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
-            torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
-            torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
-        )
-        atype = torch.tensor(self.atype_ext[:, :nloc], dtype=int, device=env.DEVICE)
-
-        od = 1
-        for foo, mixed_types in itertools.product(
-            [True],
-            [True, False],
-        ):
-            ft0 = EnergyFittingNet(
-                self.nt,
-                dd.dim_out,
-                mixed_types=mixed_types,
-            ).to(env.DEVICE)
-            ft1 = EnergyFittingNet(
-                self.nt,
-                dd.dim_out,
-                mixed_types=mixed_types,
-                old_impl=True,
-            ).to(env.DEVICE)
-            dd0 = ft0.state_dict()
-            dd1 = ft1.state_dict()
-            for kk, vv in dd1.items():
-                new_kk = kk
-                new_kk = new_kk.replace("filter_layers_old", "filter_layers.networks")
-                new_kk = new_kk.replace("deep_layers", "layers")
-                new_kk = new_kk.replace("final_layer", "layers.3")
-                dd1[kk] = dd0[new_kk]
-                if kk.split(".")[-1] in ["idt", "bias"]:
-                    dd1[kk] = dd1[kk].unsqueeze(0)
-            dd1["bias_atom_e"] = dd0["bias_atom_e"]
-            ft1.load_state_dict(dd1)
-            ret0 = ft0(rd0, atype)
-            ret1 = ft1(rd0, atype)
-            np.testing.assert_allclose(
-                to_numpy_array(ret0["energy"]),
-                to_numpy_array(ret1["energy"]),
-            )
-
     def test_jit(
         self,
     ):
