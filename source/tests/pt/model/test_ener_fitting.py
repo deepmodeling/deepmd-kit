@@ -10,7 +10,6 @@ from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
 from deepmd.pt.model.task.ener import (
-    EnergyFittingNet,
     InvarFitting,
 )
 from deepmd.pt.utils import (

@@ -19,9 +19,6 @@ from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
 )
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
-)
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
 )
@@ -472,14 +469,10 @@ class GeneralFitting(Fitting):
             device=descriptor.device,
         )  # jit assertion
         if self.mixed_types:
-            atom_property = (
-                self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
-            )
+            atom_property = self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
             if xx_zeros is not None:
                 atom_property -= self.filter_layers.networks[0](xx_zeros)
-            outs = (
-                outs + atom_property
-            )  # Shape is [nframes, natoms[0], net_dim_out]
+            outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
