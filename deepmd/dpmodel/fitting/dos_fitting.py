@@ -10,6 +10,7 @@ import numpy as np
 
 from deepmd.dpmodel.common import (
     DEFAULT_PRECISION,
+    to_numpy_array,
 )
 from deepmd.dpmodel.fitting.invar_fitting import (
     InvarFitting,
@@ -89,6 +90,6 @@ class DOSFittingNet(InvarFitting):
             **super().serialize(),
             "type": "dos",
         }
-        dd["@variables"]["bias_atom_e"] = self.bias_atom_e
+        dd["@variables"]["bias_atom_e"] = to_numpy_array(self.bias_atom_e)
 
         return dd
