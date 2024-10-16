@@ -924,7 +924,9 @@ class Trainer:
                     f.write(str(self.latest_model))
 
             # tensorboard
-            if self.enable_tensorboard and (display_step_id % self.tensorboard_freq == 0 or display_step_id == 1):
+            if self.enable_tensorboard and (
+                display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
+            ):
                 writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
                 writer.add_scalar(f"{task_key}/loss", loss, display_step_id)
                 for item in more_loss:
