@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from copy import (
+    deepcopy,
+)
+
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -18,6 +22,7 @@ def get_standard_model(data: dict):
     data : dict
         The data to construct the model.
     """
+    data = deepcopy(data)
     descriptor_type = data["descriptor"].pop("type")
     data["descriptor"]["type_map"] = data["type_map"]
     fitting_type = data["fitting_net"].pop("type")
