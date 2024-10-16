@@ -281,9 +281,7 @@ def train(
             change_model_params=use_pretrain_script,
         )
     # update init_model or init_frz_model config if necessary
-    if (
-        init_model is not None or init_frz_model is not None
-    ) and use_pretrain_script:
+    if (init_model is not None or init_frz_model is not None) and use_pretrain_script:
         if init_model is not None:
             init_state_dict = torch.load(init_model, map_location=DEVICE)
             if "model" in init_state_dict:
@@ -370,6 +368,7 @@ def freeze(
     )
     log.info(f"Saved frozen model to {output}")
 
+
 def change_bias(
     input_file: str,
     mode: str = "change",
@@ -396,9 +395,7 @@ def change_bias(
             "or a frozen model with a .pth extension"
         )
     multi_task = "model_dict" in model_params
-    bias_adjust_mode = (
-        "change-by-statistic" if mode == "change" else "set-by-statistic"
-    )
+    bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
     if multi_task:
         assert (
             model_branch is not None
@@ -477,9 +474,7 @@ def change_bias(
 
     if input_file.endswith(".pt"):
         output_path = (
-            output
-            if output is not None
-            else input_file.replace(".pt", "_updated.pt")
+            output if output is not None else input_file.replace(".pt", "_updated.pt")
         )
         wrapper = ModelWrapper(model)
         if "model" in old_state_dict:
@@ -492,9 +487,7 @@ def change_bias(
     else:
         # for .pth
         output_path = (
-            output
-            if output is not None
-            else input_file.replace(".pth", "_updated.pth")
+            output if output is not None else input_file.replace(".pth", "_updated.pth")
         )
         model = torch.jit.script(model)
         torch.jit.save(
