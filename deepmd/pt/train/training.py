@@ -769,7 +769,10 @@ class Trainer:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
             # Log and persist
-            if self.display_in_training and _step_id % self.disp_freq == 0:
+            display_step_id = _step_id + 1
+            if self.display_in_training and (
+                display_step_id % self.disp_freq == 0 or display_step_id == 1
+            ):
                 self.wrapper.eval()
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
@@ -821,7 +824,7 @@ class Trainer:
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
-                                batch=_step_id,
+                                batch=display_step_id,
                                 task_name="trn",
                                 rmse=train_results,
                                 learning_rate=cur_lr,
@@ -830,7 +833,7 @@ class Trainer:
                         if valid_results:
                             log.info(
                                 format_training_message_per_task(
-                                    batch=_step_id,
+                                    batch=display_step_id,
                                     task_name="val",
                                     rmse=valid_results,
                                     learning_rate=None,
@@ -861,7 +864,7 @@ class Trainer:
                         if self.rank == 0:
                             log.info(
                                 format_training_message_per_task(
-                                    batch=_step_id,
+                                    batch=display_step_id,
                                     task_name=_key + "_trn",
                                     rmse=train_results[_key],
                                     learning_rate=cur_lr,
@@ -870,7 +873,7 @@ class Trainer:
                             if valid_results[_key]:
                                 log.info(
                                     format_training_message_per_task(
-                                        batch=_step_id,
+                                        batch=display_step_id,
                                         task_name=_key + "_val",
                                         rmse=valid_results[_key],
                                         learning_rate=None,
@@ -883,7 +886,7 @@ class Trainer:
                 if self.rank == 0 and self.timing_in_training:
                     log.info(
                         format_training_message(
-                            batch=_step_id,
+                            batch=display_step_id,
                             wall_time=train_time,
                         )
                     )
@@ -899,7 +902,7 @@ class Trainer:
                         self.print_header(fout, train_results, valid_results)
                         self.lcurve_should_print_header = False
                     self.print_on_training(
-                        fout, _step_id, cur_lr, train_results, valid_results
+                        fout, display_step_id, cur_lr, train_results, valid_results
                     )
 
             if (
@@ -921,11 +924,15 @@ class Trainer:
                     f.write(str(self.latest_model))
 
             # tensorboard
-            if self.enable_tensorboard and _step_id % self.tensorboard_freq == 0:
-                writer.add_scalar(f"{task_key}/lr", cur_lr, _step_id)
-                writer.add_scalar(f"{task_key}/loss", loss, _step_id)
+            if self.enable_tensorboard and (
+                display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
+            ):
+                writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
+                writer.add_scalar(f"{task_key}/loss", loss, display_step_id)
                 for item in more_loss:
-                    writer.add_scalar(f"{task_key}/{item}", more_loss[item], _step_id)
+                    writer.add_scalar(
+                        f"{task_key}/{item}", more_loss[item], display_step_id
+                    )
 
         self.t0 = time.time()
         self.total_train_time = 0.0
