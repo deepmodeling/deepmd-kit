@@ -905,7 +905,7 @@ class TabulateFusionSeROp
 
 std::vector<torch::Tensor> tabulate_fusion_se_a(
     const torch::Tensor& table_tensor,
-    const torch::Tensor& table_info_tensor,
+    const torch::Tensor& table_info_tensor, // only cpu
     const torch::Tensor& em_x_tensor,
     const torch::Tensor& em_tensor,
     int64_t last_layer_size) {
@@ -915,7 +915,7 @@ std::vector<torch::Tensor> tabulate_fusion_se_a(
 
 std::vector<torch::Tensor> tabulate_fusion_se_atten(
     const torch::Tensor& table_tensor,
-    const torch::Tensor& table_info_tensor,
+    const torch::Tensor& table_info_tensor, // only cpu
     const torch::Tensor& em_x_tensor,
     const torch::Tensor& em_tensor,
     const torch::Tensor& two_embed_tensor,
@@ -928,7 +928,7 @@ std::vector<torch::Tensor> tabulate_fusion_se_atten(
 
 std::vector<torch::Tensor> tabulate_fusion_se_t(
     const torch::Tensor& table_tensor,
-    const torch::Tensor& table_info_tensor,
+    const torch::Tensor& table_info_tensor, // only cpu
     const torch::Tensor& em_x_tensor,
     const torch::Tensor& em_tensor,
     int64_t last_layer_size) {
@@ -938,7 +938,7 @@ std::vector<torch::Tensor> tabulate_fusion_se_t(
 
 std::vector<torch::Tensor> tabulate_fusion_se_r(
     const torch::Tensor& table_tensor,
-    const torch::Tensor& table_info_tensor,
+    const torch::Tensor& table_info_tensor, // only cpu
     const torch::Tensor& em_tensor,
     int64_t last_layer_size) {
   return TabulateFusionSeROp::apply(table_tensor, table_info_tensor, em_tensor,

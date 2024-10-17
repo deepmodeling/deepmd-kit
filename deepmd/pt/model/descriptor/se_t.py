@@ -66,6 +66,12 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pt.utils.env import (
+    get_activation_func,
+)
 
 @BaseDescriptor.register("se_e3")
 @BaseDescriptor.register("se_at")
@@ -250,6 +256,52 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
 
         """
         return self.seat.compute_input_stats(merged, path)
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float, 
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        self.compress = True
+        self.table = DPTabulate(
+            self,
+            self.serialize()["neuron"],
+            exclude_types=self.serialize()["exclude_types"],
+            activation_fn=get_activation_func(self.serialize()["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1 * 10,
+            table_stride_2 * 10,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1 * 10, table_stride_2 * 10
+        )
+        self.seat.enable_compression(
+            self.table,
+            self.table_config,
+            self.lower,
+            self.upper
+        )
 
     def reinit_exclude(
         self,
@@ -466,6 +518,7 @@ class DescrptBlockSeT(DescriptorBlock):
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
+        self.compress = False
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
@@ -622,6 +675,19 @@ class DescrptBlockSeT(DescriptorBlock):
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+    
+    def enable_compression(
+        self,
+        table,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        self.compress = True
+        self.table = table
+        self.table_config = table_config
+        self.lower = lower
+        self.upper = upper
 
     def forward(
         self,
@@ -664,6 +730,31 @@ class DescrptBlockSeT(DescriptorBlock):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        if self.compress:
+            return self.compressed_forward(
+                nlist,
+                extended_coord,
+                extended_atype,
+                extended_atype_embd,
+                mapping,
+            )
+        else:
+            return self.normal_forward(
+                nlist,
+                extended_coord,
+                extended_atype,
+                extended_atype_embd,
+                mapping,
+            )
+
+    def normal_forward(
+        self,
+        nlist: torch.Tensor,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
+        mapping: Optional[torch.Tensor] = None,
+    ):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
@@ -711,6 +802,88 @@ class DescrptBlockSeT(DescriptorBlock):
                 gg = ll.forward(env_ij_reshape)
                 # nfnl x nt_i x nt_j x ng
                 res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
+                res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
+                result += res_ij
+        # xyz_scatter /= (self.nnei * self.nnei)
+        result = result.view(-1, nloc, self.filter_neuron[-1])
+        return (
+            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            None,
+            sw,
+        )
+
+    def compressed_forward(
+        self,
+        nlist: torch.Tensor,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
+        mapping: Optional[torch.Tensor] = None,
+    ):
+        del extended_atype_embd, mapping
+        nloc = nlist.shape[1]
+        atype = extended_atype[:, :nloc]
+        dmatrix, diff, sw = prod_env_mat(
+            extended_coord,
+            nlist,
+            atype,
+            self.mean,
+            self.stddev,
+            self.rcut,
+            self.rcut_smth,
+            protection=self.env_protection,
+        )
+        dmatrix = dmatrix.view(-1, self.nnei, 4)
+        dmatrix = dmatrix.to(dtype=self.prec)
+        nfnl = dmatrix.shape[0]
+        # pre-allocate a shape to pass jit
+        result = torch.zeros(
+            [nfnl, self.filter_neuron[-1]],
+            dtype=self.prec,
+            device=extended_coord.device,
+        )
+        # nfnl x nnei
+        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+            ti = embedding_idx % self.ntypes
+            nei_type_j = self.sel[ti]
+            tj = embedding_idx // self.ntypes
+            nei_type_i = self.sel[tj]
+            if ti <= tj:
+                # avoid repeat calculation
+                # nfnl x nt_i x 3
+                rr_i = dmatrix[:, self.sec[ti] : self.sec[ti + 1], 1:]
+                mm_i = exclude_mask[:, self.sec[ti] : self.sec[ti + 1]]
+                rr_i = rr_i * mm_i[:, :, None]
+                # nfnl x nt_j x 3
+                rr_j = dmatrix[:, self.sec[tj] : self.sec[tj + 1], 1:]
+                mm_j = exclude_mask[:, self.sec[tj] : self.sec[tj + 1]]
+                rr_j = rr_j * mm_j[:, :, None]
+                # nfnl x nt_i x nt_j
+                env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
+                ebd_env_ij = env_ij.view(-1, 1)
+
+                net = "filter_" + str(ti) + "_net_" + str(tj)
+                info = [
+                    self.lower[net],
+                    self.upper[net],
+                    self.upper[net] * self.table_config[0],
+                    self.table_config[1],
+                    self.table_config[2],
+                    self.table_config[3],
+                ]
+                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                ebd_env_ij = ebd_env_ij.to(env.DEVICE).to(dtype=self.prec)
+                env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
+                res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
+                    tensor_data.contiguous(),
+                    torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                    ebd_env_ij.contiguous(),
+                    env_ij.contiguous(),
+                    self.filter_neuron[-1],
+                )[0]
                 res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                 result += res_ij
         # xyz_scatter /= (self.nnei * self.nnei)

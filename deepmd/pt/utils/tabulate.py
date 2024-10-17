@@ -83,15 +83,12 @@ class DPTabulate:
             raise RuntimeError("Unknown activation function type!")
         self.activation_fn = activation_fn
 
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
-            self.sel_a = self.descrpt.get_sel()
-            self.rcut = self.descrpt.get_rcut()
-            self.rcut_smth = self.descrpt.get_rcut_smth()
-        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
-            self.sel_a = self.descrpt.get_sel()
-            self.rcut = self.descrpt.get_rcut()
-            self.rcut_smth = self.descrpt.get_rcut_smth()
-        elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR) or isinstance(
+                self.descrpt, deepmd.pt.model.descriptor.DescrptSeA) or isinstance(
+                self.descrpt, deepmd.pt.model.descriptor.DescrptSeT) or isinstance(
+                self.descrpt, deepmd.pt.model.descriptor.DescrptSeT) or isinstance(
+                self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1
+            ):
             self.sel_a = self.descrpt.get_sel()
             self.rcut = self.descrpt.get_rcut()
             self.rcut_smth = self.descrpt.get_rcut_smth()
@@ -292,7 +289,9 @@ class DPTabulate:
         )
 
         # tt.shape: [nspline, self.last_layer_size]
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA) or isinstance(
+            self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1
+        ):
             tt = np.full((nspline, self.last_layer_size), stride1)
             tt[: int((upper - lower) / stride0), :] = stride0
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
@@ -538,7 +537,9 @@ class DPTabulate:
     # Change the embedding net range to sw / min_nbor_dist
     def _get_env_mat_range(self, min_nbor_dist):
         sw = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA) or isinstance(
+            self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1
+        ):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):

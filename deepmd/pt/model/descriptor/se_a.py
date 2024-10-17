@@ -300,7 +300,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-        natoms: Optional[torch.Tensor] = None,
     ):
         """Compute the descriptor.
 
@@ -334,7 +333,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.sea.forward(nlist, coord_ext, atype_ext, extended_atype_embd, mapping, natoms)
+        return self.sea.forward(nlist, coord_ext, atype_ext, extended_atype_embd, mapping)
 
     def set_stat_mean_and_stddev(
         self,
@@ -688,7 +687,6 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
-        natoms: Optional[torch.Tensor] = None,
     ):
         """Calculate decoded embedding for each atom.
 
@@ -709,7 +707,6 @@ class DescrptBlockSeA(DescriptorBlock):
                 extended_atype,
                 extended_atype_embd,
                 mapping,
-                natoms,
             )
         else:
             return self.normal_forward(
@@ -718,7 +715,6 @@ class DescrptBlockSeA(DescriptorBlock):
                 extended_atype,
                 extended_atype_embd,
                 mapping,
-                natoms,
             )
     
     def normal_forward(
@@ -728,9 +724,8 @@ class DescrptBlockSeA(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
-        natoms: Optional[torch.Tensor] = None,
     ):
-        del extended_atype_embd, mapping, natoms
+        del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -821,21 +816,18 @@ class DescrptBlockSeA(DescriptorBlock):
             None,
             sw,
         )
-    
+
     def compressed_forward(
         self,
         nlist: torch.Tensor,
-        extended_coord: torch.Tensor, # coord_
+        extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None, # natoms
+        extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
-        natoms: Optional[torch.Tensor] = None,
     ):
-        del mapping, extended_atype_embd
+        del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
-        self.atype = atype # atype
-
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
@@ -847,196 +839,50 @@ class DescrptBlockSeA(DescriptorBlock):
             protection=self.env_protection,
         )
 
-        nlist[nlist > 0] = nlist[nlist > 0] % 6
-        nlist_t = nlist.view(-1) + 1
-        atype_t = torch.cat([torch.tensor([self.ntypes], device=self.atype.device), self.atype.reshape(-1)], dim=0)
-        # self.nei_type_vec = torch.nn.functional.embedding(nlist_t, atype_t) # used in _filter_lower()
-        self.nei_type_vec = atype_t[nlist_t]
-
-        self.descrpt_reshape = dmatrix.view(-1, self.ndescrpt)
-
-        self.dout, self.qmat = self._pass_filter(
-            self.descrpt_reshape,
-            natoms,
-        )
-
-        return (
-            self.dout.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            self.qmat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            None,
-            None,
-            sw,
-        )
-    
-    def _pass_filter(
-        self, inputs, natoms,
-    ):
-        type_embedding = None
-        # input_dict
-        # question tf self.stripped_type_embedding
-
-        start_index = 0
-        inputs = inputs.view(-1, natoms[0], self.ndescrpt)
-        output = []
-        output_qmat = []
-
-        if not self.type_one_side and type_embedding is None:
-            for type_i in range(self.ntypes):
-                inputs_i = inputs[:, start_index:start_index + natoms[2 + type_i], :]
-                inputs_i = inputs_i.view(-1, self.ndescrpt)
-                layer, qmat = self._filter(
-                    inputs_i,
-                    type_i,
-                    natoms,
-                    type_embedding,
-                )
-                layer = layer.view(inputs.size(0), natoms[2 + type_i], self.get_dim_out())
-                qmat = qmat.reshape(inputs.size(0), natoms[2 + type_i], self.get_dim_rot_mat_1() * 3)
-                output.append(layer)
-                output_qmat.append(qmat)
-                start_index += natoms[2 + type_i]
-        else:
-            inputs_i = inputs.view(-1, self.ndescrpt)
-            type_i = -1
-            
-            if len(self.exclude_types):
-                mask = self.emask
-                inputs_i *= mask
-
-            layer, qmat = self._filter(
-                inputs_i,
-                type_i,
-                natoms,
-                type_embedding,
-            )
-            layer = layer.view(inputs.size(0), natoms[0], self.get_dim_out())
-            qmat = qmat.reshape(inputs.size(0), natoms[0], self.get_dim_rot_mat_1() * 3)
-            output.append(layer)
-            output_qmat.append(qmat)
-        
-        output = torch.cat(output, dim=1)
-        output_qmat = torch.cat(output_qmat, dim=1)
-        
-        return output, output_qmat
-    
-    def _filter(
-        self,
-        inputs,
-        type_input,
-        natoms,
-        type_embedding=None,
-    ):
-        # nframes = inputs.view(-1, natoms[0], self.ndescrpt).shape[0]
-        # natom x (nei x 4)
-        shape = list(inputs.shape)
-        outputs_size = [1, *self.filter_neuron]
-        outputs_size_2 = self.axis_neuron # equal to self.n_axis_neuron in tf
-        all_excluded = all(
-            (type_input, type_i) in self.exclude_types for type_i in range(self.ntypes)
-        )
-        if all_excluded:
-            # all types are excluded so result and qmat should be zeros
-            # we can safaly return a zero matrix...
-            # See also https://stackoverflow.com/a/34725458/9567349
-            # result: natom x outputs_size x outputs_size_2
-            # qmat: natom x outputs_size x 3
-            natom = inputs.shape[0]
-            result = torch.zeros((natom, outputs_size_2, outputs_size[-1]), dtype=PRECISION_DICT["default"])
-            qmat = torch.zeros((natom, outputs_size[-1], 3), dtype=PRECISION_DICT["default"])
-            return result, qmat
-
-        start_index = 0
-        type_i = 0
-        # natom x 4 x outputs_size
-        if type_embedding is None:
-            rets = []
-            for type_i in range(self.ntypes):
-                ret = self._filter_lower(
-                    type_i,
-                    type_input,
-                    start_index,
-                    self.sel[type_i],
-                    inputs,
-                    natoms,
-                    type_embedding=type_embedding,
-                    is_exclude=(type_input, type_i) in self.exclude_types,
-                )
-                if (type_input, type_i) not in self.exclude_types:
-                    # add zero is meaningless; skip
-                    rets.append(ret)
-                start_index += self.sel[type_i]
-            # faster to use add_n than multiple add
-            xyz_scatter_1 = torch.stack(rets).sum(0)
-        else:
-            xyz_scatter_1 = self._filter_lower(
-                type_i,
-                type_input,
-                start_index,
-                np.cumsum(self.sel)[-1],
-                inputs,
-                natoms,
-                type_embedding=type_embedding,
-                is_exclude=False,
-            )
-
-        if self.sel is None: # replace self.origin_sel in tf
-            # shape[1] = nnei * 4
-            nnei = shape[1] // 4
-        else:
-            nnei = torch.tensor(sum(self.sel), dtype=torch.int32)
-
-        xyz_scatter_1 = xyz_scatter_1 / nnei
-        # natom x 4 x outputs_size_2
-        xyz_scatter_2 = xyz_scatter_1[:, :, :outputs_size_2]
-        # # natom x 3 x outputs_size_2
-        # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
-        # natom x 3 x outputs_size_1
-        qmat = xyz_scatter_1[:, 1:4, :]
-        # natom x outputs_size_1 x 3
-        qmat = qmat.permute(0, 2, 1)
-        # natom x outputs_size x outputs_size_2
-        result = torch.matmul(xyz_scatter_1.transpose(1, 2), xyz_scatter_2)
-        # natom x (outputs_size x outputs_size_2)
-        result = result.view(-1, outputs_size_2 * outputs_size[-1])
-
-        return result, qmat
-    
-    def _filter_lower(
-        self,
-        type_i,
-        type_input,
-        start_index,
-        incrs_index,
-        inputs,
-        natoms,
-        type_embedding=None,
-        is_exclude=False,
-    ):
-        """Input env matrix, returns R.G."""
-        outputs_size = [1, *self.filter_neuron]
-        # cut-out inputs
-        # with natom x (nei_type_i x 4)
-        inputs_i = inputs[:, start_index * 4:start_index * 4 + incrs_index * 4]
-        shape_i = inputs_i.shape
-        natom = inputs_i.shape[0]
-        # reshape inputs
-        # with (natom x nei_type_i) x 4
-        inputs_reshape = inputs_i.reshape(-1, 4)
-        # with (natom x nei_type_i) x 1
-        xyz_scatter = inputs_reshape[:, :1]
-
-        # if type_embedding is not None:
-        #     xyz_scatter = self._concat_type_embedding(xyz_scatter, nframes, natoms, type_embedding)
-        #     if self.compress:
-        #         raise RuntimeError(
-        #             "compression of type embedded descriptor is not supported when tebd_input_mode is not set to 'strip'"
-        #         )
-        
-        if self.compress and (not is_exclude):
+        assert self.filter_layers is not None
+        dmatrix = dmatrix.view(-1, self.nnei, 4)
+        dmatrix = dmatrix.to(dtype=self.prec) # torch.Size([6, 19, 4])
+        nfnl = dmatrix.shape[0]
+        # pre-allocate a shape to pass jit
+        xyz_scatter = torch.zeros(
+            [nfnl, 4, self.filter_neuron[-1]],
+            dtype=self.prec,
+            device=extended_coord.device,
+        ) # torch.Size([6, 4, 24])
+        # nfnl x nnei
+        # torch.Size([6, 19])
+        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
             if self.type_one_side:
-                net = "filter_-1_net_" + str(type_i)
+                ii = embedding_idx
+                # torch.jit is not happy with slice(None)
+                # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                # applying a mask seems to cause performance degradation
+                ti_mask = None
             else:
-                net = "filter_" + str(type_input) + "_net_" + str(type_i)
+                # ti: center atom type, ii: neighbor type...
+                ii = embedding_idx // self.ntypes
+                ti = embedding_idx % self.ntypes
+                ti_mask = atype.ravel().eq(ti)
+            # nfnl x nt
+            if ti_mask is not None:
+                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+            else:
+                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+            # nfnl x nt x 4
+            if ti_mask is not None:
+                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+            else:
+                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+            rr = rr * mm[:, :, None] # inputs_i_tensor in tf
+            ss = rr[:, :, :1]
+            ss = ss.reshape(-1, 1) # xyz_scatter_tensor in tf
+
+            if self.type_one_side:
+                net = "filter_-1_net_" + str(ii)
+            else:
+                net = "filter_" + str(ti) + "_net_" + str(ii)
+            
             info = [
                 self.lower[net],
                 self.upper[net],
@@ -1045,61 +891,36 @@ class DescrptBlockSeA(DescriptorBlock):
                 self.table_config[2],
                 self.table_config[3],
             ]
+
             tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-            xyz_scatter_tensor = xyz_scatter.to(env.DEVICE).to(dtype=self.prec)
-            inputs_i_tensor = inputs_i.view(natom, shape_i[1] // 4, 4).to(env.DEVICE).to(dtype=self.prec)
             result = torch.ops.deepmd.tabulate_fusion_se_a(
                 tensor_data.contiguous(),
                 torch.tensor(info, dtype=self.prec).contiguous().cpu(),
-                xyz_scatter_tensor.contiguous(),
-                inputs_i_tensor.contiguous(),
-                int(outputs_size[-1]),
+                ss.contiguous(),
+                rr.contiguous(),
+                self.filter_neuron[-1],
             )
-            return result[0]
-        
-    def _concat_type_embedding(
-        self,
-        xyz_scatter,
-        nframes,
-        natoms,
-        type_embedding,
-    ):
-        """
-        Concatenate `type_embedding` of neighbors and `xyz_scatter`.
-        If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
-
-        Parameters
-        ----------
-        xyz_scatter:
-            shape is [nframes*natoms[0]*self.nnei, 1]
-        nframes:
-            shape is []
-        natoms:
-            shape is [1+1+self.ntypes]
-        type_embedding:
-            shape is [self.ntypes, Y] where Y=jdata['type_embedding']['neuron'][-1]
-
-        Returns
-        -------
-        embedding:
-            environment of each atom represented by embedding.
-        """
-        te_out_dim = type_embedding.size(-1)
-        self.t_nei_type = torch.tensor(self.nei_type, dtype=torch.int32)
-        
-        nei_embed = type_embedding[self.t_nei_type]  # shape is [self.nnei, 1+te_out_dim]
-        nei_embed = nei_embed.repeat(nframes * natoms[0], 1)  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-        nei_embed = nei_embed.view(-1, te_out_dim)
-        
-        embedding_input = torch.cat([xyz_scatter, nei_embed], dim=1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim]
-        
-        if not self.type_one_side:
-            atm_embed = embed_atom_type(self.ntypes, natoms, type_embedding)  # shape is [natoms[0], te_out_dim]
-            atm_embed = atm_embed.repeat(nframes, self.nnei)  # shape is [nframes*natoms[0], self.nnei*te_out_dim]
-            atm_embed = atm_embed.view(-1, te_out_dim)  # shape is [nframes*natoms[0]*self.nnei, te_out_dim]
-            embedding_input = torch.cat([embedding_input, atm_embed], dim=1)  # shape is [nframes*natoms[0]*self.nnei, 1+te_out_dim+te_out_dim]
-        
-        return embedding_input
+            if ti_mask is not None:
+                xyz_scatter[ti_mask] += result[0]
+            else:
+                xyz_scatter += result[0]
+                
+        xyz_scatter /= self.nnei # [6, 4, 24]
+        xyz_scatter_1 = xyz_scatter.permute(0, 2, 1) # [6, 24, 4]
+        rot_mat = xyz_scatter_1[:, :, 1:4]
+        xyz_scatter_2 = xyz_scatter[:, :, 0 : self.axis_neuron] # [6, 4, 3]
+        result = torch.matmul(
+            xyz_scatter_1, xyz_scatter_2
+        )  # shape is [nframes*nall, self.filter_neuron[-1], self.axis_neuron]
+        result = result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron)
+        rot_mat = rot_mat.view([-1, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
+        return (
+            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            sw,
+        )
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""

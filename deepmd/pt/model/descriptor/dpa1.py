@@ -54,6 +54,12 @@ from .se_atten import (
     DescrptBlockSeAtten,
     NeighborGatedAttention,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pt.utils.env import (
+    get_activation_func,
+)
 
 
 @BaseDescriptor.register("dpa1")
@@ -261,6 +267,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
+
+        self.tebd_input_mode = tebd_input_mode
 
         del type, spin, attn_mask
         self.se_atten = DescrptBlockSeAtten(
@@ -542,6 +550,78 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             attention_layers
         )
         return obj
+    
+    def enable_compression(
+        self,
+        min_nbor_dist: float, 
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the mocel compression process
+        assert (
+            not self.se_atten.resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.se_atten.exclude_types:
+            if (tt[0] not in range(self.se_atten.ntypes)) or (tt[1] not in range(self.se_atten.ntypes)):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_atten.ntypes)
+                    + "!"
+                )
+        if self.se_atten.ntypes * self.se_atten.ntypes - len(self.se_atten.exclude_types) == 0:
+            raise RuntimeError(
+                "empty embedding-net are not supported in model compression!"
+            )
+
+        if self.se_atten.attn_layer != 0:
+            raise RuntimeError("can not compress model when attention layer is not 0.")
+        
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("can not compress model when tebd_input_mode = concat")
+        
+        self.table = DPTabulate(
+            self,
+            self.serialize()["neuron"],
+            self.serialize()["type_one_side"],
+            self.serialize()["exclude_types"],
+            get_activation_func(self.serialize()["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        
+        self.se_atten.enable_compression(
+            self.table,
+            self.table_config,
+            self.lower,
+            self.upper
+        )
+
 
     def forward(
         self,

@@ -6,8 +6,8 @@ from typing import (
     Any,
 )
 from deepmd.pt.utils.env import DEVICE as PT_DEVICE
-from deepmd.pt.model.descriptor.se_a import(
-    DescrptSeA,
+from deepmd.pt.model.descriptor.se_t import(
+    DescrptSeT,
 )
 from deepmd.pt.utils.nlist import build_neighbor_list as build_neighbor_list_pt
 from deepmd.pt.utils.nlist import (
@@ -37,7 +37,7 @@ def eval_pt_descriptor(
     result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)
     return result
 
-class TestDescriptorSeA(unittest.TestCase):
+class TestDescriptorSeT(unittest.TestCase):
     def setUp(self):
         self.dtype = "float32"
         if self.dtype == "float32":
@@ -49,7 +49,6 @@ class TestDescriptorSeA(unittest.TestCase):
         self.rcut_smth = 5.80
         self.rcut = 6.00
         self.neuron = [6, 12, 24]
-        self.axis_neuron = 3
         self.ntypes = 2
         self.coords = np.array(
             [
@@ -81,35 +80,35 @@ class TestDescriptorSeA(unittest.TestCase):
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
-        self.se_a = DescrptSeA(
+        self.se_t = DescrptSeT(
             self.rcut,
             self.rcut_smth,
             self.sel,
             self.neuron,
-            self.axis_neuron,
-            type_one_side=False,
             seed=21,
             precision=self.dtype,
         )
-
+    
     def test_compressed_forward(self):
         result_pt = eval_pt_descriptor(
-            self.se_a,
+            self.se_t,
             self.natoms,
             self.coords,
             self.atype,
             self.box,
         )
 
-        self.se_a.enable_compression(1.0)
+        self.se_t.enable_compression(1.0)
         result_pt_compressed = eval_pt_descriptor(
-            self.se_a,
+            self.se_t,
             self.natoms,
             self.coords,
             self.atype,
             self.box,
         )
-
+        
+        # print("result_pt: ", result_pt[:, :, :10])
+        # print("result_pt_compressed: ", result_pt_compressed[:, :, :10])
         self.assertEqual(result_pt.shape, result_pt_compressed.shape)
         torch.testing.assert_close(
             result_pt,

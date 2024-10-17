@@ -7,6 +7,7 @@ from typing import (
     Tuple,
     Union,
 )
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -186,6 +187,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             ln_eps = 1e-5
         self.ln_eps = ln_eps
         self.old_impl = old_impl
+        self.compress = False
 
         if isinstance(sel, int):
             sel = [sel]
@@ -319,6 +321,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+    
+    def get_dim_rot_mat_1(self) -> int:
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
+        return self.filter_neuron[-1]
 
     def get_dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
@@ -425,6 +431,19 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def enable_compression(
+        self,
+        table,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        self.compress = True
+        self.table = table
+        self.table_config = table_config
+        self.lower = lower
+        self.upper = upper
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -465,7 +484,33 @@ class DescrptBlockSeAtten(DescriptorBlock):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
-        del mapping
+        if self.compress:
+            return self.compressed_forward(
+                nlist,
+                extended_coord,
+                extended_atype,
+                extended_atype_embd,
+                mapping,
+            )
+        else:
+            return self.normal_forward(
+                nlist,
+                extended_coord,
+                extended_atype,
+                extended_atype_embd,
+                mapping,
+            )
+
+    def normal_forward(
+        self,
+        nlist: torch.Tensor,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
+        mapping: Optional[torch.Tensor] = None,
+        natoms: Optional[torch.Tensor] = None,
+    ):
+        del mapping, natoms
         assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
@@ -489,14 +534,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = torch.squeeze(sw, -1)
         # nf x nloc x nt -> nf x nloc x nnei x nt
         atype_tebd = extended_atype_embd[:, :nloc, :]
-        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)
+        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1) # i
         # nf x nall x nt
         nt = extended_atype_embd.shape[-1]
         atype_tebd_ext = extended_atype_embd
         # nb x (nloc x nnei) x nt
         index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
         # nb x (nloc x nnei) x nt
-        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)
+        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index) # j
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         # beyond the cutoff sw should be 0.0
@@ -534,7 +579,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             rr = dmatrix
             rr = rr * exclude_mask[:, :, None]
             ss = rr[:, :, :1]
-            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
+            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim) # j
             atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
             if self.tebd_input_mode in ["concat"]:
                 if not self.type_one_side:
@@ -551,7 +596,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 assert self.filter_layers_strip is not None
                 if not self.type_one_side:
                     # nfnl x nnei x (tebd_dim * 2)
-                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
                 else:
                     # nfnl x nnei x tebd_dim
                     tt = nlist_tebd
@@ -582,6 +627,145 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return (
             result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
             gg.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
+            dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
+            rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
+            sw,
+        )
+    
+    def compressed_forward(
+        self,
+        nlist: torch.Tensor,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
+        mapping: Optional[torch.Tensor] = None,
+        natoms: Optional[torch.Tensor] = None,
+    ):
+        del mapping, natoms
+        assert extended_atype_embd is not None
+        nframes, nloc, nnei = nlist.shape
+        atype = extended_atype[:, :nloc]
+        nb = nframes
+        nall = extended_coord.view(nb, -1, 3).shape[1]
+        dmatrix, diff, sw = prod_env_mat(
+            extended_coord,
+            nlist,
+            atype,
+            self.mean,
+            self.stddev,
+            self.rcut,
+            self.rcut_smth,
+            protection=self.env_protection,
+        )
+        # nb x nloc x nnei
+        exclude_mask = self.emask(nlist, extended_atype)
+        nlist = torch.where(exclude_mask != 0, nlist, -1)
+        nlist_mask = nlist != -1
+        nlist = torch.where(nlist == -1, 0, nlist)
+        sw = torch.squeeze(sw, -1)
+        # nf x nloc x nt -> nf x nloc x nnei x nt
+        atype_tebd = extended_atype_embd[:, :nloc, :]
+        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1) # i
+        # nf x nall x nt
+        nt = extended_atype_embd.shape[-1]
+        atype_tebd_ext = extended_atype_embd
+        # nb x (nloc x nnei) x nt
+        index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
+        # nb x (nloc x nnei) x nt
+        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index) # j
+        # nb x nloc x nnei x nt
+        atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
+        # beyond the cutoff sw should be 0.0
+        sw = sw.masked_fill(~nlist_mask, 0.0)
+        # (nb x nloc) x nnei
+        exclude_mask = exclude_mask.view(nb * nloc, nnei)
+        if self.old_impl:
+            assert self.filter_layers_old is not None
+            dmatrix = dmatrix.view(
+                -1, self.ndescrpt
+            )  # shape is [nframes*nall, self.ndescrpt]
+            gg = self.filter_layers_old[0](
+                dmatrix,
+                atype_tebd=atype_tebd_nnei,
+                nlist_tebd=atype_tebd_nlist,
+            )  # shape is [nframes*nall, self.neei, out_size]
+            input_r = torch.nn.functional.normalize(
+                dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            inputs_reshape = dmatrix.view(-1, self.nnei, 4).permute(
+                0, 2, 1
+            )  # shape is [nframes*natoms[0], 4, self.neei]
+            xyz_scatter = torch.matmul(
+                inputs_reshape, gg
+            )  # shape is [nframes*natoms[0], 4, out_size]
+        else:
+            assert self.filter_layers is not None
+            # nfnl x nnei x 4
+            dmatrix = dmatrix.view(-1, self.nnei, 4)
+            nfnl = dmatrix.shape[0]
+            # nfnl x nnei x 4
+            rr = dmatrix
+            rr = rr * exclude_mask[:, :, None]
+            ss = rr[:, :, :1]
+            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim) # j
+            atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
+    
+
+            net = "filter_net"
+            info = [
+                self.lower[net],
+                self.upper[net],
+                self.upper[net] * self.table_config[0],
+                self.table_config[1],
+                self.table_config[2],
+                self.table_config[3],
+            ]
+            ss = ss.reshape(-1, 1)
+            # nfnl x nnei x ng
+            # gg_s = self.filter_layers.networks[0](ss)
+            assert self.filter_layers_strip is not None
+            if not self.type_one_side:
+                # nfnl x nnei x (tebd_dim * 2)
+                tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
+            else:
+                # nfnl x nnei x tebd_dim
+                tt = nlist_tebd
+            # nfnl x nnei x ng
+            gg_t = self.filter_layers_strip.networks[0](tt)
+            if self.smooth:
+                gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+            # nfnl x nnei x ng
+            # gg = gg_s * gg_t + gg_s
+            tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+            info_tensor = torch.tensor(info, dtype=self.prec)
+            gg_t = gg_t.reshape(-1, gg_t.size(-1))
+            ss = ss.to(self.prec)
+            rr = rr.to(self.prec)
+            gg_t = gg_t.to(self.prec)
+            is_sorted = len(self.exclude_types) == 0
+            xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
+                tensor_data.contiguous(),
+                info_tensor.contiguous().cpu(),
+                ss.contiguous(),
+                rr.contiguous(),
+                gg_t.contiguous(),
+                self.filter_neuron[-1],
+                is_sorted,
+            )[0]
+            
+        xyz_scatter = xyz_scatter / self.nnei
+        xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
+        rot_mat = xyz_scatter_1[:, :, 1:4]
+        xyz_scatter_2 = xyz_scatter[:, :, 0 : self.axis_neuron]
+        result = torch.matmul(
+            xyz_scatter_1, xyz_scatter_2
+        )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
+        return (
+            result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            None,
             dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
             rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
             sw,

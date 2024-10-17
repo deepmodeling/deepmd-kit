@@ -54,6 +54,12 @@ from deepmd.utils.version import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pt.utils.env import (
+    get_activation_func,
+)
 
 
 @BaseDescriptor.register("se_e2_r")
@@ -95,6 +101,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
+        self.compress = False
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -128,6 +135,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.filter_layers = filter_layers
         self.stats = None
         # set trainable
+        self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
 
@@ -301,6 +309,47 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+    
+    def enable_compression(
+        self,
+        min_nbor_dist: float, 
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        self.compress = True
+        self.table = DPTabulate(
+            self,
+            self.serialize()["neuron"],
+            self.serialize()["type_one_side"],
+            self.serialize()["exclude_types"],
+            get_activation_func(self.serialize()["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
 
     def forward(
         self,
@@ -342,6 +391,31 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
+        if self.compress:
+            return self.compressed_forward(
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping,
+                comm_dict,
+            )
+        else:
+            return self.normal_forward(
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping,
+                comm_dict,
+            ) 
+
+    def normal_forward(
+        self,
+        coord_ext: torch.Tensor,
+        atype_ext: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+    ):
         del mapping
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
@@ -381,6 +455,81 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         res_rescale = 1.0 / 5.0
         result = xyz_scatter * res_rescale
+        result = result.view(-1, nloc, self.filter_neuron[-1])
+        return (
+            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            None,
+            sw,
+        )
+
+    def compressed_forward(
+        self,
+        coord_ext: torch.Tensor,
+        atype_ext: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: Optional[torch.Tensor] = None,
+        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+    ):
+        del mapping
+        nloc = nlist.shape[1]
+        atype = atype_ext[:, :nloc]
+        dmatrix, diff, sw = prod_env_mat(
+            coord_ext,
+            nlist,
+            atype,
+            self.mean,
+            self.stddev,
+            self.rcut,
+            self.rcut_smth,
+            True,
+            protection=self.env_protection,
+        )
+
+        assert self.filter_layers is not None
+        dmatrix = dmatrix.view(-1, self.nnei, 1)
+        dmatrix = dmatrix.to(dtype=self.prec)
+        nfnl = dmatrix.shape[0]
+        # pre-allocate a shape to pass jit
+        xyz_scatter = torch.zeros(
+            [nfnl, 1, self.filter_neuron[-1]], dtype=self.prec, device=coord_ext.device
+        )
+
+        # nfnl x nnei
+        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
+        xyz_scatter_total = []
+        for ii, ll in enumerate(self.filter_layers.networks):
+            # nfnl x nt
+            mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+            # nfnl x nt x 1
+            ss = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+            ss = ss * mm[:, :, None]
+            ss = ss.squeeze(-1)
+
+            net = "filter_-1_net_" + str(ii)
+            info = [
+                self.lower[net],
+                self.upper[net],
+                self.upper[net] * self.table_config[0],
+                self.table_config[1],
+                self.table_config[2],
+                self.table_config[3],
+            ]
+            tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+            xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
+                tensor_data.contiguous(),
+                torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                ss,
+                self.filter_neuron[-1],
+            )[0]
+
+            xyz_scatter_total.append(xyz_scatter)
+
+        # natom x nei x outputs_size
+        xyz_scatter = torch.cat(xyz_scatter_total, dim=1)
+        res_rescale = 1.0 / 5.0
+        result = torch.mean(xyz_scatter, dim=1) * res_rescale
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
