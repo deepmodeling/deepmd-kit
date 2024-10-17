@@ -16,6 +16,9 @@ from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
+from deepmd.jax.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.jax.utils.exclude_mask import (
     PairExcludeMask,
 )
@@ -76,6 +79,8 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
         return super().__setattr__(name, value)
 
 
+@BaseDescriptor.register("dpa1")
+@BaseDescriptor.register("se_atten")
 @flax_module
 class DescrptDPA1(DescrptDPA1DP):
     def __setattr__(self, name: str, value: Any) -> None:

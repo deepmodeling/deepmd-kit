@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -35,6 +36,12 @@ else:
 from deepmd.utils.argcheck import (
     model_args,
 )
+
+if INSTALLED_JAX:
+    from deepmd.jax.model.ener_model import EnergyModel as EnergyModelJAX
+    from deepmd.jax.model.model import get_model as get_model_jax
+else:
+    EnergyModelJAX = None
 
 
 @parameterized(
@@ -84,13 +91,19 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     tf_class = EnergyModelTF
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
+    jax_class = EnergyModelJAX
     args = model_args()
 
+    @property
     def skip_tf(self):
         return (
             self.data["pair_exclude_types"] != []
             or self.data["atom_exclude_types"] != []
         )
+
+    @property
+    def skip_jax(self):
+        return not INSTALLED_JAX
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
@@ -99,6 +112,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
+        elif cls is EnergyModelJAX:
+            return get_model_jax(data)
         return cls(**data, **self.addtional_data)
 
     def setUp(self):
@@ -168,6 +183,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_model(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
@@ -176,4 +200,6 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         elif backend is self.RefBackend.TF:
             return (ret[0].ravel(), ret[1].ravel())
+        elif backend is self.RefBackend.JAX:
+            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
         raise ValueError(f"Unknown backend: {backend}")

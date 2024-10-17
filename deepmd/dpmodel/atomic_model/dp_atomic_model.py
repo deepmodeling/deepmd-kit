@@ -169,14 +169,20 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return dd
 
+    # for subclass overriden
+    base_descriptor_cls = BaseDescriptor
+    """The base descriptor class."""
+    base_fitting_cls = BaseFitting
+    """The base fitting class."""
+
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
         data = copy.deepcopy(data)
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
         data.pop("type")
-        descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
-        fitting_obj = BaseFitting.deserialize(data.pop("fitting"))
+        descriptor_obj = cls.base_descriptor_cls.deserialize(data.pop("descriptor"))
+        fitting_obj = cls.base_fitting_cls.deserialize(data.pop("fitting"))
         data["descriptor"] = descriptor_obj
         data["fitting"] = fitting_obj
         obj = super().deserialize(data)

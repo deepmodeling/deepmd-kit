@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.common import (
@@ -23,6 +24,7 @@ def fit_output_to_model_output(
     the model output.
 
     """
+    xp = array_api_compat.get_namespace(coord_ext)
     model_ret = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
@@ -31,7 +33,7 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             # cast to energy prec brefore reduction
-            model_ret[kk_redu] = np.sum(
+            model_ret[kk_redu] = xp.sum(
                 vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
             )
             if vdef.r_differentiable:

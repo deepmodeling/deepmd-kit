@@ -9,6 +9,9 @@ from deepmd.jax.common import (
     flax_module,
     to_jax_array,
 )
+from deepmd.jax.fitting.base_fitting import (
+    BaseFitting,
+)
 from deepmd.jax.utils.exclude_mask import (
     AtomExcludeMask,
 )
@@ -33,6 +36,7 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
     return value
 
 
+@BaseFitting.register("ener")
 @flax_module
 class EnergyFittingNet(EnergyFittingNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
@@ -40,6 +44,7 @@ class EnergyFittingNet(EnergyFittingNetDP):
         return super().__setattr__(name, value)
 
 
+@BaseFitting.register("dos")
 @flax_module
 class DOSFittingNet(DOSFittingNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
