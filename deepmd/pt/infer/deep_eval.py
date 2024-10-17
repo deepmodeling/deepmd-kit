@@ -599,8 +599,7 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> str:
         """Get model defination script."""
         return self.model_def_script
-      
-      
+
     def eval_descriptor(
         self,
         coords: np.ndarray,
@@ -656,7 +655,7 @@ class DeepEval(DeepEvalBackend):
         model.set_eval_descriptor_hook(False)
         return to_numpy_array(descriptor)
 
-      
+
 # For tests only
 def eval_model(
     model,

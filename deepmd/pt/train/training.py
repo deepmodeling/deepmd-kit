@@ -1306,7 +1306,7 @@ def get_model_for_wrapper(
         _model = {}
         model_keys = list(_model_params["model_dict"])
         for _model_key in model_keys:
-            if _loss_params is not None and whether_hessian(_loss_params):
+            if _loss_params is not None and whether_hessian(_loss_params[_model_key]):
                 _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
