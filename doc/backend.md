@@ -23,6 +23,13 @@ DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`t
 [PyTorch](https://pytorch.org/) 2.0 or above is required.
 While `.pth` and `.pt` are the same in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
 
+### Paddle {{ paddle_icon }}
+
+- Model filename extension: `.json` and `.pdiparams`
+- Checkpoint filename extension: `.pd`
+
+[Paddle](https://www.paddlepaddle.org.cn/) 3.0 or above is required.
+
 ### DP {{ dpmodel_icon }}
 
 :::{note}
@@ -45,7 +52,7 @@ NumPy 1.21 or above is required.
 
 ### Training
 
-When training and freezing a model, you can use `dp --tf` or `dp --pt` in the command line to switch the backend.
+When training and freezing a model, you can use `dp --tf` or `dp --pt` or `dp --pd` in the command line to switch the backend.
 
 ### Inference
 
@@ -57,5 +64,5 @@ For example, when the model filename ends with `.pb` (the ProtoBuf file), DeePMD
 If a model is supported by two backends, one can use [`dp convert-backend`](./cli.rst) to convert the model file between these two backends.
 
 :::{warning}
-Currently, only the `se_e2_a` model fully supports the backend conversion between TensorFlow {{ tensorflow_icon }} and PyTorch {{ pytorch_icon }}.
+Currently, only the `se_e2_a` model fully supports the backend conversion between TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }} and Paddle {{ paddle_icon }}.
 :::

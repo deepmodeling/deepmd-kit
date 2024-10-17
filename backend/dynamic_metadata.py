@@ -7,6 +7,9 @@ from typing import (
     Optional,
 )
 
+from .find_paddle import (
+    get_pd_requirement,
+)
 from .find_pytorch import (
     get_pt_requirement,
 )
@@ -34,7 +37,7 @@ def dynamic_metadata(
     settings: Optional[dict[str, object]] = None,
 ):
     assert field in ["optional-dependencies", "entry-points", "scripts"]
-    _, _, find_libpython_requires, extra_scripts, tf_version, pt_version = (
+    _, _, find_libpython_requires, extra_scripts, tf_version, pt_version, pd_version = (
         get_argument_from_env()
     )
     with Path("pyproject.toml").open("rb") as f:
@@ -55,4 +58,5 @@ def dynamic_metadata(
             **optional_dependencies,
             **get_tf_requirement(tf_version),
             **get_pt_requirement(pt_version),
+            **get_pd_requirement(pd_version),
         }

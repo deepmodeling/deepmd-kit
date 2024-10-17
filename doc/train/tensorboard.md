@@ -1,7 +1,7 @@
-# TensorBoard Usage {{ tensorflow_icon }} {{ pytorch_icon }}
+# TensorBoard Usage {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 :::
 
 TensorBoard provides the visualization and tooling needed for machine learning
