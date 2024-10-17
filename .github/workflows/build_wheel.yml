@@ -160,13 +160,13 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/deepmodeling/deepmd-kit
+          images: ghcr.io/Yi-FanLi/deepmd-kit
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: source/install/docker
-          push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
+          push: ${{ github.repository_owner == 'Yi-FanLi' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
           tags: ${{ steps.meta.outputs.tags }}${{ matrix.variant }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
