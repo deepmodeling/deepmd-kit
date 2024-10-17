@@ -44,7 +44,7 @@ class NeighborStatOP(torch.nn.Module):
         mixed_types: bool,
     ) -> None:
         super().__init__()
-        self.rcut = rcut
+        self.rcut = float(rcut)
         self.ntypes = ntypes
         self.mixed_types = mixed_types
 
