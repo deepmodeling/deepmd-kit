@@ -85,7 +85,9 @@ class TestSaveLoadDPA1(unittest.TestCase):
         optimizer = torch.optim.Adam(wrapper.parameters(), lr=self.start_lr)
         optimizer.zero_grad()
         if read:
-            wrapper.load_state_dict(torch.load(model_file, map_location=env.DEVICE))
+            wrapper.load_state_dict(
+                torch.load(model_file, map_location=env.DEVICE, weights_only=True)
+            )
             os.remove(model_file)
         else:
             torch.save(wrapper.state_dict(), model_file)

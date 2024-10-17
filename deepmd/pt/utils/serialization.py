@@ -33,7 +33,7 @@ def serialize_from_file(model_file: str) -> dict:
         model = get_model(model_def_script)
         model.load_state_dict(saved_model.state_dict())
     elif model_file.endswith(".pt"):
-        state_dict = torch.load(model_file, map_location="cpu")
+        state_dict = torch.load(model_file, map_location="cpu", weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_def_script = state_dict["_extra_state"]["model_params"]

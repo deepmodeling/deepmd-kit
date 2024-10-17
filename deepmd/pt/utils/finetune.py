@@ -136,7 +136,7 @@ def get_finetune_rules(
         Fine-tuning rules in a dict format, with `model_branch`: FinetuneRuleItem pairs.
     """
     multi_task = "model_dict" in model_config
-    state_dict = torch.load(finetune_model, map_location=env.DEVICE)
+    state_dict = torch.load(finetune_model, map_location=env.DEVICE, weights_only=True)
     if "model" in state_dict:
         state_dict = state_dict["model"]
     last_model_params = state_dict["_extra_state"]["model_params"]

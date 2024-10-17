@@ -34,7 +34,7 @@ class Tester:
         - config: The Dict-like configuration with training options.
         """
         # Model
-        state_dict = torch.load(model_ckpt, map_location=DEVICE)
+        state_dict = torch.load(model_ckpt, map_location=DEVICE, weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_params = state_dict["_extra_state"]["model_params"]
