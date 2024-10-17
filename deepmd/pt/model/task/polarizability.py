@@ -138,7 +138,6 @@ class PolarFittingNet(GeneralFitting):
             type_map=type_map,
             **kwargs,
         )
-        self.old_impl = False  # this only supports the new implementation.
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -195,7 +194,6 @@ class PolarFittingNet(GeneralFitting):
         data["type"] = "polar"
         data["@version"] = 3
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = to_numpy_array(self.scale)

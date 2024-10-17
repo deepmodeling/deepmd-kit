@@ -113,7 +113,6 @@ class DipoleFittingNet(GeneralFitting):
             type_map=type_map,
             **kwargs,
         )
-        self.old_impl = False  # this only supports the new implementation.
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -123,7 +122,6 @@ class DipoleFittingNet(GeneralFitting):
         data = super().serialize()
         data["type"] = "dipole"
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["r_differentiable"] = self.r_differentiable
         data["c_differentiable"] = self.c_differentiable
         return data

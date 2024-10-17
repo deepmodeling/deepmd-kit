@@ -71,7 +71,6 @@ class DescrptSeAttenV2(DescrptDPA1):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ) -> None:
         r"""Construct smooth version of embedding net of type `se_atten_v2`.
 
@@ -191,7 +190,6 @@ class DescrptSeAttenV2(DescrptDPA1):
             # not implemented
             spin=spin,
             type=type,
-            old_impl=old_impl,
         )
 
     def serialize(self) -> dict:
