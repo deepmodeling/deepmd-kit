@@ -92,7 +92,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-        old_impl: bool = False,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
@@ -235,7 +234,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             g1_out_conv=self.repformer_args.g1_out_conv,
             g1_out_mlp=self.repformer_args.g1_out_mlp,
             seed=child_seed(seed, 1),
-            old_impl=old_impl,
         )
         self.rcsl_list = [
             (self.repformers.get_rcut(), self.repformers.get_nsel()),

@@ -62,6 +62,19 @@ class DPAtomicModel(BaseAtomicModel):
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
         super().init_out_stat()
+        self.enable_eval_descriptor_hook = False
+        self.eval_descriptor_list = []
+
+    eval_descriptor_list: list[torch.Tensor]
+
+    def set_eval_descriptor_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
+        self.enable_eval_descriptor_hook = enable
+        self.eval_descriptor_list = []
+
+    def eval_descriptor(self) -> torch.Tensor:
+        """Evaluate the descriptor."""
+        return torch.concat(self.eval_descriptor_list)
 
     @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
@@ -192,6 +205,8 @@ class DPAtomicModel(BaseAtomicModel):
             comm_dict=comm_dict,
         )
         assert descriptor is not None
+        if self.enable_eval_descriptor_hook:
+            self.eval_descriptor_list.append(descriptor)
         # energy, force
         fit_ret = self.fitting_net(
             descriptor,
