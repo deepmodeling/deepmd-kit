@@ -200,7 +200,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             out_shape2 = np.prod(out_shape[2:])
             ret_dict[kk] = (
                 ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
-                * atom_mask[:, :, None]
+                * atom_mask[:, :, None].astype(ret_dict[kk].dtype)
             ).reshape(out_shape)
         ret_dict["mask"] = atom_mask
 

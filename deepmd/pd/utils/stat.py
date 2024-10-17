@@ -5,8 +5,6 @@ from collections import (
 )
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -52,9 +50,6 @@ def make_stat_input(datasets, dataloaders, nbatches):
     for i in range(len(datasets)):
         sys_stat = {}
 
-        # device = paddle.get_device()
-        # paddle.set_device("cpu")
-        # with paddle.device("cpu"):
         iterator = iter(dataloaders[i])
         numb_batches = min(nbatches, len(dataloaders[i]))
         for _ in range(numb_batches):
@@ -74,7 +69,6 @@ def make_stat_input(datasets, dataloaders, nbatches):
                     sys_stat[dd] = stat_data[dd]
                 else:
                     pass
-        # paddle.set_device(device)
 
         for key in sys_stat:
             if isinstance(sys_stat[key], np.float32):
@@ -90,7 +84,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 def _restore_from_file(
     stat_file_path: DPPath,
-    keys: List[str] = ["energy"],
+    keys: list[str] = ["energy"],
 ) -> Optional[dict]:
     if stat_file_path is None:
         return None, None
@@ -148,8 +142,8 @@ def _post_process_stat(
 
 
 def _compute_model_predict(
-    sampled: Union[Callable[[], List[dict]], List[dict]],
-    keys: List[str],
+    sampled: Union[Callable[[], list[dict]], list[dict]],
+    keys: list[str],
     model_forward: Callable[..., paddle.Tensor],
 ):
     auto_batch_size = AutoBatchSize()
@@ -188,7 +182,7 @@ def _compute_model_predict(
 
 def _make_preset_out_bias(
     ntypes: int,
-    ibias: List[Optional[np.array]],
+    ibias: list[Optional[np.array]],
 ) -> Optional[np.array]:
     """Make preset out bias.
 
@@ -238,12 +232,12 @@ def _fill_stat_with_global(
 
 
 def compute_output_stats(
-    merged: Union[Callable[[], List[dict]], List[dict]],
+    merged: Union[Callable[[], list[dict]], list[dict]],
     ntypes: int,
-    keys: Union[str, List[str]] = ["energy"],
+    keys: Union[str, list[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[paddle.Tensor]]]] = None,
+    preset_bias: Optional[dict[str, list[Optional[paddle.Tensor]]]] = None,
     model_forward: Optional[Callable[..., paddle.Tensor]] = None,
 ):
     """
@@ -398,12 +392,12 @@ def compute_output_stats(
 
 
 def compute_output_stats_global(
-    sampled: List[dict],
+    sampled: list[dict],
     ntypes: int,
-    keys: List[str],
+    keys: list[str],
     rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[paddle.Tensor]]]] = None,
-    model_pred: Optional[Dict[str, np.ndarray]] = None,
+    preset_bias: Optional[dict[str, list[Optional[paddle.Tensor]]]] = None,
+    model_pred: Optional[dict[str, np.ndarray]] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
@@ -518,10 +512,10 @@ def compute_output_stats_global(
 
 
 def compute_output_stats_atomic(
-    sampled: List[dict],
+    sampled: list[dict],
     ntypes: int,
-    keys: List[str],
-    model_pred: Optional[Dict[str, np.ndarray]] = None,
+    keys: list[str],
+    model_pred: Optional[dict[str, np.ndarray]] = None,
 ):
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {

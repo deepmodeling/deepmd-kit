@@ -672,7 +672,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         dmatrix = dmatrix.reshape(nf * nloc, nnei, 4)
         # nfnl x nnei x 4
         rr = dmatrix
-        rr = rr * exclude_mask[:, :, None]
+        rr = rr * exclude_mask[:, :, None].astype(rr.dtype)
         # nfnl x nt_i x 3
         rr_i = rr[:, :, 1:]
         # nfnl x nt_j x 3

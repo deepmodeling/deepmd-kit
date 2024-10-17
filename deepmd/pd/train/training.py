@@ -188,7 +188,6 @@ class Trainer:
                     collate_fn=lambda batch: batch[0],  # prevent extra conversion
                     # pin_memory=True,
                 )
-                # with paddle.device("cpu"):
                 _data_buffered = BufferedIterator(iter(_dataloader))
                 return _dataloader, _data_buffered
 
@@ -709,7 +708,6 @@ class Trainer:
                     if not paddle.isfinite(grad_norm).all():
                         # check local gradnorm single GPU case, trigger NanDetector
                         raise FloatingPointError("gradients are Nan/Inf")
-                # with paddle.device("cpu"):
                 self.optimizer.step()
                 self.scheduler.step()
             elif self.opt_type == "LKF":
@@ -1016,11 +1014,12 @@ class Trainer:
                     )
 
             if JIT:
-                pdparams_model_path = "frozen_model.pdparams"  # We use .pdparams to denote the frozen model
-                self.model.save(pdparams_model_path)
-                log.info(
-                    f"Frozen model for inferencing has been saved to {pdparams_model_path}"
-                )
+                raise NotImplementedError("JIT training is not supported yet.")
+                # frozen_model_prefix = "frozen_model"  # We use .json and .pdiparams to denote the frozen model
+                # self.model.save(frozen_model_prefix)
+                # log.info(
+                #     f"Frozen model for inferencing has been saved to {frozen_model_prefix}"
+                # )
             log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
         if fout:
@@ -1065,7 +1064,6 @@ class Trainer:
                     batch_data = next(iter(self.training_data))
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
-                    # with paddle.device("cpu"):
                     self.training_data = BufferedIterator(
                         iter(self.training_dataloader)
                     )

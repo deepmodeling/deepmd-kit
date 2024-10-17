@@ -335,6 +335,5 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     log.debug("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iteraters
     len_sampler = training_data.total_batch * max(env.NUM_WORKERS, 1)
-    # with paddle.device("cpu"):
     sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
     return sampler

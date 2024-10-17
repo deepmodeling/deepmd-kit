@@ -125,9 +125,9 @@ class SpinModel(paddle.nn.Layer):
         shape2 = 1
         for ss in out_real.shape[2:]:
             shape2 *= ss
-        out_mag = (out_mag.reshape([nframes, nloc, shape2]) * atomic_mask).reshape(
-            out_mag.shape
-        )
+        out_mag = (
+            out_mag.reshape([nframes, nloc, shape2]) * atomic_mask.astype(out_mag.dtype)
+        ).reshape(out_mag.shape)
         return out_real, out_mag, atomic_mask > 0.0
 
     def process_spin_output_lower(
