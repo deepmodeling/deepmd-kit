@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -45,7 +44,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, List[int]]] = None,
+    seed: Optional[Union[int, list[int]]] = None,
 ) -> paddle.Tensor:
     r"""
     Get residual tensor for one update vector.
@@ -163,7 +162,7 @@ class Atten2Map(paddle.nn.Layer):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -288,7 +287,7 @@ class Atten2MultiHeadApply(paddle.nn.Layer):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -375,7 +374,7 @@ class Atten2EquiVarApply(paddle.nn.Layer):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -448,7 +447,7 @@ class LocalAtten(paddle.nn.Layer):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -609,7 +608,7 @@ class RepformerLayer(paddle.nn.Layer):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1070,10 +1069,10 @@ class RepformerLayer(paddle.nn.Layer):
         assert [nb, nloc] == g1.shape[:2]
         assert [nb, nloc, nnei] == h2.shape[:3]
 
-        g2_update: List[paddle.Tensor] = [g2]
-        h2_update: List[paddle.Tensor] = [h2]
-        g1_update: List[paddle.Tensor] = [g1]
-        g1_mlp: List[paddle.Tensor] = [g1]
+        g2_update: list[paddle.Tensor] = [g2]
+        h2_update: list[paddle.Tensor] = [h2]
+        g1_update: list[paddle.Tensor] = [g1]
+        g1_mlp: list[paddle.Tensor] = [g1]
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -1163,10 +1162,9 @@ class RepformerLayer(paddle.nn.Layer):
         g1_new = self.list_update(g1_update, "g1")
         return g1_new, g2_new, h2_new
 
-    # @paddle.jit.export
     def list_update_res_avg(
         self,
-        update_list: List[paddle.Tensor],
+        update_list: list[paddle.Tensor],
     ) -> paddle.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1174,8 +1172,7 @@ class RepformerLayer(paddle.nn.Layer):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    # @paddle.jit.export
-    def list_update_res_incr(self, update_list: List[paddle.Tensor]) -> paddle.Tensor:
+    def list_update_res_incr(self, update_list: list[paddle.Tensor]) -> paddle.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1183,9 +1180,8 @@ class RepformerLayer(paddle.nn.Layer):
             uu = uu + scale * update_list[ii]
         return uu
 
-    # @paddle.jit.export
     def list_update_res_residual(
-        self, update_list: List[paddle.Tensor], update_name: str = "g1"
+        self, update_list: list[paddle.Tensor], update_name: str = "g1"
     ) -> paddle.Tensor:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1203,9 +1199,8 @@ class RepformerLayer(paddle.nn.Layer):
             raise NotImplementedError
         return uu
 
-    # @paddle.jit.export
     def list_update(
-        self, update_list: List[paddle.Tensor], update_name: str = "g1"
+        self, update_list: list[paddle.Tensor], update_name: str = "g1"
     ) -> paddle.Tensor:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)

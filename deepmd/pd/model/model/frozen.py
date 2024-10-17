@@ -35,37 +35,30 @@ class FrozenModel(BaseModel):
         else:
             raise NotImplementedError("Only support .json file")
 
-    # @paddle.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of developer implemented atomic models."""
         return self.model.fitting_output_def()
 
-    # @paddle.jit.export
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.model.get_rcut()
 
-    # @paddle.jit.export
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.model.get_type_map()
 
-    # @paddle.jit.export
     def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.model.get_sel()
 
-    # @paddle.jit.export
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.model.get_dim_fparam()
 
-    # @paddle.jit.export
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.model.get_dim_aparam()
 
-    # @paddle.jit.export
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
@@ -75,7 +68,6 @@ class FrozenModel(BaseModel):
         """
         return self.model.get_sel_type()
 
-    # @paddle.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
@@ -83,7 +75,6 @@ class FrozenModel(BaseModel):
         """
         return self.model.is_aparam_nall()
 
-    # @paddle.jit.export
     def mixed_types(self) -> bool:
         """If true, the model
         1. assumes total number of atoms aligned across frames;
@@ -96,7 +87,6 @@ class FrozenModel(BaseModel):
         """
         return self.model.mixed_types()
 
-    # @paddle.jit.export
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
         return self.model.has_message_passing()
@@ -105,7 +95,6 @@ class FrozenModel(BaseModel):
         """Returns whether the model needs sorted nlist when using `forward_lower`."""
         return self.model.need_sorted_nlist_for_lower()
 
-    # @paddle.jit.export
     def forward(
         self,
         coord,
@@ -124,7 +113,6 @@ class FrozenModel(BaseModel):
             do_atomic_virial=do_atomic_virial,
         )
 
-    # @paddle.jit.export
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         # try to use the original script instead of "frozen model"
@@ -133,7 +121,6 @@ class FrozenModel(BaseModel):
         # be a problem
         return self.model.get_model_def_script()
 
-    # @paddle.jit.export
     def get_min_nbor_dist(self) -> Optional[float]:
         """Get the minimum neighbor distance."""
         return self.model.get_min_nbor_dist()
@@ -153,12 +140,10 @@ class FrozenModel(BaseModel):
     def deserialize(cls, data: dict):
         raise RuntimeError("Should not touch here.")
 
-    # @paddle.jit.export
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         return self.model.get_nnei()
 
-    # @paddle.jit.export
     def get_nsel(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         return self.model.get_nsel()
@@ -190,7 +175,6 @@ class FrozenModel(BaseModel):
         """
         return local_jdata, None
 
-    # @paddle.jit.export
     def model_output_type(self) -> str:
         """Get the output type for the model."""
         return self.model.model_output_type()

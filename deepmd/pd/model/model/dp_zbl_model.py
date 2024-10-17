@@ -3,10 +3,7 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import paddle
@@ -68,7 +65,7 @@ class DPZBLModel(DPZBLModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -93,7 +90,6 @@ class DPZBLModel(DPZBLModel_):
             model_predict["mask"] = model_ret["mask"]
         return model_predict
 
-    # @paddle.jit.export
     def forward_lower(
         self,
         extended_coord,
@@ -135,9 +131,9 @@ class DPZBLModel(DPZBLModel_):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

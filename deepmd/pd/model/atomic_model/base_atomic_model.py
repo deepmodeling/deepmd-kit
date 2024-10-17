@@ -4,10 +4,7 @@ import copy
 import logging
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -76,11 +73,11 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def __init__(
         self,
-        type_map: List[str],
-        atom_exclude_types: List[int] = [],
-        pair_exclude_types: List[Tuple[int, int]] = [],
+        type_map: list[str],
+        atom_exclude_types: list[int] = [],
+        pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[Dict[str, paddle.Tensor]] = None,
+        preset_out_bias: Optional[dict[str, paddle.Tensor]] = None,
     ):
         paddle.nn.Layer.__init__(self)
         BaseAtomicModel_.__init__(self)
@@ -93,7 +90,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
     def init_out_stat(self):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
-        self.bias_keys: List[str] = list(self.fitting_output_def().keys())
+        self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -122,14 +119,13 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         else:
             raise KeyError(key)
 
-    # @paddle.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def reinit_atom_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
@@ -139,7 +135,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def reinit_pair_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
@@ -194,8 +190,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
-    ) -> Dict[str, paddle.Tensor]:
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+    ) -> dict[str, paddle.Tensor]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -277,8 +273,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
-    ) -> Dict[str, paddle.Tensor]:
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+    ) -> dict[str, paddle.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
             extended_atype,
@@ -290,7 +286,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         )
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -355,7 +351,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -378,7 +374,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -405,7 +401,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, paddle.Tensor],
+        ret: dict[str, paddle.Tensor],
         atype: paddle.Tensor,
     ):
         """Apply the stat to each atomic output.
@@ -521,7 +517,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def _varsize(
         self,
-        shape: List[int],
+        shape: list[int],
     ) -> int:
         output_size = 1
         len_shape = len(shape)
@@ -533,7 +529,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self,
         kk: str,
     ) -> int:
-        res: List[int] = []
+        res: list[int] = []
         for i, e in enumerate(self.bias_keys):
             if e == kk:
                 res.append(i)
@@ -542,8 +538,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def _store_out_stat(
         self,
-        out_bias: Dict[str, paddle.Tensor],
-        out_std: Dict[str, paddle.Tensor],
+        out_bias: dict[str, paddle.Tensor],
+        out_std: dict[str, paddle.Tensor],
         add: bool = False,
     ):
         ntypes = self.get_ntypes()
@@ -563,8 +559,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
     def _fetch_out_stat(
         self,
-        keys: List[str],
-    ) -> Tuple[Dict[str, paddle.Tensor], Dict[str, paddle.Tensor]]:
+        keys: list[str],
+    ) -> tuple[dict[str, paddle.Tensor], dict[str, paddle.Tensor]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

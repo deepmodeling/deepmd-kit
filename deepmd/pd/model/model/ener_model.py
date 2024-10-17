@@ -3,7 +3,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
     Optional,
 )
 
@@ -64,7 +63,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -94,7 +93,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["updated_coord"] += coord
         return model_predict
 
-    # @paddle.jit.export
     def forward_lower(
         self,
         extended_coord,
@@ -104,7 +102,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,

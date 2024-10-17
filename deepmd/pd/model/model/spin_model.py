@@ -4,8 +4,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -261,35 +259,29 @@ class SpinModel(paddle.nn.Layer):
             )
         return aparam
 
-    # @paddle.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
         ntypes = len(tmap) // 2  # ignore the virtual type
         return tmap[:ntypes]
 
-    # @paddle.jit.export
     def get_ntypes(self):
         """Returns the number of element types."""
         return len(self.get_type_map())
 
-    # @paddle.jit.export
     def get_rcut(self):
         """Get the cut-off radius."""
         return self.backbone_model.get_rcut()
 
-    # @paddle.jit.export
     def get_dim_fparam(self):
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.backbone_model.get_dim_fparam()
 
-    # @paddle.jit.export
     def get_dim_aparam(self):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.backbone_model.get_dim_aparam()
 
-    # @paddle.jit.export
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
         Only atoms with selected atom types have atomic contribution
         to the result of the model.
@@ -297,29 +289,24 @@ class SpinModel(paddle.nn.Layer):
         """
         return self.backbone_model.get_sel_type()
 
-    # @paddle.jit.export
     def is_aparam_nall(self) -> bool:
         """Check whether the shape of atomic parameters is (nframes, nall, ndim).
         If False, the shape is (nframes, nloc, ndim).
         """
         return self.backbone_model.is_aparam_nall()
 
-    # @paddle.jit.export
-    def model_output_type(self) -> List[str]:
+    def model_output_type(self) -> list[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
-    # @paddle.jit.export
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         return self.backbone_model.get_model_def_script()
 
-    # @paddle.jit.export
     def get_min_nbor_dist(self) -> Optional[float]:
         """Get the minimum neighbor distance."""
         return self.backbone_model.get_min_nbor_dist()
 
-    # @paddle.jit.export
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         # for C++ interface
@@ -328,7 +315,6 @@ class SpinModel(paddle.nn.Layer):
         else:
             return self.backbone_model.get_nnei()
 
-    # @paddle.jit.export
     def get_nsel(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
         if not self.backbone_model.mixed_types():
@@ -336,12 +322,10 @@ class SpinModel(paddle.nn.Layer):
         else:
             return self.backbone_model.get_nsel()
 
-    # @paddle.jit.export
     def has_spin(self) -> bool:
         """Returns whether it has spin input and output."""
         return True
 
-    # @paddle.jit.export
     def has_message_passing(self) -> bool:
         """Returns whether the model has message passing."""
         return self.backbone_model.has_message_passing()
@@ -428,7 +412,7 @@ class SpinModel(paddle.nn.Layer):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         nframes, nloc = atype.shape
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
         if aparam is not None:
@@ -582,7 +566,7 @@ class SpinEnergyModel(SpinModel):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -602,7 +586,6 @@ class SpinEnergyModel(SpinModel):
         # not support virial by far
         return model_predict
 
-    # @paddle.jit.export
     def forward_lower(
         self,
         extended_coord,

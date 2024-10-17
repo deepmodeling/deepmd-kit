@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
 )
 
 import paddle
@@ -46,7 +42,7 @@ from deepmd.utils.path import (
 )
 
 
-def make_model(T_AtomicModel: Type[BaseAtomicModel]):
+def make_model(T_AtomicModel: type[BaseAtomicModel]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -91,14 +87,13 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
-        # @paddle.jit.export
-        def model_output_type(self) -> List[str]:
+        def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
             # jit: Comprehension ifs are not supported yet
             # type hint is critical for JIT
-            vars: List[str] = []
+            vars: list[str] = []
             for kk, vv in var_defs.items():
                 # .value is critical for JIT
                 if vv.category == OutputVariableCategory.OUT.value:
@@ -114,7 +109,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, paddle.Tensor]:
+        ) -> dict[str, paddle.Tensor]:
             """Return model prediction.
 
             Parameters
@@ -217,7 +212,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
+            comm_dict: Optional[dict[str, paddle.Tensor]] = None,
             extra_nlist_sort: bool = False,
         ):
             """Return model prediction. Lower interface that takes
@@ -286,7 +281,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             box: Optional[paddle.Tensor] = None,
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
-        ) -> Tuple[
+        ) -> tuple[
             paddle.Tensor,
             Optional[paddle.Tensor],
             Optional[paddle.Tensor],
@@ -305,7 +300,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             #           " does not match"
             #           f" that of the coordinate {input_prec}"
             #         )
-            _lst: List[Optional[paddle.Tensor]] = [
+            _lst: list[Optional[paddle.Tensor]] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -327,9 +322,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         def output_type_cast(
             self,
-            model_ret: Dict[str, paddle.Tensor],
+            model_ret: dict[str, paddle.Tensor],
             input_prec: str,
-        ) -> Dict[str, paddle.Tensor]:
+        ) -> dict[str, paddle.Tensor]:
             """Convert the model output to the input prec."""
             do_cast = (
                 input_prec
@@ -475,7 +470,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -494,18 +489,15 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
         def deserialize(cls, data) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        # @paddle.jit.export
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
             return self.atomic_model.get_dim_fparam()
 
-        # @paddle.jit.export
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
-        # @paddle.jit.export
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -514,7 +506,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.get_sel_type()
 
-        # @paddle.jit.export
         def is_aparam_nall(self) -> bool:
             """Check whether the shape of atomic parameters is (nframes, nall, ndim).
 
@@ -522,22 +513,18 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.is_aparam_nall()
 
-        # @paddle.jit.export
         def get_rcut(self) -> float:
             """Get the cut-off radius."""
             return self.atomic_model.get_rcut()
 
-        # @paddle.jit.export
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
-        # @paddle.jit.export
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nsel()
 
-        # @paddle.jit.export
         def get_nnei(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
@@ -554,7 +541,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
 
@@ -570,7 +557,6 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """
             return self.atomic_model.mixed_types()
 
-        # @paddle.jit.export
         def has_message_passing(self) -> bool:
             """Returns whether the model has message passing."""
             return self.atomic_model.has_message_passing()
@@ -587,7 +573,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, paddle.Tensor]:
+        ) -> dict[str, paddle.Tensor]:
             # directly call the forward_common method when no specific transform rule
             return self.forward_common(
                 coord,

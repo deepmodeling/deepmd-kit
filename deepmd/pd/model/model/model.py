@@ -42,17 +42,14 @@ class BaseModel(paddle.nn.Layer, make_base_model()):
         """
         raise NotImplementedError
 
-    # @paddle.jit.export
     def get_model_def_script(self) -> str:
         """Get the model definition script."""
         return self.model_def_script
 
-    # @paddle.jit.export
     def get_min_nbor_dist(self) -> Optional[float]:
         """Get the minimum distance between two atoms."""
         return self.min_nbor_dist
 
-    # @paddle.jit.export
     def get_ntypes(self):
         """Returns the number of element types."""
         return len(self.get_type_map())

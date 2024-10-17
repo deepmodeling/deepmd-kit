@@ -3,7 +3,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
     Optional,
 )
 
@@ -56,7 +55,7 @@ class DOSModel(DPModelCommon, DPDOSModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -77,12 +76,10 @@ class DOSModel(DPModelCommon, DPDOSModel_):
             model_predict["updated_coord"] += coord
         return model_predict
 
-    # @paddle.jit.export
     def get_numb_dos(self) -> int:
         """Get the number of  DOS for DOSFittingNet."""
         return self.get_fitting_net().dim_out
 
-    # @paddle.jit.export
     def forward_lower(
         self,
         extended_coord,

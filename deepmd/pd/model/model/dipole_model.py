@@ -3,7 +3,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
     Optional,
 )
 
@@ -64,7 +63,7 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, paddle.Tensor]:
+    ) -> dict[str, paddle.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -92,7 +91,6 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
             model_predict["updated_coord"] += coord
         return model_predict
 
-    # @paddle.jit.export
     def forward_lower(
         self,
         extended_coord,
