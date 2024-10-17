@@ -654,7 +654,9 @@ class DeepmdData:
                         data = data[:, idx_map_hess, :]
                         data = data[:, :, idx_map_hess]
                         data = data.reshape([nframes, -1])
-                        ndof = 3 * ndof * 3 * ndof  # size of hessian is 3Natoms * 3Natoms
+                        ndof = (
+                            3 * ndof * 3 * ndof
+                        )  # size of hessian is 3Natoms * 3Natoms
                     else:
                         data = data.reshape([nframes, natoms, -1])
                         data = data[:, idx_map, :]

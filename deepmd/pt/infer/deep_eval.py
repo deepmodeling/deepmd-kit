@@ -600,6 +600,7 @@ class DeepEval(DeepEvalBackend):
         """Get model defination script."""
         return self.model_def_script
 
+
 # For tests only
 def eval_model(
     model,

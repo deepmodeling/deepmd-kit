@@ -63,7 +63,7 @@ class TestDeepPot(unittest.TestCase):
 
     def test_1frame(self):
         for ii, result in enumerate(self.case.results):
-            ee, ff, vv = self.dp.eval(
+            results_tmp = self.dp.eval(
                 result.coord,
                 result.box,
                 result.atype,
@@ -71,6 +71,11 @@ class TestDeepPot(unittest.TestCase):
                 fparam=result.fparam,
                 aparam=result.aparam,
             )
+            if len(results_tmp) == 3:
+                ee, ff, vv = results_tmp
+            else:
+                ee, ff, vv = results_tmp[:-1]  # results_tmp[-1] is hessian
+            del results_tmp
             # check shape of the returns
             nframes = 1
             natoms = len(result.atype)
@@ -101,7 +106,7 @@ class TestDeepPot(unittest.TestCase):
 
     def test_1frame_atm(self):
         for ii, result in enumerate(self.case.results):
-            ee, ff, vv, ae, av = self.dp.eval(
+            results_tmp = self.dp.eval(
                 result.coord,
                 result.box,
                 result.atype,
@@ -109,6 +114,11 @@ class TestDeepPot(unittest.TestCase):
                 fparam=result.fparam,
                 aparam=result.aparam,
             )
+            if len(results_tmp) == 5:
+                ee, ff, vv, ae, av = results_tmp
+            else:
+                ee, ff, vv, ae, av = results_tmp[:-1]  # results_tmp[-1] is hessian
+            del results_tmp
             # check shape of the returns
             nframes = 1
             natoms = len(result.atype)
@@ -169,7 +179,7 @@ class TestDeepPot(unittest.TestCase):
                 box2 = np.concatenate((result.box, result.box))
             else:
                 box2 = None
-            ee, ff, vv, ae, av = self.dp.eval(
+            results_tmp = self.dp.eval(
                 coords2,
                 box2,
                 result.atype,
@@ -177,6 +187,11 @@ class TestDeepPot(unittest.TestCase):
                 fparam=result.fparam,
                 aparam=result.aparam,
             )
+            if len(results_tmp) == 5:
+                ee, ff, vv, ae, av = results_tmp
+            else:
+                ee, ff, vv, ae, av = results_tmp[:-1]  # results_tmp[-1] is hessian
+            del results_tmp
             # check shape of the returns
             nframes = 2
             natoms = len(result.atype)
@@ -223,7 +238,7 @@ class TestDeepPot(unittest.TestCase):
                 self.skipTest("Segfault in GPUs")
         nframes = 1
         for box in [np.eye(3, dtype=np.float64).reshape(1, 3, 3), None]:
-            ee, ff, vv = self.dp.eval(
+            results_tmp = self.dp.eval(
                 np.zeros([nframes, 0, 3], dtype=np.float64),
                 box,
                 np.zeros([0], dtype=int),
@@ -235,6 +250,11 @@ class TestDeepPot(unittest.TestCase):
                 if self.case.dim_aparam
                 else None,
             )
+            if len(results_tmp) == 3:
+                ee, ff, vv = results_tmp
+            else:
+                ee, ff, vv = results_tmp[:-1]  # results_tmp[-1] is hessian
+            del results_tmp
             # check shape of the returns
             natoms = 0
             self.assertEqual(ee.shape, (nframes, 1))

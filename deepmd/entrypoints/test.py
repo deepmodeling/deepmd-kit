@@ -304,7 +304,9 @@ def test_ener(
     if dp.has_spin:
         data.add("spin", 3, atomic=True, must=True, high_prec=False)
         data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
-    if dp.deep_eval.input_param.get("hessian_mode"):
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
         data.add("hessian", 1, atomic=True, must=True, high_prec=False)
 
     test_data = data.get_test()
@@ -355,7 +357,9 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
-    if dp.deep_eval.input_param.get("hessian_mode"):
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
         hessian = ret[-1]
         hessian = hessian.reshape([numb_test, -1])
     if has_atom_ener:
@@ -421,7 +425,9 @@ def test_ener(
     rmse_ea = rmse_e / natoms
     mae_va = mae_v / natoms
     rmse_va = rmse_v / natoms
-    if dp.deep_eval.input_param.get("hessian_mode"):
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
         diff_h = hessian - test_data["hessian"][:numb_test]
         mae_h = mae(diff_h)
         rmse_h = rmse(diff_h)
@@ -457,7 +463,9 @@ def test_ener(
     if has_atom_ener:
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
-    if dp.deep_eval.input_param.get("hessian_mode"):
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
         log.info(f"Hessian MAE        : {mae_h:e} eV/A^2")
         log.info(f"Hessian RMSE       : {rmse_h:e} eV/A^2")
 
@@ -543,19 +551,27 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
-        if dp.deep_eval.input_param.get("hessian_mode"):
-            _n_frames_, _n_hessian_ = test_data['hessian'][:numb_test].shape
+        if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+            "hessian_mode"
+        ):
+            _n_frames_, _n_hessian_ = test_data["hessian"][:numb_test].shape
             _n_atoms_ = np.int32(np.sqrt(_n_hessian_) / 3)  # n_hessian = 3na*3na
-            triu_indices = np.triu_indices(_n_atoms_ * 3)  # upper triangle hessian indices
-            data_h_triu = test_data["hessian"][:numb_test][:, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]].reshape(-1, 1)
-            pred_h_triu = hessian[:, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]].reshape(-1, 1)
+            triu_indices = np.triu_indices(
+                _n_atoms_ * 3
+            )  # upper triangle hessian indices
+            data_h_triu = test_data["hessian"][:numb_test][
+                :, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]
+            ].reshape(-1, 1)
+            pred_h_triu = hessian[
+                :, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]
+            ].reshape(-1, 1)
             h = np.concatenate(
                 (
-                data_h_triu,
-                pred_h_triu,
-            ),
-            axis=1,
-        )
+                    data_h_triu,
+                    pred_h_triu,
+                ),
+                axis=1,
+            )
             save_txt_file(
                 detail_path.with_suffix(".h.out"),
                 h,
@@ -590,7 +606,9 @@ def test_ener(
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
         }
-    if dp.deep_eval.input_param.get("hessian_mode"):
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
         dict_to_return["mae_h"] = (mae_h, hessian.size)
         dict_to_return["rmse_h"] = (rmse_h, hessian.size)
     return dict_to_return

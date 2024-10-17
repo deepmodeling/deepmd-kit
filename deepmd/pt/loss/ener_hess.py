@@ -324,13 +324,17 @@ class EnergyHessianStdLoss(TaskLoss):
         if self.has_h and "hessian" in model_pred and "hessian" in label:
             find_hessian = label.get("find_hessian", 0.0)
             pref_h = pref_h * find_hessian
-            diff_h = label["hessian"].reshape(-1,) - model_pred["hessian"].reshape(-1,)  # tbd
+            diff_h = label["hessian"].reshape(
+                -1,
+            ) - model_pred["hessian"].reshape(
+                -1,
+            )  # tbd
             l2_hessian_loss = torch.mean(torch.square(diff_h))
             if not self.inference:
                 more_loss["l2_hessian_loss"] = self.display_if_exist(
                     l2_hessian_loss.detach(), find_hessian
                 )
-            loss += (pref_h * l2_hessian_loss)  # tbd
+            loss += pref_h * l2_hessian_loss  # tbd
             rmse_h = l2_hessian_loss.sqrt()  # tbd
             more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
             if mae:

@@ -2211,6 +2211,7 @@ def loss_ener():
         ),
     ]
 
+
 @loss_args_plugin.register("ener_hess")
 def loss_ener_hess():  # loss of fitting EnergyHessianModel
     doc_start_pref_e = start_pref("energy", abbr="e")
@@ -2347,6 +2348,7 @@ def loss_ener_hess():  # loss of fitting EnergyHessianModel
             doc=doc_numb_generalized_coord,
         ),
     ]
+
 
 @loss_args_plugin.register("ener_spin")
 def loss_ener_spin():
@@ -3046,6 +3048,16 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
             training_args(multi_task=multi_task),
             nvnmd_args(),
         ]
+
+
+def gen_args_multi_task() -> Argument:
+    """Generate multi-task arguments."""
+    return Argument(
+        "multi-task",
+        dict,
+        sub_fields=gen_args(multi_task=True),
+        doc="Multi-task arguments.",
+    )
 
 
 def gen_json_schema() -> str:

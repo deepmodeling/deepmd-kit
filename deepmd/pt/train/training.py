@@ -278,7 +278,10 @@ class Trainer:
         if not self.multi_task:
             loss_param_tmp = config["loss"]
         else:
-            loss_param_tmp = {model_key: config["loss_dict"][model_key] for model_key in self.model_keys}
+            loss_param_tmp = {
+                model_key: config["loss_dict"][model_key]
+                for model_key in self.model_keys
+            }
 
         # Model
         dp_random.seed(training_params["seed"])
@@ -1281,8 +1284,8 @@ def get_single_model(
 
 
 def get_model_for_wrapper(
-        _model_params,
-        _loss_params=None,
+    _model_params,
+    _loss_params=None,
 ):
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):

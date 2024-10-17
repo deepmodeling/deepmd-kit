@@ -34,9 +34,9 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):
     model_type = "ener_hess"
 
     def __init__(
-            self,
-            *args,
-            **kwargs,
+        self,
+        *args,
+        **kwargs,
     ):
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)
@@ -61,13 +61,13 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):
         return output_def
 
     def forward(
-            self,
-            coord,
-            atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-            do_atomic_virial: bool = False,
+        self,
+        coord,
+        atype,
+        box: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+        do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         self.requires_hessian("energy")
         model_ret = self.forward_common(
@@ -103,15 +103,15 @@ class EnergyHessianModel(DPModelCommon, DPEnergyModel_):
 
     @torch.jit.export
     def forward_lower(
-            self,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-            do_atomic_virial: bool = False,
-            comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        self,
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping: Optional[torch.Tensor] = None,
+        fparam: Optional[torch.Tensor] = None,
+        aparam: Optional[torch.Tensor] = None,
+        do_atomic_virial: bool = False,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,

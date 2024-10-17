@@ -23,6 +23,7 @@ from .deep_eval import (
 class DeepPot(DeepEval):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
     """Potential energy model.
 
     Parameters
@@ -214,7 +215,6 @@ class DeepPot(DeepEval):
         force = results["energy_derv_r"].reshape(nframes, natoms, 3)
         virial = results["energy_derv_c_redu"].reshape(nframes, 9)
 
-
         if atomic:
             if self.get_ntypes_spin() > 0:
                 ntypes_real = self.get_ntypes() - self.get_ntypes_spin()
@@ -246,8 +246,10 @@ class DeepPot(DeepEval):
             mask_mag = results["mask_mag"].reshape(nframes, natoms, 1)
             result = (*list(result), force_mag, mask_mag)
         if "energy_derv_r_derv_r" in list(results.keys()):
-            hessian = results["energy_derv_r_derv_r"].reshape(nframes, 3 * natoms, 3 * natoms)
-            result += (hessian, )
+            hessian = results["energy_derv_r_derv_r"].reshape(
+                nframes, 3 * natoms, 3 * natoms
+            )
+            result += (hessian,)
         return result
 
 

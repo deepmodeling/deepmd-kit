@@ -27,6 +27,7 @@ from .test_env_mat import (
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
+
 class TestEnergyHessianModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
     def setUp(self):
         TestCaseSingleFrameWithoutNlist.setUp(self)
