@@ -6,7 +6,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    List,
     Optional,
 )
 
@@ -32,7 +31,7 @@ class CheckSymmetry(DeepmdData):
     def __init__(
         self,
         sys_path: str,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
     ):
         super().__init__(sys_path=sys_path, type_map=type_map)
         self.add("energy", 1, atomic=False, must=False, high_prec=True)

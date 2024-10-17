@@ -5,8 +5,6 @@ from collections import (
 )
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -89,7 +87,7 @@ def make_stat_input(datasets, dataloaders, nbatches):
 
 def _restore_from_file(
     stat_file_path: DPPath,
-    keys: List[str] = ["energy"],
+    keys: list[str] = ["energy"],
 ) -> Optional[dict]:
     if stat_file_path is None:
         return None, None
@@ -147,8 +145,8 @@ def _post_process_stat(
 
 
 def _compute_model_predict(
-    sampled: Union[Callable[[], List[dict]], List[dict]],
-    keys: List[str],
+    sampled: Union[Callable[[], list[dict]], list[dict]],
+    keys: list[str],
     model_forward: Callable[..., torch.Tensor],
 ):
     auto_batch_size = AutoBatchSize()
@@ -187,7 +185,7 @@ def _compute_model_predict(
 
 def _make_preset_out_bias(
     ntypes: int,
-    ibias: List[Optional[np.ndarray]],
+    ibias: list[Optional[np.ndarray]],
 ) -> Optional[np.ndarray]:
     """Make preset out bias.
 
@@ -237,12 +235,12 @@ def _fill_stat_with_global(
 
 
 def compute_output_stats(
-    merged: Union[Callable[[], List[dict]], List[dict]],
+    merged: Union[Callable[[], list[dict]], list[dict]],
     ntypes: int,
-    keys: Union[str, List[str]] = ["energy"],
+    keys: Union[str, list[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[np.ndarray]]]] = None,
+    preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., torch.Tensor]] = None,
     atomic_output: Optional[FittingOutputDef] = None,
 ):
@@ -251,11 +249,11 @@ def compute_output_stats(
 
     Parameters
     ----------
-    merged : Union[Callable[[], List[dict]], List[dict]]
-        - List[dict]: A list of data samples from various data systems.
+    merged : Union[Callable[[], list[dict]], list[dict]]
+        - list[dict]: A list of data samples from various data systems.
             Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
             originating from the `i`-th data system.
-        - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+        - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
             only when needed. Since the sampling process can be slow and memory-intensive,
             the lazy function helps by only sampling once.
     ntypes : int
@@ -264,7 +262,7 @@ def compute_output_stats(
         The path to the stat file.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_bias : Dict[str, List[Optional[np.ndarray]]], optional
+    preset_bias : dict[str, list[Optional[np.ndarray]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
         The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
@@ -401,12 +399,12 @@ def compute_output_stats(
 
 
 def compute_output_stats_global(
-    sampled: List[dict],
+    sampled: list[dict],
     ntypes: int,
-    keys: List[str],
+    keys: list[str],
     rcond: Optional[float] = None,
-    preset_bias: Optional[Dict[str, List[Optional[np.ndarray]]]] = None,
-    model_pred: Optional[Dict[str, np.ndarray]] = None,
+    preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
+    model_pred: Optional[dict[str, np.ndarray]] = None,
     atomic_output: Optional[FittingOutputDef] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
@@ -478,7 +476,7 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
-            if atomic_output.get_data()[kk].intensive:
+            if atomic_output is not None and atomic_output.get_data()[kk].intensive:
                 task_dim = stats_input[kk].shape[1]
                 assert merged_natoms[kk].shape == (nf[kk], ntypes)
                 stats_input[kk] = (
@@ -526,10 +524,10 @@ def compute_output_stats_global(
 
 
 def compute_output_stats_atomic(
-    sampled: List[dict],
+    sampled: list[dict],
     ntypes: int,
-    keys: List[str],
-    model_pred: Optional[Dict[str, np.ndarray]] = None,
+    keys: list[str],
+    model_pred: Optional[dict[str, np.ndarray]] = None,
 ):
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {

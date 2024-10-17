@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -19,9 +18,6 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.pt.model.network.mlp import (
     FittingNet,
     NetworkCollection,
-)
-from deepmd.pt.model.network.network import (
-    ResidualDeep,
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
@@ -97,7 +93,7 @@ class GeneralFitting(Fitting):
         Embedding width per atom.
     dim_out : int
         The output dimension of the fitting net.
-    neuron : List[int]
+    neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     bias_atom_e : torch.Tensor, optional
         Average enery per atom for each element.
@@ -118,17 +114,17 @@ class GeneralFitting(Fitting):
         The condition number for the regression of atomic energy.
     seed : int, optional
         Random seed.
-    exclude_types: List[int]
+    exclude_types: list[int]
         Atomic contributions of the excluded atom types are set zero.
-    trainable : Union[List[bool], bool]
+    trainable : Union[list[bool], bool]
         If the parameters in the fitting net are trainable.
         Now this only supports setting all the parameters in the fitting net at one state.
-        When in List[bool], the trainable will be True only if all the boolean parameters are True.
-    remove_vaccum_contribution: List[bool], optional
+        When in list[bool], the trainable will be True only if all the boolean parameters are True.
+    remove_vaccum_contribution: list[bool], optional
         Remove vaccum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
         length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
 
@@ -137,7 +133,7 @@ class GeneralFitting(Fitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -146,11 +142,11 @@ class GeneralFitting(Fitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
-        trainable: Union[bool, List[bool]] = True,
-        remove_vaccum_contribution: Optional[List[bool]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
+        trainable: Union[bool, list[bool]] = True,
+        remove_vaccum_contribution: Optional[list[bool]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -212,54 +208,37 @@ class GeneralFitting(Fitting):
 
         in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
 
-        self.old_impl = kwargs.get("old_impl", False)
-        if self.old_impl:
-            filter_layers = []
-            for type_i in range(self.ntypes if not self.mixed_types else 1):
-                bias_type = 0.0
-                one = ResidualDeep(
-                    type_i,
-                    self.dim_descrpt,
+        self.filter_layers = NetworkCollection(
+            1 if not self.mixed_types else 0,
+            self.ntypes,
+            network_type="fitting_network",
+            networks=[
+                FittingNet(
+                    in_dim,
+                    net_dim_out,
                     self.neuron,
-                    bias_type,
-                    resnet_dt=self.resnet_dt,
+                    self.activation_function,
+                    self.resnet_dt,
+                    self.precision,
+                    bias_out=True,
+                    seed=child_seed(self.seed, ii),
                 )
-                filter_layers.append(one)
-            self.filter_layers_old = torch.nn.ModuleList(filter_layers)
-            self.filter_layers = None
-        else:
-            self.filter_layers = NetworkCollection(
-                1 if not self.mixed_types else 0,
-                self.ntypes,
-                network_type="fitting_network",
-                networks=[
-                    FittingNet(
-                        in_dim,
-                        net_dim_out,
-                        self.neuron,
-                        self.activation_function,
-                        self.resnet_dt,
-                        self.precision,
-                        bias_out=True,
-                        seed=child_seed(self.seed, ii),
-                    )
-                    for ii in range(self.ntypes if not self.mixed_types else 1)
-                ],
-            )
-            self.filter_layers_old = None
+                for ii in range(self.ntypes if not self.mixed_types else 1)
+            ],
+        )
         # set trainable
         for param in self.parameters():
             param.requires_grad = self.trainable
 
     def reinit_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -342,9 +321,9 @@ class GeneralFitting(Fitting):
         return self.numb_aparam
 
     # make jit happy
-    exclude_types: List[int]
+    exclude_types: list[int]
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -352,13 +331,13 @@ class GeneralFitting(Fitting):
         If returning an empty list, all atom types are selected.
         """
         # make jit happy
-        sel_type: List[int] = []
+        sel_type: list[int] = []
         for ii in range(self.ntypes):
             if ii not in self.exclude_types:
                 sel_type.append(ii)
         return sel_type
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -489,47 +468,29 @@ class GeneralFitting(Fitting):
             dtype=env.GLOBAL_PT_FLOAT_PRECISION,
             device=descriptor.device,
         )  # jit assertion
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            assert xx_zeros is None
-            if self.mixed_types:
-                atom_property = self.filter_layers_old[0](xx) + self.bias_atom_e[atype]
-                outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-            else:
-                for type_i, filter_layer in enumerate(self.filter_layers_old):
-                    mask = atype == type_i
-                    atom_property = filter_layer(xx)
-                    atom_property = atom_property + self.bias_atom_e[type_i]
-                    atom_property = atom_property * mask.unsqueeze(-1)
-                    outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+        if self.mixed_types:
+            atom_property = self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
+            if xx_zeros is not None:
+                atom_property -= self.filter_layers.networks[0](xx_zeros)
+            outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
         else:
-            if self.mixed_types:
-                atom_property = (
-                    self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
-                )
+            for type_i, ll in enumerate(self.filter_layers.networks):
+                mask = (atype == type_i).unsqueeze(-1)
+                mask = torch.tile(mask, (1, 1, net_dim_out))
+                atom_property = ll(xx)
                 if xx_zeros is not None:
-                    atom_property -= self.filter_layers.networks[0](xx_zeros)
+                    # must assert, otherwise jit is not happy
+                    assert self.remove_vaccum_contribution is not None
+                    if not (
+                        len(self.remove_vaccum_contribution) > type_i
+                        and not self.remove_vaccum_contribution[type_i]
+                    ):
+                        atom_property -= ll(xx_zeros)
+                atom_property = atom_property + self.bias_atom_e[type_i]
+                atom_property = atom_property * mask
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
-            else:
-                for type_i, ll in enumerate(self.filter_layers.networks):
-                    mask = (atype == type_i).unsqueeze(-1)
-                    mask = torch.tile(mask, (1, 1, net_dim_out))
-                    atom_property = ll(xx)
-                    if xx_zeros is not None:
-                        # must assert, otherwise jit is not happy
-                        assert self.remove_vaccum_contribution is not None
-                        if not (
-                            len(self.remove_vaccum_contribution) > type_i
-                            and not self.remove_vaccum_contribution[type_i]
-                        ):
-                            atom_property -= ll(xx_zeros)
-                    atom_property = atom_property + self.bias_atom_e[type_i]
-                    atom_property = atom_property * mask
-                    outs = (
-                        outs + atom_property
-                    )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
         mask = self.emask(atype)
         # nf x nloc x nod

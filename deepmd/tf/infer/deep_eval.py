@@ -1,17 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 from functools import (
-    lru_cache,
+    cached_property,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -267,9 +263,8 @@ class DeepEval(DeepEvalBackend):
         else:
             self.modifier_type = None
 
-    @property
-    @lru_cache(maxsize=None)
-    def model_type(self) -> Type["DeepEvalWrapper"]:
+    @cached_property
+    def model_type(self) -> type["DeepEvalWrapper"]:
         """Get type of model.
 
         :type:str
@@ -292,8 +287,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError(f"unknown model type {model_type}")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def model_version(self) -> str:
         """Get version of model.
 
@@ -311,8 +305,7 @@ class DeepEval(DeepEvalBackend):
             [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def sess(self) -> tf.Session:
         """Get TF session."""
         # start a tf session associated to the graph
@@ -398,7 +391,7 @@ class DeepEval(DeepEvalBackend):
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[List[int]] = None,
+        sel_atoms: Optional[list[int]] = None,
     ):
         """Sort atoms in the system according their types.
 
@@ -451,7 +444,7 @@ class DeepEval(DeepEvalBackend):
             return coord, atom_type, idx_map, atom_type, idx_map
 
     @staticmethod
-    def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
+    def reverse_map(vec: np.ndarray, imap: list[int]) -> np.ndarray:
         """Reverse mapping of a vector according to the index map.
 
         Parameters
@@ -635,7 +628,7 @@ class DeepEval(DeepEvalBackend):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
@@ -687,8 +680,8 @@ class DeepEval(DeepEvalBackend):
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
-        atom_types: Union[List[int], np.ndarray],
-    ) -> Tuple[int, int]:
+        atom_types: Union[list[int], np.ndarray],
+    ) -> tuple[int, int]:
         natoms = len(atom_types[0])
         if natoms == 0:
             assert coords.size == 0
@@ -707,7 +700,7 @@ class DeepEval(DeepEvalBackend):
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -1196,8 +1189,7 @@ class DeepEvalOld:
 
         self.neighbor_list = neighbor_list
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def model_type(self) -> str:
         """Get type of model.
 
@@ -1207,8 +1199,7 @@ class DeepEvalOld:
         [mt] = run_sess(self.sess, [t_mt], feed_dict={})
         return mt.decode("utf-8")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def model_version(self) -> str:
         """Get version of model.
 
@@ -1226,8 +1217,7 @@ class DeepEvalOld:
             [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def sess(self) -> tf.Session:
         """Get TF session."""
         # start a tf session associated to the graph
@@ -1319,7 +1309,7 @@ class DeepEvalOld:
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[List[int]] = None,
+        sel_atoms: Optional[list[int]] = None,
         mixed_type: bool = False,
     ):
         """Sort atoms in the system according their types.
@@ -1382,7 +1372,7 @@ class DeepEvalOld:
             return coord, atom_type, idx_map
 
     @staticmethod
-    def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
+    def reverse_map(vec: np.ndarray, imap: list[int]) -> np.ndarray:
         """Reverse mapping of a vector according to the index map.
 
         Parameters

@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -28,10 +25,6 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     MLPLayer,
     NetworkCollection,
-)
-from deepmd.pt.model.network.network import (
-    NeighborWiseAttention,
-    TypeFilter,
 )
 from deepmd.pt.utils import (
     env,
@@ -63,7 +56,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -82,13 +75,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         temperature=None,
         smooth: bool = True,
         type_one_side: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ):
         r"""Construct an embedding net of type `se_atten`.
 
@@ -134,7 +126,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version.)
             If mask the diagonal of attention weights
-        exclude_types : List[List[int]]
+        exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float
@@ -185,7 +177,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         if ln_eps is None:
             ln_eps = 1e-5
         self.ln_eps = ln_eps
-        self.old_impl = old_impl
 
         if isinstance(sel, int):
             sel = [sel]
@@ -198,40 +189,22 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.ndescrpt = self.nnei * 4
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
-        if self.old_impl:
-            assert self.tebd_input_mode in [
-                "concat"
-            ], "Old implementation does not support tebd_input_mode != 'concat'."
-            self.dpa1_attention = NeighborWiseAttention(
-                self.attn_layer,
-                self.nnei,
-                self.filter_neuron[-1],
-                self.attn_dim,
-                dotr=self.attn_dotr,
-                do_mask=self.attn_mask,
-                activation=self.activation_function,
-                scaling_factor=self.scaling_factor,
-                normalize=self.normalize,
-                temperature=self.temperature,
-                smooth=self.smooth,
-            )
-        else:
-            self.dpa1_attention = NeighborGatedAttention(
-                self.attn_layer,
-                self.nnei,
-                self.filter_neuron[-1],
-                self.attn_dim,
-                dotr=self.attn_dotr,
-                do_mask=self.attn_mask,
-                scaling_factor=self.scaling_factor,
-                normalize=self.normalize,
-                temperature=self.temperature,
-                trainable_ln=self.trainable_ln,
-                ln_eps=self.ln_eps,
-                smooth=self.smooth,
-                precision=self.precision,
-                seed=child_seed(self.seed, 0),
-            )
+        self.dpa1_attention = NeighborGatedAttention(
+            self.attn_layer,
+            self.nnei,
+            self.filter_neuron[-1],
+            self.attn_dim,
+            dotr=self.attn_dotr,
+            do_mask=self.attn_mask,
+            scaling_factor=self.scaling_factor,
+            normalize=self.normalize,
+            temperature=self.temperature,
+            trainable_ln=self.trainable_ln,
+            ln_eps=self.ln_eps,
+            smooth=self.smooth,
+            precision=self.precision,
+            seed=child_seed(self.seed, 0),
+        )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(
@@ -248,48 +221,32 @@ class DescrptBlockSeAtten(DescriptorBlock):
         else:
             self.embd_input_dim = 1
 
-        self.filter_layers_old = None
-        self.filter_layers = None
         self.filter_layers_strip = None
-        if self.old_impl:
-            filter_layers = []
-            one = TypeFilter(
-                0,
-                self.nnei,
-                self.filter_neuron,
-                return_G=True,
-                tebd_dim=self.tebd_dim,
-                use_tebd=True,
-                tebd_mode=self.tebd_input_mode,
-            )
-            filter_layers.append(one)
-            self.filter_layers_old = torch.nn.ModuleList(filter_layers)
-        else:
-            filter_layers = NetworkCollection(
+        filter_layers = NetworkCollection(
+            ndim=0, ntypes=self.ntypes, network_type="embedding_network"
+        )
+        filter_layers[0] = EmbeddingNet(
+            self.embd_input_dim,
+            self.filter_neuron,
+            activation_function=self.activation_function,
+            precision=self.precision,
+            resnet_dt=self.resnet_dt,
+            seed=child_seed(self.seed, 1),
+        )
+        self.filter_layers = filter_layers
+        if self.tebd_input_mode in ["strip"]:
+            filter_layers_strip = NetworkCollection(
                 ndim=0, ntypes=self.ntypes, network_type="embedding_network"
             )
-            filter_layers[0] = EmbeddingNet(
-                self.embd_input_dim,
+            filter_layers_strip[0] = EmbeddingNet(
+                self.tebd_dim_input,
                 self.filter_neuron,
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
-                seed=child_seed(self.seed, 1),
+                seed=child_seed(self.seed, 2),
             )
-            self.filter_layers = filter_layers
-            if self.tebd_input_mode in ["strip"]:
-                filter_layers_strip = NetworkCollection(
-                    ndim=0, ntypes=self.ntypes, network_type="embedding_network"
-                )
-                filter_layers_strip[0] = EmbeddingNet(
-                    self.tebd_dim_input,
-                    self.filter_neuron,
-                    activation_function=self.activation_function,
-                    precision=self.precision,
-                    resnet_dt=self.resnet_dt,
-                    seed=child_seed(self.seed, 2),
-                )
-                self.filter_layers_strip = filter_layers_strip
+            self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
     def get_rcut(self) -> float:
@@ -304,7 +261,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -373,7 +330,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -381,11 +338,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -410,7 +367,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -420,7 +377,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -503,75 +460,51 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.view(nb * nloc, nnei)
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            dmatrix = dmatrix.view(
-                -1, self.ndescrpt
-            )  # shape is [nframes*nall, self.ndescrpt]
-            gg = self.filter_layers_old[0](
-                dmatrix,
-                atype_tebd=atype_tebd_nnei,
-                nlist_tebd=atype_tebd_nlist,
-            )  # shape is [nframes*nall, self.neei, out_size]
-            input_r = torch.nn.functional.normalize(
-                dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-            )
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            inputs_reshape = dmatrix.view(-1, self.nnei, 4).permute(
-                0, 2, 1
-            )  # shape is [nframes*natoms[0], 4, self.neei]
-            xyz_scatter = torch.matmul(
-                inputs_reshape, gg
-            )  # shape is [nframes*natoms[0], 4, out_size]
-        else:
-            assert self.filter_layers is not None
-            # nfnl x nnei x 4
-            dmatrix = dmatrix.view(-1, self.nnei, 4)
-            nfnl = dmatrix.shape[0]
-            # nfnl x nnei x 4
-            rr = dmatrix
-            rr = rr * exclude_mask[:, :, None]
-            ss = rr[:, :, :1]
-            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
-            atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
-            if self.tebd_input_mode in ["concat"]:
-                if not self.type_one_side:
-                    # nfnl x nnei x (1 + tebd_dim * 2)
-                    ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
-                else:
-                    # nfnl x nnei x (1 + tebd_dim)
-                    ss = torch.concat([ss, nlist_tebd], dim=2)
-                # nfnl x nnei x ng
-                gg = self.filter_layers.networks[0](ss)
-            elif self.tebd_input_mode in ["strip"]:
-                # nfnl x nnei x ng
-                gg_s = self.filter_layers.networks[0](ss)
-                assert self.filter_layers_strip is not None
-                if not self.type_one_side:
-                    # nfnl x nnei x (tebd_dim * 2)
-                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)
-                else:
-                    # nfnl x nnei x tebd_dim
-                    tt = nlist_tebd
-                # nfnl x nnei x ng
-                gg_t = self.filter_layers_strip.networks[0](tt)
-                if self.smooth:
-                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-                # nfnl x nnei x ng
-                gg = gg_s * gg_t + gg_s
+        # nfnl x nnei x 4
+        dmatrix = dmatrix.view(-1, self.nnei, 4)
+        nfnl = dmatrix.shape[0]
+        # nfnl x nnei x 4
+        rr = dmatrix
+        rr = rr * exclude_mask[:, :, None]
+        ss = rr[:, :, :1]
+        nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
+        atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
+        if self.tebd_input_mode in ["concat"]:
+            if not self.type_one_side:
+                # nfnl x nnei x (1 + tebd_dim * 2)
+                ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
             else:
-                raise NotImplementedError
+                # nfnl x nnei x (1 + tebd_dim)
+                ss = torch.concat([ss, nlist_tebd], dim=2)
+            # nfnl x nnei x ng
+            gg = self.filter_layers.networks[0](ss)
+        elif self.tebd_input_mode in ["strip"]:
+            # nfnl x nnei x ng
+            gg_s = self.filter_layers.networks[0](ss)
+            assert self.filter_layers_strip is not None
+            if not self.type_one_side:
+                # nfnl x nnei x (tebd_dim * 2)
+                tt = torch.concat([nlist_tebd, atype_tebd], dim=2)
+            else:
+                # nfnl x nnei x tebd_dim
+                tt = nlist_tebd
+            # nfnl x nnei x ng
+            gg_t = self.filter_layers_strip.networks[0](tt)
+            if self.smooth:
+                gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+            # nfnl x nnei x ng
+            gg = gg_s * gg_t + gg_s
+        else:
+            raise NotImplementedError
 
-            input_r = torch.nn.functional.normalize(
-                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-            )
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            # nfnl x 4 x ng
-            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+        input_r = torch.nn.functional.normalize(
+            rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+        )
+        gg = self.dpa1_attention(
+            gg, nlist_mask, input_r=input_r, sw=sw
+        )  # shape is [nframes*nloc, self.neei, out_size]
+        # nfnl x 4 x ng
+        xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
         rot_mat = xyz_scatter_1[:, :, 1:4]
@@ -612,7 +545,7 @@ class NeighborGatedAttention(nn.Module):
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -755,7 +688,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -862,7 +795,7 @@ class GatedAttentionLayer(nn.Module):
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()

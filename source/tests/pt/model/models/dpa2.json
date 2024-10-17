@@ -42,6 +42,7 @@
       "g1_out_conv": false,
       "g1_out_mlp": false
     },
+    "seed": 1,
     "add_tebd_to_repinit_out": false
   },
   "fitting_net": {

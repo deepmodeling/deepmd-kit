@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
-    Tuple,
 )
+
+import torch
 
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -20,9 +20,9 @@ class DPModelCommon:
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -54,3 +54,13 @@ class DPModelCommon:
     def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
+
+    @torch.jit.export
+    def set_eval_descriptor_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
+        self.atomic_model.set_eval_descriptor_hook(enable)
+
+    @torch.jit.export
+    def eval_descriptor(self) -> torch.Tensor:
+        """Evaluate the descriptor."""
+        return self.atomic_model.eval_descriptor()

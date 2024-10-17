@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
 )
 
 import numpy as np
@@ -42,7 +38,7 @@ from .transform_output import (
 )
 
 
-def make_model(T_AtomicModel: Type[BaseAtomicModel]):
+def make_model(T_AtomicModel: type[BaseAtomicModel]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -87,7 +83,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
-        def model_output_type(self) -> List[str]:
+        def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
@@ -106,7 +102,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, np.ndarray]:
+        ) -> dict[str, np.ndarray]:
             """Return model prediction.
 
             Parameters
@@ -128,7 +124,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             Returns
             -------
             ret_dict
-                The result dict of type Dict[str,np.ndarray].
+                The result dict of type dict[str,np.ndarray].
                 The keys are defined by the `ModelOutputDef`.
 
             """
@@ -249,7 +245,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             box: Optional[np.ndarray] = None,
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
-        ) -> Tuple[
+        ) -> tuple[
             np.ndarray,
             Optional[np.ndarray],
             Optional[np.ndarray],
@@ -263,7 +259,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
-            _lst: List[Optional[np.ndarray]] = [
+            _lst: list[Optional[np.ndarray]] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -285,9 +281,9 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         def output_type_cast(
             self,
-            model_ret: Dict[str, np.ndarray],
+            model_ret: dict[str, np.ndarray],
             input_prec: str,
-        ) -> Dict[str, np.ndarray]:
+        ) -> dict[str, np.ndarray]:
             """Convert the model output to the input prec."""
             do_cast = (
                 input_prec
@@ -427,7 +423,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -449,7 +445,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -469,7 +465,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the cut-off radius."""
             return self.atomic_model.get_rcut()
 
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
@@ -481,7 +477,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
 
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
 

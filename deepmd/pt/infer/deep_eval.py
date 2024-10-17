@@ -4,11 +4,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -172,7 +168,7 @@ class DeepEval(DeepEvalBackend):
         """Get the number of atom types of this model."""
         return len(self.type_map)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.type_map
 
@@ -188,7 +184,7 @@ class DeepEval(DeepEvalBackend):
         return self.dp.model["Default"].get_intensive()
 
     @property
-    def model_type(self) -> Type["DeepEvalWrapper"]:
+    def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model["Default"].model_output_type()
         if "energy" in model_output_type:
@@ -208,7 +204,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError("Unknown model type")
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -246,7 +242,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -313,7 +309,7 @@ class DeepEval(DeepEvalBackend):
             )
         )
 
-    def _get_request_defs(self, atomic: bool) -> List[OutputVariableDef]:
+    def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
         """Get the requested output definitions.
 
         When atomic is True, all output_def are requested.
@@ -378,7 +374,7 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         atom_types: np.ndarray,
         mixed_type: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if mixed_type:
             natoms = len(atom_types[0])
         else:
@@ -397,7 +393,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
-        request_defs: List[OutputVariableDef],
+        request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
 
@@ -478,7 +474,7 @@ class DeepEval(DeepEvalBackend):
         spins: np.ndarray,
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
-        request_defs: List[OutputVariableDef],
+        request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
 
@@ -604,3 +600,58 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> str:
         """Get model defination script."""
         return self.model_def_script
+
+    def eval_descriptor(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        fparam: Optional[np.ndarray] = None,
+        aparam: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate descriptors by using this DP.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+
+        Returns
+        -------
+        descriptor
+            Descriptors.
+        """
+        model = self.dp.model["Default"]
+        model.set_eval_descriptor_hook(True)
+        self.eval(
+            coords,
+            cells,
+            atom_types,
+            atomic=False,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
+        descriptor = model.eval_descriptor()
+        model.set_eval_descriptor_hook(False)
+        return to_numpy_array(descriptor)

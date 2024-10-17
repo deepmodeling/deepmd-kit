@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-)
 
 import numpy as np
 
@@ -17,11 +14,11 @@ from deepmd.dpmodel.output_def import (
 
 
 def fit_output_to_model_output(
-    fit_ret: Dict[str, np.ndarray],
+    fit_ret: dict[str, np.ndarray],
     fit_output_def: FittingOutputDef,
     coord_ext: np.ndarray,
     do_atomic_virial: bool = False,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """Transform the output of the fitting network to
     the model output.
 
@@ -49,11 +46,11 @@ def fit_output_to_model_output(
 
 
 def communicate_extended_output(
-    model_ret: Dict[str, np.ndarray],
+    model_ret: dict[str, np.ndarray],
     model_output_def: ModelOutputDef,
     mapping: np.ndarray,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 

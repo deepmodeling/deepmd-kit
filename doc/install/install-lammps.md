@@ -17,11 +17,11 @@ DeePMD-kit will generate a module called `USER-DEEPMD` in the `build` directory,
 
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_29Aug2024.tar.gz
-tar xf stable_29Aug2024.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Aug2024_update1.tar.gz
+tar xf stable_29Aug2024_update1.tar.gz
 ```
 
-The source code of LAMMPS is stored in the directory `lammps-stable_29Aug2024`.
+The source code of LAMMPS is stored in the directory `lammps-stable_29Aug2024_update1`.
 
 Then, you can [build LAMMPS](https://docs.lammps.org/Build.html) with either make or CMake.
 
@@ -30,7 +30,7 @@ Then, you can [build LAMMPS](https://docs.lammps.org/Build.html) with either mak
 Now go into the LAMMPS code and copy the DeePMD-kit module like this
 
 ```bash
-cd lammps-stable_29Aug2024/src/
+cd lammps-stable_29Aug2024_update1/src/
 cp -r $deepmd_source_dir/source/build/USER-DEEPMD .
 make yes-kspace
 make yes-extra-fix
@@ -60,8 +60,8 @@ make no-user-deepmd
 Now go into the LAMMPS directory and create a directory called `build`:
 
 ```bash
-mkdir -p lammps-stable_29Aug2024/build/
-cd lammps-stable_29Aug2024/build/
+mkdir -p lammps-stable_29Aug2024_update1/build/
+cd lammps-stable_29Aug2024_update1/build/
 ```
 
 Patch the LAMMPS `CMakeLists.txt` file:
@@ -94,15 +94,15 @@ Now download the LAMMPS code (`8Apr2021` or later), and uncompress it:
 
 ```bash
 cd /some/workspace
-wget https://github.com/lammps/lammps/archive/stable_29Aug2024.tar.gz
-tar xf stable_29Aug2024.tar.gz
+wget https://github.com/lammps/lammps/archive/stable_29Aug2024_update1.tar.gz
+tar xf stable_29Aug2024_update1.tar.gz
 ```
 
-The source code of LAMMPS is stored in the directory `lammps-stable_29Aug2024`. The directory of the source code should be specified as the CMAKE argument `LAMMPS_SOURCE_ROOT` during installation of the DeePMD-kit C++ interface. Now go into the LAMMPS directory and create a directory called `build`
+The source code of LAMMPS is stored in the directory `lammps-stable_29Aug2024_update1`. The directory of the source code should be specified as the CMAKE argument `LAMMPS_SOURCE_ROOT` during installation of the DeePMD-kit C++ interface. Now go into the LAMMPS directory and create a directory called `build`
 
 ```bash
-mkdir -p lammps-stable_29Aug2024/build/
-cd lammps-stable_29Aug2024/build/
+mkdir -p lammps-stable_29Aug2024_update1/build/
+cd lammps-stable_29Aug2024_update1/build/
 ```
 
 Now build LAMMPS. Note that `PLUGIN` must be enabled, and `BUILD_SHARED_LIBS` must be set to `yes`. You can install any other package you want.

@@ -3,16 +3,11 @@ import functools
 from enum import (
     IntEnum,
 )
-from typing import (
-    Dict,
-    List,
-    Tuple,
-)
 
 
 def check_shape(
-    shape: List[int],
-    def_shape: List[int],
+    shape: list[int],
+    def_shape: list[int],
 ):
     """Check if the shape satisfies the defined shape."""
     assert len(shape) == len(def_shape)
@@ -193,7 +188,7 @@ class OutputVariableDef:
     def __init__(
         self,
         name: str,
-        shape: List[int],
+        shape: list[int],
         reducible: bool = False,
         r_differentiable: bool = False,
         c_differentiable: bool = False,
@@ -256,7 +251,7 @@ class FittingOutputDef:
 
     def __init__(
         self,
-        var_defs: List[OutputVariableDef],
+        var_defs: list[OutputVariableDef],
     ):
         self.var_defs = {vv.name: vv for vv in var_defs}
 
@@ -266,7 +261,7 @@ class FittingOutputDef:
     ) -> OutputVariableDef:
         return self.var_defs[key]
 
-    def get_data(self) -> Dict[str, OutputVariableDef]:
+    def get_data(self) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
     def keys(self):
@@ -298,7 +293,7 @@ class ModelOutputDef:
         self.def_hess_r, _ = do_derivative(self.def_derv_r)
         self.def_derv_c_redu = do_reduce(self.def_derv_c)
         self.def_mask = do_mask(self.def_outp.get_data())
-        self.var_defs: Dict[str, OutputVariableDef] = {}
+        self.var_defs: dict[str, OutputVariableDef] = {}
         for ii in [
             self.def_outp.get_data(),
             self.def_redu,
@@ -318,7 +313,7 @@ class ModelOutputDef:
 
     def get_data(
         self,
-    ) -> Dict[str, OutputVariableDef]:
+    ) -> dict[str, OutputVariableDef]:
         return self.var_defs
 
     def keys(self):
@@ -347,11 +342,11 @@ def get_reduce_name(name: str) -> str:
     return name + "_redu"
 
 
-def get_deriv_name(name: str) -> Tuple[str, str]:
+def get_deriv_name(name: str) -> tuple[str, str]:
     return name + "_derv_r", name + "_derv_c"
 
 
-def get_deriv_name_mag(name: str) -> Tuple[str, str]:
+def get_deriv_name_mag(name: str) -> tuple[str, str]:
     return name + "_derv_r_mag", name + "_derv_c_mag"
 
 
@@ -424,9 +419,9 @@ def check_deriv(var_def: OutputVariableDef) -> bool:
 
 
 def do_reduce(
-    def_outp_data: Dict[str, OutputVariableDef],
-) -> Dict[str, OutputVariableDef]:
-    def_redu: Dict[str, OutputVariableDef] = {}
+    def_outp_data: dict[str, OutputVariableDef],
+) -> dict[str, OutputVariableDef]:
+    def_redu: dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         if vv.reducible:
             rk = get_reduce_name(kk)
@@ -443,9 +438,9 @@ def do_reduce(
 
 
 def do_mask(
-    def_outp_data: Dict[str, OutputVariableDef],
-) -> Dict[str, OutputVariableDef]:
-    def_mask: Dict[str, OutputVariableDef] = {}
+    def_outp_data: dict[str, OutputVariableDef],
+) -> dict[str, OutputVariableDef]:
+    def_mask: dict[str, OutputVariableDef] = {}
     # for deep eval when has atomic mask
     def_mask["mask"] = OutputVariableDef(
         name="mask",
@@ -468,10 +463,10 @@ def do_mask(
 
 
 def do_derivative(
-    def_outp_data: Dict[str, OutputVariableDef],
-) -> Tuple[Dict[str, OutputVariableDef], Dict[str, OutputVariableDef]]:
-    def_derv_r: Dict[str, OutputVariableDef] = {}
-    def_derv_c: Dict[str, OutputVariableDef] = {}
+    def_outp_data: dict[str, OutputVariableDef],
+) -> tuple[dict[str, OutputVariableDef], dict[str, OutputVariableDef]]:
+    def_derv_r: dict[str, OutputVariableDef] = {}
+    def_derv_c: dict[str, OutputVariableDef] = {}
     for kk, vv in def_outp_data.items():
         rkr, rkc = get_deriv_name(kk)
         rkrm, rkcm = get_deriv_name_mag(kk)

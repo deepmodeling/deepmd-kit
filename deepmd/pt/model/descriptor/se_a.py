@@ -3,10 +3,7 @@ import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -58,9 +55,6 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.model.network.network import (
-    TypeFilter,
-)
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
@@ -84,14 +78,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
     ):
@@ -112,7 +105,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
             env_protection=env_protection,
-            old_impl=old_impl,
             type_one_side=type_one_side,
             trainable=trainable,
             seed=seed,
@@ -130,7 +122,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.sea.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sea.get_sel()
 
@@ -138,7 +130,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.sea.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -192,7 +184,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return self.sea.dim_out
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -205,7 +197,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -213,11 +205,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -228,7 +220,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
@@ -239,7 +231,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -284,7 +276,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         self.sea.mean = mean
         self.sea.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.sea.mean, self.sea.stddev
 
@@ -342,9 +334,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -386,12 +378,11 @@ class DescrptBlockSeA(DescriptorBlock):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -414,7 +405,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = old_impl
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.type_one_side = type_one_side
@@ -434,39 +424,23 @@ class DescrptBlockSeA(DescriptorBlock):
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
-        self.filter_layers_old = None
-        self.filter_layers = None
 
-        if self.old_impl:
-            if not self.type_one_side:
-                raise ValueError(
-                    "The old implementation does not support type_one_side=False."
-                )
-            filter_layers = []
-            # TODO: remove
-            start_index = 0
-            for type_i in range(self.ntypes):
-                one = TypeFilter(start_index, sel[type_i], self.filter_neuron)
-                filter_layers.append(one)
-                start_index += sel[type_i]
-            self.filter_layers_old = torch.nn.ModuleList(filter_layers)
-        else:
-            ndim = 1 if self.type_one_side else 2
-            filter_layers = NetworkCollection(
-                ndim=ndim, ntypes=len(sel), network_type="embedding_network"
+        ndim = 1 if self.type_one_side else 2
+        filter_layers = NetworkCollection(
+            ndim=ndim, ntypes=len(sel), network_type="embedding_network"
+        )
+        for ii, embedding_idx in enumerate(
+            itertools.product(range(self.ntypes), repeat=ndim)
+        ):
+            filter_layers[embedding_idx] = EmbeddingNet(
+                1,
+                self.filter_neuron,
+                activation_function=self.activation_function,
+                precision=self.precision,
+                resnet_dt=self.resnet_dt,
+                seed=child_seed(self.seed, ii),
             )
-            for ii, embedding_idx in enumerate(
-                itertools.product(range(self.ntypes), repeat=ndim)
-            ):
-                filter_layers[embedding_idx] = EmbeddingNet(
-                    1,
-                    self.filter_neuron,
-                    activation_function=self.activation_function,
-                    precision=self.precision,
-                    resnet_dt=self.resnet_dt,
-                    seed=child_seed(self.seed, ii),
-                )
-            self.filter_layers = filter_layers
+        self.filter_layers = filter_layers
         self.stats = None
         # set trainable
         for param in self.parameters():
@@ -484,7 +458,7 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -548,7 +522,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -556,11 +530,11 @@ class DescrptBlockSeA(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -585,7 +559,7 @@ class DescrptBlockSeA(DescriptorBlock):
             self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
         self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -595,7 +569,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -635,66 +609,49 @@ class DescrptBlockSeA(DescriptorBlock):
             protection=self.env_protection,
         )
 
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            dmatrix = dmatrix.view(
-                -1, self.ndescrpt
-            )  # shape is [nframes*nall, self.ndescrpt]
-            xyz_scatter = torch.empty(  # pylint: disable=no-explicit-dtype
-                1,
-                device=env.DEVICE,
-            )
-            ret = self.filter_layers_old[0](dmatrix)
-            xyz_scatter = ret
-            for ii, transform in enumerate(self.filter_layers_old[1:]):
-                # shape is [nframes*nall, 4, self.filter_neuron[-1]]
-                ret = transform.forward(dmatrix)
-                xyz_scatter = xyz_scatter + ret
-        else:
-            assert self.filter_layers is not None
-            dmatrix = dmatrix.view(-1, self.nnei, 4)
-            dmatrix = dmatrix.to(dtype=self.prec)
-            nfnl = dmatrix.shape[0]
-            # pre-allocate a shape to pass jit
-            xyz_scatter = torch.zeros(
-                [nfnl, 4, self.filter_neuron[-1]],
-                dtype=self.prec,
-                device=extended_coord.device,
-            )
-            # nfnl x nnei
-            exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
-            for embedding_idx, ll in enumerate(self.filter_layers.networks):
-                if self.type_one_side:
-                    ii = embedding_idx
-                    # torch.jit is not happy with slice(None)
-                    # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
-                    # applying a mask seems to cause performance degradation
-                    ti_mask = None
-                else:
-                    # ti: center atom type, ii: neighbor type...
-                    ii = embedding_idx // self.ntypes
-                    ti = embedding_idx % self.ntypes
-                    ti_mask = atype.ravel().eq(ti)
-                # nfnl x nt
-                if ti_mask is not None:
-                    mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
-                else:
-                    mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
-                # nfnl x nt x 4
-                if ti_mask is not None:
-                    rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
-                else:
-                    rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-                rr = rr * mm[:, :, None]
-                ss = rr[:, :, :1]
-                # nfnl x nt x ng
-                gg = ll.forward(ss)
-                # nfnl x 4 x ng
-                gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                if ti_mask is not None:
-                    xyz_scatter[ti_mask] += gr
-                else:
-                    xyz_scatter += gr
+        dmatrix = dmatrix.view(-1, self.nnei, 4)
+        dmatrix = dmatrix.to(dtype=self.prec)
+        nfnl = dmatrix.shape[0]
+        # pre-allocate a shape to pass jit
+        xyz_scatter = torch.zeros(
+            [nfnl, 4, self.filter_neuron[-1]],
+            dtype=self.prec,
+            device=extended_coord.device,
+        )
+        # nfnl x nnei
+        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+            if self.type_one_side:
+                ii = embedding_idx
+                # torch.jit is not happy with slice(None)
+                # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                # applying a mask seems to cause performance degradation
+                ti_mask = None
+            else:
+                # ti: center atom type, ii: neighbor type...
+                ii = embedding_idx // self.ntypes
+                ti = embedding_idx % self.ntypes
+                ti_mask = atype.ravel().eq(ti)
+            # nfnl x nt
+            if ti_mask is not None:
+                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+            else:
+                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+            # nfnl x nt x 4
+            if ti_mask is not None:
+                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+            else:
+                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+            rr = rr * mm[:, :, None]
+            ss = rr[:, :, :1]
+            # nfnl x nt x ng
+            gg = ll.forward(ss)
+            # nfnl x 4 x ng
+            gr = torch.matmul(rr.permute(0, 2, 1), gg)
+            if ti_mask is not None:
+                xyz_scatter[ti_mask] += gr
+            else:
+                xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

@@ -21,12 +21,12 @@ if TYPE_CHECKING:
 class DPChecker(BaseChecker):
     name = "deepmd-checker"
     msgs: ClassVar[dict] = {
-        "EDP01": (
+        "E8001": (
             "No explicit device.",
             "no-explicit-device",
             "Require explicit device when initializing a PyTorch tensor.",
         ),
-        "EDP02": (
+        "E8002": (
             "No explicit dtype.",
             "no-explicit-dtype",
             "Require explicit dtype when initializing a NumPy array, a TensorFlow tensor, or a PyTorch tensor.",

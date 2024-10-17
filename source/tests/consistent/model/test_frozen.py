@@ -3,7 +3,6 @@ import os
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -121,7 +120,7 @@ class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
         self.atype = self.atype[:, idx_map]
         self.coords = self.coords[:, idx_map]
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_model(
             obj,
             self.natoms,
@@ -149,7 +148,7 @@ class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
             return (ret["energy_redu"].ravel(), ret["energy"].ravel())

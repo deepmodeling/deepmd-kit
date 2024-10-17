@@ -26,6 +26,7 @@ from ....seed import (
     GLOBAL_SEED,
 )
 from ....utils import (
+    CI,
     TEST_DEVICE,
 )
 from ...common.cases.descriptor.descriptor import (
@@ -519,7 +520,7 @@ def DescriptorParamHybridMixedTTebd(ntypes, rcut, rcut_smth, sel, type_map, **kw
         (DescriptorParamHybridMixedTTebd, DescrptHybrid),
     )  # class_param & class
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestDescriptorDP(unittest.TestCase, DescriptorTest, DPTestCase):
     def setUp(self):
         DescriptorTest.setUp(self)
