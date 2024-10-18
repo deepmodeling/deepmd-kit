@@ -428,7 +428,7 @@ def extend_coord_with_ghosts(
     cell: Optional[paddle.Tensor],
     rcut: float,
     cell_cpu: Optional[paddle.Tensor] = None,
-):
+) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.

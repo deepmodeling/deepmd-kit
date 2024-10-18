@@ -110,7 +110,7 @@ class NeighborStatOP(paddle.nn.Layer):
         else:
             mask = rr2 < self.rcut**2
             # virtual types (<0) are not counted
-            nnei = paddle.sum(mask & ((extend_atype > 0)[:, None, :]), axis=-1).reshape(
+            nnei = paddle.sum(mask & ((extend_atype >= 0).unsqueeze(1)), axis=-1).reshape(
                 [nframes, nloc, 1]
             )
         max_nnei = paddle.max(nnei, axis=1)

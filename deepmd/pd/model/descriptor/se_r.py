@@ -368,7 +368,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
 
         assert self.filter_layers is not None
         dmatrix = dmatrix.reshape([-1, self.nnei, 1])
-        dmatrix = dmatrix.to(dtype=self.prec)
+        dmatrix = dmatrix.astype(self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         xyz_scatter = paddle.zeros(
@@ -392,7 +392,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         result = xyz_scatter * res_rescale
         result = result.reshape([nf, nloc, self.filter_neuron[-1]])
         return (
-            result.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            result.astype(env.GLOBAL_PD_FLOAT_PRECISION),
             None,
             None,
             None,

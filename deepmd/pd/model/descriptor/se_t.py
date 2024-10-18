@@ -683,7 +683,7 @@ class DescrptBlockSeT(DescriptorBlock):
             protection=self.env_protection,
         )
         dmatrix = dmatrix.reshape([-1, self.nnei, 4])
-        dmatrix = dmatrix.to(dtype=self.prec)
+        dmatrix = dmatrix.astype(self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         result = paddle.zeros(
@@ -720,7 +720,7 @@ class DescrptBlockSeT(DescriptorBlock):
         # xyz_scatter /= (self.nnei * self.nnei)
         result = result.reshape([nf, nloc, self.filter_neuron[-1]])
         return (
-            result.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            result.astype(env.GLOBAL_PD_FLOAT_PRECISION),
             None,
             None,
             None,

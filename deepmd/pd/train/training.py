@@ -1014,12 +1014,9 @@ class Trainer:
                     )
 
             if JIT:
-                raise NotImplementedError("JIT training is not supported yet.")
-                # frozen_model_prefix = "frozen_model"  # We use .json and .pdiparams to denote the frozen model
-                # self.model.save(frozen_model_prefix)
-                # log.info(
-                #     f"Frozen model for inferencing has been saved to {frozen_model_prefix}"
-                # )
+                raise NotImplementedError(
+                    "Paddle JIT saving during training is not supported yet."
+                )
             log.info(f"Trained model has been saved to: {self.save_ckpt}")
 
         if fout:

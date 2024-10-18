@@ -863,7 +863,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         # nf x nl x ng
         result = res_ij.reshape([nframes, nloc, self.filter_neuron[-1]])
         return (
-            result.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            result.astype(env.GLOBAL_PD_FLOAT_PRECISION),
             None,
             None,
             None,
