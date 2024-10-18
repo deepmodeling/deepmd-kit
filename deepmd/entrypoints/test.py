@@ -304,6 +304,10 @@ def test_ener(
     if dp.has_spin:
         data.add("spin", 3, atomic=True, must=True, high_prec=False)
         data.add("force_mag", 3, atomic=True, must=False, high_prec=False)
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
+        data.add("hessian", 1, atomic=True, must=True, high_prec=False)
 
     test_data = data.get_test()
     mixed_type = data.mixed_type
@@ -353,6 +357,11 @@ def test_ener(
     energy = energy.reshape([numb_test, 1])
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
+        hessian = ret[-1]
+        hessian = hessian.reshape([numb_test, -1])
     if has_atom_ener:
         ae = ret[3]
         av = ret[4]
@@ -416,6 +425,12 @@ def test_ener(
     rmse_ea = rmse_e / natoms
     mae_va = mae_v / natoms
     rmse_va = rmse_v / natoms
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
+        diff_h = hessian - test_data["hessian"][:numb_test]
+        mae_h = mae(diff_h)
+        rmse_h = rmse(diff_h)
     if has_atom_ener:
         diff_ae = test_data["atom_ener"][:numb_test].reshape([-1]) - ae.reshape([-1])
         mae_ae = mae(diff_ae)
@@ -448,6 +463,11 @@ def test_ener(
     if has_atom_ener:
         log.info(f"Atomic ener MAE    : {mae_ae:e} eV")
         log.info(f"Atomic ener RMSE   : {rmse_ae:e} eV")
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
+        log.info(f"Hessian MAE        : {mae_h:e} eV/A^2")
+        log.info(f"Hessian RMSE       : {rmse_h:e} eV/A^2")
 
     if detail_file is not None:
         detail_path = Path(detail_file)
@@ -531,8 +551,35 @@ def test_ener(
             "pred_vyy pred_vyz pred_vzx pred_vzy pred_vzz",
             append=append_detail,
         )
+        if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+            "hessian_mode"
+        ):
+            _n_frames_, _n_hessian_ = test_data["hessian"][:numb_test].shape
+            _n_atoms_ = np.int32(np.sqrt(_n_hessian_) / 3)  # n_hessian = 3na*3na
+            triu_indices = np.triu_indices(
+                _n_atoms_ * 3
+            )  # upper triangle hessian indices
+            data_h_triu = test_data["hessian"][:numb_test][
+                :, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]
+            ].reshape(-1, 1)
+            pred_h_triu = hessian[
+                :, triu_indices[0] * _n_atoms_ * 3 + triu_indices[1]
+            ].reshape(-1, 1)
+            h = np.concatenate(
+                (
+                    data_h_triu,
+                    pred_h_triu,
+                ),
+                axis=1,
+            )
+            save_txt_file(
+                detail_path.with_suffix(".h.out"),
+                h,
+                header=f"{system}: data_h pred_h",
+                append=append_detail,
+            )
     if not out_put_spin:
-        return {
+        dict_to_return = {
             "mae_e": (mae_e, energy.size),
             "mae_ea": (mae_ea, energy.size),
             "mae_f": (mae_f, force.size),
@@ -545,7 +592,7 @@ def test_ener(
             "rmse_va": (rmse_va, virial.size),
         }
     else:
-        return {
+        dict_to_return = {
             "mae_e": (mae_e, energy.size),
             "mae_ea": (mae_ea, energy.size),
             "mae_fr": (mae_fr, force_r.size),
@@ -559,6 +606,12 @@ def test_ener(
             "rmse_v": (rmse_v, virial.size),
             "rmse_va": (rmse_va, virial.size),
         }
+    if hasattr(dp.deep_eval, "input_param") and dp.deep_eval.input_param.get(
+        "hessian_mode"
+    ):
+        dict_to_return["mae_h"] = (mae_h, hessian.size)
+        dict_to_return["rmse_h"] = (rmse_h, hessian.size)
+    return dict_to_return
 
 
 def print_ener_sys_avg(avg: dict[str, float]):
@@ -585,6 +638,9 @@ def print_ener_sys_avg(avg: dict[str, float]):
     log.info(f"Virial RMSE        : {avg['rmse_v']:e} eV")
     log.info(f"Virial MAE/Natoms  : {avg['mae_va']:e} eV")
     log.info(f"Virial RMSE/Natoms : {avg['rmse_va']:e} eV")
+    if "rmse_h" in avg.keys():
+        log.info(f"Hessian MAE         : {avg['mae_h']:e} eV/A^2")
+        log.info(f"Hessian RMSE        : {avg['rmse_h']:e} eV/A^2")
 
 
 def test_dos(

@@ -212,17 +212,9 @@ class ArgsPlugin:
         for (name, alias, doc), metd in self.__plugin.plugins.items():
             if exclude_hybrid and name == "hybrid":
                 continue
-            args = metd()
-            if isinstance(args, Argument):
-                arguments.append(args)
-            elif isinstance(args, list):
-                arguments.append(
-                    Argument(
-                        name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc
-                    )
-                )
-            else:
-                raise ValueError(f"Invalid return type {type(args)}")
+            arguments.append(
+                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc)
+            )
         return arguments
 
 
@@ -1749,11 +1741,6 @@ def model_compression_type_args():
     )
 
 
-model_args_plugin = ArgsPlugin()
-# for models that require another model as input
-hybrid_model_args_plugin = ArgsPlugin()
-
-
 def model_args(exclude_hybrid=False):
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
@@ -1778,7 +1765,12 @@ def model_args(exclude_hybrid=False):
 
     hybrid_models = []
     if not exclude_hybrid:
-        hybrid_models.extend(hybrid_model_args_plugin.get_all_argument())
+        hybrid_models.extend(
+            [
+                pairwise_dprc(),
+                linear_ener_model_args(),
+            ]
+        )
     return Argument(
         "model",
         dict,
@@ -1884,7 +1876,9 @@ def model_args(exclude_hybrid=False):
             Variant(
                 "type",
                 [
-                    *model_args_plugin.get_all_argument(),
+                    standard_model_args(),
+                    frozen_model_args(),
+                    pairtab_model_args(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -1894,7 +1888,6 @@ def model_args(exclude_hybrid=False):
     )
 
 
-@model_args_plugin.register("standard")
 def standard_model_args() -> Argument:
     doc_descrpt = "The descriptor of atomic environment."
     doc_fitting = "The fitting of physical properties."
@@ -1919,7 +1912,6 @@ def standard_model_args() -> Argument:
     return ca
 
 
-@hybrid_model_args_plugin.register("pairwise_dprc")
 def pairwise_dprc() -> Argument:
     qm_model_args = model_args(exclude_hybrid=True)
     qm_model_args.name = "qm_model"
@@ -1939,7 +1931,6 @@ def pairwise_dprc() -> Argument:
     return ca
 
 
-@model_args_plugin.register("frozen")
 def frozen_model_args() -> Argument:
     doc_model_file = "Path to the frozen model file."
     ca = Argument(
@@ -1952,7 +1943,6 @@ def frozen_model_args() -> Argument:
     return ca
 
 
-@model_args_plugin.register("pairtab")
 def pairtab_model_args() -> Argument:
     doc_tab_file = "Path to the tabulation file."
     doc_rcut = "The cut-off radius."
@@ -1973,7 +1963,6 @@ def pairtab_model_args() -> Argument:
     return ca
 
 
-@hybrid_model_args_plugin.register("linear_ener")
 def linear_ener_model_args() -> Argument:
     doc_weights = (
         "If the type is list of float, a list of weights for each model. "
@@ -2048,7 +2037,7 @@ def learning_rate_variant_type_args():
     )
 
 
-def learning_rate_args(fold_subdoc: bool = False) -> Argument:
+def learning_rate_args():
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definitio of learning rate"
     return Argument(
@@ -2066,7 +2055,6 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
         [learning_rate_variant_type_args()],
         optional=True,
         doc=doc_lr,
-        fold_subdoc=fold_subdoc,
     )
 
 
@@ -2094,6 +2082,8 @@ def loss_ener():
     doc_limit_pref_f = limit_pref("force")
     doc_start_pref_v = start_pref("virial", abbr="v")
     doc_limit_pref_v = limit_pref("virial")
+    doc_start_pref_h = start_pref("hessian", abbr="h")  # prefactor of hessian
+    doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
     doc_limit_pref_ae = limit_pref("atomic energy")
     doc_start_pref_pf = start_pref(
@@ -2147,6 +2137,158 @@ def loss_ener():
             optional=True,
             default=0.00,
             doc=doc_limit_pref_v,
+        ),
+        Argument(
+            "start_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_h,
+        ),
+        Argument(
+            "limit_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_h,
+        ),
+        Argument(
+            "start_pref_ae",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_ae,
+        ),
+        Argument(
+            "limit_pref_ae",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_ae,
+        ),
+        Argument(
+            "start_pref_pf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_pf,
+        ),
+        Argument(
+            "limit_pref_pf",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_pf,
+        ),
+        Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
+        Argument(
+            "enable_atom_ener_coeff",
+            [bool],
+            optional=True,
+            default=False,
+            doc=doc_enable_atom_ener_coeff,
+        ),
+        Argument(
+            "start_pref_gf",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_start_pref_gf,
+        ),
+        Argument(
+            "limit_pref_gf",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_limit_pref_gf,
+        ),
+        Argument(
+            "numb_generalized_coord",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_numb_generalized_coord,
+        ),
+    ]
+
+
+@loss_args_plugin.register("ener_hess")
+def loss_ener_hess():  # loss of fitting EnergyHessianModel
+    doc_start_pref_e = start_pref("energy", abbr="e")
+    doc_limit_pref_e = limit_pref("energy")
+    doc_start_pref_f = start_pref("force", abbr="f")
+    doc_limit_pref_f = limit_pref("force")
+    doc_start_pref_v = start_pref("virial", abbr="v")
+    doc_limit_pref_v = limit_pref("virial")
+    doc_start_pref_h = start_pref("hessian", abbr="h")
+    doc_limit_pref_h = limit_pref("hessian")
+    doc_start_pref_ae = start_pref("atomic energy", label="atom_ener", abbr="ae")
+    doc_limit_pref_ae = limit_pref("atomic energy")
+    doc_start_pref_pf = start_pref(
+        "atomic prefactor force", label="atom_pref", abbr="pf"
+    )
+    doc_limit_pref_pf = limit_pref("atomic prefactor force")
+    doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
+    doc_limit_pref_gf = limit_pref("generalized force")
+    doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
+    doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
+    doc_enable_atom_ener_coeff = "If true, the energy will be computed as \\sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    return [
+        Argument(
+            "start_pref_e",
+            [float, int],
+            optional=True,
+            default=0.02,
+            doc=doc_start_pref_e,
+        ),
+        Argument(
+            "limit_pref_e",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_e,
+        ),
+        Argument(
+            "start_pref_f",
+            [float, int],
+            optional=True,
+            default=1000,
+            doc=doc_start_pref_f,
+        ),
+        Argument(
+            "limit_pref_f",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_f,
+        ),
+        Argument(
+            "start_pref_v",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_v,
+        ),
+        Argument(
+            "limit_pref_v",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_v,
+        ),
+        Argument(
+            "start_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_start_pref_h,
+        ),
+        Argument(
+            "limit_pref_h",
+            [float, int],
+            optional=True,
+            default=0.00,
+            doc=doc_limit_pref_h,
         ),
         Argument(
             "start_pref_ae",
@@ -2218,6 +2360,8 @@ def loss_ener_spin():
     doc_limit_pref_fm = limit_pref("force_magnetic")
     doc_start_pref_v = start_pref("virial")
     doc_limit_pref_v = limit_pref("virial")
+    # doc_start_pref_h = start_pref("hessian")
+    # doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atom_ener")
     doc_limit_pref_ae = limit_pref("atom_ener")
     doc_start_pref_pf = start_pref("atom_pref")
@@ -2281,6 +2425,20 @@ def loss_ener_spin():
             default=0.00,
             doc=doc_limit_pref_v,
         ),
+        # Argument(
+        #     "start_pref_h",
+        #     [float, int],
+        #     optional=True,
+        #     default=0.00,
+        #     doc=doc_start_pref_h,
+        # ),
+        # Argument(
+        #     "limit_pref_h",
+        #     [float, int],
+        #     optional=True,
+        #     default=0.00,
+        #     doc=doc_limit_pref_h,
+        # ),
         Argument(
             "start_pref_ae",
             [float, int],
@@ -2819,7 +2977,6 @@ def multi_model_args():
     model_dict = model_args()
     model_dict.name = "model_dict"
     model_dict.repeat = True
-    model_dict.fold_subdoc = True
     model_dict.doc = (
         "The multiple definition of the model, used in the multi-task mode."
     )
@@ -2840,7 +2997,6 @@ def multi_loss_args():
     loss_dict = loss_args()
     loss_dict.name = "loss_dict"
     loss_dict.repeat = True
-    loss_dict.fold_subdoc = True
     loss_dict.doc = "The multiple definition of the loss, used in the multi-task mode."
     return loss_dict
 
@@ -2852,11 +3008,11 @@ def make_index(keys):
     return ", ".join(ret)
 
 
-def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> str:
+def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     if make_link:
         make_anchor = True
     ptr = []
-    for ii in gen_args(multi_task=multi_task):
+    for ii in gen_args():
         ptr.append(ii.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
@@ -2868,9 +3024,9 @@ def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> 
     return "\n\n".join(ptr)
 
 
-def gen_json(multi_task: bool = False, **kwargs) -> str:
+def gen_json(**kwargs):
     return json.dumps(
-        tuple(gen_args(multi_task=multi_task)),
+        tuple(gen_args()),
         cls=ArgumentEncoder,
     )
 
@@ -2887,10 +3043,10 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
     else:
         return [
             multi_model_args(),
-            learning_rate_args(fold_subdoc=True),
+            learning_rate_args(),
             multi_loss_args(),
             training_args(multi_task=multi_task),
-            nvnmd_args(fold_subdoc=True),
+            nvnmd_args(),
         ]
 
 
@@ -2921,7 +3077,7 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data, multi_task: bool = False):
+def normalize(data, multi_task=False):
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)

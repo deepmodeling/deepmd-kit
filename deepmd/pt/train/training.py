@@ -25,6 +25,7 @@ from deepmd.loggers.training import (
 from deepmd.pt.loss import (
     DenoiseLoss,
     DOSLoss,
+    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     PropertyLoss,
@@ -184,7 +185,6 @@ class Trainer:
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
-                    collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
                 )
                 with torch.device("cpu"):
@@ -273,8 +273,22 @@ class Trainer:
         else:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
+        # loss_param_tmp for Hessian activation
+        loss_param_tmp = None
+        if not self.multi_task:
+            loss_param_tmp = config["loss"]
+        else:
+            loss_param_tmp = {
+                model_key: config["loss_dict"][model_key]
+                for model_key in self.model_keys
+            }
+
         # Model
-        self.model = get_model_for_wrapper(model_params)
+        dp_random.seed(training_params["seed"])
+        if training_params["seed"] is not None:
+            torch.manual_seed(training_params["seed"])
+
+        self.model = get_model_for_wrapper(model_params, loss_param_tmp)
 
         # Loss
         if not self.multi_task:
@@ -298,6 +312,7 @@ class Trainer:
                 )
 
         # Data
+        dp_random.seed(training_params["seed"])
         if not self.multi_task:
             self.get_sample_func = single_model_stat(
                 self.model,
@@ -1101,7 +1116,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
-            if key == "sid" or key == "fid" or key == "box" or "find_" in key:
+            if key == "sid" or key == "fid" or key == "box":
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
@@ -1223,9 +1238,17 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
+def whether_hessian(loss_params):
+    loss_type = loss_params.get("type", "ener")
+    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+
+
 def get_loss(loss_params, start_lr, _ntypes, _model):
     loss_type = loss_params.get("type", "ener")
-    if loss_type == "ener":
+    if whether_hessian(loss_params):
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergyHessianStdLoss(**loss_params)
+    elif loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dos":
@@ -1269,8 +1292,13 @@ def get_single_model(
     return model
 
 
-def get_model_for_wrapper(_model_params):
+def get_model_for_wrapper(
+    _model_params,
+    _loss_params=None,
+):
     if "model_dict" not in _model_params:
+        if _loss_params is not None and whether_hessian(_loss_params):
+            _model_params["hessian_mode"] = True
         _model = get_single_model(
             _model_params,
         )
@@ -1278,6 +1306,8 @@ def get_model_for_wrapper(_model_params):
         _model = {}
         model_keys = list(_model_params["model_dict"])
         for _model_key in model_keys:
+            if _loss_params is not None and whether_hessian(_loss_params[_model_key]):
+                _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
