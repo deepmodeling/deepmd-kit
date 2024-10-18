@@ -376,22 +376,20 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       spin_sendlist = new int*[nswap];
       std::vector<int> prefixSum(nswap);
       prefixSum[0] = 0;
-      prefixSum[1] = lmp_list.recvnum[0];  
+      prefixSum[1] = lmp_list.recvnum[0];
       for (int i = 2; i < nswap; ++i) {
-        prefixSum[i] = prefixSum[i - 1] + lmp_list.recvnum[i-1];
+        prefixSum[i] = prefixSum[i - 1] + lmp_list.recvnum[i - 1];
       }
       for (int i = 0; i < nswap; ++i) {
         spin_sendlist[i] = new int[lmp_list.sendnum[i] * 2];
         int* sendlist_part = new int[nswap];
         for (int j = 0; j < nswap; ++j) {
-            sendlist_part[j] = -1;
+          sendlist_part[j] = -1;
         }
-        for(int j = 0; j < lmp_list.sendnum[i]; j++)
-        {
-          for(int ii = 0; ii < nswap; ++ii)
-          {
-            if (lmp_list.sendlist[i][j] >= nloc + prefixSum[ii] && sendlist_part[ii] == -1)
-            {
+        for (int j = 0; j < lmp_list.sendnum[i]; j++) {
+          for (int ii = 0; ii < nswap; ++ii) {
+            if (lmp_list.sendlist[i][j] >= nloc + prefixSum[ii] &&
+                sendlist_part[ii] == -1) {
               sendlist_part[ii] = j;
             }
           }
@@ -403,30 +401,30 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
         // std::cout<<sendlist_part[4]<<std::endl;
         // std::cout<<sendlist_part[5]<<std::endl;
         for (int j = 0; j < nswap - 1; ++j) {
-          if(sendlist_part[j] == -1)
+          if (sendlist_part[j] == -1) {
             sendlist_part[j] = lmp_list.sendnum[i];
-        }
-        int j = 0;
-        for(; j < sendlist_part[0]; j++)
-        {
-          long index = lmp_list.sendlist[i][j];
-          spin_sendlist[i][j] = index;
-          spin_sendlist[i][j + sendlist_part[0]] = index + nloc; 
-        }
-        for(int ii = 1; ii < nswap; ++ii)
-        {
-          for(; j < sendlist_part[ii]; j++)
-          {
-            long index = lmp_list.sendlist[i][j];
-            spin_sendlist[i][j + sendlist_part[ii - 1]] = index + nloc + prefixSum[ii-1];
-            spin_sendlist[i][j + sendlist_part[ii]] = index + nloc + prefixSum[ii];
           }
         }
-        for(; j<lmp_list.sendnum[i]; j++)
-        {
+        int j = 0;
+        for (; j < sendlist_part[0]; j++) {
+          long index = lmp_list.sendlist[i][j];
+          spin_sendlist[i][j] = index;
+          spin_sendlist[i][j + sendlist_part[0]] = index + nloc;
+        }
+        for (int ii = 1; ii < nswap; ++ii) {
+          for (; j < sendlist_part[ii]; j++) {
+            long index = lmp_list.sendlist[i][j];
+            spin_sendlist[i][j + sendlist_part[ii - 1]] =
+                index + nloc + prefixSum[ii - 1];
+            spin_sendlist[i][j + sendlist_part[ii]] =
+                index + nloc + prefixSum[ii];
+          }
+        }
+        for (; j < lmp_list.sendnum[i]; j++) {
           long index = lmp_list.sendlist[i][j];
           spin_sendlist[i][j + sendlist_part[5]] = index + nloc + prefixSum[5];
-          spin_sendlist[i][j + lmp_list.sendnum[i]] = index + nloc + nghost_real;
+          spin_sendlist[i][j + lmp_list.sendnum[i]] =
+              index + nloc + nghost_real;
         }
         lmp_list.recvnum[i] *= 2;
         lmp_list.sendnum[i] *= 2;
@@ -435,7 +433,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
         //   std::cout<<spin_sendlist[i][j]<<" ";
         // }
         // std::cout<<std::endl;
-    }
+      }
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
       torch::Tensor recvproc_tensor =

@@ -66,7 +66,7 @@ class SpinModel(torch.nn.Module):
         extended_spin,
         nlist,
         mapping: Optional[torch.Tensor] = None,
-        recv_num:Optional[torch.Tensor] = None
+        recv_num: Optional[torch.Tensor] = None,
     ):
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
@@ -83,18 +83,20 @@ class SpinModel(torch.nn.Module):
         )[extended_atype].reshape([nframes, nall, 1])
         virtual_extended_atype = extended_atype + self.ntypes_real
         extended_coord_updated = self.concat_switch_virtual(
-            extended_coord, virtual_extended_coord, nloc, recv_num = recv_num
+            extended_coord, virtual_extended_coord, nloc, recv_num=recv_num
         )
         extended_atype_updated = self.concat_switch_virtual(
-            extended_atype, virtual_extended_atype, nloc, recv_num = recv_num
+            extended_atype, virtual_extended_atype, nloc, recv_num=recv_num
         )
         if mapping is not None:
             virtual_mapping = mapping + nloc
-            mapping_updated = self.concat_switch_virtual(mapping, virtual_mapping, nloc, recv_num = recv_num)
+            mapping_updated = self.concat_switch_virtual(
+                mapping, virtual_mapping, nloc, recv_num=recv_num
+            )
         else:
             mapping_updated = None
         # extend the nlist
-        nlist_updated = self.extend_nlist(extended_atype, nlist, recv_num = recv_num)
+        nlist_updated = self.extend_nlist(extended_atype, nlist, recv_num=recv_num)
         return (
             extended_coord_updated,
             extended_atype_updated,
@@ -177,7 +179,7 @@ class SpinModel(torch.nn.Module):
         return extended_out_real, extended_out_mag, atomic_mask > 0.0
 
     @staticmethod
-    def extend_nlist(extended_atype, nlist, recv_num:Optional[torch.Tensor] = None):
+    def extend_nlist(extended_atype, nlist, recv_num: Optional[torch.Tensor] = None):
         nframes, nloc, nnei = nlist.shape
         nall = extended_atype.shape[1]
         nlist_mask = nlist != -1
@@ -210,15 +212,26 @@ class SpinModel(torch.nn.Module):
             prefix_sum = torch.cumsum(origin_recv_num, dim=0)
             prefix_sum = torch.cat((torch.tensor([0]), prefix_sum))
             for i in range(recv_num.size(0)):
-                index_part.append((nloc * 2 + prefix_sum[i] <= extended_nlist) & (extended_nlist < nloc *2 + prefix_sum[i+1]))
-                index_part.append((nloc + nall + prefix_sum[i] <= extended_nlist) & (extended_nlist < nloc + nall + prefix_sum[i+1]))
+                index_part.append(
+                    (nloc * 2 + prefix_sum[i] <= extended_nlist)
+                    & (extended_nlist < nloc * 2 + prefix_sum[i + 1])
+                )
+                index_part.append(
+                    (nloc + nall + prefix_sum[i] <= extended_nlist)
+                    & (extended_nlist < nloc + nall + prefix_sum[i + 1])
+                )
             for i in range(recv_num.size(0)):
                 extended_nlist[index_part[2 * i]] += prefix_sum[i]
                 extended_nlist[index_part[2 * i + 1]] -= nall - nloc - prefix_sum[i + 1]
         return extended_nlist
 
     @staticmethod
-    def concat_switch_virtual(extended_tensor, extended_tensor_virtual, nloc: int, recv_num:Optional[torch.Tensor] = None):
+    def concat_switch_virtual(
+        extended_tensor,
+        extended_tensor_virtual,
+        nloc: int,
+        recv_num: Optional[torch.Tensor] = None,
+    ):
         """
         Concat real and virtual extended tensors, and switch all the local ones to the first nloc * 2 atoms.
         - [:, :nloc]: original nloc real atoms.
@@ -249,8 +262,23 @@ class SpinModel(torch.nn.Module):
             origin_prefix_sum = torch.cumsum(origin_recv_num, dim=0)
             origin_prefix_sum = torch.cat((torch.tensor([0]), origin_prefix_sum))
             for i in range(recv_num.size(0)):
-                extended_tensor_updated[:,nloc + nloc + prefix_sum[i]: nloc + nloc + prefix_sum[i] + origin_recv_num[i]] = extended_tensor[:, nloc+origin_prefix_sum[i]:nloc + origin_prefix_sum[i+1]]
-                extended_tensor_updated[:,nloc + nloc + prefix_sum[i] + origin_recv_num[i]: nloc + nloc + prefix_sum[i + 1]] = extended_tensor_virtual[:, nloc+origin_prefix_sum[i]:nloc + origin_prefix_sum[i+1]]
+                extended_tensor_updated[
+                    :,
+                    nloc + nloc + prefix_sum[i] : nloc
+                    + nloc
+                    + prefix_sum[i]
+                    + origin_recv_num[i],
+                ] = extended_tensor[
+                    :, nloc + origin_prefix_sum[i] : nloc + origin_prefix_sum[i + 1]
+                ]
+                extended_tensor_updated[
+                    :,
+                    nloc + nloc + prefix_sum[i] + origin_recv_num[i] : nloc
+                    + nloc
+                    + prefix_sum[i + 1],
+                ] = extended_tensor_virtual[
+                    :, nloc + origin_prefix_sum[i] : nloc + origin_prefix_sum[i + 1]
+                ]
         return extended_tensor_updated.view(out_shape)
 
     @staticmethod
@@ -504,7 +532,12 @@ class SpinModel(torch.nn.Module):
                 nlist_updated,
                 mapping_updated,
             ) = self.process_spin_input_lower(
-                extended_coord, extended_atype, extended_spin, nlist, mapping=mapping,recv_num=comm_dict["recv_num"]
+                extended_coord,
+                extended_atype,
+                extended_spin,
+                nlist,
+                mapping=mapping,
+                recv_num=comm_dict["recv_num"],
             )
         else:
             (
