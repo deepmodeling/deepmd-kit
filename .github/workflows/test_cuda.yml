@@ -19,7 +19,7 @@ jobs:
     runs-on: nvidia
     # https://github.com/deepmodeling/deepmd-kit/pull/2884#issuecomment-1744216845
     container:
-      image: nvidia/cuda:12.6.0-devel-ubuntu24.04
+      image: nvidia/cuda:12.3.1-devel-ubuntu22.04
       options: --gpus all
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
