@@ -132,7 +132,7 @@ cu12 = [
     "nvidia-curand-cu12",
     "nvidia-cusolver-cu12",
     "nvidia-cusparse-cu12",
-    "nvidia-cudnn-cu12<9",
+    "nvidia-cudnn-cu12",
     "nvidia-cuda-nvcc-cu12",
 ]
 jax = [
