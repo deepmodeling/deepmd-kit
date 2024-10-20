@@ -500,7 +500,7 @@ class DeepmdData:
         return data
 
     def reformat_data_paddle(self, data):
-        """Modify the data format for the requirements of Torch backend.
+        """Modify the data format for the requirements of Paddle backend.
 
         Parameters
         ----------

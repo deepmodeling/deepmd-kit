@@ -68,6 +68,8 @@ def scatter_reduce(
 
 
 def sec(l: int, size: int) -> list[int]:
+    assert l > 0
+    assert size > 0
     if l % size == 0:
         return [size] * (l // size)
     return [size] * (l // size) + [l % size]

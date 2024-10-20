@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -83,7 +82,7 @@ class PolarFittingNet(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -91,12 +90,12 @@ class PolarFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[Union[List[float], float]] = None,
+        scale: Optional[Union[list[float], float]] = None,
         shift_diag: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -164,7 +163,7 @@ class PolarFittingNet(GeneralFitting):
             return super().__getitem__(key)
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -261,4 +260,4 @@ class PolarFittingNet(GeneralFitting):
         return {"polarizability": out.to(env.GLOBAL_PD_FLOAT_PRECISION)}
 
     # make jit happy with paddle 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

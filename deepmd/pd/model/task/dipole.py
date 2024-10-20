@@ -3,7 +3,6 @@ import copy
 import logging
 from typing import (
     Callable,
-    List,
     Optional,
     Union,
 )
@@ -79,7 +78,7 @@ class DipoleFittingNet(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -87,11 +86,11 @@ class DipoleFittingNet(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         self.embedding_width = embedding_width
@@ -151,7 +150,7 @@ class DipoleFittingNet(GeneralFitting):
 
     def compute_output_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -197,4 +196,4 @@ class DipoleFittingNet(GeneralFitting):
         return {self.var_name: out.to(env.GLOBAL_PD_FLOAT_PRECISION)}
 
     # make jit happy with paddle 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

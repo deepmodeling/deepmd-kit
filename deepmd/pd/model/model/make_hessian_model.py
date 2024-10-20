@@ -2,8 +2,6 @@
 import copy
 import math
 from typing import (
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -47,7 +45,7 @@ def make_hessian_model(T_Model):
 
         def requires_hessian(
             self,
-            keys: Union[str, List[str]],
+            keys: Union[str, list[str]],
         ):
             """Set which output variable(s) requires hessian."""
             if isinstance(keys, str):
@@ -68,7 +66,7 @@ def make_hessian_model(T_Model):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, paddle.Tensor]:
+        ) -> dict[str, paddle.Tensor]:
             """Return model prediction.
 
             Parameters
@@ -122,7 +120,7 @@ def make_hessian_model(T_Model):
             box: Optional[paddle.Tensor] = None,
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
-        ) -> Dict[str, paddle.Tensor]:
+        ) -> dict[str, paddle.Tensor]:
             nf, nloc = atype.shape
             coord = coord.reshape([nf, (nloc * 3)])
             box = box.reshape([nf, 9]) if box is not None else None
@@ -130,7 +128,7 @@ def make_hessian_model(T_Model):
             aparam = aparam.reshape([nf, nloc, -1]) if aparam is not None else None
             fdef = self.atomic_output_def()
             # keys of values that require hessian
-            hess_keys: List[str] = []
+            hess_keys: list[str] = []
             for kk in fdef.keys():
                 if fdef[kk].r_hessian:
                     hess_keys.append(kk)

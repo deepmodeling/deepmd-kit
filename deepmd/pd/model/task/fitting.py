@@ -5,7 +5,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -137,7 +136,7 @@ class GeneralFitting(Fitting):
         var_name: str,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         bias_atom_e: Optional[paddle.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -146,11 +145,11 @@ class GeneralFitting(Fitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
-        trainable: Union[bool, List[bool]] = True,
-        remove_vaccum_contribution: Optional[List[bool]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
+        trainable: Union[bool, list[bool]] = True,
+        remove_vaccum_contribution: Optional[list[bool]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -253,13 +252,13 @@ class GeneralFitting(Fitting):
 
     def reinit_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -343,9 +342,9 @@ class GeneralFitting(Fitting):
         return self.numb_aparam
 
     # make jit happy
-    exclude_types: List[int]
+    exclude_types: list[int]
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -353,13 +352,13 @@ class GeneralFitting(Fitting):
         If returning an empty list, all atom types are selected.
         """
         # make jit happy
-        sel_type: List[int] = []
+        sel_type: list[int] = []
         for ii in range(self.ntypes):
             if ii not in self.exclude_types:
                 sel_type.append(ii)
         return sel_type
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 

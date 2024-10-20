@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -69,12 +66,12 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         old_impl: bool = False,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         super().__init__()
@@ -143,7 +140,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -151,7 +148,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -229,7 +226,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -242,7 +239,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -279,7 +276,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
             paddle.assign(paddle.to_tensor(mean).to(device=env.DEVICE), self.mean)  # pylint: disable=no-explicit-dtype
         paddle.assign(paddle.to_tensor(stddev).to(device=env.DEVICE), self.stddev)  # pylint: disable=no-explicit-dtype
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -305,7 +302,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -316,7 +313,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         atype_ext: paddle.Tensor,
         nlist: paddle.Tensor,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -408,7 +405,7 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         self.mean = mean
         self.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[paddle.Tensor, paddle.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.mean, self.stddev
 
@@ -462,9 +459,9 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

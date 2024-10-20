@@ -2,10 +2,7 @@
 import copy
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -55,8 +52,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        models: List[BaseAtomicModel],
-        type_map: List[str],
+        models: list[BaseAtomicModel],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -119,12 +116,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -140,22 +137,22 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 else None,
             )
 
-    def get_model_rcuts(self) -> List[float]:
+    def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def get_model_nsels(self) -> List[int]:
+    def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_model_sels(self) -> List[List[int]]:
+    def get_model_sels(self) -> list[list[int]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = paddle.stack(
             [
@@ -168,8 +165,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         inner_sorted = zipped[inner_sorting]
         outer_sorting = paddle.argsort(inner_sorted[:, 0])
         outer_sorted = inner_sorted[outer_sorting]
-        sorted_rcuts: List[float] = outer_sorted[:, 0].tolist()
-        sorted_sels: List[int] = outer_sorted[:, 1].to(paddle.int64).tolist()
+        sorted_rcuts: list[float] = outer_sorted[:, 0].tolist()
+        sorted_sels: list[int] = outer_sorted[:, 1].to(paddle.int64).tolist()
         return sorted_rcuts, sorted_sels
 
     def forward_atomic(
@@ -180,8 +177,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         mapping: Optional[paddle.Tensor] = None,
         fparam: Optional[paddle.Tensor] = None,
         aparam: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
-    ) -> Dict[str, paddle.Tensor]:
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+    ) -> dict[str, paddle.Tensor]:
         """Return atomic prediction.
 
         Parameters
@@ -253,7 +250,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, paddle.Tensor],
+        ret: dict[str, paddle.Tensor],
         atype: paddle.Tensor,
     ):
         """Apply the stat to each atomic output.
@@ -271,7 +268,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return ret
 
     @staticmethod
-    def remap_atype(ori_map: List[str], new_map: List[str]) -> paddle.Tensor:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> paddle.Tensor:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels. It creates a index mapping for the conversion.
@@ -336,7 +333,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def _compute_weight(
         self, extended_coord, extended_atype, nlists_
-    ) -> List[paddle.Tensor]:
+    ) -> list[paddle.Tensor]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
@@ -355,7 +352,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -384,7 +381,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -457,7 +454,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
-        type_map: List[str],
+        type_map: list[str],
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
@@ -504,8 +501,8 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        nlists_: List[paddle.Tensor],
-    ) -> List[paddle.Tensor]:
+        nlists_: list[paddle.Tensor],
+    ) -> list[paddle.Tensor]:
         """ZBL weight.
 
         Returns
@@ -552,10 +549,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         left_mask = sigma < self.sw_rmin
         mid_mask = (self.sw_rmin <= sigma) & (sigma < self.sw_rmax)
         right_mask = sigma >= self.sw_rmax
-        coef[left_mask] = 1
+        # coef[left_mask] = 1
+        coef = paddle.where(left_mask, paddle.ones_like(coef), coef)
         smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
-        coef[mid_mask] = smooth[mid_mask]
-        coef[right_mask] = 0
+        # coef[mid_mask] = smooth[mid_mask]
+        coef = paddle.where(mid_mask, smooth, coef)
+        # coef[right_mask] = 0
+        coef = paddle.where(right_mask, paddle.zeros_like(coef), coef)
 
         # to handle masked atoms
         coef = paddle.where(sigma != 0, coef, paddle.zeros_like(coef))

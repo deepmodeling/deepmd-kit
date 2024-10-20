@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -85,14 +82,14 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         concat_output_tebd: bool = True,
         precision: str = "float64",
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         old_impl: bool = False,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
@@ -278,7 +275,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -286,7 +283,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -377,7 +374,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -428,7 +425,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -452,8 +449,8 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: List[paddle.Tensor],
-        stddev: List[paddle.Tensor],
+        mean: list[paddle.Tensor],
+        stddev: list[paddle.Tensor],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate([self.repinit, self.repformers]):
@@ -462,7 +459,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def get_stat_mean_and_stddev(
         self,
-    ) -> Tuple[List[paddle.Tensor], List[paddle.Tensor]]:
+    ) -> tuple[list[paddle.Tensor], list[paddle.Tensor]]:
         """Get mean and stddev for descriptor."""
         return [self.repinit.mean, self.repformers.mean], [
             self.repinit.stddev,
@@ -591,7 +588,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -682,9 +679,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

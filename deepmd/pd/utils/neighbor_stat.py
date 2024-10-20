@@ -4,7 +4,6 @@ from collections.abc import (
 )
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -54,7 +53,7 @@ class NeighborStatOP(paddle.nn.Layer):
         coord: paddle.Tensor,
         atype: paddle.Tensor,
         cell: Optional[paddle.Tensor],
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -110,9 +109,9 @@ class NeighborStatOP(paddle.nn.Layer):
         else:
             mask = rr2 < self.rcut**2
             # virtual types (<0) are not counted
-            nnei = paddle.sum(mask & ((extend_atype >= 0).unsqueeze(1)), axis=-1).reshape(
-                [nframes, nloc, 1]
-            )
+            nnei = paddle.sum(
+                mask & ((extend_atype >= 0).unsqueeze(1)), axis=-1
+            ).reshape([nframes, nloc, 1])
         max_nnei = paddle.max(nnei, axis=1)
         return min_rr2, max_nnei
 
@@ -144,7 +143,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 
         Yields

@@ -8,14 +8,12 @@ from collections import (
     OrderedDict,
 )
 from typing import (
-    Dict,
-    Optional,
     Union,
 )
 
 import paddle
 
-_StateDict = Union[Dict[str, paddle.Tensor], OrderedDict[str, paddle.Tensor]]
+_StateDict = Union[dict[str, paddle.Tensor], OrderedDict[str, paddle.Tensor]]
 
 # if paddle.__version__.startswith("2"):
 #     import paddle._dynamo
@@ -27,8 +25,8 @@ log = logging.getLogger(__name__)
 class ModelWrapper(paddle.nn.Layer):
     def __init__(
         self,
-        model: Union[paddle.nn.Layer, Dict],
-        loss: Union[paddle.nn.Layer, Dict] = None,
+        model: paddle.nn.Layer | dict,
+        loss: paddle.nn.Layer | dict = None,
         model_params=None,
         shared_links=None,
     ):
@@ -148,15 +146,15 @@ class ModelWrapper(paddle.nn.Layer):
         self,
         coord,
         atype,
-        spin: Optional[paddle.Tensor] = None,
-        box: Optional[paddle.Tensor] = None,
-        cur_lr: Optional[paddle.Tensor] = None,
-        label: Optional[paddle.Tensor] = None,
-        task_key: Optional[paddle.Tensor] = None,
+        spin: paddle.Tensor | None = None,
+        box: paddle.Tensor | None = None,
+        cur_lr: paddle.Tensor | None = None,
+        label: paddle.Tensor | None = None,
+        task_key: paddle.Tensor | None = None,
         inference_only=False,
         do_atomic_virial=False,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
     ):
         if not self.multi_task:
             task_key = "Default"
@@ -211,12 +209,12 @@ class ModelWrapper(paddle.nn.Layer):
         state_dict.update({"_extra_state": extra_state})
         return state_dict
 
-    def set_extra_state(self, extra_state: Dict):
+    def set_extra_state(self, extra_state: dict):
         self.model_params = extra_state["model_params"]
         self.train_infos = extra_state["train_infos"]
         return None
 
-    def get_extra_state(self) -> Dict:
+    def get_extra_state(self) -> dict:
         extra_state = {
             "model_params": self.model_params,
             "train_infos": self.train_infos,

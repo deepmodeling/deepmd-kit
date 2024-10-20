@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -100,12 +97,12 @@ class DescrptBlockRepformers(DescriptorBlock):
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         old_impl: bool = False,
     ):
         r"""
@@ -325,7 +322,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -394,7 +391,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -406,7 +403,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         extended_atype: paddle.Tensor,
         extended_atype_embd: Optional[paddle.Tensor] = None,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
     ):
         if comm_dict is None:
             assert mapping is not None
@@ -513,7 +510,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -550,7 +547,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             paddle.assign(paddle.to_tensor(mean).to(device=env.DEVICE), self.mean)  # pylint: disable=no-explicit-dtype
         paddle.assign(paddle.to_tensor(stddev).to(device=env.DEVICE), self.stddev)  # pylint: disable=no-explicit-dtype
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(

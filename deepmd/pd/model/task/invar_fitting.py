@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -87,7 +86,7 @@ class InvarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         dim_out: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         bias_atom_e: Optional[paddle.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -96,10 +95,10 @@ class InvarFitting(GeneralFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         rcond: Optional[float] = None,
-        seed: Optional[Union[int, List[int]]] = None,
-        exclude_types: List[int] = [],
-        atom_ener: Optional[List[Optional[paddle.Tensor]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        exclude_types: list[int] = [],
+        atom_ener: Optional[list[Optional[paddle.Tensor]]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         self.dim_out = dim_out
@@ -179,4 +178,4 @@ class InvarFitting(GeneralFitting):
         return self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
 
     # make jit happy with paddle 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

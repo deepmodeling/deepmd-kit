@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-)
 
 import paddle
 
@@ -136,7 +133,7 @@ class TensorLoss(TaskLoss):
                     paddle.sum(
                         paddle.square(diff) * atom_num.astype(diff.dtype), axis=0
                     )
-                    / atom_num.sum()
+                    / (atom_num.sum().astype(diff.dtype))
                 )
                 atom_num = paddle.mean(atom_num.astype(diff.dtype))
             else:
@@ -154,7 +151,7 @@ class TensorLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
         if self.has_local_weight:

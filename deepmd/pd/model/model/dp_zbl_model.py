@@ -88,6 +88,7 @@ class DPZBLModel(DPZBLModel_):
             model_predict["force"] = model_ret["dforce"]
         if "mask" in model_ret:
             model_predict["mask"] = model_ret["mask"]
+
         return model_predict
 
     def forward_lower(

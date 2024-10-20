@@ -2,10 +2,7 @@
 import math
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -43,11 +40,11 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
         The descriptor can be either an object or a dictionary.
     """
 
-    nlist_cut_idx: List[paddle.Tensor]
+    nlist_cut_idx: list[paddle.Tensor]
 
     def __init__(
         self,
-        list: List[Union[BaseDescriptor, Dict[str, Any]]],
+        list: list[Union[BaseDescriptor, dict[str, Any]]],
         **kwargs,
     ) -> None:
         super().__init__()
@@ -57,7 +54,7 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
             raise RuntimeError(
                 "cannot build descriptor from an empty list of descriptors."
             )
-        formatted_descript_list: List[BaseDescriptor] = []
+        formatted_descript_list: list[BaseDescriptor] = []
         for ii in descrpt_list:
             if isinstance(ii, BaseDescriptor):
                 formatted_descript_list.append(ii)
@@ -75,7 +72,7 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
             ), f"number of atom types in {ii}th descrptor does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
-        self.nlist_cut_idx: List[paddle.Tensor] = []
+        self.nlist_cut_idx: list[paddle.Tensor] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -114,7 +111,7 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
         # Note: Using the minimum rcut_smth might not be appropriate in all scenarios. Consider using a different approach or provide detailed documentation on why the minimum value is chosen.
         return min([descrpt.get_rcut_smth() for descrpt in self.descrpt_list])
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         if self.mixed_types():
             return [
@@ -131,7 +128,7 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of element types."""
         return self.descrpt_list[0].get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.descrpt_list[0].get_type_map()
 
@@ -185,7 +182,7 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -198,15 +195,15 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
                 else None,
             )
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
         self,
-        mean: List[Union[paddle.Tensor, List[paddle.Tensor]]],
-        stddev: List[Union[paddle.Tensor, List[paddle.Tensor]]],
+        mean: list[Union[paddle.Tensor, list[paddle.Tensor]]],
+        stddev: list[Union[paddle.Tensor, list[paddle.Tensor]]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -214,9 +211,9 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
 
     def get_stat_mean_and_stddev(
         self,
-    ) -> Tuple[
-        List[Union[paddle.Tensor, List[paddle.Tensor]]],
-        List[Union[paddle.Tensor, List[paddle.Tensor]]],
+    ) -> tuple[
+        list[Union[paddle.Tensor, list[paddle.Tensor]]],
+        list[Union[paddle.Tensor, list[paddle.Tensor]]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -233,7 +230,7 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
         atype_ext: paddle.Tensor,
         nlist: paddle.Tensor,
         mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[Dict[str, paddle.Tensor]] = None,
+        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -303,9 +300,9 @@ class DescrptHybrid(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

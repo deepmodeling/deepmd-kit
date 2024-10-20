@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-)
 
 import paddle
 
@@ -74,7 +71,7 @@ def task_deriv_one(
     do_atomic_virial: bool = False,
     create_graph: bool = True,
 ):
-    faked_grad = paddle.ones_like(energy)
+    # faked_grad = paddle.ones_like(energy)
     # lst = paddle.jit.annotate(List[Optional[paddle.Tensor]], [faked_grad])
     extended_force = paddle.autograd.grad(
         [energy],
@@ -162,12 +159,12 @@ def take_deriv(
 
 
 def fit_output_to_model_output(
-    fit_ret: Dict[str, paddle.Tensor],
+    fit_ret: dict[str, paddle.Tensor],
     fit_output_def: FittingOutputDef,
     coord_ext: paddle.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-) -> Dict[str, paddle.Tensor]:
+) -> dict[str, paddle.Tensor]:
     """Transform the output of the fitting network to
     the model output.
 
@@ -203,11 +200,11 @@ def fit_output_to_model_output(
 
 
 def communicate_extended_output(
-    model_ret: Dict[str, paddle.Tensor],
+    model_ret: dict[str, paddle.Tensor],
     model_output_def: ModelOutputDef,
     mapping: paddle.Tensor,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> Dict[str, paddle.Tensor]:
+) -> dict[str, paddle.Tensor]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 

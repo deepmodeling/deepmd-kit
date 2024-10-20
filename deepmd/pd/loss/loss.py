@@ -3,9 +3,6 @@ from abc import (
     ABC,
     abstractmethod,
 )
-from typing import (
-    List,
-)
 
 import paddle
 
@@ -25,7 +22,7 @@ class TaskLoss(paddle.nn.Layer, ABC):
 
     @property
     @abstractmethod
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         pass
 

@@ -2,7 +2,6 @@
 import copy
 import logging
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -45,19 +44,19 @@ class DOSFittingNet(InvarFitting):
         ntypes: int,
         dim_descrpt: int,
         numb_dos: int = 300,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         rcond: Optional[float] = None,
         bias_dos: Optional[paddle.Tensor] = None,
-        trainable: Union[bool, List[bool]] = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        trainable: Union[bool, list[bool]] = True,
+        seed: Optional[Union[int, list[int]]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
         mixed_types: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
     ):
         super().__init__(
             var_name="dos",
@@ -127,4 +126,4 @@ class DOSFittingNet(InvarFitting):
         return dd
 
     # make jit happy with paddle 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]

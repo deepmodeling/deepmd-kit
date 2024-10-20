@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -22,7 +20,7 @@ def extend_input_and_build_neighbor_list(
     coord,
     atype,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     mixed_types: bool = False,
     box: Optional[paddle.Tensor] = None,
 ):
@@ -56,7 +54,7 @@ def build_neighbor_list(
     atype: paddle.Tensor,
     nloc: int,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> paddle.Tensor:
     """Build neightbor list for a single frame. keeps nsel neighbors.
@@ -140,7 +138,7 @@ def _trim_mask_distinguish_nlist(
     rr: paddle.Tensor,
     nlist: paddle.Tensor,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     distinguish_types: bool,
 ) -> paddle.Tensor:
     """Trim the size of nlist, mask if any central atom is virtual, distinguish types if necessary."""
@@ -189,7 +187,7 @@ def build_directional_neighbor_list(
     coord_neig: paddle.Tensor,
     atype_neig: paddle.Tensor,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> paddle.Tensor:
     """Build directional neighbor list.
@@ -290,7 +288,7 @@ def build_directional_neighbor_list(
 def nlist_distinguish_types(
     nlist: paddle.Tensor,
     atype: paddle.Tensor,
-    sel: List[int],
+    sel: list[int],
 ):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
@@ -349,9 +347,9 @@ def get_multiple_nlist_key(
 def build_multiple_neighbor_list(
     coord: paddle.Tensor,
     nlist: paddle.Tensor,
-    rcuts: List[float],
-    nsels: List[int],
-) -> Dict[str, paddle.Tensor]:
+    rcuts: list[float],
+    nsels: list[int],
+) -> dict[str, paddle.Tensor]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.

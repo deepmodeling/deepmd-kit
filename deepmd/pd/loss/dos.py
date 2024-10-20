@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    List,
-)
 
 import paddle
 
@@ -184,9 +181,12 @@ class DOSLoss(TaskLoss):
             if "mask" in model_pred:
                 atom_num = model_pred["mask"].sum(-1, keepdim=True)
                 l2_global_loss_dos = paddle.mean(
-                    paddle.sum(paddle.square(diff) * atom_num, axis=0) / atom_num.sum()
+                    paddle.sum(
+                        paddle.square(diff) * atom_num.astype(diff.dtype), axis=0
+                    )
+                    / (atom_num.sum().astype(diff.dtype))
                 )
-                atom_num = paddle.mean(float(atom_num))
+                atom_num = paddle.mean(atom_num.astype(diff.dtype))
             else:
                 atom_num = natoms
                 l2_global_loss_dos = paddle.mean(paddle.square(diff))
@@ -212,7 +212,8 @@ class DOSLoss(TaskLoss):
             if "mask" in model_pred:
                 atom_num = model_pred["mask"].sum(-1, keepdim=True)
                 l2_global_loss_cdf = paddle.mean(
-                    paddle.sum(paddle.square(diff) * atom_num, axis=0) / atom_num.sum()
+                    paddle.sum(paddle.square(diff) * atom_num, axis=0)
+                    / (atom_num.sum().astype(diff.dtype))
                 )
                 atom_num = paddle.mean(float(atom_num))
             else:
@@ -230,7 +231,7 @@ class DOSLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
         if self.has_ados or self.has_acdf:

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-)
 
 import paddle
 
@@ -21,7 +18,7 @@ class DPPolarAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, paddle.Tensor],
+        ret: dict[str, paddle.Tensor],
         atype: paddle.Tensor,
     ):
         """Apply the stat to each atomic output.
