@@ -2,9 +2,7 @@
 """Module that reads node resources, auto detects if running local or on SLURM."""
 
 from typing import (
-    List,
     Optional,
-    Tuple,
 )
 
 from .local import get_resource as get_local_res
@@ -12,12 +10,12 @@ from .local import get_resource as get_local_res
 __all__ = ["get_resource"]
 
 
-def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
+def get_resource() -> tuple[str, list[str], Optional[list[int]]]:
     """Get local or slurm resources: nodename, nodelist, and gpus.
 
     Returns
     -------
-    Tuple[str, List[str], Optional[List[int]]]
+    tuple[str, list[str], Optional[list[int]]]
         nodename, nodelist, and gpus
     """
     return get_local_res()

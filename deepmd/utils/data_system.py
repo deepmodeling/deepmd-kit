@@ -3,12 +3,10 @@ import collections
 import logging
 import warnings
 from functools import (
-    lru_cache,
+    cached_property,
 )
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -45,13 +43,13 @@ class DeepmdDataSystem:
 
     def __init__(
         self,
-        systems: List[str],
+        systems: list[str],
         batch_size: int,
         test_size: int,
         rcut: Optional[float] = None,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set=False,
@@ -196,8 +194,8 @@ class DeepmdDataSystem:
             words = self.test_size.split("%")
             try:
                 percent = int(words[0])
-            except ValueError:
-                raise RuntimeError("unknown test_size rule " + words[0])
+            except ValueError as e:
+                raise RuntimeError("unknown test_size rule " + words[0]) from e
             self.test_size = self._make_auto_ts(percent)
         elif isinstance(self.test_size, list):
             pass
@@ -240,9 +238,8 @@ class DeepmdDataSystem:
             for nn in test_system_data:
                 self.test_data[nn].append(test_system_data[nn])
 
-    @property
-    @lru_cache(maxsize=None)
-    def default_mesh(self) -> List[np.ndarray]:
+    @cached_property
+    def default_mesh(self) -> list[np.ndarray]:
         """Mesh for each system."""
         return [
             make_default_mesh(
@@ -266,7 +263,7 @@ class DeepmdDataSystem:
         )
         return energy_shift.ravel()
 
-    def add_dict(self, adict: Dict[str, Dict[str, Any]]) -> None:
+    def add_dict(self, adict: dict[str, dict[str, Any]]) -> None:
         """Add items to the data system by a `dict`.
         `adict` should have items like
         .. code-block:: python.
@@ -299,7 +296,7 @@ class DeepmdDataSystem:
             )
 
     def add_data_requirements(
-        self, data_requirements: List[DataRequirementItem]
+        self, data_requirements: list[DataRequirementItem]
     ) -> None:
         """Add items to the data system by a list of `DataRequirementItem`."""
         self.add_dict({rr.key: rr.dict for rr in data_requirements})
@@ -311,7 +308,7 @@ class DeepmdDataSystem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: Optional[list[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
@@ -440,7 +437,7 @@ class DeepmdDataSystem:
             self.pick_idx = sys_idx
         else:
             # prob = self._get_sys_probs(sys_probs, auto_prob_style)
-            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)  # pylint: disable=no-explicit-dtype
         b_data = self.data_systems[self.pick_idx].get_batch(
             self.batch_size[self.pick_idx]
         )
@@ -460,7 +457,7 @@ class DeepmdDataSystem:
         batch_size = self.batch_size[0]
         batch_data = []
         for _ in range(batch_size):
-            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)
+            self.pick_idx = dp_random.choice(np.arange(self.nsystems), p=self.sys_probs)  # pylint: disable=no-explicit-dtype
             bb_data = self.data_systems[self.pick_idx].get_batch(1)
             bb_data["natoms_vec"] = self.natoms_vec[self.pick_idx]
             bb_data["default_mesh"] = self.default_mesh[self.pick_idx]
@@ -468,7 +465,7 @@ class DeepmdDataSystem:
         b_data = self._merge_batch_data(batch_data)
         return b_data
 
-    def _merge_batch_data(self, batch_data: List[dict]) -> dict:
+    def _merge_batch_data(self, batch_data: list[dict]) -> dict:
         """Merge batch data from different systems.
 
         Parameters
@@ -550,7 +547,7 @@ class DeepmdDataSystem:
         else:
             return self.test_size[self.pick_idx]
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
@@ -613,7 +610,11 @@ class DeepmdDataSystem:
                 min_len = min([len(ii), len(ret)])
                 for idx in range(min_len):
                     if ii[idx] != ret[idx]:
-                        raise RuntimeError(f"inconsistent type map: {ret!s} {ii!s}")
+                        raise RuntimeError(
+                            f"Inconsistent type map: {ret!s} {ii!s} in different data systems. "
+                            "If you didn't set model/type_map, please set it, "
+                            "since the type map of the model cannot be decided by data."
+                        )
                 if len(ii) > len(ret):
                     ret = ii
         return ret
@@ -631,12 +632,12 @@ def _format_name_length(name, width):
 def print_summary(
     name: str,
     nsystems: int,
-    system_dirs: List[str],
-    natoms: List[int],
-    batch_size: List[int],
-    nbatches: List[int],
-    sys_probs: List[float],
-    pbc: List[bool],
+    system_dirs: list[str],
+    natoms: list[int],
+    batch_size: list[int],
+    nbatches: list[int],
+    sys_probs: list[float],
+    pbc: list[bool],
 ):
     """Print summary of systems.
 
@@ -720,7 +721,7 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
         block_weights.append(weight)
     nblocks = len(block_str)
     block_probs = np.array(block_weights) / np.sum(block_weights)
-    sys_probs = np.zeros([nsystems])
+    sys_probs = np.zeros([nsystems])  # pylint: disable=no-explicit-dtype
     for ii in range(nblocks):
         nbatch_block = nbatch[block_stt[ii] : block_end[ii]]
         tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
@@ -728,7 +729,7 @@ def prob_sys_size_ext(keywords, nsystems, nbatch):
     return sys_probs
 
 
-def process_systems(systems: Union[str, List[str]]) -> List[str]:
+def process_systems(systems: Union[str, list[str]]) -> list[str]:
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
@@ -769,7 +770,7 @@ def process_systems(systems: Union[str, List[str]]) -> List[str]:
 
 
 def get_data(
-    jdata: Dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
+    jdata: dict[str, Any], rcut, type_map, modifier, multi_task_mode=False
 ) -> DeepmdDataSystem:
     """Get the data system.
 

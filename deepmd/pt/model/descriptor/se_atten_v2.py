@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -42,7 +40,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -55,7 +53,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
         normalize=True,
@@ -66,13 +64,13 @@ class DescrptSeAttenV2(DescrptDPA1):
         ln_eps: Optional[float] = 1e-5,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        use_tebd_bias: bool = False,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ) -> None:
         r"""Construct smooth version of embedding net of type `se_atten_v2`.
 
@@ -112,7 +110,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-        exclude_types : List[List[int]]
+        exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float
@@ -124,6 +122,10 @@ class DescrptSeAttenV2(DescrptDPA1):
             Whether to normalize the hidden vectors in attention weights calculation.
         temperature : float
             If not None, the scaling of attention weights is `temperature` itself.
+        concat_output_tebd : bool
+            Whether to concat type embedding at the output of the descriptor.
+        trainable : bool
+            If the weights of this descriptors are trainable.
         trainable_ln : bool
             Whether to use trainable shift and scale weights in layer normalization.
         ln_eps : float, Optional
@@ -132,8 +134,24 @@ class DescrptSeAttenV2(DescrptDPA1):
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
             Default is 'False'.
+        stripped_type_embedding : bool, Optional
+            (Deprecated, kept only for compatibility.)
+            Whether to strip the type embedding into a separate embedding network.
+            Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
+            Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
+            The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
         seed : int, Optional
             Random seed for parameter initialization.
+        use_econf_tebd : bool, Optional
+            Whether to use electronic configuration type embedding.
+        use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
+        type_map : list[str], Optional
+            A list of strings. Give the name to each type of atoms.
+        spin
+            (Only support None to keep consistent with other backend references.)
+            (Not used in this version. Not-none option is not implemented.)
+            The old implementation of deepspin.
         """
         DescrptDPA1.__init__(
             self,
@@ -167,11 +185,11 @@ class DescrptSeAttenV2(DescrptDPA1):
             stripped_type_embedding=stripped_type_embedding,
             seed=seed,
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # not implemented
             spin=spin,
             type=type,
-            old_impl=old_impl,
         )
 
     def serialize(self) -> dict:
@@ -179,7 +197,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         data = {
             "@class": "Descriptor",
             "type": "se_atten_v2",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -202,6 +220,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": RESERVED_PRECISON_DICT[obj.prec],
@@ -224,7 +243,7 @@ class DescrptSeAttenV2(DescrptDPA1):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -233,6 +252,9 @@ class DescrptSeAttenV2(DescrptDPA1):
         attention_layers = data.pop("attention_layers")
         data.pop("env_mat")
         embeddings_strip = data.pop("embeddings_strip")
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
 
         def t_cvt(xx):

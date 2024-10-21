@@ -680,7 +680,7 @@ def test_pair_deepmd_si(lammps_si):
 )
 @pytest.mark.parametrize(
     ("balance_args",),
-    [(["--balance"],)],
+    [(["--balance"],), ([],)],
 )
 def test_pair_deepmd_mpi(balance_args: list):
     with tempfile.NamedTemporaryFile() as f:

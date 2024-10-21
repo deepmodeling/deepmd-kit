@@ -12,7 +12,7 @@ In the documentation, TensorFlow {{ tensorflow_icon }} and PyTorch {{ pytorch_ic
 - Model filename extension: `.pb`
 - Checkpoint filename extension: `.meta`, `.index`, `.data-00000-of-00001`
 
-[TensorFlow](https://tensorflow.org) 2.2 or above is required.
+[TensorFlow](https://tensorflow.org) 2.7 or above is required, since NumPy 1.21 or above is required.
 DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`tf.compat.v1`) in the graph mode.
 
 ### PyTorch {{ pytorch_icon }}
@@ -29,13 +29,15 @@ While `.pth` and `.pt` are the same in the PyTorch package, they have different 
 This backend is only for development and should not take into production.
 :::
 
-- Model filename extension: `.dp`
+- Model filename extension: `.dp`, `.yaml`, `.yml`
 
 DP is a reference backend for development, which uses pure [NumPy](https://numpy.org/) to implement models without using any heavy deep-learning frameworks.
 Due to the limitation of NumPy, it doesn't support gradient calculation and thus cannot be used for training.
 As a reference backend, it is not aimed at the best performance, but only the correct results.
-The DP backend uses [HDF5](https://docs.h5py.org/) to store model serialization data, which is backend-independent.
-Only Python inference interface can load this format.
+The DP backend has two formats, both of which are backend-independent:
+The `.dp` format uses [HDF5](https://docs.h5py.org/) to store model serialization data, which has good performance.
+The `.yaml` or `.yml` use [YAML](https://yaml.org/) to save the data as plain texts, which is easy to read for human beings.
+Only Python inference interface can load these formats.
 
 NumPy 1.21 or above is required.
 

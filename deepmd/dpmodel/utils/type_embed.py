@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    support_array_api,
+)
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
     NativeOP,
@@ -45,7 +48,9 @@ class TypeEmbedNet(NativeOP):
         Concat the zero padding to the output, as the default embedding of empty type.
     use_econf_tebd: bool, Optional
         Whether to use electronic configuration type embedding.
-    type_map: List[str], Optional
+    use_tebd_bias : bool, Optional
+        Whether to use bias in the type embedding layer.
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
 
@@ -53,15 +58,16 @@ class TypeEmbedNet(NativeOP):
         self,
         *,
         ntypes: int,
-        neuron: List[int],
+        neuron: list[int],
         resnet_dt: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        use_tebd_bias: bool = False,
+        type_map: Optional[list[str]] = None,
     ) -> None:
         self.ntypes = ntypes
         self.neuron = neuron
@@ -72,6 +78,7 @@ class TypeEmbedNet(NativeOP):
         self.trainable = trainable
         self.padding = padding
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         embed_input_dim = ntypes
         if self.use_econf_tebd:
@@ -85,18 +92,21 @@ class TypeEmbedNet(NativeOP):
             self.resnet_dt,
             self.precision,
             seed=self.seed,
+            bias=self.use_tebd_bias,
         )
 
+    @support_array_api(version="2022.12")
     def call(self) -> np.ndarray:
         """Compute the type embedding network."""
+        sample_array = self.embedding_net[0]["w"]
+        xp = array_api_compat.array_namespace(sample_array)
         if not self.use_econf_tebd:
-            embed = self.embedding_net(
-                np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
-            )
+            embed = self.embedding_net(xp.eye(self.ntypes, dtype=sample_array.dtype))
         else:
             embed = self.embedding_net(self.econf_tebd)
         if self.padding:
-            embed = np.pad(embed, ((0, 1), (0, 0)), mode="constant")
+            embed_pad = xp.zeros((1, embed.shape[-1]), dtype=embed.dtype)
+            embed = xp.concat([embed, embed_pad], axis=0)
         return embed
 
     @classmethod
@@ -114,11 +124,14 @@ class TypeEmbedNet(NativeOP):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        check_version_compatibility(data.pop("@version", 1), 2, 1)
         data_cls = data.pop("@class")
         assert data_cls == "TypeEmbedNet", f"Invalid class {data_cls}"
 
         embedding_net = EmbeddingNet.deserialize(data.pop("embedding"))
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         type_embedding_net = cls(**data)
         type_embedding_net.embedding_net = embedding_net
         return type_embedding_net
@@ -133,7 +146,7 @@ class TypeEmbedNet(NativeOP):
         """
         return {
             "@class": "TypeEmbedNet",
-            "@version": 1,
+            "@version": 2,
             "ntypes": self.ntypes,
             "neuron": self.neuron,
             "resnet_dt": self.resnet_dt,
@@ -142,12 +155,13 @@ class TypeEmbedNet(NativeOP):
             "trainable": self.trainable,
             "padding": self.padding,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             "embedding": self.embedding_net.serialize(),
         }
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -207,7 +221,9 @@ class TypeEmbedNet(NativeOP):
 def get_econf_tebd(type_map, precision: str = "default"):
     from deepmd.utils.econf_embd import (
         ECONF_DIM,
-        electronic_configuration_embedding,
+    )
+    from deepmd.utils.econf_embd import (
+        normalized_electronic_configuration_embedding as electronic_configuration_embedding,
     )
     from deepmd.utils.econf_embd import type_map as periodic_table
 

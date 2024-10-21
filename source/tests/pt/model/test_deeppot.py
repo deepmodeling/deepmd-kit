@@ -2,9 +2,6 @@
 import json
 import os
 import unittest
-from argparse import (
-    Namespace,
-)
 from copy import (
     deepcopy,
 )
@@ -22,10 +19,6 @@ from deepmd.pt.entrypoints.main import (
 )
 from deepmd.pt.infer.deep_eval import (
     DeepPot,
-)
-
-from ...tf.test_deeppot_a import (
-    FparamAparamCommonTest,
 )
 
 
@@ -114,17 +107,24 @@ class TestDeepPot(unittest.TestCase):
         self.assertIsInstance(dp, DeepPot)
         # its methods has been tested in test_dp_test
 
+    def test_eval_typeebd(self):
+        dp = DeepPot(str(self.model))
+        eval_typeebd = dp.eval_typeebd()
+        self.assertEqual(
+            eval_typeebd.shape, (len(self.config["model"]["type_map"]) + 1, 8)
+        )
+        np.testing.assert_allclose(eval_typeebd[-1], np.zeros_like(eval_typeebd[-1]))
+
 
 class TestDeepPotFrozen(TestDeepPot):
     def setUp(self):
         super().setUp()
         frozen_model = "frozen_model.pth"
-        ns = Namespace(
+        freeze(
             model=self.model,
             output=frozen_model,
             head=None,
         )
-        freeze(ns)
         self.model = frozen_model
 
     # Note: this can not actually disable cuda device to be used
@@ -136,19 +136,4 @@ class TestDeepPotFrozen(TestDeepPot):
         self.test_dp_test()
 
 
-class TestFparamAparamPT(FparamAparamCommonTest, unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.dp = DeepPot(
-            str(Path(__file__).parent.parent.parent / "infer/fparam_aparam.pth")
-        )
-
-    def setUp(self):
-        super().setUp()
-        # For unclear reason, the precision is only 1e-7
-        # not sure if it is expected...
-        self.places = 1e-7
-
-    @classmethod
-    def tearDownClass(cls):
-        pass
+# TestFparamAparamPT: moved to infer/test_models.py

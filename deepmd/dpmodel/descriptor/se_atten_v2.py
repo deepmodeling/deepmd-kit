@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -38,9 +36,9 @@ class DescrptSeAttenV2(DescrptDPA1):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         resnet_dt: bool = False,
@@ -50,7 +48,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -64,9 +62,10 @@ class DescrptSeAttenV2(DescrptDPA1):
         spin: Optional[Any] = None,
         stripped_type_embedding: Optional[bool] = None,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        use_tebd_bias: bool = False,
+        type_map: Optional[list[str]] = None,
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         DescrptDPA1.__init__(
             self,
@@ -100,6 +99,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             spin=spin,
             stripped_type_embedding=stripped_type_embedding,
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # consistent with argcheck, not used though
             seed=seed,
@@ -111,7 +111,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         data = {
             "@class": "Descriptor",
             "type": "se_atten_v2",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -134,6 +134,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": np.dtype(PRECISION_DICT[obj.precision]).name,
@@ -158,7 +159,7 @@ class DescrptSeAttenV2(DescrptDPA1):
     def deserialize(cls, data: dict) -> "DescrptSeAttenV2":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -167,6 +168,9 @@ class DescrptSeAttenV2(DescrptDPA1):
         attention_layers = data.pop("attention_layers")
         data.pop("env_mat")
         embeddings_strip = data.pop("embeddings_strip")
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
 
         obj.se_atten["davg"] = variables["davg"]

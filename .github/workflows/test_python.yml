@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         group: [1, 2, 3, 4, 5, 6]
-        python: ["3.8", "3.11"]
+        python: ["3.9", "3.12"]
 
     steps:
     - uses: actions/checkout@v4
@@ -28,13 +28,13 @@ jobs:
         source/install/uv_with_retry.sh pip install --system mpich
         source/install/uv_with_retry.sh pip install --system "torch==2.3.0+cpu.cxx11.abi" -i https://download.pytorch.org/whl/
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
-        source/install/uv_with_retry.sh pip install --system --only-binary=horovod -e .[cpu,test] horovod[tensorflow-cpu] mpi4py
+        source/install/uv_with_retry.sh pip install --system --only-binary=horovod -e .[cpu,test,jax] horovod[tensorflow-cpu] mpi4py
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
         # TensorFlow in the build dependency, but if it
         # changes, setting `TENSORFLOW_ROOT`.
-        TENSORFLOW_VERSION: ${{ matrix.python == '3.8' && '2.13.1' || '2.16.1' }}
+        TENSORFLOW_VERSION: 2.16.1
         DP_ENABLE_PYTORCH: 1
         DP_BUILD_TESTING: 1
         UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/njzjz/simple https://pypi.anaconda.org/mpi4py/simple"
@@ -59,6 +59,7 @@ jobs:
       with:
         name: split-${{ matrix.python }}-${{ matrix.group }}
         path: .test_durations_${{ matrix.group }}
+        include-hidden-files: true
     - uses: codecov/codecov-action@v4
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -68,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.8", "3.11"]
+        python: ["3.9", "3.12"]
     needs: testpython
     steps:
     - name: Get durations from cache

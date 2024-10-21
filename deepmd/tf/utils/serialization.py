@@ -91,13 +91,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         if model.get_numb_fparam() > 0:
             inputs["fparam"] = tf.placeholder(
                 GLOBAL_TF_FLOAT_PRECISION,
-                [None, model.get_numb_fparam()],
+                [None],
                 name="t_fparam",
             )
         if model.get_numb_aparam() > 0:
             inputs["aparam"] = tf.placeholder(
                 GLOBAL_TF_FLOAT_PRECISION,
-                [None, model.get_numb_aparam()],
+                [None],
                 name="t_aparam",
             )
         model.build(

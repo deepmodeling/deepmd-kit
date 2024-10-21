@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -31,17 +29,29 @@ def atomic_virial_corr(
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = torch.split(torch.sum(ce, dim=1), [1, 1, 1], dim=-1)
     faked_grad = torch.ones_like(sumce0)
-    lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
     extended_virial_corr0 = torch.autograd.grad(
-        [sumce0], [extended_coord], grad_outputs=lst, create_graph=True
+        [sumce0],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=False,
+        retain_graph=True,
     )[0]
     assert extended_virial_corr0 is not None
     extended_virial_corr1 = torch.autograd.grad(
-        [sumce1], [extended_coord], grad_outputs=lst, create_graph=True
+        [sumce1],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=False,
+        retain_graph=True,
     )[0]
     assert extended_virial_corr1 is not None
     extended_virial_corr2 = torch.autograd.grad(
-        [sumce2], [extended_coord], grad_outputs=lst, create_graph=True
+        [sumce2],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=False,
+        retain_graph=True,
     )[0]
     assert extended_virial_corr2 is not None
     extended_virial_corr = torch.concat(
@@ -61,11 +71,16 @@ def task_deriv_one(
     extended_coord: torch.Tensor,
     do_virial: bool = True,
     do_atomic_virial: bool = False,
+    create_graph: bool = True,
 ):
     faked_grad = torch.ones_like(energy)
-    lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
     extended_force = torch.autograd.grad(
-        [energy], [extended_coord], grad_outputs=lst, create_graph=True
+        [energy],
+        [extended_coord],
+        grad_outputs=lst,
+        create_graph=create_graph,
+        retain_graph=True,
     )[0]
     assert extended_force is not None
     extended_force = -extended_force
@@ -91,14 +106,6 @@ def get_leading_dims(
     return list(vshape[: (len(vshape) - len(vdef.shape))])
 
 
-def get_atom_axis(
-    vdef: torch.Tensor,
-):
-    """Get the axis of atoms."""
-    atom_axis = -(len(vdef.shape) + 1)
-    return atom_axis
-
-
 def take_deriv(
     vv: torch.Tensor,
     svv: torch.Tensor,
@@ -106,6 +113,7 @@ def take_deriv(
     coord_ext: torch.Tensor,
     do_virial: bool = False,
     do_atomic_virial: bool = False,
+    create_graph: bool = True,
 ):
     size = 1
     for ii in vdef.shape:
@@ -123,6 +131,7 @@ def take_deriv(
             coord_ext,
             do_virial=do_virial,
             do_atomic_virial=do_atomic_virial,
+            create_graph=create_graph,
         )
         # nf x nloc x 1 x 3, nf x nloc x 1 x 9
         ffi = ffi.unsqueeze(-2)
@@ -142,11 +151,12 @@ def take_deriv(
 
 
 def fit_output_to_model_output(
-    fit_ret: Dict[str, torch.Tensor],
+    fit_ret: dict[str, torch.Tensor],
     fit_output_def: FittingOutputDef,
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
-) -> Dict[str, torch.Tensor]:
+    create_graph: bool = True,
+) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
 
@@ -159,7 +169,10 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
-            model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
+            if vdef.intensive:
+                model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
+            else:
+                model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 dr, dc = take_deriv(
@@ -169,6 +182,7 @@ def fit_output_to_model_output(
                     coord_ext,
                     do_virial=vdef.c_differentiable,
                     do_atomic_virial=do_atomic_virial,
+                    create_graph=create_graph,
                 )
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
@@ -181,11 +195,11 @@ def fit_output_to_model_output(
 
 
 def communicate_extended_output(
-    model_ret: Dict[str, torch.Tensor],
+    model_ret: dict[str, torch.Tensor],
     model_output_def: ModelOutputDef,
     mapping: torch.Tensor,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 

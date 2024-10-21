@@ -2,9 +2,7 @@
 
 
 from typing import (
-    List,
     Optional,
-    Tuple,
 )
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
@@ -21,9 +19,9 @@ class DPModelCommon:
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

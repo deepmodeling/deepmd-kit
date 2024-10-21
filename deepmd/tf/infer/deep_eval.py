@@ -1,16 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from functools import (
-    lru_cache,
+    cached_property,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -266,9 +263,8 @@ class DeepEval(DeepEvalBackend):
         else:
             self.modifier_type = None
 
-    @property
-    @lru_cache(maxsize=None)
-    def model_type(self) -> Type["DeepEvalWrapper"]:
+    @cached_property
+    def model_type(self) -> type["DeepEvalWrapper"]:
         """Get type of model.
 
         :type:str
@@ -291,8 +287,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError(f"unknown model type {model_type}")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def model_version(self) -> str:
         """Get version of model.
 
@@ -310,8 +305,7 @@ class DeepEval(DeepEvalBackend):
             [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def sess(self) -> tf.Session:
         """Get TF session."""
         # start a tf session associated to the graph
@@ -397,7 +391,7 @@ class DeepEval(DeepEvalBackend):
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[List[int]] = None,
+        sel_atoms: Optional[list[int]] = None,
     ):
         """Sort atoms in the system according their types.
 
@@ -434,7 +428,7 @@ class DeepEval(DeepEvalBackend):
             for ii in sel_atoms:
                 selection += atom_type[0] == ii
             sel_atom_type = atom_type[:, selection]
-        idx = np.arange(natoms)
+        idx = np.arange(natoms)  # pylint: disable=no-explicit-dtype
         idx_map = np.lexsort((idx, atom_type[0]))
         nframes = coord.shape[0]
         coord = coord.reshape([nframes, -1, 3])
@@ -442,7 +436,7 @@ class DeepEval(DeepEvalBackend):
         atom_type = atom_type[:, idx_map]
         if sel_atoms is not None:
             sel_natoms = sel_atom_type.shape[1]
-            sel_idx = np.arange(sel_natoms)
+            sel_idx = np.arange(sel_natoms)  # pylint: disable=no-explicit-dtype
             sel_idx_map = np.lexsort((sel_idx, sel_atom_type[0]))
             sel_atom_type = sel_atom_type[:, sel_idx_map]
             return coord, atom_type, idx_map, sel_atom_type, sel_idx_map
@@ -450,7 +444,7 @@ class DeepEval(DeepEvalBackend):
             return coord, atom_type, idx_map, atom_type, idx_map
 
     @staticmethod
-    def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
+    def reverse_map(vec: np.ndarray, imap: list[int]) -> np.ndarray:
         """Reverse mapping of a vector according to the index map.
 
         Parameters
@@ -465,7 +459,7 @@ class DeepEval(DeepEvalBackend):
         vec_out
             Reverse mapped vector.
         """
-        ret = np.zeros(vec.shape)
+        ret = np.zeros(vec.shape)  # pylint: disable=no-explicit-dtype
         ret[:, imap, :] = vec
         return ret
 
@@ -489,7 +483,7 @@ class DeepEval(DeepEvalBackend):
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
 
         """
-        natoms_vec = np.zeros(self.ntypes + 2).astype(int)
+        natoms_vec = np.zeros(self.ntypes + 2).astype(int)  # pylint: disable=no-explicit-dtype
         natoms = atom_types[0].size
         natoms_vec[0] = natoms
         natoms_vec[1] = natoms
@@ -601,25 +595,25 @@ class DeepEval(DeepEvalBackend):
         all_atype = np.concatenate((atype, out_atype), axis=0)
         # convert neighbor indexes
         ghost_map = pair_second[out_mask]
-        pair_second[out_mask] = np.arange(nloc, nloc + nghost)
+        pair_second[out_mask] = np.arange(nloc, nloc + nghost)  # pylint: disable=no-explicit-dtype
         # get the mesh
         mesh = np.zeros(16 + nloc * 2 + pair_second.size, dtype=int)
         mesh[0] = nloc
         # ilist
-        mesh[16 : 16 + nloc] = np.arange(nloc)
+        mesh[16 : 16 + nloc] = np.arange(nloc)  # pylint: disable=no-explicit-dtype
         # numnei
         mesh[16 + nloc : 16 + nloc * 2] = first_neigh[1:] - first_neigh[:-1]
         # jlist
         mesh[16 + nloc * 2 :] = pair_second
 
         # natoms_vec
-        natoms_vec = np.zeros(self.ntypes + 2).astype(int)
+        natoms_vec = np.zeros(self.ntypes + 2).astype(int)  # pylint: disable=no-explicit-dtype
         natoms_vec[0] = nloc
         natoms_vec[1] = nloc + nghost
         for ii in range(self.ntypes):
             natoms_vec[ii + 2] = np.count_nonzero(atype == ii)
         # imap append ghost atoms
-        imap = np.concatenate((imap, np.arange(nloc, nloc + nghost)))
+        imap = np.concatenate((imap, np.arange(nloc, nloc + nghost)))  # pylint: disable=no-explicit-dtype
         return natoms_vec, all_coords, all_atype, mesh, imap, ghost_map
 
     def get_ntypes(self) -> int:
@@ -634,7 +628,7 @@ class DeepEval(DeepEvalBackend):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
@@ -686,8 +680,8 @@ class DeepEval(DeepEvalBackend):
     def _get_natoms_and_nframes(
         self,
         coords: np.ndarray,
-        atom_types: Union[List[int], np.ndarray],
-    ) -> Tuple[int, int]:
+        atom_types: Union[list[int], np.ndarray],
+    ) -> tuple[int, int]:
         natoms = len(atom_types[0])
         if natoms == 0:
             assert coords.size == 0
@@ -706,7 +700,7 @@ class DeepEval(DeepEvalBackend):
         aparam: Optional[np.ndarray] = None,
         efield: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -797,7 +791,7 @@ class DeepEval(DeepEvalBackend):
         if cells is None:
             pbc = False
             # make cells to work around the requirement of pbc
-            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])
+            cells = np.tile(np.eye(3), [nframes, 1]).reshape([nframes, 9])  # pylint: disable=no-explicit-dtype
         else:
             pbc = True
             cells = np.array(cells).reshape([nframes, 9])
@@ -1123,6 +1117,13 @@ class DeepEval(DeepEvalBackend):
     def get_has_efield(self) -> bool:
         return self.has_efield
 
+    def get_model_def_script(self) -> dict:
+        """Get model defination script."""
+        t_script = self._get_tensor("train_attr/training_script:0")
+        [script] = run_sess(self.sess, [t_script], feed_dict={})
+        model_def_script = script.decode("utf-8")
+        return json.loads(model_def_script)["model"]
+
 
 class DeepEvalOld:
     # old class for DipoleChargeModifier only
@@ -1188,8 +1189,7 @@ class DeepEvalOld:
 
         self.neighbor_list = neighbor_list
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def model_type(self) -> str:
         """Get type of model.
 
@@ -1199,8 +1199,7 @@ class DeepEvalOld:
         [mt] = run_sess(self.sess, [t_mt], feed_dict={})
         return mt.decode("utf-8")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def model_version(self) -> str:
         """Get version of model.
 
@@ -1218,8 +1217,7 @@ class DeepEvalOld:
             [mt] = run_sess(self.sess, [t_mt], feed_dict={})
             return mt.decode("utf-8")
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def sess(self) -> tf.Session:
         """Get TF session."""
         # start a tf session associated to the graph
@@ -1311,7 +1309,7 @@ class DeepEvalOld:
     def sort_input(
         coord: np.ndarray,
         atom_type: np.ndarray,
-        sel_atoms: Optional[List[int]] = None,
+        sel_atoms: Optional[list[int]] = None,
         mixed_type: bool = False,
     ):
         """Sort atoms in the system according their types.
@@ -1350,7 +1348,7 @@ class DeepEvalOld:
         if mixed_type:
             # mixed_type need not to resort
             natoms = atom_type[0].size
-            idx_map = np.arange(natoms)
+            idx_map = np.arange(natoms)  # pylint: disable=no-explicit-dtype
             return coord, atom_type, idx_map
         if sel_atoms is not None:
             selection = [False] * np.size(atom_type)
@@ -1358,7 +1356,7 @@ class DeepEvalOld:
                 selection += atom_type == ii
             sel_atom_type = atom_type[selection]
         natoms = atom_type.size
-        idx = np.arange(natoms)
+        idx = np.arange(natoms)  # pylint: disable=no-explicit-dtype
         idx_map = np.lexsort((idx, atom_type))
         nframes = coord.shape[0]
         coord = coord.reshape([nframes, -1, 3])
@@ -1366,7 +1364,7 @@ class DeepEvalOld:
         atom_type = atom_type[idx_map]
         if sel_atoms is not None:
             sel_natoms = np.size(sel_atom_type)
-            sel_idx = np.arange(sel_natoms)
+            sel_idx = np.arange(sel_natoms)  # pylint: disable=no-explicit-dtype
             sel_idx_map = np.lexsort((sel_idx, sel_atom_type))
             sel_atom_type = sel_atom_type[sel_idx_map]
             return coord, atom_type, idx_map, sel_atom_type, sel_idx_map
@@ -1374,7 +1372,7 @@ class DeepEvalOld:
             return coord, atom_type, idx_map
 
     @staticmethod
-    def reverse_map(vec: np.ndarray, imap: List[int]) -> np.ndarray:
+    def reverse_map(vec: np.ndarray, imap: list[int]) -> np.ndarray:
         """Reverse mapping of a vector according to the index map.
 
         Parameters
@@ -1389,7 +1387,7 @@ class DeepEvalOld:
         vec_out
             Reverse mapped vector.
         """
-        ret = np.zeros(vec.shape)
+        ret = np.zeros(vec.shape)  # pylint: disable=no-explicit-dtype
         # for idx,ii in enumerate(imap) :
         #     ret[:,ii,:] = vec[:,idx,:]
         ret[:, imap, :] = vec
@@ -1418,7 +1416,7 @@ class DeepEvalOld:
             natoms[i]: 2 <= i < Ntypes+2, number of type i atoms
 
         """
-        natoms_vec = np.zeros(self.ntypes + 2).astype(int)
+        natoms_vec = np.zeros(self.ntypes + 2).astype(int)  # pylint: disable=no-explicit-dtype
         if mixed_type:
             natoms = atom_types[0].size
         else:
@@ -1531,23 +1529,23 @@ class DeepEvalOld:
         all_atype = np.concatenate((atype, out_atype), axis=0)
         # convert neighbor indexes
         ghost_map = pair_second[out_mask]
-        pair_second[out_mask] = np.arange(nloc, nloc + nghost)
+        pair_second[out_mask] = np.arange(nloc, nloc + nghost)  # pylint: disable=no-explicit-dtype
         # get the mesh
         mesh = np.zeros(16 + nloc * 2 + pair_second.size, dtype=int)
         mesh[0] = nloc
         # ilist
-        mesh[16 : 16 + nloc] = np.arange(nloc)
+        mesh[16 : 16 + nloc] = np.arange(nloc)  # pylint: disable=no-explicit-dtype
         # numnei
         mesh[16 + nloc : 16 + nloc * 2] = first_neigh[1:] - first_neigh[:-1]
         # jlist
         mesh[16 + nloc * 2 :] = pair_second
 
         # natoms_vec
-        natoms_vec = np.zeros(self.ntypes + 2).astype(int)
+        natoms_vec = np.zeros(self.ntypes + 2).astype(int)  # pylint: disable=no-explicit-dtype
         natoms_vec[0] = nloc
         natoms_vec[1] = nloc + nghost
         for ii in range(self.ntypes):
             natoms_vec[ii + 2] = np.count_nonzero(atype == ii)
         # imap append ghost atoms
-        imap = np.concatenate((imap, np.arange(nloc, nloc + nghost)))
+        imap = np.concatenate((imap, np.arange(nloc, nloc + nghost)))  # pylint: disable=no-explicit-dtype
         return natoms_vec, all_coords, all_atype, mesh, imap, ghost_map

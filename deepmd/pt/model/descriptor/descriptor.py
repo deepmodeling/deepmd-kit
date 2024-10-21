@@ -6,8 +6,6 @@ from abc import (
 )
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -48,8 +46,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         if cls is DescriptorBlock:
             try:
                 descrpt_type = kwargs["type"]
-            except KeyError:
-                raise KeyError("the type of DescriptorBlock should be set by `type`")
+            except KeyError as e:
+                raise KeyError(
+                    "the type of DescriptorBlock should be set by `type`"
+                ) from e
             cls = cls.get_class_by_type(descrpt_type)
         return super().__new__(cls)
 
@@ -69,7 +69,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         pass
 
     @abstractmethod
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         pass
 
@@ -100,7 +100,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -108,11 +108,11 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -121,7 +121,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         """
         raise NotImplementedError
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
@@ -145,8 +145,8 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
                         base_env.stats[kk] += self.get_stats()[kk]
                     mean, stddev = base_env()
                     if not base_class.set_davg_zero:
-                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+                        base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+                    base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
                 # must share, even if not do stat
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
@@ -173,6 +173,10 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
 
+    @abstractmethod
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+
 
 def make_default_type_embedding(
     ntypes,
@@ -197,7 +201,7 @@ def extend_descrpt_stat(des, type_map, des_with_stat=None):
     ----------
     des : DescriptorBlock
         The descriptor block to be extended.
-    type_map : List[str]
+    type_map : list[str]
         The name of each type of atoms to be extended.
     des_with_stat : DescriptorBlock, Optional
         The descriptor block has additional statistics of types from newly provided `type_map`.

@@ -1,5 +1,9 @@
 # Python interface
 
+:::{note}
+See [Environment variables](../env.md) for the runtime environment variables.
+:::
+
 One may use the python interface of DeePMD-kit for model inference, an example is given as follows
 
 ```python

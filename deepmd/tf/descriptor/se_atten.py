@@ -4,10 +4,7 @@ import re
 import warnings
 from typing import (
     Any,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -125,7 +122,7 @@ class DescrptSeAtten(DescrptSeA):
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
             Default is 'False'.
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     set_davg_zero: bool
@@ -162,7 +159,7 @@ class DescrptSeAtten(DescrptSeA):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
     Raises
@@ -175,16 +172,16 @@ class DescrptSeAtten(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
         set_davg_zero: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -203,7 +200,7 @@ class DescrptSeAtten(DescrptSeA):
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
         stripped_type_embedding: Optional[bool] = None,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -278,10 +275,10 @@ class DescrptSeAtten(DescrptSeA):
         # descrpt config
         self.sel_all_a = [sel]
         self.sel_all_r = [0]
-        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(
+        avg_zero = np.zeros([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
-        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(
+        std_ones = np.ones([self.ntypes, self.ndescrpt]).astype(  # pylint: disable=no-explicit-dtype
             GLOBAL_NP_FLOAT_PRECISION
         )
         self.attention_layer_variables = None
@@ -563,9 +560,9 @@ class DescrptSeAtten(DescrptSeA):
             check_switch_range(davg, dstd)
         with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
             if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
@@ -765,7 +762,14 @@ class DescrptSeAtten(DescrptSeA):
             type_embedding=type_embedding,
             atype=atype,
         )
-        layer = tf.reshape(layer, [tf.shape(inputs)[0], natoms[0], self.get_dim_out()])
+        layer = tf.reshape(
+            layer,
+            [
+                tf.shape(inputs)[0],
+                natoms[0],
+                self.filter_neuron[-1] * self.n_axis_neuron,
+            ],
+        )
         qmat = tf.reshape(
             qmat, [tf.shape(inputs)[0], natoms[0], self.get_dim_rot_mat_1() * 3]
         )
@@ -963,7 +967,7 @@ class DescrptSeAtten(DescrptSeA):
                 self.attn_weight_final[layer] = attn[0]  # atom 0
         if do_mask:
             nei = int(attn.shape[-1])
-            mask = tf.cast(tf.ones((nei, nei)) - tf.eye(nei), self.filter_precision)
+            mask = tf.cast(tf.ones((nei, nei)) - tf.eye(nei), self.filter_precision)  # pylint: disable=no-explicit-dtype
             attn *= mask
         output = tf.matmul(attn, V)
         return output
@@ -1413,9 +1417,9 @@ class DescrptSeAtten(DescrptSeA):
 
     def build_type_exclude_mask_mixed(
         self,
-        exclude_types: Set[Tuple[int, int]],
+        exclude_types: set[tuple[int, int]],
         ntypes: int,
-        sel: List[int],
+        sel: list[int],
         ndescrpt: int,
         atype: tf.Tensor,
         shape0: tf.Tensor,
@@ -1434,12 +1438,12 @@ class DescrptSeAtten(DescrptSeA):
 
         Parameters
         ----------
-        exclude_types : List[Tuple[int, int]]
+        exclude_types : list[tuple[int, int]]
             The list of excluded types, e.g. [(0, 1), (1, 0)] means the interaction
             between type 0 and type 1 is excluded.
         ntypes : int
             The number of types.
-        sel : List[int]
+        sel : list[int]
             The list of the number of selected neighbors for each type.
         ndescrpt : int
             The number of descriptors for each atom.
@@ -1504,9 +1508,9 @@ class DescrptSeAtten(DescrptSeA):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -1639,7 +1643,7 @@ class DescrptSeAtten(DescrptSeA):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
@@ -1656,7 +1660,7 @@ class DescrptSeAtten(DescrptSeA):
             The dimension of elements
         in_dim : int
             The input dimension
-        neuron : List[int]
+        neuron : list[int]
             The neuron list
         activation_function : str
             The activation function
@@ -2048,7 +2052,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
     attn_mask: bool
             (Only support False to keep consistent with other backend references.)
             If mask the diagonal of attention weights
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -2079,7 +2083,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to concat type embedding at the output of the descriptor.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
-    type_map: List[str], Optional
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
             (Only support None to keep consistent with old implementation.)
@@ -2090,9 +2096,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -2103,7 +2109,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -2116,7 +2122,8 @@ class DescrptDPA1Compat(DescrptSeAtten):
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        use_tebd_bias: bool = False,
+        type_map: Optional[list[str]] = None,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
@@ -2167,6 +2174,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         )
         self.tebd_dim = tebd_dim
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.scaling_factor = scaling_factor
         self.normalize = normalize
         self.temperature = temperature
@@ -2176,6 +2184,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             padding=True,
             activation_function="Linear",
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             # precision=precision,
             seed=seed,
@@ -2188,6 +2197,14 @@ class DescrptDPA1Compat(DescrptSeAtten):
                 self.embd_input_dim = 1 + self.tebd_dim
         else:
             self.embd_input_dim = 1
+
+    def get_dim_out(self) -> int:
+        """Returns the output dimension of this descriptor."""
+        return (
+            super().get_dim_out() + self.tebd_dim
+            if self.concat_output_tebd
+            else super().get_dim_out()
+        )
 
     def build(
         self,
@@ -2303,7 +2320,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         if cls is not DescrptDPA1Compat:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -2325,6 +2342,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             )
         else:
             two_side_embeeding_net_variables = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables
@@ -2357,12 +2377,14 @@ class DescrptDPA1Compat(DescrptSeAtten):
         data.update(
             {
                 "type": "dpa1",
+                "@version": 2,
                 "tebd_dim": self.tebd_dim,
                 "scaling_factor": self.scaling_factor,
                 "normalize": self.normalize,
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
                 "use_econf_tebd": self.use_econf_tebd,
+                "use_tebd_bias": self.use_tebd_bias,
                 "type_embedding": self.type_embedding.serialize(suffix),
             }
         )

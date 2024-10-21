@@ -4,8 +4,8 @@ import logging
 import warnings
 from typing import (
     Callable,
-    List,
     Optional,
+    Union,
 )
 
 from dargs import (
@@ -87,9 +87,10 @@ def type_embedding_args():
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "If the parameters in the embedding net are trainable"
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
 
     return [
-        Argument("neuron", List[int], optional=True, default=[8], doc=doc_neuron),
+        Argument("neuron", list[int], optional=True, default=[8], doc=doc_neuron),
         Argument(
             "activation_function",
             str,
@@ -103,6 +104,13 @@ def type_embedding_args():
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
         Argument(
             "use_econf_tebd", bool, optional=True, default=False, doc=doc_use_econf_tebd
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
         ),
     ]
 
@@ -126,22 +134,22 @@ def spin_args():
     )
 
     return [
-        Argument("use_spin", [List[bool], List[int]], doc=doc_use_spin),
+        Argument("use_spin", [list[bool], list[int]], doc=doc_use_spin),
         Argument(
             "spin_norm",
-            List[float],
+            list[float],
             optional=True,
             doc=doc_only_tf_supported + doc_spin_norm,
         ),
         Argument(
             "virtual_len",
-            List[float],
+            list[float],
             optional=True,
             doc=doc_only_tf_supported + doc_virtual_len,
         ),
         Argument(
             "virtual_scale",
-            [List[float], float],
+            [list[float], float],
             optional=True,
             doc=doc_only_pt_supported + doc_virtual_scale,
         ),
@@ -156,21 +164,24 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[List[str]] = None, doc: str = ""
-    ) -> Callable[[], List[Argument]]:
+        self, name: str, alias: Optional[list[str]] = None, doc: str = ""
+    ) -> Callable[
+        [Union[Callable[[], Argument], Callable[[], list[Argument]]]],
+        Union[Callable[[], Argument], Callable[[], list[Argument]]],
+    ]:
         """Register a descriptor argument plugin.
 
         Parameters
         ----------
         name : str
             the name of a descriptor
-        alias : List[str], optional
+        alias : list[str], optional
             the list of aliases of this descriptor
 
         Returns
         -------
-        Callable[[], List[Argument]]
-            the registered descriptor argument method
+        Callable[[Union[Callable[[], Argument], Callable[[], list[Argument]]]], Union[Callable[[], Argument], Callable[[], list[Argument]]]]
+            decorator to return the registered descriptor argument method
 
         Examples
         --------
@@ -184,7 +195,7 @@ class ArgsPlugin:
             alias = tuple(alias)
         return self.__plugin.register((name, alias, doc))
 
-    def get_all_argument(self, exclude_hybrid: bool = False) -> List[Argument]:
+    def get_all_argument(self, exclude_hybrid: bool = False) -> list[Argument]:
         """Get all arguments.
 
         Parameters
@@ -194,16 +205,24 @@ class ArgsPlugin:
 
         Returns
         -------
-        List[Argument]
+        list[Argument]
             all arguments
         """
         arguments = []
         for (name, alias, doc), metd in self.__plugin.plugins.items():
             if exclude_hybrid and name == "hybrid":
                 continue
-            arguments.append(
-                Argument(name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc)
-            )
+            args = metd()
+            if isinstance(args, Argument):
+                arguments.append(args)
+            elif isinstance(args, list):
+                arguments.append(
+                    Argument(
+                        name=name, dtype=dict, sub_fields=metd(), alias=alias, doc=doc
+                    )
+                )
+            else:
+                raise ValueError(f"Invalid return type {type(args)}")
         return arguments
 
 
@@ -224,17 +243,17 @@ def descrpt_local_frame_args():
 - axis_rule[i*6+5]: index of the axis atom defining the second axis. Note that the neighbors with the same class and type are sorted according to their relative distance."
 
     return [
-        Argument("sel_a", List[int], optional=False, doc=doc_sel_a),
-        Argument("sel_r", List[int], optional=False, doc=doc_sel_r),
+        Argument("sel_a", list[int], optional=False, doc=doc_sel_a),
+        Argument("sel_r", list[int], optional=False, doc=doc_sel_r),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
-        Argument("axis_rule", List[int], optional=False, doc=doc_axis_rule),
+        Argument("axis_rule", list[int], optional=False, doc=doc_axis_rule),
     ]
 
 
 @descrpt_args_plugin.register("se_e2_a", alias=["se_a"])
 def descrpt_se_a_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
@@ -251,11 +270,11 @@ def descrpt_se_a_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
 
     return [
-        Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
+        Argument("sel", [list[int], str], optional=True, default="auto", doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
         Argument(
-            "neuron", List[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+            "neuron", list[int], optional=True, default=[10, 20, 40], doc=doc_neuron
         ),
         Argument(
             "axis_neuron",
@@ -281,7 +300,7 @@ def descrpt_se_a_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "exclude_types",
-            List[List[int]],
+            list[list[int]],
             optional=True,
             default=[],
             doc=doc_exclude_types,
@@ -302,7 +321,7 @@ def descrpt_se_a_args():
 @descrpt_args_plugin.register("se_e3", alias=["se_at", "se_a_3be", "se_t"])
 def descrpt_se_t_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
@@ -317,11 +336,11 @@ def descrpt_se_t_args():
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
-        Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
+        Argument("sel", [list[int], str], optional=True, default="auto", doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
         Argument(
-            "neuron", List[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+            "neuron", list[int], optional=True, default=[10, 20, 40], doc=doc_neuron
         ),
         Argument(
             "activation_function",
@@ -339,7 +358,7 @@ def descrpt_se_t_args():
         ),
         Argument(
             "exclude_types",
-            List[List[int]],
+            list[list[int]],
             optional=True,
             default=[],
             doc=doc_exclude_types,
@@ -371,7 +390,7 @@ def descrpt_se_a_tpe_args():
 @descrpt_args_plugin.register("se_e2_r", alias=["se_r"])
 def descrpt_se_r_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
@@ -387,11 +406,11 @@ def descrpt_se_r_args():
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
 
     return [
-        Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
+        Argument("sel", [list[int], str], optional=True, default="auto", doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
         Argument(
-            "neuron", List[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+            "neuron", list[int], optional=True, default=[10, 20, 40], doc=doc_neuron
         ),
         Argument(
             "activation_function",
@@ -409,7 +428,7 @@ def descrpt_se_r_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "exclude_types",
-            List[List[int]],
+            list[list[int]],
             optional=True,
             default=[],
             doc=doc_exclude_types,
@@ -448,7 +467,7 @@ def descrpt_hybrid_args():
 def descrpt_se_atten_common_args():
     doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
@@ -469,12 +488,12 @@ def descrpt_se_atten_common_args():
 
     return [
         Argument(
-            "sel", [int, List[int], str], optional=True, default="auto", doc=doc_sel
+            "sel", [int, list[int], str], optional=True, default="auto", doc=doc_sel
         ),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
         Argument(
-            "neuron", List[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+            "neuron", list[int], optional=True, default=[10, 20, 40], doc=doc_neuron
         ),
         Argument(
             "axis_neuron",
@@ -500,7 +519,7 @@ def descrpt_se_atten_common_args():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "exclude_types",
-            List[List[int]],
+            list[list[int]],
             optional=True,
             default=[],
             doc=doc_exclude_types,
@@ -529,6 +548,7 @@ def descrpt_se_atten_args():
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
@@ -597,6 +617,13 @@ def descrpt_se_atten_args():
             doc=doc_only_pt_supported + doc_use_econf_tebd,
         ),
         Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
+        ),
+        Argument(
             "tebd_input_mode",
             str,
             optional=True,
@@ -633,6 +660,120 @@ def descrpt_se_atten_args():
     ]
 
 
+@descrpt_args_plugin.register("se_e3_tebd", doc=doc_only_pt_supported)
+def descrpt_se_e3_tebd_args():
+    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_rcut = "The cut-off radius."
+    doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
+    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_seed = "Random seed for parameter initialization"
+    doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
+    doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
+    doc_smooth = "Whether to use smooth process in calculation when using stripped type embedding. Whether to dot smooth factor (both neighbors j and k) on the network output (out_jk) of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
+    doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
+    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_use_econf_tebd = r"Whether to use electronic configuration type embedding."
+    doc_concat_output_tebd = (
+        "Whether to concat type embedding at the output of the descriptor."
+    )
+    doc_tebd_input_mode = (
+        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
+        "- 'concat': Concatenate the type embedding with the smoothed angular information as the union input for the embedding network. "
+        "The input is `input_jk = concat([angle_jk, tebd_j, tebd_k])`. "
+        "The output is `out_jk = embeding(input_jk)` for the three-body representation of atom i with neighbors j and k."
+        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the angular embedding network output. "
+        "The input is `input_t = concat([tebd_j, tebd_k])`."
+        "The output is `out_jk = embeding_t(input_t) * embeding_s(angle_jk) + embeding_s(angle_jk)` for the three-body representation of atom i with neighbors j and k."
+    )
+
+    return [
+        Argument(
+            "sel", [int, list[int], str], optional=True, default="auto", doc=doc_sel
+        ),
+        Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
+        Argument("rcut_smth", float, optional=True, default=0.5, doc=doc_rcut_smth),
+        Argument(
+            "neuron", list[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+        ),
+        Argument(
+            "tebd_dim",
+            int,
+            optional=True,
+            default=8,
+            doc=doc_only_pt_supported + doc_tebd_dim,
+        ),
+        Argument(
+            "tebd_input_mode",
+            str,
+            optional=True,
+            default="concat",
+            doc=doc_tebd_input_mode,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
+        Argument(
+            "set_davg_zero", bool, optional=True, default=True, doc=doc_set_davg_zero
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "env_protection",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported + doc_env_protection,
+        ),
+        Argument(
+            "smooth",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_smooth,
+        ),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc=doc_exclude_types,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument(
+            "concat_output_tebd",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_concat_output_tebd,
+        ),
+        Argument(
+            "use_econf_tebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=True,
+        ),
+    ]
+
+
 @descrpt_args_plugin.register("se_atten_v2")
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
@@ -642,6 +783,7 @@ def descrpt_se_atten_v2_args():
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
     doc_tebd_dim = "The dimension of atom type embedding."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
@@ -678,6 +820,13 @@ def descrpt_se_atten_v2_args():
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
         ),
         Argument(
             "scaling_factor",
@@ -729,6 +878,7 @@ def descrpt_dpa2_args():
     doc_seed = "Random seed for parameter initialization."
     doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
     doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
+    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
     return [
         # repinit args
         Argument("repinit", dict, dpa2_repinit_args(), doc=doc_repinit),
@@ -746,7 +896,7 @@ def descrpt_dpa2_args():
         Argument("smooth", bool, optional=True, default=True, doc=doc_smooth),
         Argument(
             "exclude_types",
-            List[List[int]],
+            list[list[int]],
             optional=True,
             default=[],
             doc=doc_exclude_types,
@@ -774,6 +924,13 @@ def descrpt_dpa2_args():
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_use_econf_tebd,
+        ),
+        Argument(
+            "use_tebd_bias",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_tebd_bias,
         ),
     ]
 
@@ -807,6 +964,17 @@ def dpa2_repinit_args():
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
+    doc_use_three_body = (
+        "Whether to concatenate three-body representation in the output descriptor."
+    )
+    doc_three_body_neuron = (
+        "Number of neurons in each hidden layers of the three-body embedding net."
+        "When two layers are of the same size or one layer is twice as large as the previous layer, "
+        "a skip connection is built."
+    )
+    doc_three_body_sel = "Maximally possible number of selected neighbors in the three-body representation."
+    doc_three_body_rcut = "The cut-off radius in the three-body representation."
+    doc_three_body_rcut_smth = "Where to start smoothing in the three-body representation. For example the 1/r term is smoothed from `three_body_rcut` to `three_body_rcut_smth`."
 
     return [
         # repinit args
@@ -869,6 +1037,37 @@ def dpa2_repinit_args():
             default=False,
             doc=doc_resnet_dt,
         ),
+        Argument(
+            "use_three_body",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_three_body,
+        ),
+        Argument(
+            "three_body_neuron",
+            list,
+            optional=True,
+            default=[2, 4, 8],
+            doc=doc_three_body_neuron,
+        ),
+        Argument(
+            "three_body_rcut",
+            float,
+            optional=True,
+            default=4.0,
+            doc=doc_three_body_rcut,
+        ),
+        Argument(
+            "three_body_rcut_smth",
+            float,
+            optional=True,
+            default=0.5,
+            doc=doc_three_body_rcut_smth,
+        ),
+        Argument(
+            "three_body_sel", int, optional=True, default=40, doc=doc_three_body_sel
+        ),
     ]
 
 
@@ -889,6 +1088,9 @@ def dpa2_repformer_args():
     doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
     doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
     doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
+    doc_use_sqrt_nnei = "Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly."
+    doc_g1_out_conv = "Whether to put the convolutional update of g1 separately outside the concatenated MLP update."
+    doc_g1_out_mlp = "Whether to put the self MLP update of g1 separately outside the concatenated MLP update."
     doc_update_h2 = "Update the h2 rep."
     doc_attn1_hidden = (
         "The hidden dimension of localized self-attention to update the g1 rep."
@@ -1010,6 +1212,27 @@ def dpa2_repformer_args():
             doc=doc_update_g2_has_attn,
         ),
         Argument(
+            "use_sqrt_nnei",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_use_sqrt_nnei,
+        ),
+        Argument(
+            "g1_out_conv",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_g1_out_conv,
+        ),
+        Argument(
+            "g1_out_mlp",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_g1_out_mlp,
+        ),
+        Argument(
             "update_h2",
             bool,
             optional=True,
@@ -1113,7 +1336,7 @@ def descrpt_se_a_ebd_v2_args():
 @descrpt_args_plugin.register("se_a_mask", doc=doc_only_tf_supported)
 def descrpt_se_a_mask_args():
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
 
     doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
@@ -1127,9 +1350,9 @@ def descrpt_se_a_mask_args():
     doc_seed = "Random seed for parameter initialization"
 
     return [
-        Argument("sel", [List[int], str], optional=True, default="auto", doc=doc_sel),
+        Argument("sel", [list[int], str], optional=True, default="auto", doc=doc_sel),
         Argument(
-            "neuron", List[int], optional=True, default=[10, 20, 40], doc=doc_neuron
+            "neuron", list[int], optional=True, default=[10, 20, 40], doc=doc_neuron
         ),
         Argument(
             "axis_neuron",
@@ -1152,7 +1375,7 @@ def descrpt_se_a_mask_args():
         ),
         Argument(
             "exclude_types",
-            List[List[int]],
+            list[list[int]],
             optional=True,
             default=[],
             doc=doc_exclude_types,
@@ -1226,7 +1449,7 @@ def fitting_ener():
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
         Argument(
             "neuron",
-            List[int],
+            list[int],
             optional=True,
             default=[120, 120, 120],
             alias=["n_neuron"],
@@ -1243,7 +1466,7 @@ def fitting_ener():
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument(
             "trainable",
-            [List[bool], bool],
+            [list[bool], bool],
             optional=True,
             default=True,
             doc=doc_trainable,
@@ -1254,12 +1477,12 @@ def fitting_ener():
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "atom_ener",
-            List[Optional[float]],
+            list[Optional[float]],
             optional=True,
             default=[],
             doc=doc_atom_ener,
         ),
-        Argument("layer_name", List[str], optional=True, doc=doc_layer_name),
+        Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
             "use_aparam_as_mask",
             bool,
@@ -1291,7 +1514,7 @@ def fitting_dos():
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
         Argument(
-            "neuron", List[int], optional=True, default=[120, 120, 120], doc=doc_neuron
+            "neuron", list[int], optional=True, default=[120, 120, 120], doc=doc_neuron
         ),
         Argument(
             "activation_function",
@@ -1304,7 +1527,7 @@ def fitting_dos():
         Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
         Argument(
             "trainable",
-            [List[bool], bool],
+            [list[bool], bool],
             optional=True,
             default=True,
             doc=doc_trainable,
@@ -1314,6 +1537,47 @@ def fitting_dos():
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
+    ]
+
+
+@fitting_args_plugin.register("property", doc=doc_only_pt_supported)
+def fitting_property():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built"
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_task_dim = "The dimension of outputs of fitting net"
+    doc_intensive = "Whether the fitting property is intensive"
+    doc_bias_method = "The method of applying the bias to each atomic output, user can select 'normal' or 'no_bias'. If 'no_bias' is used, no bias will be added to the atomic output."
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
+        Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
+        Argument(
+            "bias_method", str, optional=True, default="normal", doc=doc_bias_method
+        ),
     ]
 
 
@@ -1335,7 +1599,7 @@ def fitting_polar():
     return [
         Argument(
             "neuron",
-            List[int],
+            list[int],
             optional=True,
             default=[120, 120, 120],
             alias=["n_neuron"],
@@ -1352,13 +1616,13 @@ def fitting_polar():
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument("fit_diag", bool, optional=True, default=True, doc=doc_fit_diag),
         Argument(
-            "scale", [List[float], float], optional=True, default=1.0, doc=doc_scale
+            "scale", [list[float], float], optional=True, default=1.0, doc=doc_scale
         ),
         # Argument("diag_shift", [list,float], optional = True, default = 0.0, doc = doc_diag_shift),
         Argument("shift_diag", bool, optional=True, default=True, doc=doc_shift_diag),
         Argument(
             "sel_type",
-            [List[int], int, None],
+            [list[int], int, None],
             optional=True,
             alias=["pol_type"],
             doc=doc_sel_type + doc_only_tf_supported,
@@ -1382,7 +1646,7 @@ def fitting_dipole():
     return [
         Argument(
             "neuron",
-            List[int],
+            list[int],
             optional=True,
             default=[120, 120, 120],
             alias=["n_neuron"],
@@ -1399,7 +1663,7 @@ def fitting_dipole():
         Argument("precision", str, optional=True, default="default", doc=doc_precision),
         Argument(
             "sel_type",
-            [List[int], int, None],
+            [list[int], int, None],
             optional=True,
             alias=["dipole_type"],
             doc=doc_sel_type + doc_only_tf_supported,
@@ -1436,9 +1700,9 @@ def modifier_dipole_charge():
     return [
         Argument("model_name", str, optional=False, doc=doc_model_name),
         Argument(
-            "model_charge_map", List[float], optional=False, doc=doc_model_charge_map
+            "model_charge_map", list[float], optional=False, doc=doc_model_charge_map
         ),
-        Argument("sys_charge_map", List[float], optional=False, doc=doc_sys_charge_map),
+        Argument("sys_charge_map", list[float], optional=False, doc=doc_sys_charge_map),
         Argument("ewald_beta", float, optional=True, default=0.4, doc=doc_ewald_beta),
         Argument("ewald_h", float, optional=True, default=1.0, doc=doc_ewald_h),
     ]
@@ -1467,7 +1731,7 @@ def model_compression():
 
     return [
         Argument("model_file", str, optional=False, doc=doc_model_file),
-        Argument("table_config", List[float], optional=False, doc=doc_table_config),
+        Argument("table_config", list[float], optional=False, doc=doc_table_config),
         Argument("min_nbor_dist", float, optional=False, doc=doc_min_nbor_dist),
     ]
 
@@ -1483,6 +1747,11 @@ def model_compression_type_args():
         default_tag="se_e2_a",
         doc=doc_compress_type,
     )
+
+
+model_args_plugin = ArgsPlugin()
+# for models that require another model as input
+hybrid_model_args_plugin = ArgsPlugin()
 
 
 def model_args(exclude_hybrid=False):
@@ -1501,20 +1770,20 @@ def model_args(exclude_hybrid=False):
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
+    doc_preset_out_bias = "The preset bias of the atomic output. Note that the set_davg_zero should be set to true. The bias is provided as a dict. Taking the energy model that has three atom types for example, the `preset_out_bias` may be given as `{ 'energy': [null, 0., 1.] }`. In this case the energy bias of type 1 and 2 are set to 0. and 1., respectively. A dipole model with two atom types may set `preset_out_bias` as `{ 'dipole': [null, [0., 1., 2.]] }`"
+    doc_finetune_head = (
+        "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
+        "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
+    )
 
     hybrid_models = []
     if not exclude_hybrid:
-        hybrid_models.extend(
-            [
-                pairwise_dprc(),
-                linear_ener_model_args(),
-            ]
-        )
+        hybrid_models.extend(hybrid_model_args_plugin.get_all_argument())
     return Argument(
         "model",
         dict,
         [
-            Argument("type_map", List[str], optional=True, doc=doc_type_map),
+            Argument("type_map", list[str], optional=True, doc=doc_type_map),
             Argument(
                 "data_stat_nbatch",
                 int,
@@ -1565,6 +1834,13 @@ def model_args(exclude_hybrid=False):
                 doc=doc_only_pt_supported + doc_atom_exclude_types,
             ),
             Argument(
+                "preset_out_bias",
+                dict[str, list[Optional[Union[float, list[float]]]]],
+                optional=True,
+                default=None,
+                doc=doc_only_pt_supported + doc_preset_out_bias,
+            ),
+            Argument(
                 "srtab_add_bias",
                 bool,
                 optional=True,
@@ -1597,14 +1873,18 @@ def model_args(exclude_hybrid=False):
                 fold_subdoc=True,
             ),
             Argument("spin", dict, spin_args(), [], optional=True, doc=doc_spin),
+            Argument(
+                "finetune_head",
+                str,
+                optional=True,
+                doc=doc_only_pt_supported + doc_finetune_head,
+            ),
         ],
         [
             Variant(
                 "type",
                 [
-                    standard_model_args(),
-                    frozen_model_args(),
-                    pairtab_model_args(),
+                    *model_args_plugin.get_all_argument(),
                     *hybrid_models,
                 ],
                 optional=True,
@@ -1614,6 +1894,7 @@ def model_args(exclude_hybrid=False):
     )
 
 
+@model_args_plugin.register("standard")
 def standard_model_args() -> Argument:
     doc_descrpt = "The descriptor of atomic environment."
     doc_fitting = "The fitting of physical properties."
@@ -1638,6 +1919,7 @@ def standard_model_args() -> Argument:
     return ca
 
 
+@hybrid_model_args_plugin.register("pairwise_dprc")
 def pairwise_dprc() -> Argument:
     qm_model_args = model_args(exclude_hybrid=True)
     qm_model_args.name = "qm_model"
@@ -1657,6 +1939,7 @@ def pairwise_dprc() -> Argument:
     return ca
 
 
+@model_args_plugin.register("frozen")
 def frozen_model_args() -> Argument:
     doc_model_file = "Path to the frozen model file."
     ca = Argument(
@@ -1669,12 +1952,13 @@ def frozen_model_args() -> Argument:
     return ca
 
 
+@model_args_plugin.register("pairtab")
 def pairtab_model_args() -> Argument:
     doc_tab_file = "Path to the tabulation file."
     doc_rcut = "The cut-off radius."
     doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `List[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wraped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     ca = Argument(
         "pairtab",
@@ -1682,13 +1966,14 @@ def pairtab_model_args() -> Argument:
         [
             Argument("tab_file", str, optional=False, doc=doc_tab_file),
             Argument("rcut", float, optional=False, doc=doc_rcut),
-            Argument("sel", [int, List[int], str], optional=False, doc=doc_sel),
+            Argument("sel", [int, list[int], str], optional=False, doc=doc_sel),
         ],
         doc=doc_only_tf_supported + "Pairwise tabulation energy model.",
     )
     return ca
 
 
+@hybrid_model_args_plugin.register("linear_ener")
 def linear_ener_model_args() -> Argument:
     doc_weights = (
         "If the type is list of float, a list of weights for each model. "
@@ -1763,7 +2048,7 @@ def learning_rate_variant_type_args():
     )
 
 
-def learning_rate_args():
+def learning_rate_args(fold_subdoc: bool = False) -> Argument:
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definitio of learning rate"
     return Argument(
@@ -1781,6 +2066,7 @@ def learning_rate_args():
         [learning_rate_variant_type_args()],
         optional=True,
         doc=doc_lr,
+        fold_subdoc=fold_subdoc,
     )
 
 
@@ -2108,6 +2394,36 @@ def loss_dos():
     ]
 
 
+@loss_args_plugin.register("property")
+def loss_property():
+    doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
+    doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
+        ),
+        Argument(
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
+        ),
+    ]
+
+
 # YWolfeee: Modified to support tensor type of loss args.
 @loss_args_plugin.register("tensor")
 def loss_tensor():
@@ -2162,7 +2478,7 @@ def training_data_args():  # ! added by Ziyao: new specification style for data 
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
-- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for Tensorflow backend.\n\n\
+- string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -2176,11 +2492,11 @@ If MPI is used, the value should be considered as the batch size per task.'
 
     args = [
         Argument(
-            "systems", [List[str], str], optional=False, default=".", doc=doc_systems
+            "systems", [list[str], str], optional=False, default=".", doc=doc_systems
         ),
         Argument(
             "batch_size",
-            [List[int], int, str],
+            [list[int], int, str],
             optional=True,
             default="auto",
             doc=doc_batch_size,
@@ -2197,7 +2513,7 @@ If MPI is used, the value should be considered as the batch size per task.'
         ),
         Argument(
             "sys_probs",
-            List[float],
+            list[float],
             optional=True,
             default=None,
             doc=doc_sys_probs,
@@ -2242,11 +2558,11 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
 
     args = [
         Argument(
-            "systems", [List[str], str], optional=False, default=".", doc=doc_systems
+            "systems", [list[str], str], optional=False, default=".", doc=doc_systems
         ),
         Argument(
             "batch_size",
-            [List[int], int, str],
+            [list[int], int, str],
             optional=True,
             default="auto",
             doc=doc_batch_size,
@@ -2263,7 +2579,7 @@ def validation_data_args():  # ! added by Ziyao: new specification style for dat
         ),
         Argument(
             "sys_probs",
-            List[float],
+            list[float],
             optional=True,
             default=None,
             doc=doc_sys_probs,
@@ -2325,7 +2641,9 @@ def mixed_precision_args():  # ! added by Denghui.
     )
 
 
-def training_args():  # ! modified by Ziyao: data configuration isolated.
+def training_args(
+    multi_task=False,
+):  # ! modified by Ziyao: data configuration isolated.
     doc_numb_steps = "Number of training batch. Each training uses one batch of data."
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
@@ -2336,6 +2654,11 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
         "The maximum number of checkpoints to keep. "
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
+    )
+    doc_change_bias_after_training = (
+        "Whether to change the output bias after the last training step, "
+        "by performing predictions using trained model on training data and "
+        "doing least square on the errors to add the target shift on the bias."
     )
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing durining training."
@@ -2364,14 +2687,30 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     )
     doc_opt_type = "The type of optimizer to use."
     doc_kf_blocksize = "The blocksize for the Kalman filter."
+    doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
+    doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
     mixed_precision_data = mixed_precision_args()
 
-    args = [
+    data_args = [
         arg_training_data,
         arg_validation_data,
+        Argument(
+            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
+        ),
+    ]
+    args = (
+        data_args
+        if not multi_task
+        else [
+            Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
+            Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
+        ]
+    )
+
+    args += [
         mixed_precision_data,
         Argument(
             "numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]
@@ -2386,6 +2725,13 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "change_bias_after_training",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_change_bias_after_training,
+        ),
         Argument(
             "disp_training", bool, optional=True, default=True, doc=doc_disp_training
         ),
@@ -2438,9 +2784,6 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
             optional=True,
             doc=doc_only_pt_supported + doc_gradient_max_norm,
         ),
-        Argument(
-            "stat_file", str, optional=True, doc=doc_only_pt_supported + doc_stat_file
-        ),
     ]
     variants = [
         Variant(
@@ -2472,6 +2815,36 @@ def training_args():  # ! modified by Ziyao: data configuration isolated.
     return Argument("training", dict, args, variants, doc=doc_training)
 
 
+def multi_model_args():
+    model_dict = model_args()
+    model_dict.name = "model_dict"
+    model_dict.repeat = True
+    model_dict.fold_subdoc = True
+    model_dict.doc = (
+        "The multiple definition of the model, used in the multi-task mode."
+    )
+    doc_shared_dict = "The definition of the shared parameters used in the `model_dict` within multi-task mode."
+    return Argument(
+        "model",
+        dict,
+        [
+            model_dict,
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
+            ),
+        ],
+    )
+
+
+def multi_loss_args():
+    loss_dict = loss_args()
+    loss_dict.name = "loss_dict"
+    loss_dict.repeat = True
+    loss_dict.fold_subdoc = True
+    loss_dict.doc = "The multiple definition of the loss, used in the multi-task mode."
+    return loss_dict
+
+
 def make_index(keys):
     ret = []
     for ii in keys:
@@ -2479,11 +2852,11 @@ def make_index(keys):
     return ", ".join(ret)
 
 
-def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
+def gen_doc(*, make_anchor=True, make_link=True, multi_task=False, **kwargs) -> str:
     if make_link:
         make_anchor = True
     ptr = []
-    for ii in gen_args():
+    for ii in gen_args(multi_task=multi_task):
         ptr.append(ii.gen_doc(make_anchor=make_anchor, make_link=make_link, **kwargs))
 
     key_words = []
@@ -2495,24 +2868,43 @@ def gen_doc(*, make_anchor=True, make_link=True, **kwargs):
     return "\n\n".join(ptr)
 
 
-def gen_json(**kwargs):
+def gen_json(multi_task: bool = False, **kwargs) -> str:
     return json.dumps(
-        tuple(gen_args()),
+        tuple(gen_args(multi_task=multi_task)),
         cls=ArgumentEncoder,
     )
 
 
-def gen_args(**kwargs) -> List[Argument]:
-    return [
-        model_args(),
-        learning_rate_args(),
-        loss_args(),
-        training_args(),
-        nvnmd_args(),
-    ]
+def gen_args(multi_task: bool = False) -> list[Argument]:
+    if not multi_task:
+        return [
+            model_args(),
+            learning_rate_args(),
+            loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(),
+        ]
+    else:
+        return [
+            multi_model_args(),
+            learning_rate_args(fold_subdoc=True),
+            multi_loss_args(),
+            training_args(multi_task=multi_task),
+            nvnmd_args(fold_subdoc=True),
+        ]
 
 
-def gen_json_schema() -> str:
+def gen_args_multi_task() -> Argument:
+    """Generate multi-task arguments."""
+    return Argument(
+        "multi-task",
+        dict,
+        sub_fields=gen_args(multi_task=True),
+        doc="Multi-task arguments.",
+    )
+
+
+def gen_json_schema(multi_task: bool = False) -> str:
     """Generate JSON schema.
 
     Returns
@@ -2520,12 +2912,17 @@ def gen_json_schema() -> str:
     str
         JSON schema.
     """
-    arg = Argument("DeePMD-kit", dict, gen_args(), doc=f"DeePMD-kit {__version__}")
+    arg = Argument(
+        "DeePMD-kit",
+        dict,
+        gen_args(multi_task=multi_task),
+        doc=f"DeePMD-kit {__version__}",
+    )
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data):
-    base = Argument("base", dict, gen_args())
+def normalize(data, multi_task: bool = False):
+    base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
     base.check_value(data, strict=True)
 

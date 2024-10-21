@@ -6,8 +6,6 @@ from copy import (
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
 )
 
@@ -24,6 +22,7 @@ from .....seed import (
     GLOBAL_SEED,
 )
 from .....utils import (
+    CI,
     TEST_DEVICE,
 )
 
@@ -31,7 +30,7 @@ from .....utils import (
 class ModelTestCase:
     """Common test case for model."""
 
-    expected_type_map: List[str]
+    expected_type_map: list[str]
     """Expected type map."""
     expected_rcut: float
     """Expected cut-off radius."""
@@ -39,15 +38,15 @@ class ModelTestCase:
     """Expected number (dimension) of frame parameters."""
     expected_dim_aparam: int
     """Expected number (dimension) of atomic parameters."""
-    expected_sel_type: List[int]
+    expected_sel_type: list[int]
     """Expected selected atom types."""
     expected_aparam_nall: bool
     """Expected shape of atomic parameters."""
-    expected_model_output_type: List[str]
+    expected_model_output_type: list[str]
     """Expected output type for the model."""
-    model_output_equivariant: List[str]
+    model_output_equivariant: list[str]
     """Outputs that are equivariant to the input rotation."""
-    expected_sel: List[int]
+    expected_sel: list[int]
     """Expected number of neighbors."""
     expected_has_message_passing: bool
     """Expected whether having message passing."""
@@ -55,11 +54,11 @@ class ModelTestCase:
     """Class wrapper for forward method."""
     forward_wrapper_cpu_ref: Callable[[Any], Any]
     """Convert model to CPU method."""
-    aprec_dict: Dict[str, Optional[float]]
+    aprec_dict: dict[str, Optional[float]]
     """Dictionary of absolute precision in each test."""
-    rprec_dict: Dict[str, Optional[float]]
+    rprec_dict: dict[str, Optional[float]]
     """Dictionary of relative precision in each test."""
-    epsilon_dict: Dict[str, Optional[float]]
+    epsilon_dict: dict[str, Optional[float]]
     """Dictionary of epsilons in each test."""
 
     def test_get_type_map(self):
@@ -178,6 +177,11 @@ class ModelTestCase:
                 input_dict_lower["extended_spin"] = spin_ext
 
             ret_lower.append(module.forward_lower(**input_dict_lower))
+
+            # use shuffled nlist, simulating the lammps interface
+            rng.shuffle(input_dict_lower["nlist"], axis=-1)
+            ret_lower.append(module.forward_lower(**input_dict_lower))
+
         for kk in ret[0]:
             subret = []
             for rr in ret:
@@ -221,7 +225,110 @@ class ModelTestCase:
                 continue
             np.testing.assert_allclose(rr1, rr2, atol=aprec)
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    def test_zero_forward(self):
+        test_spin = getattr(self, "test_spin", False)
+        nf = 1
+        natoms = 0
+        aprec = (
+            0
+            if self.aprec_dict.get("test_forward", None) is None
+            else self.aprec_dict["test_forward"]
+        )
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coord = np.zeros((nf, 0, 3), dtype=np.float64)
+        atype = np.zeros([nf, 0], dtype=int)
+        spin = np.zeros([nf, 0], dtype=np.float64)
+        cell = 6.0 * np.eye(3, dtype=np.float64).reshape([nf, 9])
+        coord_ext, atype_ext, mapping, nlist = extend_input_and_build_neighbor_list(
+            coord,
+            atype,
+            self.expected_rcut + 1.0 if test_spin else self.expected_rcut,
+            self.expected_sel,
+            mixed_types=self.module.mixed_types(),
+            box=cell,
+        )
+        spin_ext = np.take_along_axis(
+            spin.reshape(nf, -1, 3),
+            np.repeat(np.expand_dims(mapping, axis=-1), 3, axis=-1),
+            axis=1,
+        )
+        aparam = None
+        fparam = None
+        if self.module.get_dim_aparam() > 0:
+            aparam = rng.random([nf, natoms, self.module.get_dim_aparam()])
+        if self.module.get_dim_fparam() > 0:
+            fparam = rng.random([nf, self.module.get_dim_fparam()])
+        ret = []
+        ret_lower = []
+        for module in self.modules_to_test:
+            module = self.forward_wrapper(module)
+            input_dict = {
+                "coord": coord,
+                "atype": atype,
+                "box": cell,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict["spin"] = spin
+            ret.append(module(**input_dict))
+
+            input_dict_lower = {
+                "extended_coord": coord_ext,
+                "extended_atype": atype_ext,
+                "nlist": nlist,
+                "mapping": mapping,
+                "aparam": aparam,
+                "fparam": fparam,
+            }
+            if test_spin:
+                input_dict_lower["extended_spin"] = spin_ext
+
+            ret_lower.append(module.forward_lower(**input_dict_lower))
+        for kk in ret[0]:
+            subret = []
+            for rr in ret:
+                if rr is not None:
+                    subret.append(rr[kk])
+            if len(subret):
+                for ii, rr in enumerate(subret[1:]):
+                    if subret[0] is None:
+                        assert rr is None
+                    else:
+                        np.testing.assert_allclose(
+                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                        )
+        for kk in ret_lower[0]:
+            subret = []
+            for rr in ret_lower:
+                if rr is not None:
+                    subret.append(rr[kk])
+            if len(subret):
+                for ii, rr in enumerate(subret[1:]):
+                    if subret[0] is None:
+                        assert rr is None
+                    else:
+                        np.testing.assert_allclose(
+                            subret[0], rr, err_msg=f"compare {kk} between 0 and {ii}"
+                        )
+        same_keys = set(ret[0].keys()) & set(ret_lower[0].keys())
+        self.assertTrue(same_keys)
+        for key in same_keys:
+            for rr in ret:
+                if rr[key] is not None:
+                    rr1 = rr[key]
+                    break
+            else:
+                continue
+            for rr in ret_lower:
+                if rr[key] is not None:
+                    rr2 = rr[key]
+                    break
+            else:
+                continue
+            np.testing.assert_allclose(rr1, rr2, atol=aprec)
+
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_permutation(self):
         """Test permutation."""
         if getattr(self, "skip_test_permutation", False):
@@ -307,7 +414,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_trans(self):
         """Test translation."""
         if getattr(self, "skip_test_trans", False):
@@ -376,7 +483,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_rot(self):
         """Test rotation."""
         if getattr(self, "skip_test_rot", False):
@@ -566,7 +673,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_smooth(self):
         """Test smooth."""
         if getattr(self, "skip_test_smooth", False):
@@ -673,7 +780,7 @@ class ModelTestCase:
             else:
                 raise RuntimeError(f"Unknown output key: {kk}")
 
-    @unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_autodiff(self):
         """Test autodiff."""
         if getattr(self, "skip_test_autodiff", False):
@@ -813,7 +920,7 @@ class ModelTestCase:
             # not support virial by far
             pass
 
-    @unittest.skipIf(TEST_DEVICE == "cpu", "Skip test on CPU.")
+    @unittest.skipIf(TEST_DEVICE == "cpu" and CI, "Skip test on CPU.")
     def test_device_consistence(self):
         """Test forward consistency between devices."""
         test_spin = getattr(self, "test_spin", False)

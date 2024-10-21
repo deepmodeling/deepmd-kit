@@ -10,7 +10,7 @@ You can refer to [DeepModeling conda FAQ](https://docs.deepmodeling.com/faq/cond
 :::
 
 :::{note}
-Python 3.8 or above is required for Python interface.
+Python 3.9 or above is required for Python interface.
 :::
 
 - [Install off-line packages](#install-off-line-packages)
@@ -126,7 +126,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install deepmd-kit[cpu]
 ```
 
-[The LAMMPS module](../third-party/lammps-command.md) and [the i-Pi driver](../third-party/ipi.md) are only provided on Linux and macOS for the TensorFlow backend. To install LAMMPS and/or i-Pi, add `lmp` and/or `ipi` to extras:
+[The LAMMPS module](../third-party/lammps-command.md) and [the i-PI driver](../third-party/ipi.md) are only provided on Linux and macOS for the TensorFlow backend. To install LAMMPS and/or i-PI, add `lmp` and/or `ipi` to extras:
 
 ```bash
 pip install deepmd-kit[gpu,cu12,torch,lmp,ipi]

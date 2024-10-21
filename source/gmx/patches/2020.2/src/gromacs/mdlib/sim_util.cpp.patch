@@ -22,14 +22,14 @@
                                 simulationWork.useGpuPmePpCommunication, false, wcycle);
      }
 
-+    /* DeepMD */
++    /* DeePMD-kit */
 +    double               dener;
 +    std::vector<double > dforce;
 +    if (useDeepmd)
 +    {
 +        if (DIM != 3)
 +        {
-+            gmx_fatal(FARGS, "DeepMD does not support DIM < 3.");
++            gmx_fatal(FARGS, "DeePMD-kit does not support DIM < 3.");
 +        }
 +        else
 +        {

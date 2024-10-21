@@ -3,7 +3,6 @@ import unittest
 from typing import (
     Any,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -54,6 +53,7 @@ from deepmd.utils.argcheck import (
     (True,),  # concat_output_tebd
     ("float64",),  # precision
     (True, False),  # use_econf_tebd
+    (False,),  # use_tebd_bias
 )
 class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -75,6 +75,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             concat_output_tebd,
             precision,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return {
             "sel": [10],
@@ -100,6 +101,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             "precision": precision,
             "set_davg_zero": set_davg_zero,
             "use_econf_tebd": use_econf_tebd,
+            "use_tebd_bias": use_tebd_bias,
             "type_map": ["O", "H"] if use_econf_tebd else None,
             "seed": 1145141919810,
         }
@@ -132,6 +134,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             concat_output_tebd,
             precision,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
@@ -159,8 +162,9 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             concat_output_tebd,
             precision,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
-        return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
+        return CommonTest.skip_dp or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
             attn_dotr,
             normalize,
@@ -210,7 +214,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
             obj,
             self.natoms,
@@ -240,7 +244,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             mixed_types=True,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property
@@ -263,6 +267,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             concat_output_tebd,
             precision,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -291,6 +296,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             concat_output_tebd,
             precision,
             use_econf_tebd,
+            use_tebd_bias,
         ) = self.param
         if precision == "float64":
             return 1e-10

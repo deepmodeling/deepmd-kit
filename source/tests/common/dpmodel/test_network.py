@@ -283,6 +283,7 @@ class TestSaveLoadDPModel(unittest.TestCase):
             ],
         }
         self.filename = "test_dp_dpmodel.dp"
+        self.filename_yaml = "test_dp_dpmodel.yaml"
 
     def test_save_load_model(self):
         save_dp_model(self.filename, {"model": deepcopy(self.model_dict)})
@@ -291,6 +292,15 @@ class TestSaveLoadDPModel(unittest.TestCase):
         assert "software" in model
         assert "version" in model
 
+    def test_save_load_model_yaml(self):
+        save_dp_model(self.filename_yaml, {"model": deepcopy(self.model_dict)})
+        model = load_dp_model(self.filename_yaml)
+        np.testing.assert_equal(model["model"], self.model_dict)
+        assert "software" in model
+        assert "version" in model
+
     def tearDown(self) -> None:
         if os.path.exists(self.filename):
             os.remove(self.filename)
+        if os.path.exists(self.filename_yaml):
+            os.remove(self.filename_yaml)

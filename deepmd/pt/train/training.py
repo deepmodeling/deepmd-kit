@@ -10,7 +10,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Dict,
 )
 
 import numpy as np
@@ -28,6 +27,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    PropertyLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -87,7 +87,7 @@ log = logging.getLogger(__name__)
 class Trainer:
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         training_data,
         stat_file_path=None,
         validation_data=None,
@@ -141,6 +141,9 @@ class Trainer:
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
+        self.change_bias_after_training = training_params.get(
+            "change_bias_after_training", False
+        )
         self.lcurve_should_print_header = True
 
         def get_opt_param(params):
@@ -181,6 +184,7 @@ class Trainer:
                     if dist.is_available()
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
+                    collate_fn=lambda batch: batch,  # prevent extra conversion
                     pin_memory=True,
                 )
                 with torch.device("cpu"):
@@ -220,28 +224,7 @@ class Trainer:
             _data_requirement,
             finetune_has_new_type=False,
         ):
-            if _model.get_dim_fparam() > 0:
-                fparam_requirement_items = [
-                    DataRequirementItem(
-                        "fparam", _model.get_dim_fparam(), atomic=False, must=True
-                    )
-                ]
-                _data_requirement += fparam_requirement_items
-            if _model.get_dim_aparam() > 0:
-                aparam_requirement_items = [
-                    DataRequirementItem(
-                        "aparam", _model.get_dim_aparam(), atomic=True, must=True
-                    )
-                ]
-                _data_requirement += aparam_requirement_items
-            has_spin = getattr(_model, "has_spin", False)
-            if callable(has_spin):
-                has_spin = has_spin()
-            if has_spin:
-                spin_requirement_items = [
-                    DataRequirementItem("spin", ndof=3, atomic=True, must=True)
-                ]
-                _data_requirement += spin_requirement_items
+            _data_requirement += get_additional_data_requirement(_model)
             _training_data.add_data_requirement(_data_requirement)
             if _validation_data is not None:
                 _validation_data.add_data_requirement(_data_requirement)
@@ -264,15 +247,6 @@ class Trainer:
                     _stat_file_path.root.close()
             return get_sample
 
-        def get_single_model(
-            _model_params,
-        ):
-            if "use_srtab" in _model_params:
-                model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
-            else:
-                model = get_model(deepcopy(_model_params)).to(DEVICE)
-            return model
-
         def get_lr(lr_params):
             assert (
                 lr_params.get("type", "exp") == "exp"
@@ -280,39 +254,6 @@ class Trainer:
             lr_params["stop_steps"] = self.num_steps - self.warmup_steps
             lr_exp = LearningRateExp(**lr_params)
             return lr_exp
-
-        def get_loss(loss_params, start_lr, _ntypes, _model):
-            loss_type = loss_params.get("type", "ener")
-            if loss_type == "ener":
-                loss_params["starter_learning_rate"] = start_lr
-                return EnergyStdLoss(**loss_params)
-            elif loss_type == "dos":
-                loss_params["starter_learning_rate"] = start_lr
-                loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
-                return DOSLoss(**loss_params)
-            elif loss_type == "ener_spin":
-                loss_params["starter_learning_rate"] = start_lr
-                return EnergySpinLoss(**loss_params)
-            elif loss_type == "denoise":
-                loss_params["ntypes"] = _ntypes
-                return DenoiseLoss(**loss_params)
-            elif loss_type == "tensor":
-                model_output_type = _model.model_output_type()
-                if "mask" in model_output_type:
-                    model_output_type.pop(model_output_type.index("mask"))
-                tensor_name = model_output_type[0]
-                loss_params["tensor_name"] = tensor_name
-                loss_params["tensor_size"] = _model.model_output_def()[
-                    tensor_name
-                ].output_size
-                label_name = tensor_name
-                if label_name == "polarizability":
-                    label_name = "polar"
-                loss_params["label_name"] = label_name
-                loss_params["tensor_name"] = label_name
-                return TensorLoss(**loss_params)
-            else:
-                raise NotImplementedError
 
         # Optimizer
         if self.multi_task and training_params.get("optim_dict", None) is not None:
@@ -333,24 +274,6 @@ class Trainer:
             self.opt_type, self.opt_param = get_opt_param(training_params)
 
         # Model
-        dp_random.seed(training_params["seed"])
-        if training_params["seed"] is not None:
-            torch.manual_seed(training_params["seed"])
-
-        def get_model_for_wrapper(_model_params):
-            if "model_dict" not in _model_params:
-                _model = get_single_model(
-                    _model_params,
-                )
-            else:
-                _model = {}
-                model_keys = list(_model_params["model_dict"])
-                for _model_key in model_keys:
-                    _model[_model_key] = get_single_model(
-                        _model_params["model_dict"][_model_key],
-                    )
-            return _model
-
         self.model = get_model_for_wrapper(model_params)
 
         # Loss
@@ -375,7 +298,6 @@ class Trainer:
                 )
 
         # Data
-        dp_random.seed(training_params["seed"])
         if not self.multi_task:
             self.get_sample_func = single_model_stat(
                 self.model,
@@ -561,7 +483,7 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
-                            if _new_fitting and ".fitting_net." in item_key:
+                            if _new_fitting and (".descriptor." not in item_key):
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
@@ -600,7 +522,7 @@ class Trainer:
                         _finetune_rule_single,
                         _sample_func,
                     ):
-                        _model = _model_change_out_bias(
+                        _model = model_change_out_bias(
                             _model,
                             _sample_func,
                             _bias_adjust_mode="change-by-statistic"
@@ -704,7 +626,13 @@ class Trainer:
 
     def run(self):
         fout = (
-            open(self.disp_file, mode="w", buffering=1) if self.rank == 0 else None
+            open(
+                self.disp_file,
+                mode="w" if not self.restart_training else "a",
+                buffering=1,
+            )
+            if self.rank == 0
+            else None
         )  # line buffered
         if SAMPLER_RECORD:
             record_file = f"Sample_rank_{self.rank}.txt"
@@ -841,7 +769,10 @@ class Trainer:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
             # Log and persist
-            if self.display_in_training and _step_id % self.disp_freq == 0:
+            display_step_id = _step_id + 1
+            if self.display_in_training and (
+                display_step_id % self.disp_freq == 0 or display_step_id == 1
+            ):
                 self.wrapper.eval()
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
@@ -893,7 +824,7 @@ class Trainer:
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
-                                batch=_step_id,
+                                batch=display_step_id,
                                 task_name="trn",
                                 rmse=train_results,
                                 learning_rate=cur_lr,
@@ -902,7 +833,7 @@ class Trainer:
                         if valid_results:
                             log.info(
                                 format_training_message_per_task(
-                                    batch=_step_id,
+                                    batch=display_step_id,
                                     task_name="val",
                                     rmse=valid_results,
                                     learning_rate=None,
@@ -933,7 +864,7 @@ class Trainer:
                         if self.rank == 0:
                             log.info(
                                 format_training_message_per_task(
-                                    batch=_step_id,
+                                    batch=display_step_id,
                                     task_name=_key + "_trn",
                                     rmse=train_results[_key],
                                     learning_rate=cur_lr,
@@ -942,7 +873,7 @@ class Trainer:
                             if valid_results[_key]:
                                 log.info(
                                     format_training_message_per_task(
-                                        batch=_step_id,
+                                        batch=display_step_id,
                                         task_name=_key + "_val",
                                         rmse=valid_results[_key],
                                         learning_rate=None,
@@ -955,14 +886,15 @@ class Trainer:
                 if self.rank == 0 and self.timing_in_training:
                     log.info(
                         format_training_message(
-                            batch=_step_id,
+                            batch=display_step_id,
                             wall_time=train_time,
                         )
                     )
                 # the first training time is not accurate
                 if (
-                    _step_id + 1
-                ) > self.disp_freq or self.num_steps < 2 * self.disp_freq:
+                    (_step_id + 1 - self.start_step) > self.disp_freq
+                    or self.num_steps - self.start_step < 2 * self.disp_freq
+                ):
                     self.total_train_time += train_time
 
                 if fout:
@@ -970,7 +902,7 @@ class Trainer:
                         self.print_header(fout, train_results, valid_results)
                         self.lcurve_should_print_header = False
                     self.print_on_training(
-                        fout, _step_id, cur_lr, train_results, valid_results
+                        fout, display_step_id, cur_lr, train_results, valid_results
                     )
 
             if (
@@ -992,11 +924,15 @@ class Trainer:
                     f.write(str(self.latest_model))
 
             # tensorboard
-            if self.enable_tensorboard and _step_id % self.tensorboard_freq == 0:
-                writer.add_scalar(f"{task_key}/lr", cur_lr, _step_id)
-                writer.add_scalar(f"{task_key}/loss", loss, _step_id)
+            if self.enable_tensorboard and (
+                display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
+            ):
+                writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
+                writer.add_scalar(f"{task_key}/loss", loss, display_step_id)
                 for item in more_loss:
-                    writer.add_scalar(f"{task_key}/{item}", more_loss[item], _step_id)
+                    writer.add_scalar(
+                        f"{task_key}/{item}", more_loss[item], display_step_id
+                    )
 
         self.t0 = time.time()
         self.total_train_time = 0.0
@@ -1005,7 +941,7 @@ class Trainer:
                 continue
             if self.multi_task:
                 chosen_index_list = dp_random.choice(
-                    np.arange(self.num_model),
+                    np.arange(self.num_model),  # pylint: disable=no-explicit-dtype
                     p=np.array(self.model_prob),
                     size=self.world_size,
                     replace=True,
@@ -1019,6 +955,28 @@ class Trainer:
             if JIT:
                 break
 
+        if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
+            if not self.multi_task:
+                self.model = model_change_out_bias(
+                    self.model,
+                    self.get_sample_func,
+                    _bias_adjust_mode="change-by-statistic",
+                )
+            else:
+                for model_key in self.model_keys:
+                    self.model[model_key] = model_change_out_bias(
+                        self.model[model_key],
+                        self.get_sample_func[model_key],
+                        _bias_adjust_mode="change-by-statistic",
+                    )
+            self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
+            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
+            log.info(f"Saved model to {self.latest_model}")
+            symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+            with open("checkpoint", "w") as f:
+                f.write(str(self.latest_model))
+
         if (
             self.rank == 0 or dist.get_rank() == 0
         ):  # Handle the case if rank 0 aborted and re-assigned
@@ -1031,13 +989,14 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            if self.timing_in_training and self.num_steps // self.disp_freq > 0:
-                if self.num_steps >= 2 * self.disp_freq:
+            elapsed_batch = self.num_steps - self.start_step
+            if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
+                if self.start_step >= 2 * self.disp_freq:
                     log.info(
                         "average training time: %.4f s/batch (exclude first %d batches)",
                         self.total_train_time
                         / (
-                            self.num_steps // self.disp_freq * self.disp_freq
+                            elapsed_batch // self.disp_freq * self.disp_freq
                             - self.disp_freq
                         ),
                         self.disp_freq,
@@ -1046,7 +1005,7 @@ class Trainer:
                     log.info(
                         "average training time: %.4f s/batch",
                         self.total_train_time
-                        / (self.num_steps // self.disp_freq * self.disp_freq),
+                        / (elapsed_batch // self.disp_freq * self.disp_freq),
                     )
 
             if JIT:
@@ -1079,10 +1038,13 @@ class Trainer:
             if dist.is_available() and dist.is_initialized()
             else self.wrapper
         )
-        module.train_infos["lr"] = lr
+        module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
+        optim_state_dict = deepcopy(self.optimizer.state_dict())
+        for item in optim_state_dict["param_groups"]:
+            item["lr"] = float(item["lr"])
         torch.save(
-            {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
+            {"model": module.state_dict(), "optimizer": optim_state_dict},
             save_path,
         )
         checkpoint_dir = save_path.parent
@@ -1139,7 +1101,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
 
         for key in batch_data.keys():
-            if key == "sid" or key == "fid" or key == "box":
+            if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
@@ -1234,17 +1196,105 @@ class Trainer:
         fout.flush()
 
 
-def _model_change_out_bias(
+def get_additional_data_requirement(_model):
+    additional_data_requirement = []
+    if _model.get_dim_fparam() > 0:
+        fparam_requirement_items = [
+            DataRequirementItem(
+                "fparam", _model.get_dim_fparam(), atomic=False, must=True
+            )
+        ]
+        additional_data_requirement += fparam_requirement_items
+    if _model.get_dim_aparam() > 0:
+        aparam_requirement_items = [
+            DataRequirementItem(
+                "aparam", _model.get_dim_aparam(), atomic=True, must=True
+            )
+        ]
+        additional_data_requirement += aparam_requirement_items
+    has_spin = getattr(_model, "has_spin", False)
+    if callable(has_spin):
+        has_spin = has_spin()
+    if has_spin:
+        spin_requirement_items = [
+            DataRequirementItem("spin", ndof=3, atomic=True, must=True)
+        ]
+        additional_data_requirement += spin_requirement_items
+    return additional_data_requirement
+
+
+def get_loss(loss_params, start_lr, _ntypes, _model):
+    loss_type = loss_params.get("type", "ener")
+    if loss_type == "ener":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergyStdLoss(**loss_params)
+    elif loss_type == "dos":
+        loss_params["starter_learning_rate"] = start_lr
+        loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size
+        return DOSLoss(**loss_params)
+    elif loss_type == "ener_spin":
+        loss_params["starter_learning_rate"] = start_lr
+        return EnergySpinLoss(**loss_params)
+    elif loss_type == "denoise":
+        loss_params["ntypes"] = _ntypes
+        return DenoiseLoss(**loss_params)
+    elif loss_type == "tensor":
+        model_output_type = _model.model_output_type()
+        if "mask" in model_output_type:
+            model_output_type.pop(model_output_type.index("mask"))
+        tensor_name = model_output_type[0]
+        loss_params["tensor_name"] = tensor_name
+        loss_params["tensor_size"] = _model.model_output_def()[tensor_name].output_size
+        label_name = tensor_name
+        if label_name == "polarizability":
+            label_name = "polar"
+        loss_params["label_name"] = label_name
+        loss_params["tensor_name"] = label_name
+        return TensorLoss(**loss_params)
+    elif loss_type == "property":
+        task_dim = _model.get_task_dim()
+        loss_params["task_dim"] = task_dim
+        return PropertyLoss(**loss_params)
+    else:
+        raise NotImplementedError
+
+
+def get_single_model(
+    _model_params,
+):
+    if "use_srtab" in _model_params:
+        model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
+    else:
+        model = get_model(deepcopy(_model_params)).to(DEVICE)
+    return model
+
+
+def get_model_for_wrapper(_model_params):
+    if "model_dict" not in _model_params:
+        _model = get_single_model(
+            _model_params,
+        )
+    else:
+        _model = {}
+        model_keys = list(_model_params["model_dict"])
+        for _model_key in model_keys:
+            _model[_model_key] = get_single_model(
+                _model_params["model_dict"][_model_key],
+            )
+    return _model
+
+
+def model_change_out_bias(
     _model,
     _sample_func,
     _bias_adjust_mode="change-by-statistic",
 ):
-    old_bias = _model.get_out_bias()
+    old_bias = deepcopy(_model.get_out_bias())
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
     )
-    new_bias = _model.get_out_bias()
+    new_bias = deepcopy(_model.get_out_bias())
 
     model_type_map = _model.get_type_map()
     log.info(

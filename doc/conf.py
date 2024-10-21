@@ -7,15 +7,14 @@
 
 # -- Path setup --------------------------------------------------------------
 
+import datetime
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
 import sys
-from datetime import (
-    date,
-)
 
 from deepmd.utils.argcheck import (
     ACTIVATION_FN_DICT,
@@ -29,7 +28,9 @@ import sphinx_contrib_exhale_multiproject  # noqa: F401
 # -- Project information -----------------------------------------------------
 
 project = "DeePMD-kit"
-copyright = "2017-%d, DeepModeling" % date.today().year
+copyright = (
+    "2017-%d, DeepModeling" % datetime.datetime.now(tz=datetime.timezone.utc).year
+)
 author = "DeepModeling"
 
 autoapi_dirs = ["../deepmd"]
@@ -67,6 +68,8 @@ extensions = [
     "sphinxcontrib.bibtex",
     "sphinx_design",
     "autoapi.extension",
+    "sphinxcontrib.programoutput",
+    "sphinxcontrib.moderncmakedomain",
 ]
 
 # breathe_domain_by_extension = {
@@ -142,6 +145,10 @@ intersphinx_mapping = {
         "https://github.com/mr-ubik/tensorflow-intersphinx/raw/master/tf2_py_objects.inv",
     ),
     "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+    "torch": ("https://pytorch.org/docs/master/", None),
+    "dargs": ("https://docs.deepmodeling.com/projects/dargs/en/stable/", None),
+    "h5py": ("https://docs.h5py.org/en/latest/", None),
+    "array_api_compat": ("https://data-apis.org/array-api-compat/", None),
 }
 numpydoc_xref_param_type = True
 

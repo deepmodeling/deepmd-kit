@@ -3,8 +3,6 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     ClassVar,
-    List,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -37,7 +35,7 @@ class DPModelBackend(Backend):
         Backend.Feature.DEEP_EVAL | Backend.Feature.NEIGHBOR_STAT | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = [".dp"]
+    suffixes: ClassVar[list[str]] = [".dp", ".yaml", ".yml"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -62,7 +60,7 @@ class DPModelBackend(Backend):
         raise NotImplementedError(f"Unsupported backend: {self.name}")
 
     @property
-    def deep_eval(self) -> Type["DeepEvalBackend"]:
+    def deep_eval(self) -> type["DeepEvalBackend"]:
         """The Deep Eval backend of the backend.
 
         Returns
@@ -77,7 +75,7 @@ class DPModelBackend(Backend):
         return DeepEval
 
     @property
-    def neighbor_stat(self) -> Type["NeighborStat"]:
+    def neighbor_stat(self) -> type["NeighborStat"]:
         """The neighbor statistics of the backend.
 
         Returns

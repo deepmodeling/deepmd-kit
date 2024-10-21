@@ -16,10 +16,10 @@ class TestSingleMachine(unittest.TestCase):
     def setUp(self):
         try:
             import horovod  # noqa: F401
-        except ImportError:
+        except ImportError as e:
             raise unittest.SkipTest(
                 "Package horovod is required for parallel-training tests."
-            )
+            ) from e
         self.input_file = str(tests_path / "model_compression" / "input.json")
 
     def test_two_workers(self):
@@ -40,12 +40,16 @@ class TestSingleMachine(unittest.TestCase):
             stdout=sp.PIPE,
             stderr=sp.STDOUT,
         )
+        lines = []
         for line in iter(popen.stdout.readline, b""):
             if hasattr(line, "decode"):
                 line = line.decode("utf-8")
             line = line.rstrip()
+            lines.append(line)
         popen.wait()
-        self.assertEqual(0, popen.returncode, "Parallel training failed!")
+        self.assertEqual(
+            0, popen.returncode, f"Parallel training failed!\n{''.join(lines)}"
+        )
 
 
 if __name__ == "__main__":

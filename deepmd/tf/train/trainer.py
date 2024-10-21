@@ -4,10 +4,6 @@ import logging
 import os
 import shutil
 import time
-from typing import (
-    Dict,
-    List,
-)
 
 import google.protobuf.message
 import numpy as np
@@ -145,6 +141,9 @@ class DPTrainer:
         self.tensorboard_log_dir = tr_data.get("tensorboard_log_dir", "log")
         self.tensorboard_freq = tr_data.get("tensorboard_freq", 1)
         self.mixed_prec = tr_data.get("mixed_precision", None)
+        self.change_bias_after_training = tr_data.get(
+            "change_bias_after_training", False
+        )
         if self.mixed_prec is not None:
             if (
                 self.mixed_prec["compute_prec"] not in ("float16", "bfloat16")
@@ -417,6 +416,8 @@ class DPTrainer:
             fp = open(self.disp_file, "a")
 
         cur_batch = run_sess(self.sess, self.global_step)
+        start_batch = cur_batch
+        elapsed_batch = stop_batch - start_batch
         is_first_step = True
         self.cur_batch = cur_batch
         log.info(
@@ -553,7 +554,10 @@ class DPTrainer:
                         )
                     )
                     # the first training time is not accurate
-                    if cur_batch > self.disp_freq or stop_batch < 2 * self.disp_freq:
+                    if (
+                        cur_batch - start_batch > self.disp_freq
+                        or elapsed_batch < 2 * self.disp_freq
+                    ):
                         total_train_time += train_time
                     train_time = 0
                     wall_time_tic = toc
@@ -563,24 +567,55 @@ class DPTrainer:
                     and self.saver is not None
                 ):
                     self.save_checkpoint(cur_batch)
+        if self.change_bias_after_training:
+            import tempfile
+
+            from deepmd.tf.entrypoints import (
+                freeze,
+            )
+
+            self.save_checkpoint(cur_batch)
+            with tempfile.NamedTemporaryFile(suffix=".pb") as f:
+                freeze(
+                    checkpoint_folder=os.path.join(os.getcwd(), self.save_ckpt),
+                    output=f.name,
+                )
+                self._change_energy_bias(
+                    train_data,
+                    f.name,
+                    self.type_map,
+                    bias_adjust_mode="change-by-statistic",
+                )
+            assign_op = tf.assign(
+                self.model.get_fitting().t_bias_atom_e,
+                self.model.get_fitting().bias_atom_e,
+            )
+            run_sess(self.sess, assign_op)
+            self.save_checkpoint(cur_batch)
+
         if (
             self.save_freq == 0 or cur_batch == 0 or cur_batch % self.save_freq != 0
         ) and self.saver is not None:
             self.save_checkpoint(cur_batch)
         if self.run_opt.is_chief:
             fp.close()
-        if self.timing_in_training and stop_batch // self.disp_freq > 0:
-            if stop_batch >= 2 * self.disp_freq:
+        elapsed_batch = stop_batch - start_batch
+        if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
+            if elapsed_batch >= 2 * self.disp_freq:
                 log.info(
                     "average training time: %.4f s/batch (exclude first %d batches)",
                     total_train_time
-                    / (stop_batch // self.disp_freq * self.disp_freq - self.disp_freq),
+                    / (
+                        elapsed_batch // self.disp_freq * self.disp_freq
+                        - self.disp_freq
+                    ),
                     self.disp_freq,
                 )
             else:
                 log.info(
                     "average training time: %.4f s/batch",
-                    total_train_time / (stop_batch // self.disp_freq * self.disp_freq),
+                    total_train_time
+                    / (elapsed_batch // self.disp_freq * self.disp_freq),
                 )
 
         if self.profiling and self.run_opt.is_chief:
@@ -862,7 +897,7 @@ class DPTrainer:
         )
 
     @property
-    def data_requirements(self) -> List[DataRequirementItem]:
+    def data_requirements(self) -> list[DataRequirementItem]:
         return self.model.input_requirement + self.loss.label_requirement
 
 
@@ -893,17 +928,17 @@ class DatasetLoader:
         self.data_keys = batch_data.keys()
         self.data_types = [tf.as_dtype(x.dtype) for x in batch_data.values()]
 
-    def build(self) -> List[tf.Tensor]:
+    def build(self) -> list[tf.Tensor]:
         """Build the OP that loads the training data.
 
         Returns
         -------
-        List[tf.Tensor]
+        list[tf.Tensor]
             Tensor of the loaded data.
         """
         train_data = self.train_data
 
-        def get_train_batch() -> List[np.ndarray]:
+        def get_train_batch() -> list[np.ndarray]:
             batch_data = train_data.get_batch()
             # convert dict to list of arryas
             batch_data = tuple([batch_data[kk] for kk in self.data_keys])
@@ -911,17 +946,17 @@ class DatasetLoader:
 
         return tf.py_func(get_train_batch, [], self.data_types, name="train_data")
 
-    def get_data_dict(self, batch_list: List[np.ndarray]) -> Dict[str, np.ndarray]:
+    def get_data_dict(self, batch_list: list[np.ndarray]) -> dict[str, np.ndarray]:
         """Generate a dict of the loaded data.
 
         Parameters
         ----------
-        batch_list : List[np.ndarray]
+        batch_list : list[np.ndarray]
             The loaded data.
 
         Returns
         -------
-        Dict[str, np.ndarray]
+        dict[str, np.ndarray]
             The dict of the loaded data.
         """
         return dict(zip(self.data_keys, batch_list))

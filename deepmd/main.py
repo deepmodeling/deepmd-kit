@@ -14,10 +14,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -57,10 +54,10 @@ class RawTextArgumentDefaultsHelpFormatter(
     """This formatter is used to print multile-line help message with default value."""
 
 
-BACKENDS: Dict[str, Type[Backend]] = Backend.get_backends_by_feature(
+BACKENDS: dict[str, type[Backend]] = Backend.get_backends_by_feature(
     Backend.Feature.ENTRY_POINT
 )
-BACKEND_TABLE: Dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
+BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
 
 
 class BackendOption(argparse.Action):
@@ -130,7 +127,7 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    BACKEND_ALIAS: Dict[str, List[str]] = defaultdict(list)
+    BACKEND_ALIAS: dict[str, list[str]] = defaultdict(list)
     for alias, backend in BACKEND_TABLE.items():
         BACKEND_ALIAS[backend].append(alias)
     for backend, alias in BACKEND_ALIAS.items():
@@ -258,7 +255,9 @@ def main_parser() -> argparse.ArgumentParser:
     parser_train.add_argument(
         "--use-pretrain-script",
         action="store_true",
-        help="Use model parameters from the script of the pretrained model instead of user input when doing finetuning. Note: This behavior is default and unchangeable in TensorFlow.",
+        help="When performing fine-tuning or init-model, "
+        "utilize the model parameters provided by the script of the pretrained model rather than relying on user input. "
+        "It is important to note that in TensorFlow, this behavior is the default and cannot be modified for fine-tuning. ",
     )
     parser_train.add_argument(
         "-o",
@@ -368,7 +367,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--datafile",
         default=None,
         type=str,
-        help="The path to file of test list.",
+        help="The path to the datafile, each line of which is a path to one data system.",
     )
     parser_tst.add_argument(
         "-S",
@@ -509,6 +508,11 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="The output type",
     )
+    parsers_doc.add_argument(
+        "--multi-task",
+        action="store_true",
+        help="Print the documentation of multi-task training input parameters.",
+    )
 
     # * make model deviation ***********************************************************
     parser_model_devi = subparsers.add_parser(
@@ -648,8 +652,8 @@ def main_parser() -> argparse.ArgumentParser:
         "--type-map",
         type=str,
         nargs="+",
-        required=True,
-        help="type map",
+        required=False,
+        help="Type map. If not provided, the type map of data will be used.",
     )
     parser_neighbor_stat.add_argument(
         "--mixed-type",
@@ -657,6 +661,79 @@ def main_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="treat all types as a single type. Used with se_atten descriptor.",
+    )
+
+    # change_bias
+    parser_change_bias = subparsers.add_parser(
+        "change-bias",
+        parents=[parser_log],
+        help="(Supported backend: PyTorch) Change model out bias according to the input data.",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp change-bias model.pt -s data -n 10 -m change
+        """
+        ),
+    )
+    parser_change_bias.add_argument(
+        "INPUT", help="The input checkpoint file or frozen model file"
+    )
+    parser_change_bias_source = parser_change_bias.add_mutually_exclusive_group()
+    parser_change_bias_source.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_change_bias_source.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_change_bias_source.add_argument(
+        "-b",
+        "--bias-value",
+        default=None,
+        type=float,
+        nargs="+",
+        help="The user defined value for each type in the type_map of the model, split with spaces.\n"
+        "For example, '-93.57 -187.1' for energy bias of two elements. "
+        "Only supports energy bias changing.",
+    )
+    parser_change_bias.add_argument(
+        "-n",
+        "--numb-batch",
+        default=0,
+        type=int,
+        help="The number of frames for bias changing in one data system. 0 means all data.",
+    )
+    parser_change_bias.add_argument(
+        "-m",
+        "--mode",
+        type=str,
+        default="change",
+        choices=["change", "set"],
+        help="The mode for changing energy bias: \n"
+        "change (default) : perform predictions using input model on target dataset, "
+        "and do least square on the errors to obtain the target shift as bias.\n"
+        "set : directly use the statistic bias in the target dataset.",
+    )
+    parser_change_bias.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        type=str,
+        help="The model after changing bias.",
+    )
+    parser_change_bias.add_argument(
+        "--model-branch",
+        type=str,
+        default=None,
+        help="Model branch chosen for changing bias if multi-task model.",
     )
 
     # --version
@@ -755,7 +832,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_show = subparsers.add_parser(
         "show",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Show the information of a model",
+        help="Show the information of a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
@@ -776,12 +853,12 @@ def main_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse arguments and convert argument strings to objects.
 
     Parameters
     ----------
-    args : List[str]
+    args : list[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
 
@@ -800,15 +877,21 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main():
+def main(args: Optional[list[str]] = None):
     """DeePMD-kit new entry point.
+
+    Parameters
+    ----------
+    args : list[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    args = parse_args(args=args)
 
     if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
@@ -820,6 +903,7 @@ def main():
         "neighbor-stat",
         "gui",
         "convert-backend",
+        "show",
     ):
         # common entrypoints
         from deepmd.entrypoints.main import main as deepmd_main
@@ -830,7 +914,7 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
-        "show",
+        "change-bias",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook
     elif args.command is None:

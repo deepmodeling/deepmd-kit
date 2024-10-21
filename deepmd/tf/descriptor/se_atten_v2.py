@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    List,
     Optional,
 )
 
@@ -44,7 +43,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
             Random seed for initializing the network parameters.
     type_one_side
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     set_davg_zero
@@ -71,14 +70,14 @@ class DescrptSeAttenV2(DescrptSeAtten):
         rcut_smth: float,
         sel: int,
         ntypes: int,
-        neuron: List[int] = [24, 48, 96],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
         set_davg_zero: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,

@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-from typing import (
-    List,
-    Tuple,
-)
 
 import numpy as np
 
@@ -47,8 +43,8 @@ class DipoleChargeModifier(DeepDipole):
     def __init__(
         self,
         model_name: str,
-        model_charge_map: List[float],
-        sys_charge_map: List[float],
+        model_charge_map: list[float],
+        sys_charge_map: list[float],
         ewald_h: float = 1,
         ewald_beta: float = 1,
     ) -> None:
@@ -219,7 +215,7 @@ class DipoleChargeModifier(DeepDipole):
         box: np.ndarray,
         atype: np.ndarray,
         eval_fv: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate the modification.
 
         Parameters
@@ -252,7 +248,7 @@ class DipoleChargeModifier(DeepDipole):
         sel_idx_map = select_idx_map(atype, self.sel_type)
         nsel = len(sel_idx_map)
         # setup charge
-        charge = np.zeros([natoms])
+        charge = np.zeros([natoms])  # pylint: disable=no-explicit-dtype
         for ii in range(natoms):
             charge[ii] = self.sys_charge_map[atype[ii]]
         charge = np.tile(charge, [nframes, 1])
@@ -386,7 +382,7 @@ class DipoleChargeModifier(DeepDipole):
 
         wfcc_coord = ref_coord + dipole
         # wfcc_coord = dipole
-        wfcc_charge = np.zeros([nsel])
+        wfcc_charge = np.zeros([nsel])  # pylint: disable=no-explicit-dtype
         for ii in range(nsel):
             orig_idx = self.sel_type.index(atype[sel_idx_map[ii]])
             wfcc_charge[ii] = self.model_charge_map[orig_idx]

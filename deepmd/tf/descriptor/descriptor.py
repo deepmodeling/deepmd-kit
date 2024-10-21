@@ -4,11 +4,7 @@ from abc import (
 )
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
-    Set,
-    Tuple,
 )
 
 import numpy as np
@@ -111,7 +107,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         """
         raise NotImplementedError
 
-    def get_nlist(self) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist(self) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Returns neighbor information.
 
         Returns
@@ -130,12 +126,12 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     @abstractmethod
     def compute_input_stats(
         self,
-        data_coord: List[np.ndarray],
-        data_box: List[np.ndarray],
-        data_atype: List[np.ndarray],
-        natoms_vec: List[np.ndarray],
-        mesh: List[np.ndarray],
-        input_dict: Dict[str, List[np.ndarray]],
+        data_coord: list[np.ndarray],
+        data_box: list[np.ndarray],
+        data_atype: list[np.ndarray],
+        natoms_vec: list[np.ndarray],
+        mesh: list[np.ndarray],
+        input_dict: dict[str, list[np.ndarray]],
         **kwargs,
     ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be
@@ -175,7 +171,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         natoms: tf.Tensor,
         box_: tf.Tensor,
         mesh: tf.Tensor,
-        input_dict: Dict[str, Any],
+        input_dict: dict[str, Any],
         reuse: Optional[bool] = None,
         suffix: str = "",
     ) -> tf.Tensor:
@@ -275,7 +271,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     @abstractmethod
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -323,7 +319,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             f"Descriptor {type(self).__name__} doesn't support initialization from the given variables!"
         )
 
-    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> tuple[str]:
         """Get names of tensors.
 
         Parameters
@@ -333,7 +329,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
 
         Returns
         -------
-        Tuple[str]
+        tuple[str]
             Names of tensors
         """
         raise NotImplementedError(
@@ -362,9 +358,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
 
     def build_type_exclude_mask(
         self,
-        exclude_types: Set[Tuple[int, int]],
+        exclude_types: set[tuple[int, int]],
         ntypes: int,
-        sel: List[int],
+        sel: list[int],
         ndescrpt: int,
         atype: tf.Tensor,
         shape0: tf.Tensor,
@@ -391,12 +387,12 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
 
         Parameters
         ----------
-        exclude_types : List[Tuple[int, int]]
+        exclude_types : list[tuple[int, int]]
             The list of excluded types, e.g. [(0, 1), (1, 0)] means the interaction
             between type 0 and type 1 is excluded.
         ntypes : int
             The number of types.
-        sel : List[int]
+        sel : list[int]
             The list of the number of selected neighbors for each type.
         ndescrpt : int
             The number of descriptors for each atom.
@@ -443,7 +439,8 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         # assume the number of neighbors for each type is the same
         assert ndescrpt_per_neighbor * np.sum(sel) == ndescrpt
         atype_descrpt = np.repeat(
-            np.arange(ntypes), np.array(sel) * ndescrpt_per_neighbor
+            np.arange(ntypes),  # pylint: disable=no-explicit-dtype
+            np.array(sel) * ndescrpt_per_neighbor,
         )
         atype_descrpt = tf.convert_to_tensor(atype_descrpt, dtype=tf.int32)
         # (1, ndescrpt)
@@ -468,9 +465,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -534,6 +531,6 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         raise NotImplementedError(f"Not implemented in class {self.__name__}")
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return []

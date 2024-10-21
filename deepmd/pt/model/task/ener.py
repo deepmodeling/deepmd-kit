@@ -2,9 +2,7 @@
 import copy
 import logging
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -48,7 +46,7 @@ class EnergyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: List[int] = [128, 128, 128],
+        neuron: list[int] = [128, 128, 128],
         bias_atom_e: Optional[torch.Tensor] = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -56,8 +54,8 @@ class EnergyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ):
         super().__init__(
@@ -94,7 +92,7 @@ class EnergyFittingNet(InvarFitting):
         }
 
     # make jit happy with torch 2.0.0
-    exclude_types: List[int]
+    exclude_types: list[int]
 
 
 @Fitting.register("direct_force")
@@ -128,10 +126,10 @@ class EnergyFittingNetDirect(Fitting):
         self.use_tebd = use_tebd
         self.out_dim = out_dim
         if bias_atom_e is None:
-            bias_atom_e = np.zeros([self.ntypes])
+            bias_atom_e = np.zeros([self.ntypes])  # pylint: disable=no-explicit-dtype
         if not use_tebd:
             assert self.ntypes == len(bias_atom_e), "Element count mismatches!"
-        bias_atom_e = torch.tensor(bias_atom_e, device=env.DEVICE)
+        bias_atom_e = torch.tensor(bias_atom_e, device=env.DEVICE)  # pylint: disable=no-explicit-dtype
         self.register_buffer("bias_atom_e", bias_atom_e)
 
         filter_layers_dipole = []
@@ -181,15 +179,15 @@ class EnergyFittingNetDirect(Fitting):
     def serialize(self) -> dict:
         raise NotImplementedError
 
-    def deserialize(cls) -> "EnergyFittingNetDirect":
+    def deserialize(self) -> "EnergyFittingNetDirect":
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         raise NotImplementedError
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         raise NotImplementedError
 
     def forward(
@@ -201,7 +199,7 @@ class EnergyFittingNetDirect(Fitting):
         h2: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, None]:
+    ) -> tuple[torch.Tensor, None]:
         """Based on embedding net output, alculate total energy.
 
         Args:

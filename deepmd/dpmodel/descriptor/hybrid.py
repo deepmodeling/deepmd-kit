@@ -2,10 +2,7 @@
 import math
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -37,14 +34,14 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     Parameters
     ----------
-    list : list : List[Union[BaseDescriptor, Dict[str, Any]]]
+    list : list : list[Union[BaseDescriptor, dict[str, Any]]]
         Build a descriptor from the concatenation of the list of descriptors.
         The descriptor can be either an object or a dictionary.
     """
 
     def __init__(
         self,
-        list: List[Union[BaseDescriptor, Dict[str, Any]]],
+        list: list[Union[BaseDescriptor, dict[str, Any]]],
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -69,7 +66,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             ), f"number of atom types in {ii}th descrptor {self.descrpt_list[0].__class__.__name__} does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
-        self.nlist_cut_idx: List[np.ndarray] = []
+        self.nlist_cut_idx: list[np.ndarray] = []
         if self.mixed_types() and not all(
             descrpt.mixed_types() for descrpt in self.descrpt_list
         ):
@@ -107,7 +104,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         # Note: Using the minimum rcut_smth might not be appropriate in all scenarios. Consider using a different approach or provide detailed documentation on why the minimum value is chosen.
         return np.min([descrpt.get_rcut_smth() for descrpt in self.descrpt_list]).item()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         if self.mixed_types():
             return [
@@ -124,7 +121,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the number of element types."""
         return self.descrpt_list[0].get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.descrpt_list[0].get_type_map()
 
@@ -146,6 +143,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns whether the descriptor has message passing."""
         return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
 
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return True
+
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix. All descriptors should be the same."""
         all_protection = [descrpt.get_env_protection() for descrpt in self.descrpt_list]
@@ -165,7 +166,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -178,15 +179,15 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 else None,
             )
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
             descrpt.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
         self,
-        mean: List[Union[np.ndarray, List[np.ndarray]]],
-        stddev: List[Union[np.ndarray, List[np.ndarray]]],
+        mean: list[Union[np.ndarray, list[np.ndarray]]],
+        stddev: list[Union[np.ndarray, list[np.ndarray]]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -194,9 +195,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def get_stat_mean_and_stddev(
         self,
-    ) -> Tuple[
-        List[Union[np.ndarray, List[np.ndarray]]],
-        List[Union[np.ndarray, List[np.ndarray]]],
+    ) -> tuple[
+        list[Union[np.ndarray, list[np.ndarray]]],
+        list[Union[np.ndarray, list[np.ndarray]]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -275,9 +276,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

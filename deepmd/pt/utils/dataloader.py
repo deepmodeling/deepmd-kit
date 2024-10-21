@@ -9,9 +9,6 @@ from multiprocessing.dummy import (
 from threading import (
     Thread,
 )
-from typing import (
-    List,
-)
 
 import h5py
 import numpy as np
@@ -77,15 +74,16 @@ class DpLoaderSet(Dataset):
         systems,
         batch_size,
         type_map,
-        seed=10,
+        seed=None,
         shuffle=True,
     ):
-        setup_seed(seed)
+        if seed is not None:
+            setup_seed(seed)
         if isinstance(systems, str):
             with h5py.File(systems) as file:
                 systems = [os.path.join(systems, item) for item in file.keys()]
 
-        self.systems: List[DeepmdDataSetForLoader] = []
+        self.systems: list[DeepmdDataSetForLoader] = []
         if len(systems) >= 100:
             log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
@@ -105,7 +103,7 @@ class DpLoaderSet(Dataset):
         ) as pool:
             self.systems = pool.map(construct_dataset, systems)
 
-        self.sampler_list: List[DistributedSampler] = []
+        self.sampler_list: list[DistributedSampler] = []
         self.index = []
         self.total_batch = 0
 
@@ -177,7 +175,7 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, data_requirement: List[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
@@ -185,7 +183,7 @@ class DpLoaderSet(Dataset):
     def print_summary(
         self,
         name: str,
-        prob: List[float],
+        prob: list[float],
     ):
         print_summary(
             name,

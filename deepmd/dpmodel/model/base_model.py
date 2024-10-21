@@ -1,15 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import inspect
+import json
 from abc import (
     ABC,
     abstractmethod,
 )
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
-    Type,
 )
 
 from deepmd.utils.data_system import (
@@ -21,7 +19,7 @@ from deepmd.utils.plugin import (
 )
 
 
-def make_base_model() -> Type[object]:
+def make_base_model() -> type[object]:
     class BaseBaseModel(ABC, PluginVariant, make_plugin_registry("model")):
         """Base class for final exported model that will be directly used for inference.
 
@@ -66,7 +64,7 @@ def make_base_model() -> Type[object]:
             pass
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
 
         @abstractmethod
@@ -82,7 +80,7 @@ def make_base_model() -> Type[object]:
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -98,7 +96,7 @@ def make_base_model() -> Type[object]:
             """
 
         @abstractmethod
-        def model_output_type(self) -> List[str]:
+        def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
 
         @abstractmethod
@@ -165,9 +163,9 @@ def make_base_model() -> Type[object]:
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[List[str]],
+            type_map: Optional[list[str]],
             local_jdata: dict,
-        ) -> Tuple[dict, Optional[float]]:
+        ) -> tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters
@@ -192,6 +190,30 @@ def make_base_model() -> Type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
+
+        @classmethod
+        def get_model(cls, model_params: dict) -> "BaseBaseModel":
+            """Get the model by the parameters.
+
+            By default, all the parameters are directly passed to the constructor.
+            If not, override this method.
+
+            Parameters
+            ----------
+            model_params : dict
+                The model parameters
+
+            Returns
+            -------
+            BaseBaseModel
+                The model
+            """
+            model_params_old = model_params.copy()
+            model_params = model_params.copy()
+            model_params.pop("type", None)
+            model = cls(**model_params)
+            model.model_def_script = json.dumps(model_params_old)
+            return model
 
     return BaseBaseModel
 

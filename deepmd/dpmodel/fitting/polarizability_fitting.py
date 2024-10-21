@@ -2,8 +2,6 @@
 import copy
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -82,11 +80,11 @@ class PolarFitting(GeneralFitting):
     fit_diag : bool
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to
             normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
             Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -95,26 +93,25 @@ class PolarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
+        trainable: Optional[list[bool]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: Optional[list[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
-        exclude_types: List[int] = [],
-        old_impl: bool = False,
+        exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: Optional[list[float]] = None,
         shift_diag: bool = True,
-        type_map: Optional[List[str]] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        type_map: Optional[list[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -167,7 +164,6 @@ class PolarFitting(GeneralFitting):
             type_map=type_map,
             seed=seed,
         )
-        self.old_impl = False
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -194,7 +190,6 @@ class PolarFitting(GeneralFitting):
         data["type"] = "polar"
         data["@version"] = 3
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = self.scale
@@ -223,7 +218,7 @@ class PolarFitting(GeneralFitting):
         )
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -257,7 +252,7 @@ class PolarFitting(GeneralFitting):
         h2: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters
@@ -308,7 +303,7 @@ class PolarFitting(GeneralFitting):
             bias = self.constant_matrix[atype]
             # (nframes, nloc, 1)
             bias = np.expand_dims(bias, axis=-1) * self.scale[atype]
-            eye = np.eye(3)
+            eye = np.eye(3)  # pylint: disable=no-explicit-dtype
             eye = np.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
             bias = np.expand_dims(bias, axis=-1) * eye

@@ -41,7 +41,6 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.rcut,
             self.rcut_smth,
             self.sel,
-            old_impl=False,
         )
         ddsub1 = DescrptSeR(
             self.rcut,

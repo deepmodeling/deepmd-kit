@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -64,13 +62,13 @@ class DeepDOS(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
         **kwargs: Any,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         """Evaluate energy, force, and virial. If atomic is True,
         also return atomic energy and atomic virial.
 
@@ -81,7 +79,7 @@ class DeepDOS(DeepEval):
         cells : np.ndarray
             The cell vectors of the system, in shape (nframes, 9). If the system
             is not periodic, set it to None.
-        atom_types : List[int] or np.ndarray
+        atom_types : list[int] or np.ndarray
             The types of the atoms. If mixed_type is False, the shape is (natoms,);
             otherwise, the shape is (nframes, natoms).
         atomic : bool, optional
@@ -92,7 +90,7 @@ class DeepDOS(DeepEval):
             The atomic parameters, by default None.
         mixed_type : bool, optional
             Whether the atom_types is mixed type, by default False.
-        **kwargs : Dict[str, Any]
+        **kwargs : dict[str, Any]
             Keyword arguments.
 
         Returns

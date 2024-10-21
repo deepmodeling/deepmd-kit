@@ -8,6 +8,7 @@ from deepmd.dpmodel.descriptor import (
     DescrptSeA,
     DescrptSeR,
     DescrptSeT,
+    DescrptSeTTebd,
 )
 from deepmd.dpmodel.fitting import (
     EnergyFittingNet,
@@ -24,6 +25,7 @@ from ....consistent.common import (
     parameterized,
 )
 from ....utils import (
+    CI,
     TEST_DEVICE,
 )
 from ...common.cases.model.model import (
@@ -40,12 +42,15 @@ from ..descriptor.test_descriptor import (
     DescriptorParamDPA2List,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
+    DescriptorParamHybridMixedTTebd,
     DescriptorParamSeA,
     DescriptorParamSeAList,
     DescriptorParamSeR,
     DescriptorParamSeRList,
     DescriptorParamSeT,
     DescriptorParamSeTList,
+    DescriptorParamSeTTebd,
+    DescriptorParamSeTTebdList,
 )
 from ..fitting.test_fitting import (
     FittingParamEnergy,
@@ -82,10 +87,15 @@ def skip_model_tests(test_obj):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+            *[
+                (param_func, DescrptSeTTebd)
+                for param_func in DescriptorParamSeTTebdList
+            ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             (DescriptorParamHybrid, DescrptHybrid),
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
@@ -94,6 +104,7 @@ def skip_model_tests(test_obj):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamSeR, DescrptSeR),
             (DescriptorParamSeT, DescrptSeT),
+            (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
@@ -102,7 +113,7 @@ def skip_model_tests(test_obj):
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -116,7 +127,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             cls.aprec_dict["test_smooth"] = 5e-5
         if Descrpt in [DescrptDPA1]:
             cls.epsilon_dict["test_smooth"] = 1e-6
-        if Descrpt in [DescrptSeT]:
+        if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
             cls.expected_sel = [i // 4 for i in cls.expected_sel]
             cls.expected_rcut = cls.expected_rcut / 2
@@ -163,11 +174,16 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
             *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
             *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
+            *[
+                (param_func, DescrptSeTTebd)
+                for param_func in DescriptorParamSeTTebdList
+            ],
             *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
             *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
             # (DescriptorParamHybrid, DescrptHybrid),
             # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
             (DescriptorParamHybridMixed, DescrptHybrid),
+            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
@@ -176,6 +192,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             (DescriptorParamSeA, DescrptSeA),
             (DescriptorParamSeR, DescrptSeR),
             (DescriptorParamSeT, DescrptSeT),
+            (DescriptorParamSeTTebd, DescrptSeTTebd),
             (DescriptorParamDPA1, DescrptDPA1),
             (DescriptorParamDPA2, DescrptDPA2),
         ),  # descrpt_class_param & class
@@ -184,7 +201,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -197,7 +214,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         # set special precision
         if Descrpt in [DescrptDPA2, DescrptHybrid]:
             cls.epsilon_dict["test_smooth"] = 1e-8
-        if Descrpt in [DescrptSeT]:
+        if Descrpt in [DescrptSeT, DescrptSeTTebd]:
             # computational expensive
             cls.expected_sel = [i // 4 for i in cls.expected_sel]
             cls.expected_rcut = cls.expected_rcut / 2

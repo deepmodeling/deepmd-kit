@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
     overload,
@@ -123,7 +122,7 @@ MIX_MULT_R = 0x4973F715
 XSHIFT = 16
 
 
-def hashmix(value: int, hash_const: List[int]):
+def hashmix(value: int, hash_const: list[int]):
     value ^= INIT_A
     hash_const[0] *= MULT_A
     value *= INIT_A
@@ -142,7 +141,7 @@ def mix(x: int, y: int):
     return result
 
 
-def mix_entropy(entropy_array: List[int]) -> int:
+def mix_entropy(entropy_array: list[int]) -> int:
     # https://github.com/numpy/numpy/blob/a4cddb60489f821a1a4dffc16cd5c69755d43bdb/numpy/random/bit_generator.pyx#L341-L374
     hash_const = [INIT_A]
     mixer = hashmix(entropy_array[0], hash_const)
@@ -152,7 +151,7 @@ def mix_entropy(entropy_array: List[int]) -> int:
 
 
 def get_generator(
-    seed: Optional[Union[int, List[int]]] = None,
+    seed: Optional[Union[int, list[int]]] = None,
 ) -> Optional[torch.Generator]:
     if seed is not None:
         if isinstance(seed, list):

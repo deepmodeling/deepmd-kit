@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -45,7 +44,7 @@ class LayerNorm(nn.Module):
         stddev: float = 1.0,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.eps = eps
@@ -96,8 +95,11 @@ class LayerNorm(nn.Module):
         # variance = xx.var(dim=-1, unbiased=False, keepdim=True)
         # The following operation is the same as above, but will not raise error when using jit model to inference.
         # See https://github.com/pytorch/pytorch/issues/85792
-        variance, mean = torch.var_mean(xx, dim=-1, unbiased=False, keepdim=True)
-        yy = (xx - mean) / torch.sqrt(variance + self.eps)
+        if xx.numel() > 0:
+            variance, mean = torch.var_mean(xx, dim=-1, unbiased=False, keepdim=True)
+            yy = (xx - mean) / torch.sqrt(variance + self.eps)
+        else:
+            yy = xx
         if self.matrix is not None and self.bias is not None:
             yy = yy * self.matrix + self.bias
         return yy

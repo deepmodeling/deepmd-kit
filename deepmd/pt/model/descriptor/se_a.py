@@ -4,10 +4,7 @@ import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -63,9 +60,6 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.model.network.network import (
-    TypeFilter,
-)
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
@@ -95,14 +89,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
     ):
@@ -123,7 +116,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
             env_protection=env_protection,
-            old_impl=old_impl,
             type_one_side=type_one_side,
             trainable=trainable,
             seed=seed,
@@ -141,7 +133,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.sea.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sea.get_sel()
 
@@ -149,7 +141,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.sea.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -170,6 +162,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
         return self.sea.has_message_passing()
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.sea.need_sorted_nlist_for_lower()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -199,7 +195,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return self.sea.dim_out
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -212,7 +208,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -220,11 +216,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -235,7 +231,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
@@ -295,7 +291,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -340,7 +336,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         self.sea.mean = mean
         self.sea.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.sea.mean, self.sea.stddev
 
@@ -398,9 +394,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -442,12 +438,11 @@ class DescrptBlockSeA(DescriptorBlock):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -471,7 +466,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = old_impl
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.type_one_side = type_one_side
@@ -491,6 +485,7 @@ class DescrptBlockSeA(DescriptorBlock):
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
+        
         self.compress = False
 
         ndim = 1 if self.type_one_side else 2
@@ -527,7 +522,7 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -595,7 +590,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -603,11 +598,11 @@ class DescrptBlockSeA(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -629,10 +624,10 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))
+            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -642,7 +637,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -681,6 +676,7 @@ class DescrptBlockSeA(DescriptorBlock):
         - `torch.Tensor`: descriptor matrix with shape [nframes, natoms[0]*self.filter_neuron[-1]*self.axis_neuron].
         """
         del extended_atype_embd, mapping
+        nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
         dmatrix, diff, sw = prod_env_mat(
@@ -729,6 +725,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
             rr = rr * mm[:, :, None]
             ss = rr[:, :, :1]
+
             if self.compress:
                 if self.type_one_side:
                     net = "filter_-1_net_" + str(ii)
@@ -756,6 +753,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
+
             if ti_mask is not None:
                 xyz_scatter[ti_mask] += gr
             else:
@@ -768,8 +766,8 @@ class DescrptBlockSeA(DescriptorBlock):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nall, self.filter_neuron[-1], self.axis_neuron]
-        result = result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron)
-        rot_mat = rot_mat.view([-1, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
+        result = result.view(nf, nloc, self.filter_neuron[-1] * self.axis_neuron)
+        rot_mat = rot_mat.view([nf, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
@@ -780,4 +778,8 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+        return False
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return False

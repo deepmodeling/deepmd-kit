@@ -4,8 +4,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -57,7 +55,7 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
             pass
 
@@ -66,7 +64,7 @@ def make_base_atomic_model(
             return len(self.get_type_map())
 
         @abstractmethod
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             pass
 
@@ -87,7 +85,7 @@ def make_base_atomic_model(
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -120,6 +118,10 @@ def make_base_atomic_model(
             """Returns whether the descriptor has message passing."""
 
         @abstractmethod
+        def need_sorted_nlist_for_lower(self) -> bool:
+            """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+
+        @abstractmethod
         def fwd(
             self,
             extended_coord: t_tensor,
@@ -128,7 +130,7 @@ def make_base_atomic_model(
             mapping: Optional[t_tensor] = None,
             fparam: Optional[t_tensor] = None,
             aparam: Optional[t_tensor] = None,
-        ) -> Dict[str, t_tensor]:
+        ) -> dict[str, t_tensor]:
             pass
 
         @abstractmethod
@@ -142,7 +144,7 @@ def make_base_atomic_model(
 
         @abstractmethod
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             pass
 
@@ -178,7 +180,7 @@ def make_base_atomic_model(
             """
             odef = self.fitting_output_def()
             if var_name is None:
-                require: List[bool] = []
+                require: list[bool] = []
                 for vv in odef.keys():
                     require.append(self.do_grad_(vv, "r"))
                 return any(require)
@@ -195,7 +197,7 @@ def make_base_atomic_model(
             """
             odef = self.fitting_output_def()
             if var_name is None:
-                require: List[bool] = []
+                require: list[bool] = []
                 for vv in odef.keys():
                     require.append(self.do_grad_(vv, "c"))
                 return any(require)

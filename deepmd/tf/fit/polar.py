@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import warnings
 from typing import (
-    List,
     Optional,
 )
 
@@ -52,18 +51,18 @@ class PolarFittingSeA(Fitting):
             The dimension of the descrptor :math:`\mathcal{D}`
     embedding_width
             The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
-    neuron : List[int]
+    neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    sel_type : List[int]
+    sel_type : list[int]
             The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
     fit_diag : bool
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
-    diag_shift : List[float]
+    diag_shift : list[float]
             The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.
     seed : int
             Random seed for initializing the network parameters.
@@ -76,7 +75,7 @@ class PolarFittingSeA(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -85,19 +84,19 @@ class PolarFittingSeA(Fitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: Optional[list[float]] = None,
         shift_diag: bool = True,  # YWolfeee: will support the user to decide whether to use this function
-        # diag_shift : List[float] = None, YWolfeee: will not support the user to assign a shift
+        # diag_shift : list[float] = None, YWolfeee: will not support the user to assign a shift
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         """Constructor."""
@@ -140,7 +139,7 @@ class PolarFittingSeA(Fitting):
         if not isinstance(self.sel_type, list):
             self.sel_type = [self.sel_type]
         self.sel_type = sorted(self.sel_type)
-        self.constant_matrix = np.zeros(
+        self.constant_matrix = np.zeros(  # pylint: disable=no-explicit-dtype
             self.ntypes
         )  # self.ntypes x 1, store the average diagonal value
         # if type(self.diag_shift) is not list:
@@ -153,7 +152,7 @@ class PolarFittingSeA(Fitting):
         self.mixed_types = mixed_types
         self.type_map = type_map
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get selected atom types."""
         return self.sel_type
 
@@ -171,7 +170,7 @@ class PolarFittingSeA(Fitting):
             can be prepared by model.make_stat_input
         """
         if "polarizability" not in all_stat.keys():
-            self.avgeig = np.zeros([9])
+            self.avgeig = np.zeros([9])  # pylint: disable=no-explicit-dtype
             warnings.warn(
                 "no polarizability data, cannot do data stat. use zeros as guess"
             )
@@ -190,7 +189,7 @@ class PolarFittingSeA(Fitting):
 
         # YWolfeee: support polar normalization, initialize to a more appropriate point
         if self.shift_diag:
-            mean_polar = np.zeros([len(self.sel_type), 9])
+            mean_polar = np.zeros([len(self.sel_type), 9])  # pylint: disable=no-explicit-dtype
             sys_matrix, polar_bias = [], []
             for ss in range(len(all_stat["type"])):
                 nframes = all_stat["type"][ss].shape[0]
@@ -207,7 +206,7 @@ class PolarFittingSeA(Fitting):
                             if w == self.sel_type[itype]
                         ]  # select index in this type
 
-                        sys_matrix.append(np.zeros((1, len(self.sel_type))))
+                        sys_matrix.append(np.zeros((1, len(self.sel_type))))  # pylint: disable=no-explicit-dtype
                         sys_matrix[-1][0, itype] = len(index_lis)
 
                         polar_bias.append(
@@ -226,7 +225,7 @@ class PolarFittingSeA(Fitting):
                         continue
                     # Till here, we have global polar
                     sys_matrix.append(
-                        np.zeros((1, len(self.sel_type)))
+                        np.zeros((1, len(self.sel_type)))  # pylint: disable=no-explicit-dtype
                     )  # add a line in the equations
                     for itype in range(
                         len(self.sel_type)
@@ -299,7 +298,7 @@ class PolarFittingSeA(Fitting):
             if (not self.uniform_seed) and (self.seed is not None):
                 self.seed += self.seed_shift
         if self.fit_diag:
-            bavg = np.zeros(self.dim_rot_mat_1)
+            bavg = np.zeros(self.dim_rot_mat_1)  # pylint: disable=no-explicit-dtype
             # bavg[0] = self.avgeig[0]
             # bavg[1] = self.avgeig[1]
             # bavg[2] = self.avgeig[2]
@@ -327,7 +326,7 @@ class PolarFittingSeA(Fitting):
             # (nframes x natoms) x naxis x naxis
             final_layer = tf.matrix_diag(final_layer)
         else:
-            bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)
+            bavg = np.zeros(self.dim_rot_mat_1 * self.dim_rot_mat_1)  # pylint: disable=no-explicit-dtype
             # bavg[0*self.dim_rot_mat_1+0] = self.avgeig[0]
             # bavg[1*self.dim_rot_mat_1+1] = self.avgeig[1]
             # bavg[2*self.dim_rot_mat_1+2] = self.avgeig[2]
@@ -620,18 +619,18 @@ class GlobalPolarFittingSeA:
     ----------
     descrpt : tf.Tensor
             The descrptor
-    neuron : List[int]
+    neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-    sel_type : List[int]
+    sel_type : list[int]
             The atom types selected to have an atomic polarizability prediction
     fit_diag : bool
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
-    diag_shift : List[float]
+    diag_shift : list[float]
             The diagonal part of the polarizability matrix of type i will be shifted by diag_shift[i]. The shift operation is carried out after scale.
     seed : int
             Random seed for initializing the network parameters.
@@ -644,12 +643,12 @@ class GlobalPolarFittingSeA:
     def __init__(
         self,
         descrpt: tf.Tensor,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
-        sel_type: Optional[List[int]] = None,
+        sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
-        diag_shift: Optional[List[float]] = None,
+        scale: Optional[list[float]] = None,
+        diag_shift: Optional[list[float]] = None,
         seed: Optional[int] = None,
         activation_function: str = "tanh",
         precision: str = "default",

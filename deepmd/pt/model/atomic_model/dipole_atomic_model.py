@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Dict,
-)
 
 import torch
 
@@ -21,7 +18,7 @@ class DPDipoleAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, torch.Tensor],
+        ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
         # dipole not applying bias

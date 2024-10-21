@@ -1,5 +1,14 @@
 # Run MD with LAMMPS
 
+:::{note}
+See [Environment variables](../env.md) for the runtime environment variables.
+:::
+
+:::{note}
+Each MPI rank can only use at most one GPU card.
+See [How to control the parallelism of a job](../troubleshooting/howtoset_num_nodes.md) for details.
+:::
+
 ## units
 
 All units in LAMMPS except `lj` are supported. `lj` is not supported.

@@ -1,4 +1,4 @@
-# Create a model in TensorFlow
+# Create a model in TensorFlow {{ tensorflow_icon }}
 
 If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
 
@@ -37,7 +37,7 @@ from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")
-def descrpt_some_args() -> List[Argument]:
+def descrpt_some_args() -> list[Argument]:
     return [
         Argument("arg1", bool, optional=False, doc="balabala"),
         Argument("arg2", float, optional=True, default=6.0, doc="haha"),
@@ -58,16 +58,12 @@ The arguments here should be consistent with the class arguments of your new com
 
 ## Package new codes
 
-You may use `setuptools` to package new codes into a new Python package. It's crucial to add your new component to `entry_points['deepmd']` in `setup.py`:
+You may package new codes into a new Python package if you don't want to contribute it to the main DeePMD-kit repository.
+It's crucial to add your new component to `project.entry-points."deepmd"` in `pyproject.toml`:
 
-```py
-entry_points = (
-    {
-        "deepmd": [
-            "some_descrpt=deepmd_some_descrtpt:SomeDescript",
-        ],
-    },
-)
+```toml
+[project.entry-points."deepmd"]
+some_descrpt = "deepmd_some_descrtpt:SomeDescript"
 ```
 
 where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `from deepmd_some_descrtpt import SomeDescript`.
@@ -75,3 +71,12 @@ where `deepmd_some_descrtpt` is the module of your codes. It is equivalent to `f
 If you place `SomeDescript` and `descrpt_some_args` into different modules, you are also expected to add `descrpt_some_args` to `entry_points`.
 
 After you install your new package, you can now use `dp train` to run your new model.
+
+### Package customized C++ OPs
+
+You may need to use customized TensorFlow C++ OPs in the new model.
+Follow [TensorFlow documentation](https://www.tensorflow.org/guide/create_op) to create one library.
+
+When using your customized C++ OPs in the Python interface, use {py:meth}`tf.load_op_library` to load the OP library in the module defined in `entry_points`.
+
+When using your customized C++ OPs in the C++ library, define the environment variable {envvar}`DP_PLUGIN_PATH` to load the OP library.

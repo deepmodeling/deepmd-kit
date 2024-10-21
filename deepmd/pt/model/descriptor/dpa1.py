@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -163,7 +160,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version. True option is not implemented.)
             If mask the diagonal of attention weights
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -195,7 +192,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Random seed for parameter initialization.
     use_econf_tebd: bool, Optional
             Whether to use electronic configuration type embedding.
-    type_map: List[str], Optional
+    use_tebd_bias : bool, Optional
+            Whether to use bias in the type embedding layer.
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
             (Only support None to keep consistent with other backend references.)
@@ -219,7 +218,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -233,7 +232,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
         normalize=True,
@@ -245,13 +244,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
-        type_map: Optional[List[str]] = None,
+        use_tebd_bias: bool = False,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ):
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -298,9 +297,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             seed=child_seed(seed, 1),
-            old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -308,6 +307,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             precision=precision,
             seed=child_seed(seed, 2),
             use_econf_tebd=use_econf_tebd,
+            use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
         self.tebd_dim = tebd_dim
@@ -329,7 +329,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.se_atten.get_sel()
 
@@ -337,7 +337,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.se_atten.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -366,6 +366,10 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
         return self.se_atten.has_message_passing()
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
+        return self.se_atten.need_sorted_nlist_for_lower()
 
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
@@ -404,7 +408,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -412,11 +416,11 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -434,12 +438,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -470,7 +474,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 1,
+            "@version": 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -495,6 +499,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             "type_one_side": obj.type_one_side,
             "concat_output_tebd": self.concat_output_tebd,
             "use_econf_tebd": self.use_econf_tebd,
+            "use_tebd_bias": self.use_tebd_bias,
             "type_map": self.type_map,
             # make deterministic
             "precision": RESERVED_PRECISON_DICT[obj.prec],
@@ -518,7 +523,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -531,6 +536,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             embeddings_strip = data.pop("embeddings_strip")
         else:
             embeddings_strip = None
+        # compat with version 1
+        if "use_tebd_bias" not in data:
+            data["use_tebd_bias"] = True
         obj = cls(**data)
 
         def t_cvt(xx):
@@ -629,7 +637,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -684,9 +692,9 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

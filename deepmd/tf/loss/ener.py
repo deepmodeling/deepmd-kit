@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
@@ -356,7 +355,7 @@ class EnerStdLoss(Loss):
         return results
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         data_requirements = []
         # data required
@@ -726,7 +725,7 @@ class EnerSpinLoss(Loss):
         return print_str
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         data_requirements = []
         # data required
@@ -872,7 +871,7 @@ class EnerDipoleLoss(Loss):
         return results
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         data_requirements = []
         # data required

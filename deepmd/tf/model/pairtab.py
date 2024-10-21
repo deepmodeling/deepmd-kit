@@ -3,9 +3,7 @@ from enum import (
     Enum,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -69,7 +67,7 @@ class PairTabModel(Model):
     model_type = "ener"
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
+        self, tab_file: str, rcut: float, sel: Union[int, list[int]], **kwargs
     ):
         super().__init__()
         self.tab_file = tab_file
@@ -171,8 +169,8 @@ class PairTabModel(Model):
             natoms,
             box,
             mesh,
-            np.zeros([self.ntypes, self.sel * 4]),
-            np.ones([self.ntypes, self.sel * 4]),
+            np.zeros([self.ntypes, self.sel * 4]),  # pylint: disable=no-explicit-dtype
+            np.ones([self.ntypes, self.sel * 4]),  # pylint: disable=no-explicit-dtype
             rcut_a=-1,
             rcut_r=self.rcut,
             rcut_r_smth=self.rcut,
@@ -275,9 +273,9 @@ class PairTabModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Notes
@@ -308,6 +306,6 @@ class PairTabModel(Model):
         return local_jdata_cpy, min_nbor_dist
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return []

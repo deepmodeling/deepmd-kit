@@ -727,7 +727,11 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         jdata = nvnmd_cfg.get_deepmd_jdata()
         run_opt = RunOptions(log_path=None, log_level=20)
         jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
+        jdata["model"]["type_embedding"] = {}
         jdata = normalize(jdata)
+        jdata["model"]["type_embedding"].update(
+            {"activation_function": None, "use_tebd_bias": True}
+        )
         self.trainer = DPTrainer(jdata, run_opt, False)
         self.model = self.trainer.model
         # place holder

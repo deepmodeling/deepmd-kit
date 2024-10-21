@@ -16,9 +16,6 @@ from .dpa2 import (
 from .env_mat import (
     prod_env_mat,
 )
-from .gaussian_lcc import (
-    DescrptGaussianLcc,
-)
 from .hybrid import (
     DescrptHybrid,
 )
@@ -38,6 +35,10 @@ from .se_r import (
 from .se_t import (
     DescrptSeT,
 )
+from .se_t_tebd import (
+    DescrptBlockSeTTebd,
+    DescrptSeTTebd,
+)
 
 __all__ = [
     "BaseDescriptor",
@@ -46,6 +47,8 @@ __all__ = [
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
     "DescrptSeAttenV2",
+    "DescrptSeTTebd",
+    "DescrptBlockSeTTebd",
     "DescrptSeA",
     "DescrptSeR",
     "DescrptSeT",
@@ -53,6 +56,5 @@ __all__ = [
     "DescrptDPA2",
     "DescrptHybrid",
     "prod_env_mat",
-    "DescrptGaussianLcc",
     "DescrptBlockRepformers",
 ]

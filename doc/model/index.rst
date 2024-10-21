@@ -18,7 +18,9 @@ Model
    train-fitting-dos
    train-se-e2-a-tebd
    train-se-a-mask
+   train-se-e3-tebd
    dplr
    dprc
    linear
    pairtab
+   change-bias

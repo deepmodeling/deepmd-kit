@@ -20,6 +20,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -62,6 +65,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             sm,
             prec,
             ect,
+            ns,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -70,8 +74,12 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [True, False],  # repformer_update_g1_has_conv
             [True, False],  # repformer_update_g1_has_drrd
             [True, False],  # repformer_update_g1_has_grrg
-            [True, False],  # repformer_update_g1_has_attn
-            [True, False],  # repformer_update_g2_has_g1g1
+            [
+                False,
+            ],  # repformer_update_g1_has_attn
+            [
+                False,
+            ],  # repformer_update_g2_has_g1g1
             [True, False],  # repformer_update_g2_has_attn
             [
                 False,
@@ -83,10 +91,18 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [
                 True,
             ],  # repformer_set_davg_zero
-            [True, False],  # smooth
+            [
+                True,
+            ],  # smooth
             ["float64"],  # precision
             [False, True],  # use_econf_tebd
+            [
+                False,
+                True,
+            ],  # new sub-structures (use_sqrt_nnei, g1_out_conv, g1_out_mlp)
         ):
+            if ns and not rp1d and not rp1g:
+                continue
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             if prec == "float64":
@@ -121,6 +137,9 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 attn2_has_gate=rp2gate,
                 update_style=rus,
                 set_davg_zero=rpz,
+                use_sqrt_nnei=ns,
+                g1_out_conv=ns,
+                g1_out_mlp=ns,
             )
 
             # dpa2 new impl
@@ -135,7 +154,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
-                old_impl=False,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             dd0.repinit.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -173,44 +192,6 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 rtol=rtol,
                 atol=atol,
             )
-            # old impl
-            if prec == "float64" and rus == "res_avg" and ect is False:
-                dd3 = DescrptDPA2(
-                    self.nt,
-                    repinit=repinit,
-                    repformer=repformer,
-                    # kwargs for descriptor
-                    smooth=sm,
-                    exclude_types=[],
-                    add_tebd_to_repinit_out=False,
-                    precision=prec,
-                    old_impl=True,
-                ).to(env.DEVICE)
-                dd0_state_dict = dd0.state_dict()
-                dd3_state_dict = dd3.state_dict()
-                for i in list(dd0_state_dict.keys()):
-                    if ".bias" in i and (
-                        ".linear1." in i or ".linear2." in i or ".head_map." in i
-                    ):
-                        dd0_state_dict[i] = dd0_state_dict[i].unsqueeze(0)
-                    if ".attn2_lm.matrix" in i:
-                        dd0_state_dict[
-                            i.replace(".attn2_lm.matrix", ".attn2_lm.weight")
-                        ] = dd0_state_dict.pop(i)
-
-                dd3.load_state_dict(dd0_state_dict)
-                rd3, _, _, _, _ = dd3(
-                    torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
-                    torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
-                    torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
-                    torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
-                )
-                np.testing.assert_allclose(
-                    rd0.detach().cpu().numpy(),
-                    rd3.detach().cpu().numpy(),
-                    rtol=rtol,
-                    atol=atol,
-                )
 
     def test_jit(
         self,
@@ -239,6 +220,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             sm,
             prec,
             ect,
+            ns,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
             [
@@ -277,6 +259,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ],  # smooth
             ["float64"],  # precision
             [False, True],  # use_econf_tebd
+            [True],  # new sub-structures (use_sqrt_nnei, g1_out_conv, g1_out_mlp)
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -310,6 +293,9 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 attn2_has_gate=rp2gate,
                 update_style=rus,
                 set_davg_zero=rpz,
+                use_sqrt_nnei=ns,
+                g1_out_conv=ns,
+                g1_out_mlp=ns,
             )
 
             # dpa2 new impl
@@ -324,7 +310,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
-                old_impl=False,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             dd0.repinit.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)

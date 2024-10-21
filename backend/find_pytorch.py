@@ -18,9 +18,7 @@ from sysconfig import (
     get_path,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -30,7 +28,7 @@ from packaging.version import (
 
 
 @lru_cache
-def find_pytorch() -> Tuple[Optional[str], List[str]]:
+def find_pytorch() -> tuple[Optional[str], list[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:

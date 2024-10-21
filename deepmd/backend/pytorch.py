@@ -6,8 +6,6 @@ from typing import (
     TYPE_CHECKING,
     Callable,
     ClassVar,
-    List,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -41,7 +39,7 @@ class PyTorchBackend(Backend):
         | Backend.Feature.IO
     )
     """The features of the backend."""
-    suffixes: ClassVar[List[str]] = [".pth", ".pt"]
+    suffixes: ClassVar[list[str]] = [".pth", ".pt"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -68,7 +66,7 @@ class PyTorchBackend(Backend):
         return deepmd_main
 
     @property
-    def deep_eval(self) -> Type["DeepEvalBackend"]:
+    def deep_eval(self) -> type["DeepEvalBackend"]:
         """The Deep Eval backend of the backend.
 
         Returns
@@ -81,7 +79,7 @@ class PyTorchBackend(Backend):
         return DeepEvalPT
 
     @property
-    def neighbor_stat(self) -> Type["NeighborStat"]:
+    def neighbor_stat(self) -> type["NeighborStat"]:
         """The neighbor statistics of the backend.
 
         Returns

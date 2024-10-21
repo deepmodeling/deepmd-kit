@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -110,7 +108,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         The precision of the embedding net parameters.
     smooth : bool, optional
         Whether to use smoothness in processes such as attention weights calculation.
-    exclude_types : List[List[int]], optional
+    exclude_types : list[list[int]], optional
         The excluded pairs of types which have no interaction with each other.
         For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection : float, optional
@@ -118,6 +116,12 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     trainable_ln : bool, optional
         Whether to use trainable shift and scale weights in layer normalization.
+    use_sqrt_nnei : bool, optional
+        Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly.
+    g1_out_conv : bool, optional
+        Whether to put the convolutional update of g1 separately outside the concatenated MLP update.
+    g1_out_mlp : bool, optional
+        Whether to put the self MLP update of g1 separately outside the concatenated MLP update.
     ln_eps : float, optional
         The epsilon value for layer normalization.
     seed : int, optional
@@ -153,12 +157,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.rcut = rcut
@@ -200,6 +207,9 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.env_protection = env_protection
         self.precision = precision
         self.trainable_ln = trainable_ln
+        self.use_sqrt_nnei = use_sqrt_nnei
+        self.g1_out_conv = g1_out_conv
+        self.g1_out_mlp = g1_out_mlp
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
 
@@ -238,6 +248,9 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
                     trainable_ln=self.trainable_ln,
                     ln_eps=self.ln_eps,
                     precision=precision,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                    g1_out_conv=self.g1_out_conv,
+                    g1_out_mlp=self.g1_out_mlp,
                     seed=child_seed(child_seed(seed, 1), ii),
                 )
             )
@@ -257,7 +270,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -322,7 +335,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
@@ -334,7 +347,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -392,14 +405,26 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             )
 
         # nf x nloc x 3 x ng2
-        h2g2 = _cal_hg(g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon)
+        h2g2 = _cal_hg(
+            g2,
+            h2,
+            nlist_mask,
+            sw,
+            smooth=self.smooth,
+            epsilon=self.epsilon,
+            use_sqrt_nnei=self.use_sqrt_nnei,
+        )
         # (nf x nloc) x ng2 x 3
         rot_mat = np.transpose(h2g2, (0, 1, 3, 2))
-        return g1, g2, h2, rot_mat.reshape(-1, nloc, self.dim_emb, 3), sw
+        return g1, g2, h2, rot_mat.reshape(nf, nloc, self.dim_emb, 3), sw
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
         return True
+
+    def need_sorted_nlist_for_lower(self) -> bool:
+        """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
+        return False
 
 
 # translated by GPT and modified
@@ -409,7 +434,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, List[int]]] = None,
+    seed: Optional[Union[int, list[int]]] = None,
 ) -> np.ndarray:
     """
     Get residual tensor for one update vector.
@@ -517,6 +542,7 @@ def _cal_hg(
     sw: np.ndarray,
     smooth: bool = True,
     epsilon: float = 1e-4,
+    use_sqrt_nnei: bool = True,
 ) -> np.ndarray:
     """
     Calculate the transposed rotation matrix.
@@ -536,6 +562,8 @@ def _cal_hg(
         Whether to use smoothness in processes such as attention weights calculation.
     epsilon
         Protection of 1./nnei.
+    use_sqrt_nnei : bool, optional
+        Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly.
 
     Returns
     -------
@@ -551,12 +579,20 @@ def _cal_hg(
     g = _apply_nlist_mask(g, nlist_mask)
     if not smooth:
         # nf x nloc
-        invnnei = 1.0 / (epsilon + np.sum(nlist_mask, axis=-1))
+        if not use_sqrt_nnei:
+            invnnei = 1.0 / (epsilon + np.sum(nlist_mask, axis=-1))
+        else:
+            invnnei = 1.0 / (epsilon + np.sqrt(np.sum(nlist_mask, axis=-1)))
         # nf x nloc x 1 x 1
         invnnei = invnnei[:, :, np.newaxis, np.newaxis]
     else:
         g = _apply_switch(g, sw)
-        invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1, 1), dtype=g.dtype)
+        if not use_sqrt_nnei:
+            invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1, 1), dtype=g.dtype)
+        else:
+            invnnei = (1.0 / (float(nnei) ** 0.5)) * np.ones(
+                (nf, nloc, 1, 1), dtype=g.dtype
+            )
     # nf x nloc x 3 x ng
     hg = np.matmul(np.transpose(h, axes=(0, 1, 3, 2)), g) * invnnei
     return hg
@@ -597,6 +633,7 @@ def symmetrization_op(
     axis_neuron: int,
     smooth: bool = True,
     epsilon: float = 1e-4,
+    use_sqrt_nnei: bool = True,
 ) -> np.ndarray:
     """
     Symmetrization operator to obtain atomic invariant rep.
@@ -618,6 +655,8 @@ def symmetrization_op(
         Whether to use smoothness in processes such as attention weights calculation.
     epsilon
         Protection of 1./nnei.
+    use_sqrt_nnei : bool, optional
+        Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly.
 
     Returns
     -------
@@ -629,7 +668,15 @@ def symmetrization_op(
     # msk: nf x nloc x nnei
     nf, nloc, nnei, _ = g.shape
     # nf x nloc x 3 x ng
-    hg = _cal_hg(g, h, nlist_mask, sw, smooth=smooth, epsilon=epsilon)
+    hg = _cal_hg(
+        g,
+        h,
+        nlist_mask,
+        sw,
+        smooth=smooth,
+        epsilon=epsilon,
+        use_sqrt_nnei=use_sqrt_nnei,
+    )
     # nf x nloc x (axis_neuron x ng)
     grrg = _cal_grrg(hg, axis_neuron)
     return grrg
@@ -645,7 +692,7 @@ class Atten2Map(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -763,7 +810,7 @@ class Atten2MultiHeadApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -848,7 +895,7 @@ class Atten2EquiVarApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -921,7 +968,7 @@ class LocalAtten(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -1079,8 +1126,11 @@ class RepformerLayer(NativeOP):
         smooth: bool = True,
         precision: str = "float64",
         trainable_ln: bool = True,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1116,6 +1166,9 @@ class RepformerLayer(NativeOP):
         self.g1_dim = g1_dim
         self.g2_dim = g2_dim
         self.trainable_ln = trainable_ln
+        self.use_sqrt_nnei = use_sqrt_nnei
+        self.g1_out_conv = g1_out_conv
+        self.g1_out_mlp = g1_out_mlp
         self.ln_eps = ln_eps
         self.precision = precision
 
@@ -1173,14 +1226,52 @@ class RepformerLayer(NativeOP):
                         seed=child_seed(seed, 3),
                     )
                 )
-        if self.update_g1_has_conv:
-            self.proj_g1g2 = NativeLayer(
+        if self.g1_out_mlp:
+            self.g1_self_mlp = NativeLayer(
                 g1_dim,
-                g2_dim,
-                bias=False,
+                g1_dim,
                 precision=precision,
-                seed=child_seed(seed, 4),
+                seed=child_seed(seed, 15),
             )
+            if self.update_style == "res_residual":
+                self.g1_residual.append(
+                    get_residual(
+                        g1_dim,
+                        self.update_residual,
+                        self.update_residual_init,
+                        precision=precision,
+                        seed=child_seed(seed, 16),
+                    )
+                )
+        else:
+            self.g1_self_mlp = None
+        if self.update_g1_has_conv:
+            if not self.g1_out_conv:
+                self.proj_g1g2 = NativeLayer(
+                    g1_dim,
+                    g2_dim,
+                    bias=False,
+                    precision=precision,
+                    seed=child_seed(seed, 4),
+                )
+            else:
+                self.proj_g1g2 = NativeLayer(
+                    g2_dim,
+                    g1_dim,
+                    bias=False,
+                    precision=precision,
+                    seed=child_seed(seed, 4),
+                )
+                if self.update_style == "res_residual":
+                    self.g1_residual.append(
+                        get_residual(
+                            g1_dim,
+                            self.update_residual,
+                            self.update_residual_init,
+                            precision=precision,
+                            seed=child_seed(seed, 17),
+                        )
+                    )
         if self.update_g2_has_g1g1:
             self.proj_g1g1g2 = NativeLayer(
                 g1_dim,
@@ -1266,12 +1357,12 @@ class RepformerLayer(NativeOP):
                 )
 
     def cal_1_dim(self, g1d: int, g2d: int, ax: int) -> int:
-        ret = g1d
+        ret = g1d if not self.g1_out_mlp else 0
         if self.update_g1_has_grrg:
             ret += g2d * ax
         if self.update_g1_has_drrd:
             ret += g1d * ax
-        if self.update_g1_has_conv:
+        if self.update_g1_has_conv and not self.g1_out_conv:
             ret += g2d
         return ret
 
@@ -1321,9 +1412,13 @@ class RepformerLayer(NativeOP):
         nf, nloc, nnei, _ = g2.shape
         ng1 = gg1.shape[-1]
         ng2 = g2.shape[-1]
-        # gg1  : nf x nloc x nnei x ng2
-        gg1 = self.proj_g1g2(gg1).reshape(nf, nloc, nnei, ng2)
-        # nf x nloc x nnei x ng2
+        if not self.g1_out_conv:
+            # gg1  : nf x nloc x nnei x ng2
+            gg1 = self.proj_g1g2(gg1).reshape(nf, nloc, nnei, ng2)
+        else:
+            # gg1  : nf x nloc x nnei x ng1
+            gg1 = gg1.reshape(nf, nloc, nnei, ng1)
+        # nf x nloc x nnei x ng2/ng1
         gg1 = _apply_nlist_mask(gg1, nlist_mask)
         if not self.smooth:
             # normalized by number of neighbors, not smooth
@@ -1334,8 +1429,14 @@ class RepformerLayer(NativeOP):
         else:
             gg1 = _apply_switch(gg1, sw)
             invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1), dtype=gg1.dtype)
-        # nf x nloc x ng2
-        g1_11 = np.sum(g2 * gg1, axis=2) * invnnei
+        if not self.g1_out_conv:
+            # nf x nloc x ng2
+            g1_11 = np.sum(g2 * gg1, axis=2) * invnnei
+        else:
+            # nf x nloc x ng1
+            g2 = self.proj_g1g2(g2).reshape(nf, nloc, nnei, ng1)
+            # nb x nloc x ng1
+            g1_11 = np.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
     def _update_g2_g1g1(
@@ -1405,10 +1506,14 @@ class RepformerLayer(NativeOP):
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: List[np.ndarray] = [g2]
-        h2_update: List[np.ndarray] = [h2]
-        g1_update: List[np.ndarray] = [g1]
-        g1_mlp: List[np.ndarray] = [g1]
+        g2_update: list[np.ndarray] = [g2]
+        h2_update: list[np.ndarray] = [h2]
+        g1_update: list[np.ndarray] = [g1]
+        g1_mlp: list[np.ndarray] = [g1] if not self.g1_out_mlp else []
+        if self.g1_out_mlp:
+            assert self.g1_self_mlp is not None
+            g1_self_mlp = self.act(self.g1_self_mlp(g1))
+            g1_update.append(g1_self_mlp)
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -1450,7 +1555,11 @@ class RepformerLayer(NativeOP):
 
         if self.update_g1_has_conv:
             assert gg1 is not None
-            g1_mlp.append(self._update_g1_conv(gg1, g2, nlist_mask, sw))
+            g1_conv = self._update_g1_conv(gg1, g2, nlist_mask, sw)
+            if not self.g1_out_conv:
+                g1_mlp.append(g1_conv)
+            else:
+                g1_update.append(g1_conv)
 
         if self.update_g1_has_grrg:
             g1_mlp.append(
@@ -1462,6 +1571,7 @@ class RepformerLayer(NativeOP):
                     self.axis_neuron,
                     smooth=self.smooth,
                     epsilon=self.epsilon,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
                 )
             )
 
@@ -1476,6 +1586,7 @@ class RepformerLayer(NativeOP):
                     self.axis_neuron,
                     smooth=self.smooth,
                     epsilon=self.epsilon,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
                 )
             )
 
@@ -1500,7 +1611,7 @@ class RepformerLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: List[np.ndarray],
+        update_list: list[np.ndarray],
     ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1508,7 +1619,7 @@ class RepformerLayer(NativeOP):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: List[np.ndarray]) -> np.ndarray:
+    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1517,7 +1628,7 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: List[np.ndarray], update_name: str = "g1"
+        self, update_list: list[np.ndarray], update_name: str = "g1"
     ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1535,7 +1646,7 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update(
-        self, update_list: List[np.ndarray], update_name: str = "g1"
+        self, update_list: list[np.ndarray], update_name: str = "g1"
     ) -> np.ndarray:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
@@ -1582,6 +1693,9 @@ class RepformerLayer(NativeOP):
             "smooth": self.smooth,
             "precision": self.precision,
             "trainable_ln": self.trainable_ln,
+            "use_sqrt_nnei": self.use_sqrt_nnei,
+            "g1_out_conv": self.g1_out_conv,
+            "g1_out_mlp": self.g1_out_mlp,
             "ln_eps": self.ln_eps,
             "linear1": self.linear1.serialize(),
         }
@@ -1629,6 +1743,12 @@ class RepformerLayer(NativeOP):
                     "loc_attn": self.loc_attn.serialize(),
                 }
             )
+        if self.g1_out_mlp:
+            data.update(
+                {
+                    "g1_self_mlp": self.g1_self_mlp.serialize(),
+                }
+            )
         if self.update_style == "res_residual":
             data.update(
                 {
@@ -1659,6 +1779,7 @@ class RepformerLayer(NativeOP):
         update_h2 = data["update_h2"]
         update_g1_has_attn = data["update_g1_has_attn"]
         update_style = data["update_style"]
+        g1_out_mlp = data["g1_out_mlp"]
 
         linear2 = data.pop("linear2", None)
         proj_g1g2 = data.pop("proj_g1g2", None)
@@ -1668,6 +1789,7 @@ class RepformerLayer(NativeOP):
         attn2_lm = data.pop("attn2_lm", None)
         attn2_ev_apply = data.pop("attn2_ev_apply", None)
         loc_attn = data.pop("loc_attn", None)
+        g1_self_mlp = data.pop("g1_self_mlp", None)
         g1_residual = data.pop("g1_residual", [])
         g2_residual = data.pop("g2_residual", [])
         h2_residual = data.pop("h2_residual", [])
@@ -1697,6 +1819,9 @@ class RepformerLayer(NativeOP):
         if update_g1_has_attn:
             assert isinstance(loc_attn, dict)
             obj.loc_attn = LocalAtten.deserialize(loc_attn)
+        if g1_out_mlp:
+            assert isinstance(g1_self_mlp, dict)
+            obj.g1_self_mlp = NativeLayer.deserialize(g1_self_mlp)
         if update_style == "res_residual":
             obj.g1_residual = g1_residual
             obj.g2_residual = g2_residual

@@ -11,6 +11,7 @@
       "HW"
     ],
     "type_embedding": {
+      "use_tebd_bias": true,
       "neuron": [
         2
       ]
