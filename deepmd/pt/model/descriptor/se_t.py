@@ -280,7 +280,6 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
-        self.compress = True
         self.table = DPTabulate(
             self,
             self.serialize()["neuron"],
@@ -730,31 +729,6 @@ class DescrptBlockSeT(DescriptorBlock):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
-        if self.compress:
-            return self.compressed_forward(
-                nlist,
-                extended_coord,
-                extended_atype,
-                extended_atype_embd,
-                mapping,
-            )
-        else:
-            return self.normal_forward(
-                nlist,
-                extended_coord,
-                extended_atype,
-                extended_atype_embd,
-                mapping,
-            )
-
-    def normal_forward(
-        self,
-        nlist: torch.Tensor,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-    ):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
@@ -796,94 +770,34 @@ class DescrptBlockSeT(DescriptorBlock):
                 rr_j = rr_j * mm_j[:, :, None]
                 # nfnl x nt_i x nt_j
                 env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
-                # nfnl x nt_i x nt_j x 1
-                env_ij_reshape = env_ij.unsqueeze(-1)
-                # nfnl x nt_i x nt_j x ng
-                gg = ll.forward(env_ij_reshape)
-                # nfnl x nt_i x nt_j x ng
-                res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
-                res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
-                result += res_ij
-        # xyz_scatter /= (self.nnei * self.nnei)
-        result = result.view(-1, nloc, self.filter_neuron[-1])
-        return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            None,
-            None,
-            None,
-            sw,
-        )
-
-    def compressed_forward(
-        self,
-        nlist: torch.Tensor,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-    ):
-        del extended_atype_embd, mapping
-        nloc = nlist.shape[1]
-        atype = extended_atype[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat(
-            extended_coord,
-            nlist,
-            atype,
-            self.mean,
-            self.stddev,
-            self.rcut,
-            self.rcut_smth,
-            protection=self.env_protection,
-        )
-        dmatrix = dmatrix.view(-1, self.nnei, 4)
-        dmatrix = dmatrix.to(dtype=self.prec)
-        nfnl = dmatrix.shape[0]
-        # pre-allocate a shape to pass jit
-        result = torch.zeros(
-            [nfnl, self.filter_neuron[-1]],
-            dtype=self.prec,
-            device=extended_coord.device,
-        )
-        # nfnl x nnei
-        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
-        for embedding_idx, ll in enumerate(self.filter_layers.networks):
-            ti = embedding_idx % self.ntypes
-            nei_type_j = self.sel[ti]
-            tj = embedding_idx // self.ntypes
-            nei_type_i = self.sel[tj]
-            if ti <= tj:
-                # avoid repeat calculation
-                # nfnl x nt_i x 3
-                rr_i = dmatrix[:, self.sec[ti] : self.sec[ti + 1], 1:]
-                mm_i = exclude_mask[:, self.sec[ti] : self.sec[ti + 1]]
-                rr_i = rr_i * mm_i[:, :, None]
-                # nfnl x nt_j x 3
-                rr_j = dmatrix[:, self.sec[tj] : self.sec[tj + 1], 1:]
-                mm_j = exclude_mask[:, self.sec[tj] : self.sec[tj + 1]]
-                rr_j = rr_j * mm_j[:, :, None]
-                # nfnl x nt_i x nt_j
-                env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
-                ebd_env_ij = env_ij.view(-1, 1)
-
-                net = "filter_" + str(ti) + "_net_" + str(tj)
-                info = [
-                    self.lower[net],
-                    self.upper[net],
-                    self.upper[net] * self.table_config[0],
-                    self.table_config[1],
-                    self.table_config[2],
-                    self.table_config[3],
-                ]
-                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-                ebd_env_ij = ebd_env_ij.to(env.DEVICE).to(dtype=self.prec)
-                env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
-                res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
-                    tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec).contiguous().cpu(),
-                    ebd_env_ij.contiguous(),
-                    env_ij.contiguous(),
-                    self.filter_neuron[-1],
-                )[0]
+                if self.compress:
+                    ebd_env_ij = env_ij.view(-1, 1)
+                    net = "filter_" + str(ti) + "_net_" + str(tj)
+                    info = [
+                        self.lower[net],
+                        self.upper[net],
+                        self.upper[net] * self.table_config[0],
+                        self.table_config[1],
+                        self.table_config[2],
+                        self.table_config[3],
+                    ]
+                    tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                    ebd_env_ij = ebd_env_ij.to(env.DEVICE).to(dtype=self.prec)
+                    env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
+                    res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
+                        tensor_data.contiguous(),
+                        torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                        ebd_env_ij.contiguous(),
+                        env_ij.contiguous(),
+                        self.filter_neuron[-1],
+                    )[0]
+                else:
+                    # nfnl x nt_i x nt_j x 1
+                    env_ij_reshape = env_ij.unsqueeze(-1)
+                    # nfnl x nt_i x nt_j x ng
+                    gg = ll.forward(env_ij_reshape)
+                    # nfnl x nt_i x nt_j x ng
+                    res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
                 res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                 result += res_ij
         # xyz_scatter /= (self.nnei * self.nnei)

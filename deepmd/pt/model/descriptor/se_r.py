@@ -350,7 +350,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.lower, self.upper = self.table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
-
+    
     def forward(
         self,
         coord_ext: torch.Tensor,
@@ -391,87 +391,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        if self.compress:
-            return self.compressed_forward(
-                coord_ext,
-                atype_ext,
-                nlist,
-                mapping,
-                comm_dict,
-            )
-        else:
-            return self.normal_forward(
-                coord_ext,
-                atype_ext,
-                nlist,
-                mapping,
-                comm_dict,
-            ) 
-
-    def normal_forward(
-        self,
-        coord_ext: torch.Tensor,
-        atype_ext: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ):
-        del mapping
-        nloc = nlist.shape[1]
-        atype = atype_ext[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat(
-            coord_ext,
-            nlist,
-            atype,
-            self.mean,
-            self.stddev,
-            self.rcut,
-            self.rcut_smth,
-            True,
-            protection=self.env_protection,
-        )
-
-        assert self.filter_layers is not None
-        dmatrix = dmatrix.view(-1, self.nnei, 1)
-        dmatrix = dmatrix.to(dtype=self.prec)
-        nfnl = dmatrix.shape[0]
-        # pre-allocate a shape to pass jit
-        xyz_scatter = torch.zeros(
-            [nfnl, 1, self.filter_neuron[-1]], dtype=self.prec, device=coord_ext.device
-        )
-
-        # nfnl x nnei
-        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
-        for ii, ll in enumerate(self.filter_layers.networks):
-            # nfnl x nt
-            mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
-            # nfnl x nt x 1
-            ss = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-            ss = ss * mm[:, :, None]
-            # nfnl x nt x ng
-            gg = ll.forward(ss)
-            gg = torch.mean(gg, dim=1).unsqueeze(1)
-            xyz_scatter += gg * (self.sel[ii] / self.nnei)
-
-        res_rescale = 1.0 / 5.0
-        result = xyz_scatter * res_rescale
-        result = result.view(-1, nloc, self.filter_neuron[-1])
-        return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            None,
-            None,
-            None,
-            sw,
-        )
-
-    def compressed_forward(
-        self,
-        coord_ext: torch.Tensor,
-        atype_ext: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ):
         del mapping
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
@@ -505,31 +424,37 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             # nfnl x nt x 1
             ss = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
             ss = ss * mm[:, :, None]
-            ss = ss.squeeze(-1)
+            if self.compress:
+                ss = ss.squeeze(-1)
+                net = "filter_-1_net_" + str(ii)
+                info = [
+                    self.lower[net],
+                    self.upper[net],
+                    self.upper[net] * self.table_config[0],
+                    self.table_config[1],
+                    self.table_config[2],
+                    self.table_config[3],
+                ]
+                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
+                    tensor_data.contiguous(),
+                    torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                    ss,
+                    self.filter_neuron[-1],
+                )[0]
+                xyz_scatter_total.append(xyz_scatter)
+            else:
+                # nfnl x nt x ng
+                gg = ll.forward(ss)
+                gg = torch.mean(gg, dim=1).unsqueeze(1)
+                xyz_scatter += gg * (self.sel[ii] / self.nnei)
 
-            net = "filter_-1_net_" + str(ii)
-            info = [
-                self.lower[net],
-                self.upper[net],
-                self.upper[net] * self.table_config[0],
-                self.table_config[1],
-                self.table_config[2],
-                self.table_config[3],
-            ]
-            tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-            xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
-                tensor_data.contiguous(),
-                torch.tensor(info, dtype=self.prec).contiguous().cpu(),
-                ss,
-                self.filter_neuron[-1],
-            )[0]
-
-            xyz_scatter_total.append(xyz_scatter)
-
-        # natom x nei x outputs_size
-        xyz_scatter = torch.cat(xyz_scatter_total, dim=1)
         res_rescale = 1.0 / 5.0
-        result = torch.mean(xyz_scatter, dim=1) * res_rescale
+        if self.compress:
+            xyz_scatter = torch.cat(xyz_scatter_total, dim=1)
+            result = torch.mean(xyz_scatter, dim=1) * res_rescale
+        else:
+            result = xyz_scatter * res_rescale
         result = result.view(-1, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),

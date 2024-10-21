@@ -13,7 +13,6 @@ from typing import (
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from deepmd.pt.cxx_op import (
     ENABLE_CUSTOMIZED_OP,
@@ -44,9 +43,6 @@ from deepmd.utils.data_system import (
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
-)
-from deepmd.pt.utils.type_embed import (
-    embed_atom_type,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -679,7 +675,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
-
+    
     def forward(
         self,
         nlist: torch.Tensor,
@@ -700,31 +696,6 @@ class DescrptBlockSeA(DescriptorBlock):
         -------
         - `torch.Tensor`: descriptor matrix with shape [nframes, natoms[0]*self.filter_neuron[-1]*self.axis_neuron].
         """
-        if self.compress:
-            return self.compressed_forward(
-                nlist,
-                extended_coord,
-                extended_atype,
-                extended_atype_embd,
-                mapping,
-            )
-        else:
-            return self.normal_forward(
-                nlist,
-                extended_coord,
-                extended_atype,
-                extended_atype_embd,
-                mapping,
-            )
-    
-    def normal_forward(
-        self,
-        nlist: torch.Tensor,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-    ):
         del extended_atype_embd, mapping
         nloc = nlist.shape[1]
         atype = extended_atype[:, :nloc]
@@ -791,10 +762,33 @@ class DescrptBlockSeA(DescriptorBlock):
                     rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
                 rr = rr * mm[:, :, None]
                 ss = rr[:, :, :1]
-                # nfnl x nt x ng
-                gg = ll.forward(ss)
-                # nfnl x 4 x ng
-                gr = torch.matmul(rr.permute(0, 2, 1), gg)
+                if self.compress:
+                    if self.type_one_side:
+                        net = "filter_-1_net_" + str(ii)
+                    else:
+                        net = "filter_" + str(ti) + "_net_" + str(ii)
+                    info = [
+                        self.lower[net],
+                        self.upper[net],
+                        self.upper[net] * self.table_config[0],
+                        self.table_config[1],
+                        self.table_config[2],
+                        self.table_config[3],
+                    ]
+                    ss = ss.reshape(-1, 1) # xyz_scatter_tensor in tf
+                    tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                    gr = torch.ops.deepmd.tabulate_fusion_se_a(
+                        tensor_data.contiguous(),
+                        torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                        ss.contiguous(),
+                        rr.contiguous(),
+                        self.filter_neuron[-1],
+                    )[0]
+                else:
+                    # nfnl x nt x ng
+                    gg = ll.forward(ss)
+                    # nfnl x 4 x ng
+                    gr = torch.matmul(rr.permute(0, 2, 1), gg)
                 if ti_mask is not None:
                     xyz_scatter[ti_mask] += gr
                 else:
@@ -804,111 +798,6 @@ class DescrptBlockSeA(DescriptorBlock):
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
         rot_mat = xyz_scatter_1[:, :, 1:4]
         xyz_scatter_2 = xyz_scatter[:, :, 0 : self.axis_neuron]
-        result = torch.matmul(
-            xyz_scatter_1, xyz_scatter_2
-        )  # shape is [nframes*nall, self.filter_neuron[-1], self.axis_neuron]
-        result = result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron)
-        rot_mat = rot_mat.view([-1, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
-        return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            None,
-            None,
-            sw,
-        )
-
-    def compressed_forward(
-        self,
-        nlist: torch.Tensor,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-    ):
-        del extended_atype_embd, mapping
-        nloc = nlist.shape[1]
-        atype = extended_atype[:, :nloc]
-        dmatrix, diff, sw = prod_env_mat(
-            extended_coord,
-            nlist,
-            atype,
-            self.mean,
-            self.stddev,
-            self.rcut,
-            self.rcut_smth,
-            protection=self.env_protection,
-        )
-
-        assert self.filter_layers is not None
-        dmatrix = dmatrix.view(-1, self.nnei, 4)
-        dmatrix = dmatrix.to(dtype=self.prec) # torch.Size([6, 19, 4])
-        nfnl = dmatrix.shape[0]
-        # pre-allocate a shape to pass jit
-        xyz_scatter = torch.zeros(
-            [nfnl, 4, self.filter_neuron[-1]],
-            dtype=self.prec,
-            device=extended_coord.device,
-        ) # torch.Size([6, 4, 24])
-        # nfnl x nnei
-        # torch.Size([6, 19])
-        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
-        for embedding_idx, ll in enumerate(self.filter_layers.networks):
-            if self.type_one_side:
-                ii = embedding_idx
-                # torch.jit is not happy with slice(None)
-                # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
-                # applying a mask seems to cause performance degradation
-                ti_mask = None
-            else:
-                # ti: center atom type, ii: neighbor type...
-                ii = embedding_idx // self.ntypes
-                ti = embedding_idx % self.ntypes
-                ti_mask = atype.ravel().eq(ti)
-            # nfnl x nt
-            if ti_mask is not None:
-                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
-            else:
-                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
-            # nfnl x nt x 4
-            if ti_mask is not None:
-                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
-            else:
-                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-            rr = rr * mm[:, :, None] # inputs_i_tensor in tf
-            ss = rr[:, :, :1]
-            ss = ss.reshape(-1, 1) # xyz_scatter_tensor in tf
-
-            if self.type_one_side:
-                net = "filter_-1_net_" + str(ii)
-            else:
-                net = "filter_" + str(ti) + "_net_" + str(ii)
-            
-            info = [
-                self.lower[net],
-                self.upper[net],
-                self.upper[net] * self.table_config[0],
-                self.table_config[1],
-                self.table_config[2],
-                self.table_config[3],
-            ]
-
-            tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-            result = torch.ops.deepmd.tabulate_fusion_se_a(
-                tensor_data.contiguous(),
-                torch.tensor(info, dtype=self.prec).contiguous().cpu(),
-                ss.contiguous(),
-                rr.contiguous(),
-                self.filter_neuron[-1],
-            )
-            if ti_mask is not None:
-                xyz_scatter[ti_mask] += result[0]
-            else:
-                xyz_scatter += result[0]
-                
-        xyz_scatter /= self.nnei # [6, 4, 24]
-        xyz_scatter_1 = xyz_scatter.permute(0, 2, 1) # [6, 24, 4]
-        rot_mat = xyz_scatter_1[:, :, 1:4]
-        xyz_scatter_2 = xyz_scatter[:, :, 0 : self.axis_neuron] # [6, 4, 3]
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nall, self.filter_neuron[-1], self.axis_neuron]
