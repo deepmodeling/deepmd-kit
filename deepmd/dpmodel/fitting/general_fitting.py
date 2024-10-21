@@ -14,6 +14,7 @@ import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.common import (
@@ -133,6 +134,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.trainable = [self.trainable] * (len(self.neuron) + 1)
         self.activation_function = activation_function
         self.precision = precision
+        prec = PRECISION_DICT[self.precision.lower()]
         self.layer_name = layer_name
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
@@ -146,18 +148,18 @@ class GeneralFitting(NativeOP, BaseFitting):
         net_dim_out = self._net_out_dim()
         # init constants
         if bias_atom_e is None:
-            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])  # pylint: disable=no-explicit-dtype
+            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out], dtype=prec)
         else:
             assert bias_atom_e.shape == (self.ntypes, net_dim_out)
             self.bias_atom_e = bias_atom_e
         if self.numb_fparam > 0:
-            self.fparam_avg = np.zeros(self.numb_fparam)  # pylint: disable=no-explicit-dtype
-            self.fparam_inv_std = np.ones(self.numb_fparam)  # pylint: disable=no-explicit-dtype
+            self.fparam_avg = np.zeros(self.numb_fparam, dtype=prec)
+            self.fparam_inv_std = np.ones(self.numb_fparam, dtype=prec)
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
         if self.numb_aparam > 0:
-            self.aparam_avg = np.zeros(self.numb_aparam)  # pylint: disable=no-explicit-dtype
-            self.aparam_inv_std = np.ones(self.numb_aparam)  # pylint: disable=no-explicit-dtype
+            self.aparam_avg = np.zeros(self.numb_aparam, dtype=prec)
+            self.aparam_inv_std = np.ones(self.numb_aparam, dtype=prec)
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
         # init networks
@@ -410,7 +412,7 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         # calcualte the prediction
         if not self.mixed_types:
-            outs = xp.zeros([nf, nloc, net_dim_out])  # pylint: disable=no-explicit-dtype
+            outs = xp.zeros([nf, nloc, net_dim_out], dtype=descriptor.dtype)
             for type_i in range(self.ntypes):
                 mask = xp.tile(
                     xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
