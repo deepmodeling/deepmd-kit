@@ -704,7 +704,7 @@ class DescrptBlockSeA(DescriptorBlock):
             device=extended_coord.device,
         )
         # nfnl x nnei
-        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, -1)
+        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             if self.type_one_side:
                 ii = embedding_idx

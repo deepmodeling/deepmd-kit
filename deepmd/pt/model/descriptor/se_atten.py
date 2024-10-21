@@ -199,40 +199,23 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.ndescrpt = self.nnei * 4
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
-        if self.old_impl:
-            assert self.tebd_input_mode in [
-                "concat"
-            ], "Old implementation does not support tebd_input_mode != 'concat'."
-            self.dpa1_attention = NeighborWiseAttention(
-                self.attn_layer,
-                self.nnei,
-                self.filter_neuron[-1],
-                self.attn_dim,
-                dotr=self.attn_dotr,
-                do_mask=self.attn_mask,
-                activation=self.activation_function,
-                scaling_factor=self.scaling_factor,
-                normalize=self.normalize,
-                temperature=self.temperature,
-                smooth=self.smooth,
-            )
-        else:
-            self.dpa1_attention = NeighborGatedAttention(
-                self.attn_layer,
-                self.nnei,
-                self.filter_neuron[-1],
-                self.attn_dim,
-                dotr=self.attn_dotr,
-                do_mask=self.attn_mask,
-                scaling_factor=self.scaling_factor,
-                normalize=self.normalize,
-                temperature=self.temperature,
-                trainable_ln=self.trainable_ln,
-                ln_eps=self.ln_eps,
-                smooth=self.smooth,
-                precision=self.precision,
-                seed=child_seed(self.seed, 0),
-            )
+        
+        self.dpa1_attention = NeighborGatedAttention(
+            self.attn_layer,
+            self.nnei,
+            self.filter_neuron[-1],
+            self.attn_dim,
+            dotr=self.attn_dotr,
+            do_mask=self.attn_mask,
+            scaling_factor=self.scaling_factor,
+            normalize=self.normalize,
+            temperature=self.temperature,
+            trainable_ln=self.trainable_ln,
+            ln_eps=self.ln_eps,
+            smooth=self.smooth,
+            precision=self.precision,
+            seed=child_seed(self.seed, 0),
+        )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(
@@ -522,7 +505,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.view(nb * nloc, nnei)
         
-        assert self.filter_layers is not None
         # nfnl x nnei x 4
         dmatrix = dmatrix.view(-1, self.nnei, 4)
         nfnl = dmatrix.shape[0]
@@ -530,7 +512,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None]
         ss = rr[:, :, :1]
-        nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim) # j
+        nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
         atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
         if self.tebd_input_mode in ["concat"]:
             if not self.type_one_side:
