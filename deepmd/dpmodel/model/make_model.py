@@ -76,7 +76,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             else:
                 self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
-            self.reverse_precision_dict = RESERVED_PRECISON_DICT
+            # not supported by flax
+            # self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
             self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
@@ -254,9 +255,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             str,
         ]:
             """Cast the input data to global float type."""
-            input_prec = self.reverse_precision_dict[
-                self.precision_dict[coord.dtype.name]
-            ]
+            input_prec = RESERVED_PRECISON_DICT[self.precision_dict[coord.dtype.name]]
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
@@ -265,10 +264,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 for vv in [box, fparam, aparam]
             ]
             box, fparam, aparam = _lst
-            if (
-                input_prec
-                == self.reverse_precision_dict[self.global_np_float_precision]
-            ):
+            if input_prec == RESERVED_PRECISON_DICT[self.global_np_float_precision]:
                 return coord, box, fparam, aparam, input_prec
             else:
                 pp = self.global_np_float_precision
@@ -287,8 +283,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         ) -> dict[str, np.ndarray]:
             """Convert the model output to the input prec."""
             do_cast = (
-                input_prec
-                != self.reverse_precision_dict[self.global_np_float_precision]
+                input_prec != RESERVED_PRECISON_DICT[self.global_np_float_precision]
             )
             pp = self.precision_dict[input_prec]
             odef = self.model_output_def()
