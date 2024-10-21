@@ -7,6 +7,9 @@ from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomi
 from deepmd.jax.atomic_model.base_atomic_model import (
     base_atomic_model_set_attr,
 )
+from deepmd.jax.common import (
+    flax_module,
+)
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -15,6 +18,7 @@ from deepmd.jax.fitting.base_fitting import (
 )
 
 
+@flax_module
 class DPAtomicModel(DPAtomicModelDP):
     base_descriptor_cls = BaseDescriptor
     """The base descriptor class."""
