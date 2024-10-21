@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+from typing import (
+    Callable,
+)
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 
-from typing import (
-    Callable,
-)
-
 from deepmd.common import (
-    VALID_PRECISION,
     VALID_ACTIVATION,
+    VALID_PRECISION,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -54,9 +53,8 @@ ACTIVATION_FN_DICT = {
 }
 assert VALID_ACTIVATION.issubset(ACTIVATION_FN_DICT.keys())
 
-def get_activation_func(
-    activation_fn
-) -> Callable[[torch.Tensor], torch.Tensor]:
+
+def get_activation_func(activation_fn) -> Callable[[torch.Tensor], torch.Tensor]:
     """Get activation function callable based on string name.
 
     Parameters
@@ -80,6 +78,7 @@ def get_activation_func(
     if activation_fn.lower() not in ACTIVATION_FN_DICT:
         raise RuntimeError(f"{activation_fn} is not a valid activation function")
     return ACTIVATION_FN_DICT[activation_fn.lower()]
+
 
 PRECISION_DICT = {
     "float16": torch.float16,
@@ -136,5 +135,5 @@ __all__ = [
     "CACHE_PER_SYS",
     "ENERGY_BIAS_TRAINABLE",
     "LOCAL_RANK",
-    "get_activation_func"
+    "get_activation_func",
 ]

@@ -177,7 +177,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         if ln_eps is None:
             ln_eps = 1e-5
         self.ln_eps = ln_eps
-        
+
         self.compress = False
 
         if isinstance(sel, int):
@@ -279,7 +279,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
-    
+
     def get_dim_rot_mat_1(self) -> int:
         """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
         return self.filter_neuron[-1]
@@ -401,7 +401,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
-    
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -466,14 +466,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = torch.squeeze(sw, -1)
         # nf x nloc x nt -> nf x nloc x nnei x nt
         atype_tebd = extended_atype_embd[:, :nloc, :]
-        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1) # i
+        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)  # i
         # nf x nall x nt
         nt = extended_atype_embd.shape[-1]
         atype_tebd_ext = extended_atype_embd
         # nb x (nloc x nnei) x nt
         index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
         # nb x (nloc x nnei) x nt
-        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index) # j
+        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)  # j
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         # beyond the cutoff sw should be 0.0
@@ -516,7 +516,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 assert self.filter_layers_strip is not None
                 if not self.type_one_side:
                     # nfnl x nnei x (tebd_dim * 2)
-                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)  # dynamic, index
                 else:
                     # nfnl x nnei x tebd_dim
                     tt = nlist_tebd
@@ -548,7 +548,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 assert self.filter_layers_strip is not None
                 if not self.type_one_side:
                     # nfnl x nnei x (tebd_dim * 2)
-                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)  # dynamic, index
                 else:
                     # nfnl x nnei x tebd_dim
                     tt = nlist_tebd
@@ -559,7 +559,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # nfnl x nnei x ng
                 gg = gg_s * gg_t + gg_s
 
-            
             if not self.compress:
                 input_r = torch.nn.functional.normalize(
                     rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
@@ -577,7 +576,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
-        
+
         if not self.compress:
             return (
                 result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
@@ -588,12 +587,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
             )
         else:
             return (
-            result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
-            None,
-            dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-            rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
-            sw,
-        )
+                result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
+                None,
+                dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
+                rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
+                sw,
+            )
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""

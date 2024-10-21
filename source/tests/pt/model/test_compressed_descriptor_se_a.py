@@ -1,21 +1,24 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-import numpy as np
-import torch
-
 from typing import (
     Any,
 )
-from deepmd.pt.utils.env import DEVICE as PT_DEVICE
-from deepmd.pt.model.descriptor.se_a import(
+
+import numpy as np
+import torch
+
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.pt.model.descriptor.se_a import (
     DescrptSeA,
 )
+from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 from deepmd.pt.utils.nlist import build_neighbor_list as build_neighbor_list_pt
 from deepmd.pt.utils.nlist import (
     extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
 )
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
-)
+
 
 def eval_pt_descriptor(
     pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
@@ -36,6 +39,7 @@ def eval_pt_descriptor(
     )
     result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)
     return result
+
 
 class TestDescriptorSeA(unittest.TestCase):
     def setUp(self):
@@ -118,5 +122,6 @@ class TestDescriptorSeA(unittest.TestCase):
             rtol=self.atol,
         )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

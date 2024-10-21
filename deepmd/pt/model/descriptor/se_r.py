@@ -25,12 +25,16 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISON_DICT,
+    get_activation_func,
 )
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
@@ -50,12 +54,6 @@ from deepmd.utils.version import (
 
 from .base_descriptor import (
     BaseDescriptor,
-)
-from deepmd.pt.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.pt.utils.env import (
-    get_activation_func,
 )
 
 
@@ -308,10 +306,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
-    
+
     def enable_compression(
         self,
-        min_nbor_dist: float, 
+        min_nbor_dist: float,
         table_extrapolate: float = 5,
         table_stride_1: float = 0.01,
         table_stride_2: float = 0.1,
@@ -349,7 +347,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.lower, self.upper = self.table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
-    
+
     def forward(
         self,
         coord_ext: torch.Tensor,

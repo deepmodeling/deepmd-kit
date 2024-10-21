@@ -55,20 +55,20 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
+from deepmd.pt.utils.env import (
+    get_activation_func,
+)
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
 )
 
 from .base_descriptor import (
     BaseDescriptor,
 )
 
-from deepmd.pt.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.pt.utils.env import (
-    get_activation_func,
-)
 
 @BaseDescriptor.register("se_e3")
 @BaseDescriptor.register("se_at")
@@ -260,7 +260,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
 
     def enable_compression(
         self,
-        min_nbor_dist: float, 
+        min_nbor_dist: float,
         table_extrapolate: float = 5,
         table_stride_1: float = 0.01,
         table_stride_2: float = 0.1,
@@ -297,10 +297,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             min_nbor_dist, table_extrapolate, table_stride_1 * 10, table_stride_2 * 10
         )
         self.seat.enable_compression(
-            self.table,
-            self.table_config,
-            self.lower,
-            self.upper
+            self.table, self.table_config, self.lower, self.upper
         )
 
     def reinit_exclude(
@@ -675,7 +672,7 @@ class DescrptBlockSeT(DescriptorBlock):
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
-    
+
     def enable_compression(
         self,
         table,
@@ -783,7 +780,9 @@ class DescrptBlockSeT(DescriptorBlock):
                         self.table_config[2],
                         self.table_config[3],
                     ]
-                    tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                    tensor_data = (
+                        self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                    )
                     ebd_env_ij = ebd_env_ij.to(env.DEVICE).to(dtype=self.prec)
                     env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(

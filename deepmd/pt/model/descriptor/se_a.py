@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
-
 from typing import (
     Callable,
     ClassVar,
@@ -10,10 +9,6 @@ from typing import (
 
 import numpy as np
 import torch
-
-from deepmd.pt.cxx_op import (
-    ENABLE_CUSTOMIZED_OP,
-)
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -60,20 +55,20 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
+from deepmd.pt.utils.env import (
+    get_activation_func,
+)
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
 )
 
 from .base_descriptor import (
     BaseDescriptor,
 )
 
-from deepmd.pt.utils.tabulate import (
-    DPTabulate,
-)
-from deepmd.pt.utils.env import (
-    get_activation_func,
-)
 
 @BaseDescriptor.register("se_e2_a")
 @BaseDescriptor.register("se_a")
@@ -235,10 +230,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     ):
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
-    
+
     def enable_compression(
         self,
-        min_nbor_dist: float, 
+        min_nbor_dist: float,
         table_extrapolate: float = 5,
         table_stride_1: float = 0.01,
         table_stride_2: float = 0.1,
@@ -277,12 +272,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
         self.sea.enable_compression(
-            self.table,
-            self.table_config,
-            self.lower,
-            self.upper
+            self.table, self.table_config, self.lower, self.upper
         )
-        
 
     def forward(
         self,
@@ -325,7 +316,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.sea.forward(nlist, coord_ext, atype_ext, extended_atype_embd, mapping)
+        return self.sea.forward(
+            nlist, coord_ext, atype_ext, extended_atype_embd, mapping
+        )
 
     def set_stat_mean_and_stddev(
         self,
@@ -485,7 +478,7 @@ class DescrptBlockSeA(DescriptorBlock):
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
-        
+
         self.compress = False
 
         ndim = 1 if self.type_one_side else 2
@@ -533,7 +526,7 @@ class DescrptBlockSeA(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
-    
+
     def get_dim_rot_mat_1(self) -> int:
         """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
         return self.filter_neuron[-1]
@@ -641,7 +634,7 @@ class DescrptBlockSeA(DescriptorBlock):
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
-    
+
     def enable_compression(
         self,
         table,
@@ -654,7 +647,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
-    
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -739,7 +732,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     self.table_config[2],
                     self.table_config[3],
                 ]
-                ss = ss.reshape(-1, 1) # xyz_scatter_tensor in tf
+                ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
                     tensor_data.contiguous(),

@@ -1,35 +1,33 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-import torch
+
 import numpy as np
-import torch.nn.functional as F
+import torch
 
 from deepmd.pt.utils.tabulate import (
-    unaggregated_dy_dx_s,
+    unaggregated_dy2_dx,
     unaggregated_dy2_dx_s,
     unaggregated_dy_dx,
-    unaggregated_dy2_dx,
+    unaggregated_dy_dx_s,
 )
 from deepmd.tf.env import (
     op_module,
     tf,
 )
+
 tf.compat.v1.enable_eager_execution()
+
 
 class TestDPTabulate(unittest.TestCase):
     def setUp(self):
         self.w = np.array(
-            [[0.1, 0.2, 0.3, 0.4], 
-             [0.5, 0.6, 0.7, 0.8], 
-             [0.9, 1.0, 1.1, 1.2]],
-            dtype=np.float64
+            [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1.0, 1.1, 1.2]],
+            dtype=np.float64,
         )
 
         self.x = np.array(
-            [[0.1, 0.2, 0.3], 
-             [0.4, 0.5, 0.6], 
-             [0.7, 0.8, 0.9], 
-             [1.0, 1.1, 1.2]],
-            dtype=np.float64  # 4 x 3
+            [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9], [1.0, 1.1, 1.2]],
+            dtype=np.float64,  # 4 x 3
         )
 
         self.b = np.array([[0.1], [0.2], [0.3], [0.4]], dtype=np.float64)  # 4 x 1
@@ -37,7 +35,7 @@ class TestDPTabulate(unittest.TestCase):
         self.xbar = np.matmul(self.x, self.w) + self.b  # 4 x 4
 
         self.y = np.tanh(self.xbar)
-    
+
     def test_ops(self):
         dy_tf = op_module.unaggregated_dy_dx_s(
             tf.constant(self.y, dtype="double"),
@@ -45,7 +43,7 @@ class TestDPTabulate(unittest.TestCase):
             tf.constant(self.xbar, dtype="double"),
             tf.constant(1),
         )
-        
+
         dy_pt = unaggregated_dy_dx_s(
             torch.from_numpy(self.y),
             self.w,
@@ -99,8 +97,8 @@ class TestDPTabulate(unittest.TestCase):
             1,
         )
 
-        print("w: ",self.w.shape) # 3, 4
-        print("dy_pt: ", dy_pt.shape) # 4, 4
+        print("w: ", self.w.shape)  # 3, 4
+        print("dy_pt: ", dy_pt.shape)  # 4, 4
 
         dz_tf_numpy = dz_tf.numpy()
         dz_pt_numpy = dz_pt.detach().numpy()
