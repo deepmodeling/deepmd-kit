@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import math
 from typing import (
     Optional,
@@ -243,7 +242,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict) -> "BaseAtomicModel":
-        data = copy.deepcopy(data)
+        # do not deep copy Descriptor and Fitting class
+        data = data.copy()
         variables = data.pop("@variables")
         obj = cls(**data)
         for kk in variables.keys():
