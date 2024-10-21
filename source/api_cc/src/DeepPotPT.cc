@@ -392,12 +392,14 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
           std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
       torch::Tensor sendlist_tensor =
           torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
+      torch::Tensor has_spin = torch::tensor({1}, int32_option);
       comm_dict.insert("send_list", sendlist_tensor);
       comm_dict.insert("send_proc", sendproc_tensor);
       comm_dict.insert("recv_proc", recvproc_tensor);
       comm_dict.insert("send_num", sendnum_tensor);
       comm_dict.insert("recv_num", recvnum_tensor);
       comm_dict.insert("communicator", communicator_tensor);
+      comm_dict.insert("has_spin", has_spin);
     }
     if (do_message_passing == 1 && nghost == 0) {
       // for the situation that no ghost atoms (e.g. serial nopbc)

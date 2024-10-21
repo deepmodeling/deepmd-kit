@@ -45,6 +45,9 @@ from .repformer_layer import (
     RepformerLayer,
 )
 from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
+from deepmd.pt.utils.spin import (
+    concat_switch_virtual,
+)
 
 if not hasattr(torch.ops.deepmd, "border_op"):
 
@@ -456,6 +459,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             atype_embd = extended_atype_embd
         assert isinstance(atype_embd, torch.Tensor)  # for jit
         g1 = self.act(atype_embd)
+        ng1 = g1.shape[-1]
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         if not self.direct_dist:
             g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
@@ -482,10 +486,27 @@ class DescrptBlockRepformers(DescriptorBlock):
                 assert mapping is not None
                 g1_ext = torch.gather(g1, 1, mapping)
             else:
-                n_padding = nall - nloc
-                g1 = torch.nn.functional.pad(
-                    g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
-                )
+                has_spin = "has_spin" in comm_dict
+                if not has_spin:
+                    n_padding = nall - nloc
+                    g1 = torch.nn.functional.pad(
+                        g1.squeeze(0), (0, 0, 0, n_padding), value=0.0
+                    )
+                    real_nloc = nloc
+                    real_nall = nall
+                else:
+                    # for spin
+                    real_nloc = nloc // 2
+                    real_nall = nall // 2
+                    real_n_padding = real_nall - real_nloc
+                    g1_real, g1_virtual = torch.split(g1, [real_nloc, real_nloc], dim=1)
+                    # mix_g1: nb x real_nloc x (ng1 * 2)
+                    mix_g1 = torch.cat([g1_real, g1_virtual], dim=2)
+                    # nb x real_nall x (ng1 * 2)
+                    g1 = torch.nn.functional.pad(
+                        mix_g1.squeeze(0), (0, 0, 0, real_n_padding), value=0.0
+                    )
+
                 assert "send_list" in comm_dict
                 assert "send_proc" in comm_dict
                 assert "recv_proc" in comm_dict
@@ -500,10 +521,13 @@ class DescrptBlockRepformers(DescriptorBlock):
                     comm_dict["recv_num"],
                     g1,
                     comm_dict["communicator"],
-                    torch.tensor(nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
-                    torch.tensor(nall - nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
+                    torch.tensor(real_nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
+                    torch.tensor(real_nall - real_nloc),  # pylint: disable=no-explicit-dtype,no-explicit-device
                 )
                 g1_ext = ret[0].unsqueeze(0)
+                if has_spin:
+                    g1_real_ext, g1_virtual_ext = torch.split(g1_ext, [ng1, ng1], dim=2)
+                    g1_ext = concat_switch_virtual(g1_real_ext, g1_virtual_ext, real_nloc)
             g1, g2, h2 = ll.forward(
                 g1_ext,
                 g2,
