@@ -428,7 +428,6 @@ class DeepPotPT : public DeepPotBase {
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
-  int** spin_sendlist;
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.
    * @param[in] f The function to run.
