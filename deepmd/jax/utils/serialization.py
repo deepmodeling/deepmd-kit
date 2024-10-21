@@ -3,6 +3,7 @@ import tensorflow as tf
 
 from deepmd.jax.env import (
     jax2tf,
+    nnx,
 )
 from deepmd.jax.model.model import (
     BaseModel,
@@ -51,5 +52,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             model_file,
             options=tf.saved_model.SaveOptions(experimental_custom_gradients=True),
         )
+    elif model_file.endswith(".jax"):
+        model = BaseModel.deserialize(data["model"])
+        state = nnx.state(model)
+        nnx.display(state)
     else:
         raise ValueError("JAX backend only supports converting .pth file")

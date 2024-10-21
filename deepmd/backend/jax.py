@@ -38,7 +38,7 @@ class JAXBackend(Backend):
         # | Backend.Feature.NEIGHBOR_STAT
     )
     """The features of the backend."""
-    suffixes: ClassVar[list[str]] = [".saved_model"]
+    suffixes: ClassVar[list[str]] = [".saved_model", ".jax"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
