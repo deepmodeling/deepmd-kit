@@ -38,7 +38,7 @@ class JAXBackend(Backend):
         # | Backend.Feature.NEIGHBOR_STAT
     )
     """The features of the backend."""
-    suffixes: ClassVar[list[str]] = [".saved_model", ".jax"]
+    suffixes: ClassVar[list[str]] = [".jax"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -93,7 +93,11 @@ class JAXBackend(Backend):
         Callable[[str], dict]
             The serialize hook of the backend.
         """
-        raise NotImplementedError
+        from deepmd.jax.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file
 
     @property
     def deserialize_hook(self) -> Callable[[str, dict], None]:

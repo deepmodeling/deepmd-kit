@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import shutil
 import unittest
 from pathlib import (
     Path,
@@ -60,12 +61,14 @@ class IOTest:
     def tearDown(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for ii in Path(".").glob(prefix + ".*"):
-            if Path(ii).exists():
+            if Path(ii).is_file():
                 Path(ii).unlink()
+            elif Path(ii).is_dir():
+                shutil.rmtree(ii)
 
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
-        for backend_name in ("tensorflow", "pytorch", "dpmodel"):
+        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
                 if not backend.is_available:
@@ -80,6 +83,7 @@ class IOTest:
                     "backend",
                     "tf_version",
                     "pt_version",
+                    "jax_version",
                     "@variables",
                     # dpmodel only
                     "software",
