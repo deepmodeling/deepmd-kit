@@ -402,6 +402,7 @@ banned-module-level-imports = [
 # Also ignore `E402` in all `__init__.py` files.
 "deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253"]
+"deepmd/jax/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
 "source/tests/universal/pt/**" = ["TID253"]
