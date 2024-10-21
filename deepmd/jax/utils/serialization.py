@@ -8,6 +8,9 @@ from deepmd.jax.env import (
 from deepmd.jax.model.model import (
     BaseModel,
 )
+from deepmd.jax.utils.network import (
+    ArrayAPIParam,
+)
 
 
 def deserialize_to_file(model_file: str, data: dict) -> None:
@@ -54,7 +57,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         )
     elif model_file.endswith(".jax"):
         model = BaseModel.deserialize(data["model"])
-        state = nnx.state(model)
+        state = nnx.state(model, ArrayAPIParam)
         nnx.display(state)
     else:
         raise ValueError("JAX backend only supports converting .pth file")
