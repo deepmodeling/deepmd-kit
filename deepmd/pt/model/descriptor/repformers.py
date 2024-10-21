@@ -28,6 +28,9 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.spin import (
+    concat_switch_virtual,
+)
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
@@ -40,9 +43,6 @@ from deepmd.utils.path import (
 
 from .repformer_layer import (
     RepformerLayer,
-)
-from deepmd.pt.utils.spin import (
-    concat_switch_virtual,
 )
 
 if not hasattr(torch.ops.deepmd, "border_op"):
@@ -493,7 +493,9 @@ class DescrptBlockRepformers(DescriptorBlock):
                 g1_ext = ret[0].unsqueeze(0)
                 if has_spin:
                     g1_real_ext, g1_virtual_ext = torch.split(g1_ext, [ng1, ng1], dim=2)
-                    g1_ext = concat_switch_virtual(g1_real_ext, g1_virtual_ext, real_nloc)
+                    g1_ext = concat_switch_virtual(
+                        g1_real_ext, g1_virtual_ext, real_nloc
+                    )
             g1, g2, h2 = ll.forward(
                 g1_ext,
                 g2,

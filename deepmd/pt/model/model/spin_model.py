@@ -15,6 +15,9 @@ from deepmd.dpmodel import (
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
 )
+from deepmd.pt.utils.spin import (
+    concat_switch_virtual,
+)
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
@@ -23,9 +26,6 @@ from deepmd.utils.path import (
 )
 from deepmd.utils.spin import (
     Spin,
-)
-from deepmd.pt.utils.spin import (
-    concat_switch_virtual,
 )
 
 from .make_model import (

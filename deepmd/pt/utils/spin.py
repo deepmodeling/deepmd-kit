@@ -1,4 +1,8 @@
-from typing import Optional
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Optional,
+)
+
 import torch
 
 
@@ -24,12 +28,8 @@ def concat_switch_virtual(
         device=extended_tensor.device,
     )
     extended_tensor_updated[:, :nloc] = extended_tensor[:, :nloc]
-    extended_tensor_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[
-        :, :nloc
-    ]
-    extended_tensor_updated[:, nloc + nloc : nloc + nall] = extended_tensor[
-        :, nloc:
-    ]
+    extended_tensor_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[:, :nloc]
+    extended_tensor_updated[:, nloc + nloc : nloc + nall] = extended_tensor[:, nloc:]
     extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
     # nloc + nloc + nghost + nghost
     if recv_num is not None:
