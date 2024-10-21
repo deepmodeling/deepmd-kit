@@ -185,7 +185,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         if ln_eps is None:
             ln_eps = 1e-5
         self.ln_eps = ln_eps
-        self.old_impl = old_impl
+
         self.compress = False
 
         if isinstance(sel, int):
@@ -521,109 +521,86 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.view(nb * nloc, nnei)
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            dmatrix = dmatrix.view(
-                -1, self.ndescrpt
-            )  # shape is [nframes*nall, self.ndescrpt]
-            gg = self.filter_layers_old[0](
-                dmatrix,
-                atype_tebd=atype_tebd_nnei,
-                nlist_tebd=atype_tebd_nlist,
-            )  # shape is [nframes*nall, self.neei, out_size]
-            input_r = torch.nn.functional.normalize(
-                dmatrix.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-            )
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            inputs_reshape = dmatrix.view(-1, self.nnei, 4).permute(
-                0, 2, 1
-            )  # shape is [nframes*natoms[0], 4, self.neei]
-            xyz_scatter = torch.matmul(
-                inputs_reshape, gg
-            )  # shape is [nframes*natoms[0], 4, out_size]
-        else:
-            assert self.filter_layers is not None
-            # nfnl x nnei x 4
-            dmatrix = dmatrix.view(-1, self.nnei, 4)
-            nfnl = dmatrix.shape[0]
-            # nfnl x nnei x 4
-            rr = dmatrix
-            rr = rr * exclude_mask[:, :, None]
-            ss = rr[:, :, :1]
-            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim) # j
-            atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
-            if self.tebd_input_mode in ["concat"]:
-                if not self.type_one_side:
-                    # nfnl x nnei x (1 + tebd_dim * 2)
-                    ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
-                else:
-                    # nfnl x nnei x (1 + tebd_dim)
-                    ss = torch.concat([ss, nlist_tebd], dim=2)
-                # nfnl x nnei x ng
-                gg = self.filter_layers.networks[0](ss)
-            elif self.tebd_input_mode in ["strip"]:
-                if self.compress:
-                    net = "filter_net"
-                    info = [
-                        self.lower[net],
-                        self.upper[net],
-                        self.upper[net] * self.table_config[0],
-                        self.table_config[1],
-                        self.table_config[2],
-                        self.table_config[3],
-                    ]
-                    ss = ss.reshape(-1, 1)
-                    # nfnl x nnei x ng
-                    # gg_s = self.filter_layers.networks[0](ss)
-                    assert self.filter_layers_strip is not None
-                    if not self.type_one_side:
-                        # nfnl x nnei x (tebd_dim * 2)
-                        tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
-                    else:
-                        # nfnl x nnei x tebd_dim
-                        tt = nlist_tebd
-                    # nfnl x nnei x ng
-                    gg_t = self.filter_layers_strip.networks[0](tt)
-                    if self.smooth:
-                        gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-                    # nfnl x nnei x ng
-                    # gg = gg_s * gg_t + gg_s
-                    tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-                    info_tensor = torch.tensor(info, dtype=self.prec)
-                    gg_t = gg_t.reshape(-1, gg_t.size(-1))
-                    ss = ss.to(self.prec)
-                    rr = rr.to(self.prec)
-                    gg_t = gg_t.to(self.prec)
-                    is_sorted = len(self.exclude_types) == 0
-                    xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
-                        tensor_data.contiguous(),
-                        info_tensor.contiguous().cpu(),
-                        ss.contiguous(),
-                        rr.contiguous(),
-                        gg_t.contiguous(),
-                        self.filter_neuron[-1],
-                        is_sorted,
-                    )[0]
-                else:
-                    # nfnl x nnei x ng
-                    gg_s = self.filter_layers.networks[0](ss)
-                    assert self.filter_layers_strip is not None
-                    if not self.type_one_side:
-                        # nfnl x nnei x (tebd_dim * 2)
-                        tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
-                    else:
-                        # nfnl x nnei x tebd_dim
-                        tt = nlist_tebd
-                    # nfnl x nnei x ng
-                    gg_t = self.filter_layers_strip.networks[0](tt)
-                    if self.smooth:
-                        gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-                    # nfnl x nnei x ng
-                    gg = gg_s * gg_t + gg_s
+        
+        assert self.filter_layers is not None
+        # nfnl x nnei x 4
+        dmatrix = dmatrix.view(-1, self.nnei, 4)
+        nfnl = dmatrix.shape[0]
+        # nfnl x nnei x 4
+        rr = dmatrix
+        rr = rr * exclude_mask[:, :, None]
+        ss = rr[:, :, :1]
+        nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim) # j
+        atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
+        if self.tebd_input_mode in ["concat"]:
+            if not self.type_one_side:
+                # nfnl x nnei x (1 + tebd_dim * 2)
+                ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
             else:
-                raise NotImplementedError
+                # nfnl x nnei x (1 + tebd_dim)
+                ss = torch.concat([ss, nlist_tebd], dim=2)
+            # nfnl x nnei x ng
+            gg = self.filter_layers.networks[0](ss)
+        elif self.tebd_input_mode in ["strip"]:
+            if self.compress:
+                net = "filter_net"
+                info = [
+                    self.lower[net],
+                    self.upper[net],
+                    self.upper[net] * self.table_config[0],
+                    self.table_config[1],
+                    self.table_config[2],
+                    self.table_config[3],
+                ]
+                ss = ss.reshape(-1, 1)
+                # nfnl x nnei x ng
+                # gg_s = self.filter_layers.networks[0](ss)
+                assert self.filter_layers_strip is not None
+                if not self.type_one_side:
+                    # nfnl x nnei x (tebd_dim * 2)
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
+                else:
+                    # nfnl x nnei x tebd_dim
+                    tt = nlist_tebd
+                # nfnl x nnei x ng
+                gg_t = self.filter_layers_strip.networks[0](tt)
+                if self.smooth:
+                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+                # nfnl x nnei x ng
+                # gg = gg_s * gg_t + gg_s
+                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                info_tensor = torch.tensor(info, dtype=self.prec)
+                gg_t = gg_t.reshape(-1, gg_t.size(-1))
+                ss = ss.to(self.prec)
+                rr = rr.to(self.prec)
+                gg_t = gg_t.to(self.prec)
+                is_sorted = len(self.exclude_types) == 0
+                xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
+                    tensor_data.contiguous(),
+                    info_tensor.contiguous().cpu(),
+                    ss.contiguous(),
+                    rr.contiguous(),
+                    gg_t.contiguous(),
+                    self.filter_neuron[-1],
+                    is_sorted,
+                )[0]
+            else:
+                # nfnl x nnei x ng
+                gg_s = self.filter_layers.networks[0](ss)
+                assert self.filter_layers_strip is not None
+                if not self.type_one_side:
+                    # nfnl x nnei x (tebd_dim * 2)
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2) # dynamic, index
+                else:
+                    # nfnl x nnei x tebd_dim
+                    tt = nlist_tebd
+                # nfnl x nnei x ng
+                gg_t = self.filter_layers_strip.networks[0](tt)
+                if self.smooth:
+                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+                # nfnl x nnei x ng
+                gg = gg_s * gg_t + gg_s
+
             
             if not self.compress:
                 input_r = torch.nn.functional.normalize(

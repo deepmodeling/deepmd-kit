@@ -416,7 +416,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         )
 
         # nfnl x nnei
-        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, -1)
+        exclude_mask = self.emask(nlist, atype_ext).view(nfnl, self.nnei)
         xyz_scatter_total = []
         for ii, ll in enumerate(self.filter_layers.networks):
             # nfnl x nt
