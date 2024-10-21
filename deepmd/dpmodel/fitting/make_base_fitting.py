@@ -4,8 +4,6 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -60,7 +58,7 @@ def make_base_fitting(
             h2: Optional[t_tensor] = None,
             fparam: Optional[t_tensor] = None,
             aparam: Optional[t_tensor] = None,
-        ) -> Dict[str, t_tensor]:
+        ) -> dict[str, t_tensor]:
             """Calculate fitting."""
             pass
 
@@ -69,13 +67,13 @@ def make_base_fitting(
             raise NotImplementedError
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the name to each type of atoms."""
             pass
 
         @abstractmethod
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.

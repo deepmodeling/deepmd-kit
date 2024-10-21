@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -46,7 +44,7 @@ class DPAtomicModel(BaseAtomicModel):
         self,
         descriptor,
         fitting,
-        type_map: List[str],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -64,7 +62,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return self.descriptor.get_rcut()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
@@ -96,7 +94,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Models' atomic predictions.
 
         Parameters
@@ -140,7 +138,7 @@ class DPAtomicModel(BaseAtomicModel):
         return ret
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -192,7 +190,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.fitting.get_dim_aparam()
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

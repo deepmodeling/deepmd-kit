@@ -3,7 +3,6 @@ import json
 import logging
 from typing import (
     Any,
-    Dict,
 )
 
 from deepmd.tf.utils.errors import (
@@ -17,13 +16,13 @@ log = logging.getLogger(__name__)
 
 
 def replace_model_params_with_pretrained_model(
-    jdata: Dict[str, Any], pretrained_model: str
+    jdata: dict[str, Any], pretrained_model: str
 ):
     """Replace the model params in input script according to pretrained model.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         input script
     pretrained_model : str
         filename of the pretrained model

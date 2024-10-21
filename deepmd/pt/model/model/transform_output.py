@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -31,7 +29,7 @@ def atomic_virial_corr(
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = torch.split(torch.sum(ce, dim=1), [1, 1, 1], dim=-1)
     faked_grad = torch.ones_like(sumce0)
-    lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
     extended_virial_corr0 = torch.autograd.grad(
         [sumce0],
         [extended_coord],
@@ -76,7 +74,7 @@ def task_deriv_one(
     create_graph: bool = True,
 ):
     faked_grad = torch.ones_like(energy)
-    lst = torch.jit.annotate(List[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
     extended_force = torch.autograd.grad(
         [energy],
         [extended_coord],
@@ -153,12 +151,12 @@ def take_deriv(
 
 
 def fit_output_to_model_output(
-    fit_ret: Dict[str, torch.Tensor],
+    fit_ret: dict[str, torch.Tensor],
     fit_output_def: FittingOutputDef,
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
 
@@ -197,11 +195,11 @@ def fit_output_to_model_output(
 
 
 def communicate_extended_output(
-    model_ret: Dict[str, torch.Tensor],
+    model_ret: dict[str, torch.Tensor],
     model_output_def: ModelOutputDef,
     mapping: torch.Tensor,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 

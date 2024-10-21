@@ -39,6 +39,9 @@ from deepmd.tf.common import (
 )
 from deepmd.tf.descriptor import DescrptSeA as DescrptSeA_tf
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from ..test_finetune import (
     energy_data_requirement,
 )
@@ -153,7 +156,7 @@ class TestSeA(unittest.TestCase):
             sel=self.sel,
             neuron=self.filter_neuron,
             axis_neuron=self.axis_neuron,
-            seed=1,
+            seed=GLOBAL_SEED,
         )
         dp_embedding, dp_force, dp_vars = base_se_a(
             descriptor=dp_d,
@@ -164,20 +167,15 @@ class TestSeA(unittest.TestCase):
         )
 
         # Reproduced
-        old_impl = False
         descriptor = DescrptSeA(
             self.rcut,
             self.rcut_smth,
             self.sel,
             neuron=self.filter_neuron,
             axis_neuron=self.axis_neuron,
-            old_impl=old_impl,
         ).to(DEVICE)
         for name, param in descriptor.named_parameters():
-            if old_impl:
-                ms = re.findall(r"(\d)\.deep_layers\.(\d)\.([a-z]+)", name)
-            else:
-                ms = re.findall(r"(\d)\.layers\.(\d)\.([a-z]+)", name)
+            ms = re.findall(r"(\d)\.layers\.(\d)\.([a-z]+)", name)
             if len(ms) == 1:
                 m = ms[0]
                 key = gen_key(worb=m[2], depth=int(m[1]) + 1, elemid=int(m[0]))

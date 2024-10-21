@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    List,
     Literal,
     Optional,
-    Tuple,
     Union,
     overload,
 )
@@ -95,13 +93,13 @@ class DeepPot(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: Literal[True],
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         mixed_type: bool,
         **kwargs: Any,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         pass
 
     @overload
@@ -109,13 +107,13 @@ class DeepPot(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: Literal[False],
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         mixed_type: bool,
         **kwargs: Any,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         pass
 
     @overload
@@ -123,26 +121,26 @@ class DeepPot(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: bool,
         fparam: Optional[np.ndarray],
         aparam: Optional[np.ndarray],
         mixed_type: bool,
         **kwargs: Any,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         pass
 
     def eval(
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: Union[List[int], np.ndarray],
+        atom_types: Union[list[int], np.ndarray],
         atomic: bool = False,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         mixed_type: bool = False,
         **kwargs: Any,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         """Evaluate energy, force, and virial. If atomic is True,
         also return atomic energy and atomic virial.
 
@@ -153,7 +151,7 @@ class DeepPot(DeepEval):
         cells : np.ndarray
             The cell vectors of the system, in shape (nframes, 9). If the system
             is not periodic, set it to None.
-        atom_types : List[int] or np.ndarray
+        atom_types : list[int] or np.ndarray
             The types of the atoms. If mixed_type is False, the shape is (natoms,);
             otherwise, the shape is (nframes, natoms).
         atomic : bool, optional
@@ -164,7 +162,7 @@ class DeepPot(DeepEval):
             The atomic parameters, by default None.
         mixed_type : bool, optional
             Whether the atom_types is mixed type, by default False.
-        **kwargs : Dict[str, Any]
+        **kwargs : dict[str, Any]
             Keyword arguments.
 
         Returns

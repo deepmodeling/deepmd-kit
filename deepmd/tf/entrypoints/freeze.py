@@ -15,7 +15,6 @@ from pathlib import (
     Path,
 )
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -80,7 +79,7 @@ def _make_node_names(
     modifier_type: Optional[str] = None,
     out_suffix: str = "",
     node_names: Optional[Union[str, list]] = None,
-) -> List[str]:
+) -> list[str]:
     """Get node names based on model type.
 
     Parameters
@@ -96,7 +95,7 @@ def _make_node_names(
 
     Returns
     -------
-    List[str]
+    list[str]
         list with all node names to freeze
 
     Raises
@@ -240,7 +239,7 @@ def freeze_graph(
         The default session.
     input_graph : tf.GraphDef
         The input graph_def stored from the checkpoint.
-    input_node : List[str]
+    input_node : list[str]
         The expected nodes to freeze.
     freeze_type : str
         The model type to freeze.

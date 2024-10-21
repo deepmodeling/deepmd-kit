@@ -32,6 +32,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
 
+from ...seed import (
+    GLOBAL_SEED,
+)
 from .test_env_mat import (
     TestCaseSingleFrameWithNlist,
 )
@@ -78,6 +81,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 bias_atom_p=bias_atom_p,
                 intensive=intensive,
                 bias_method=bias_method,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             ft1 = DPProperFittingNet.deserialize(ft0.serialize())
@@ -146,6 +150,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
                 bias_method=bias_method,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
@@ -199,6 +204,7 @@ class TestInvarianceOutCell(unittest.TestCase):
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
+            seed=GLOBAL_SEED,
         ).to(env.DEVICE)
         res = []
         for xyz in [self.coord, coord_s]:
@@ -266,6 +272,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 mixed_types=self.dd0.mixed_types(),
                 intensive=intensive,
                 bias_method=bias_method,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             if nfp > 0:
                 ifp = torch.tensor(
@@ -320,6 +327,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
+            seed=GLOBAL_SEED,
         ).to(env.DEVICE)
         res = []
         for idx_perm in [[0, 1, 2, 3, 4], [1, 0, 4, 3, 2]]:
@@ -367,6 +375,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             numb_fparam=0,
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
+            seed=GLOBAL_SEED,
         ).to(env.DEVICE)
         res = []
         for xyz in [self.coord, coord_s]:
@@ -417,6 +426,7 @@ class TestPropertyModel(unittest.TestCase):
             numb_aparam=0,
             mixed_types=self.dd0.mixed_types(),
             intensive=True,
+            seed=GLOBAL_SEED,
         ).to(env.DEVICE)
         self.type_mapping = ["O", "H", "B"]
         self.model = PropertyModel(self.dd0, self.ft0, self.type_mapping)

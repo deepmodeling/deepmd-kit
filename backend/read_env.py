@@ -5,9 +5,6 @@ import os
 from functools import (
     lru_cache,
 )
-from typing import (
-    Tuple,
-)
 
 from packaging.version import (
     Version,
@@ -24,7 +21,7 @@ from .find_tensorflow import (
 
 
 @lru_cache
-def get_argument_from_env() -> Tuple[str, list, list, dict, str, str]:
+def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
     """Get the arguments from environment variables.
 
     The environment variables are assumed to be not changed during the build.

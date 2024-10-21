@@ -17,9 +17,7 @@ from sysconfig import (
     get_path,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -29,7 +27,7 @@ from packaging.specifiers import (
 
 
 @lru_cache
-def find_tensorflow() -> Tuple[Optional[str], List[str]]:
+def find_tensorflow() -> tuple[Optional[str], list[str]]:
     """Find TensorFlow library.
 
     Tries to find TensorFlow in the order of:
@@ -156,18 +154,15 @@ def get_tf_requirement(tf_version: str = "") -> dict:
                 "tensorflow; platform_machine=='aarch64' or (platform_machine=='arm64' and platform_system == 'Darwin')",
                 # https://github.com/tensorflow/tensorflow/issues/61830
                 "tensorflow-cpu!=2.15.*; platform_system=='Windows'",
-                # TODO: build(wheel): unpin h5py on aarch64
-                # Revert after https://github.com/h5py/h5py/issues/2408 is fixed;
-                # or set UV_PREFER_BINARY when https://github.com/astral-sh/uv/issues/1794 is resolved.
-                # 3.6.0 is the first version to have aarch64 wheels.
-                "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
+                # https://github.com/h5py/h5py/issues/2408
+                "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
                 *extra_requires,
             ],
             "gpu": [
                 "tensorflow",
                 "tensorflow-metal; platform_machine=='arm64' and platform_system == 'Darwin'",
                 # See above.
-                "h5py>=3.6.0,<3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
+                "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
                 *extra_requires,
             ],
             **extra_select,

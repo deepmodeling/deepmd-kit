@@ -427,6 +427,7 @@ class DeepPotPT : public DeepPotBase {
   int do_message_passing;  // 1:dpa2 model 0:others
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
+  c10::optional<torch::Tensor> mapping_tensor;
   torch::Dict<std::string, torch::Tensor> comm_dict;
   /**
    * @brief Translate PyTorch exceptions to the DeePMD-kit exception.

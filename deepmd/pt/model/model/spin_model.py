@@ -4,8 +4,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -234,7 +232,7 @@ class SpinModel(torch.nn.Module):
         return aparam
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
         ntypes = len(tmap) // 2  # ignore the virtual type
@@ -261,7 +259,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.get_dim_aparam()
 
     @torch.jit.export
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
         Only atoms with selected atom types have atomic contribution
         to the result of the model.
@@ -277,7 +275,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.is_aparam_nall()
 
     @torch.jit.export
-    def model_output_type(self) -> List[str]:
+    def model_output_type(self) -> list[str]:
         """Get the output type for the model."""
         return self.backbone_model.model_output_type()
 
@@ -398,7 +396,7 @@ class SpinModel(torch.nn.Module):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
         coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
         if aparam is not None:
@@ -554,7 +552,7 @@ class SpinEnergyModel(SpinModel):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,

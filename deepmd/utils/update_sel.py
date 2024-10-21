@@ -5,10 +5,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -28,11 +25,11 @@ class BaseUpdateSel(ABC):
     def update_one_sel(
         self,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         rcut: float,
-        sel: Union[int, List[int], str],
+        sel: Union[int, list[int], str],
         mixed_type: bool = False,
-    ) -> Tuple[float, List[int]]:
+    ) -> tuple[float, list[int]]:
         min_nbor_dist, tmp_sel = self.get_nbor_stat(
             train_data,
             type_map,
@@ -86,17 +83,17 @@ class BaseUpdateSel(ABC):
     def get_nbor_stat(
         self,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         rcut: float,
         mixed_type: bool = False,
-    ) -> Tuple[float, Union[int, List[int]]]:
+    ) -> tuple[float, Union[int, list[int]]]:
         """Get the neighbor statistics of the data.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
             The training data.
-        type_map : Optional[List[str]]
+        type_map : Optional[list[str]]
             The type map.
         rcut : float
             The cutoff radius.
@@ -107,7 +104,7 @@ class BaseUpdateSel(ABC):
         -------
         min_nbor_dist : float
             The minimum neighbor distance.
-        max_nbor_size : List[int]
+        max_nbor_size : list[int]
             The maximum neighbor size.
         """
         if type_map and len(type_map) == 0:
@@ -128,7 +125,7 @@ class BaseUpdateSel(ABC):
 
     @property
     @abstractmethod
-    def neighbor_stat(self) -> Type[NeighborStat]:
+    def neighbor_stat(self) -> type[NeighborStat]:
         pass
 
     def get_min_nbor_dist(

@@ -3,7 +3,6 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
     Optional,
 )
 
@@ -56,7 +55,7 @@ class DOSModel(DPModelCommon, DPDOSModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,

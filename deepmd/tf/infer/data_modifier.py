@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-from typing import (
-    List,
-    Tuple,
-)
 
 import numpy as np
 
@@ -47,8 +43,8 @@ class DipoleChargeModifier(DeepDipole):
     def __init__(
         self,
         model_name: str,
-        model_charge_map: List[float],
-        sys_charge_map: List[float],
+        model_charge_map: list[float],
+        sys_charge_map: list[float],
         ewald_h: float = 1,
         ewald_beta: float = 1,
     ) -> None:
@@ -219,7 +215,7 @@ class DipoleChargeModifier(DeepDipole):
         box: np.ndarray,
         atype: np.ndarray,
         eval_fv: bool = True,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate the modification.
 
         Parameters

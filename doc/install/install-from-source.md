@@ -21,7 +21,7 @@ deepmd_source_dir=`pwd`
 ### Install Backend's Python interface
 
 First, check the Python version on your machine.
-Python 3.8 or above is required.
+Python 3.9 or above is required.
 
 ```bash
 python --version
@@ -95,7 +95,7 @@ deactivate
 If one has multiple python interpreters named something like python3.x, it can be specified by, for example
 
 ```bash
-virtualenv -p python3.8 $deepmd_venv
+virtualenv -p python3.9 $deepmd_venv
 ```
 
 One should remember to activate the virtual environment every time he/she uses DeePMD-kit.
