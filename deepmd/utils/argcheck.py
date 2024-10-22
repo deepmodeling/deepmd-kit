@@ -1387,14 +1387,16 @@ def descrpt_se_a_mask_args():
 
 
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
-    link_lf = make_link("loc_frame", "model/descriptor[loc_frame]")
-    link_se_e2_a = make_link("se_e2_a", "model/descriptor[se_e2_a]")
-    link_se_e2_r = make_link("se_e2_r", "model/descriptor[se_e2_r]")
-    link_se_e3 = make_link("se_e3", "model/descriptor[se_e3]")
-    link_se_a_tpe = make_link("se_a_tpe", "model/descriptor[se_a_tpe]")
-    link_hybrid = make_link("hybrid", "model/descriptor[hybrid]")
-    link_se_atten = make_link("se_atten", "model/descriptor[se_atten]")
-    link_se_atten_v2 = make_link("se_atten_v2", "model/descriptor[se_atten_v2]")
+    link_lf = make_link("loc_frame", "model[standard]/descriptor[loc_frame]")
+    link_se_e2_a = make_link("se_e2_a", "model[standard]/descriptor[se_e2_a]")
+    link_se_e2_r = make_link("se_e2_r", "model[standard]/descriptor[se_e2_r]")
+    link_se_e3 = make_link("se_e3", "model[standard]/descriptor[se_e3]")
+    link_se_a_tpe = make_link("se_a_tpe", "model[standard]/descriptor[se_a_tpe]")
+    link_hybrid = make_link("hybrid", "model[standard]/descriptor[hybrid]")
+    link_se_atten = make_link("se_atten", "model[standard]/descriptor[se_atten]")
+    link_se_atten_v2 = make_link(
+        "se_atten_v2", "model[standard]/descriptor[se_atten_v2]"
+    )
     doc_descrpt_type = "The type of the descritpor. See explanation below. \n\n\
 - `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
@@ -1692,7 +1694,7 @@ def fitting_variant_type_args():
 #  --- Modifier configurations: --- #
 def modifier_dipole_charge():
     doc_model_name = "The name of the frozen dipole model file."
-    doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model/fitting_net[dipole]/sel_type')}. "
+    doc_model_charge_map = f"The charge of the WFCC. The list length should be the same as the {make_link('sel_type', 'model[standard]/fitting_net[dipole]/sel_type')}. "
     doc_sys_charge_map = f"The charge of real atoms. The list length should be the same as the {make_link('type_map', 'model/type_map')}"
     doc_ewald_h = "The grid spacing of the FFT grid. Unit is A"
     doc_ewald_beta = f"The splitting parameter of Ewald sum. Unit is A^{-1}"
