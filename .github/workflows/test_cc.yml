@@ -11,7 +11,7 @@ name: Test C++
 jobs:
   testcc:
     name: Test C++
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         check_memleak: [true, false]

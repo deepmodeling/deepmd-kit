@@ -11,7 +11,7 @@ name: Build C++
 jobs:
   buildcc:
     name: Build C++
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         include:

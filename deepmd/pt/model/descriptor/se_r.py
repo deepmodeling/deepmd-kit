@@ -68,7 +68,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         resnet_dt: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         trainable: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
@@ -84,7 +83,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
         self.type_map = type_map

@@ -41,7 +41,6 @@ from deepmd.utils.path import (
 from .repformer_layer import (
     RepformerLayer,
 )
-from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
 if not hasattr(torch.ops.deepmd, "border_op"):
 
@@ -106,7 +105,6 @@ class DescrptBlockRepformers(DescriptorBlock):
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-        old_impl: bool = False,
     ):
         r"""
         The repformer descriptor block.
@@ -240,78 +238,48 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
         self.seed = seed
-        self.old_impl = old_impl
 
         self.g2_embd = MLPLayer(
             1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
         )
         layers = []
         for ii in range(nlayers):
-            if self.old_impl:
-                layers.append(
-                    RepformerLayerOld(
-                        self.rcut,
-                        self.rcut_smth,
-                        self.sel,
-                        self.ntypes,
-                        self.g1_dim,
-                        self.g2_dim,
-                        axis_neuron=self.axis_neuron,
-                        update_chnnl_2=(ii != nlayers - 1),
-                        update_g1_has_conv=self.update_g1_has_conv,
-                        update_g1_has_drrd=self.update_g1_has_drrd,
-                        update_g1_has_grrg=self.update_g1_has_grrg,
-                        update_g1_has_attn=self.update_g1_has_attn,
-                        update_g2_has_g1g1=self.update_g2_has_g1g1,
-                        update_g2_has_attn=self.update_g2_has_attn,
-                        update_h2=self.update_h2,
-                        attn1_hidden=self.attn1_hidden,
-                        attn1_nhead=self.attn1_nhead,
-                        attn2_has_gate=self.attn2_has_gate,
-                        attn2_hidden=self.attn2_hidden,
-                        attn2_nhead=self.attn2_nhead,
-                        activation_function=self.activation_function,
-                        update_style=self.update_style,
-                        smooth=self.smooth,
-                    )
+            layers.append(
+                RepformerLayer(
+                    self.rcut,
+                    self.rcut_smth,
+                    self.sel,
+                    self.ntypes,
+                    self.g1_dim,
+                    self.g2_dim,
+                    axis_neuron=self.axis_neuron,
+                    update_chnnl_2=(ii != nlayers - 1),
+                    update_g1_has_conv=self.update_g1_has_conv,
+                    update_g1_has_drrd=self.update_g1_has_drrd,
+                    update_g1_has_grrg=self.update_g1_has_grrg,
+                    update_g1_has_attn=self.update_g1_has_attn,
+                    update_g2_has_g1g1=self.update_g2_has_g1g1,
+                    update_g2_has_attn=self.update_g2_has_attn,
+                    update_h2=self.update_h2,
+                    attn1_hidden=self.attn1_hidden,
+                    attn1_nhead=self.attn1_nhead,
+                    attn2_has_gate=self.attn2_has_gate,
+                    attn2_hidden=self.attn2_hidden,
+                    attn2_nhead=self.attn2_nhead,
+                    activation_function=self.activation_function,
+                    update_style=self.update_style,
+                    update_residual=self.update_residual,
+                    update_residual_init=self.update_residual_init,
+                    smooth=self.smooth,
+                    trainable_ln=self.trainable_ln,
+                    ln_eps=self.ln_eps,
+                    precision=precision,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                    g1_out_conv=self.g1_out_conv,
+                    g1_out_mlp=self.g1_out_mlp,
+                    seed=child_seed(child_seed(seed, 1), ii),
                 )
-            else:
-                layers.append(
-                    RepformerLayer(
-                        self.rcut,
-                        self.rcut_smth,
-                        self.sel,
-                        self.ntypes,
-                        self.g1_dim,
-                        self.g2_dim,
-                        axis_neuron=self.axis_neuron,
-                        update_chnnl_2=(ii != nlayers - 1),
-                        update_g1_has_conv=self.update_g1_has_conv,
-                        update_g1_has_drrd=self.update_g1_has_drrd,
-                        update_g1_has_grrg=self.update_g1_has_grrg,
-                        update_g1_has_attn=self.update_g1_has_attn,
-                        update_g2_has_g1g1=self.update_g2_has_g1g1,
-                        update_g2_has_attn=self.update_g2_has_attn,
-                        update_h2=self.update_h2,
-                        attn1_hidden=self.attn1_hidden,
-                        attn1_nhead=self.attn1_nhead,
-                        attn2_has_gate=self.attn2_has_gate,
-                        attn2_hidden=self.attn2_hidden,
-                        attn2_nhead=self.attn2_nhead,
-                        activation_function=self.activation_function,
-                        update_style=self.update_style,
-                        update_residual=self.update_residual,
-                        update_residual_init=self.update_residual_init,
-                        smooth=self.smooth,
-                        trainable_ln=self.trainable_ln,
-                        ln_eps=self.ln_eps,
-                        precision=precision,
-                        use_sqrt_nnei=self.use_sqrt_nnei,
-                        g1_out_conv=self.g1_out_conv,
-                        g1_out_mlp=self.g1_out_mlp,
-                        seed=child_seed(child_seed(seed, 1), ii),
-                    )
-                )
+            )
         self.layers = torch.nn.ModuleList(layers)
 
         wanted_shape = (self.ntypes, self.nnei, 4)
