@@ -5,16 +5,13 @@ from __future__ import (
 
 import math
 import warnings
-from typing import (
-    TypeAlias,
-)
 
 import paddle
 from paddle import (
     Tensor,
 )
 
-PaddleGenerator: TypeAlias = paddle.base.libpaddle.Generator
+PaddleGenerator = paddle.base.libpaddle.Generator
 
 # Copyright (c) 2024 The PyTorch Authors. All rights reserved.
 #
