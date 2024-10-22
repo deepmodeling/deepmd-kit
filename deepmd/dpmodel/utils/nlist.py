@@ -131,7 +131,7 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = xp.concatenate(
-            [rr, xp.ones([batch_size, nloc, nsel - nnei]) + rcut],  # pylint: disable=no-explicit-dtype
+            [rr, xp.ones([batch_size, nloc, nsel - nnei], dtype=rr.dtype) + rcut],
             axis=-1,
         )
         nlist = xp.concatenate(
@@ -277,7 +277,7 @@ def extend_coord_with_ghosts(
     """
     xp = array_api_compat.array_namespace(coord, atype)
     nf, nloc = atype.shape
-    aidx = xp.tile(xp.arange(nloc)[xp.newaxis, :], (nf, 1))  # pylint: disable=no-explicit-dtype
+    aidx = xp.tile(xp.arange(nloc, dtype=xp.int64)[xp.newaxis, :], (nf, 1))
     if cell is None:
         nall = nloc
         extend_coord = coord
@@ -289,9 +289,9 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
         nbuff = xp.max(nbuff, axis=0)
-        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1)  # pylint: disable=no-explicit-dtype
-        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1)  # pylint: disable=no-explicit-dtype
-        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1)  # pylint: disable=no-explicit-dtype
+        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1, dtype=nbuff.dtype)
+        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1, dtype=nbuff.dtype)
+        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1, dtype=nbuff.dtype)
         xyz = xp.linalg.outer(xi, xp.asarray([1, 0, 0]))[:, xp.newaxis, xp.newaxis, :]
         xyz = (
             xyz
