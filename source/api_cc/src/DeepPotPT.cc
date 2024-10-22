@@ -168,7 +168,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-    if (do_message_passing == 1 && nghost > 0) {
+    if (do_message_passing == 1) {
       int nswap = lmp_list.nswap;
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
@@ -196,12 +196,6 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       comm_dict.insert("recv_num", recvnum_tensor);
       comm_dict.insert("communicator", communicator_tensor);
     }
-    if (do_message_passing == 1 && nghost == 0) {
-      // for the situation that no ghost atoms (e.g. serial nopbc)
-      // set the mapping arange(nloc) is enough
-      auto option = torch::TensorOptions().device(device).dtype(torch::kInt64);
-      mapping_tensor = at::arange(nloc_real, option).unsqueeze(0);
-    }
   }
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
@@ -224,7 +218,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      (do_message_passing == 1 && nghost > 0)
+      (do_message_passing == 1 )
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
                             firstneigh_tensor, mapping_tensor, fparam_tensor,
