@@ -162,6 +162,42 @@ extern void DP_DeepPotCompute(DP_DeepPot* dp,
                               double* atomic_virial);
 
 /**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP with spin input. (double version)
+ * @attention The number of frames is assumed to be 1.
+ * @param[in] dp The DP to use.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be 
+ *of size natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputeSP(DP_DeepPot* dp,
+                              const int natom,
+                              const double* coord,
+                              const double* spin,
+                              const int* atype,
+                              const double* cell,
+                              double* energy,
+                              double* force,
+                              double* force_mag,
+                              double* virial,
+                              double* atomic_energy,
+                              double* atomic_virial);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP. (float version)
  * @attention The number of frames is assumed to be 1.
  * @param[in] dp The DP to use.
@@ -188,6 +224,42 @@ extern void DP_DeepPotComputef(DP_DeepPot* dp,
                                const float* cell,
                                double* energy,
                                float* force,
+                               float* virial,
+                               float* atomic_energy,
+                               float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP with spin input. (float version)
+ * @attention The number of frames is assumed to be 1.
+ * @param[in] dp The DP to use.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be 
+ *of size natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputefSP(DP_DeepPot* dp,
+                               const int natom,
+                               const float* coord,
+                               const float* spin,
+                               const int* atype,
+                               const float* cell,
+                               double* energy,
+                               float* force,
+                               float* force_mag,
                                float* virial,
                                float* atomic_energy,
                                float* atomic_virial);
@@ -340,6 +412,50 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
                                double* atomic_virial);
 
 /**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP with spin input. (double version)
+ * @version 2
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
+ *nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag The magnetic force on each atom.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotCompute2SP(DP_DeepPot* dp,
+                               const int nframes,
+                               const int natom,
+                               const double* coord,
+                               const double* spin,
+                               const int* atype,
+                               const double* cell,
+                               const double* fparam,
+                               const double* aparam,
+                               double* energy,
+                               double* force,
+                               double* force_mag,
+                               double* virial,
+                               double* atomic_energy,
+                               double* atomic_virial);
+
+/**
  * @brief Evaluate the energy, force and virial by using a DP. (float version)
  * @version 2
  * @param[in] dp The DP to use.
@@ -374,6 +490,50 @@ extern void DP_DeepPotComputef2(DP_DeepPot* dp,
                                 const float* aparam,
                                 double* energy,
                                 float* force,
+                                float* virial,
+                                float* atomic_energy,
+                                float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP with spin input. (float version)
+ * @version 2
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
+ *nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag The magnetic force on each atom.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
+extern void DP_DeepPotComputef2SP(DP_DeepPot* dp,
+                                const int nframes,
+                                const int natom,
+                                const float* coord,
+                                const float* spin,
+                                const int* atype,
+                                const float* cell,
+                                const float* fparam,
+                                const float* aparam,
+                                double* energy,
+                                float* force,
+                                float* force_mag,
                                 float* virial,
                                 float* atomic_energy,
                                 float* atomic_virial);

@@ -893,11 +893,20 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   } else {
     if (numb_models == 1) {
-      // need support for spin
-      try {
-        deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
-      } catch (deepmd_compat::deepmd_exception &e) {
-        error->one(FLERR, e.what());
+      if (!atom->sp_flag) {
+        try {
+          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
+        } catch (deepmd_compat::deepmd_exception &e) {
+          error->one(FLERR, e.what());
+        }
+      } else {
+        try {
+          const vector<double> &dcoord_const = dcoord;
+          const vector<double> &dspin_const = dspin;
+          deep_pot.compute(dener, dforce, dforce_mag, dvirial, dcoord_const, dspin_const, dtype, dbox);
+        } catch (deepmd_compat::deepmd_exception &e) {
+          error->one(FLERR, e.what());
+        }
       }
     } else {
       error->all(FLERR, "Serial version does not support model devi");
