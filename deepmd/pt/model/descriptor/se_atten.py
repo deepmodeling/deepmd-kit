@@ -559,15 +559,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # nfnl x nnei x ng
                 gg = gg_s * gg_t + gg_s
 
-            if not self.compress:
-                input_r = torch.nn.functional.normalize(
-                    rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-                )
-                gg = self.dpa1_attention(
-                    gg, nlist_mask, input_r=input_r, sw=sw
-                )  # shape is [nframes*nloc, self.neei, out_size]
-                # nfnl x 4 x ng
-                xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+        if not self.compress:
+            input_r = torch.nn.functional.normalize(
+                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            # nfnl x 4 x ng
+            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
 
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
