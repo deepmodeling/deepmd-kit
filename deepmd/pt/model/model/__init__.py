@@ -100,7 +100,7 @@ def get_spin_model(model_params):
     if not model_params["spin"]["use_spin"] or isinstance(
         model_params["spin"]["use_spin"][0], int
     ):
-        use_spin = np.full(len(model_params["type_map"]), False)  # pylint: disable=no-explicit-dtype
+        use_spin = np.full(len(model_params["type_map"]), False, dtype=bool)
         use_spin[model_params["spin"]["use_spin"]] = True
         model_params["spin"]["use_spin"] = use_spin.tolist()
     # include virtual spin and placeholder types
