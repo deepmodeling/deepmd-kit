@@ -123,11 +123,9 @@ class Border : public torch::autograd::Function<Border> {
       torch::Tensor isendlist;
       torch::Tensor send_g1_tensor;
       FPTYPE* send_g1;
-      if(nsend != 0)
-      {
-        isendlist =
-            torch::from_blob(sendlist[iswap], {nsend}, int32_options)
-                .to(recv_g1_tensor.device());
+      if (nsend != 0) {
+        isendlist = torch::from_blob(sendlist[iswap], {nsend}, int32_options)
+                        .to(recv_g1_tensor.device());
         send_g1_tensor = recv_g1_tensor.index_select(0, isendlist);
         send_g1 = send_g1_tensor.data_ptr<FPTYPE>();
       }
@@ -258,15 +256,13 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor recv_g1_tensor;
     FPTYPE* recv_g1;
     FPTYPE* send_g1;
-    if(nswap != 0)
-    {
+    if (nswap != 0) {
       send_g1_tensor = d_local_g1_tensor;
       int max_recvnum = sendnum_tensor.max().item<int>();
       auto options = torch::TensorOptions()
-                        .dtype(d_local_g1_tensor.dtype())
-                        .device(d_local_g1_tensor.device());
-      recv_g1_tensor =
-          torch::empty({max_recvnum, tensor_size}, options);
+                         .dtype(d_local_g1_tensor.dtype())
+                         .device(d_local_g1_tensor.device());
+      recv_g1_tensor = torch::empty({max_recvnum, tensor_size}, options);
       recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>();
       send_g1 = send_g1_tensor.data_ptr<FPTYPE>() + ntotal * tensor_size;
     }

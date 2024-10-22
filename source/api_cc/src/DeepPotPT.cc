@@ -218,7 +218,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      (do_message_passing == 1 )
+      (do_message_passing == 1)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
                             firstneigh_tensor, mapping_tensor, fparam_tensor,
