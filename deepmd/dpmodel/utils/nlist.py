@@ -277,6 +277,7 @@ def extend_coord_with_ghosts(
     """
     xp = array_api_compat.array_namespace(coord, atype)
     nf, nloc = atype.shape
+    # int64 for index
     aidx = xp.tile(xp.arange(nloc, dtype=xp.int64)[xp.newaxis, :], (nf, 1))
     if cell is None:
         nall = nloc
