@@ -16,11 +16,6 @@ from deepmd.utils.errors import (
     OutOfMemoryError,
 )
 
-try:
-    import paddle
-except ModuleNotFoundError:
-    pass
-
 log = logging.getLogger(__name__)
 
 
@@ -241,6 +236,12 @@ class AutoBatchSize(ABC):
                 xp = array_api_compat.array_namespace(r[0])
                 ret = xp.concat(r, axis=0)
             elif str(r[0].__class__) == "<class 'paddle.Tensor'>":
+                try:
+                    import paddle
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError(
+                        "The 'paddlepaddle' is required but not installed."
+                    ) from e
                 ret = paddle.concat(r, axis=0)
             else:
                 raise RuntimeError(f"Unexpected result type {type(r[0])}")

@@ -78,6 +78,23 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 
 :::
 
+:::{tab-item} Paddle {{ paddle_icon }}
+
+To install Paddle, run
+
+```sh
+# cu123
+python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu123/
+# cu118
+python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu118/
+# cpu
+python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+```
+
+Follow [Paddle documentation](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/install/pip/linux-pip.html) to install Paddle built against different CUDA versions or without CUDA.
+
+:::
+
 ::::
 
 It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
@@ -96,47 +113,6 @@ If one has multiple python interpreters named something like python3.x, it can b
 
 ```bash
 virtualenv -p python3.9 $deepmd_venv
-```
-
-:::
-
-:::{tab-item} Paddle {{ paddle_icon }}
-
-To install Paddle, run
-
-```sh
-# cu123
-python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu123/
-# cu118
-python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu118/
-# cpu
-python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
-```
-
-Follow [Paddle documentation](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/install/pip/linux-pip.html) to install Paddle built against different CUDA versions or without CUDA.
-
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install Paddle from [conda-forge](https://conda-forge.org).
-
-:::
-
-::::
-
-It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
-
-```bash
-source $deepmd_venv/bin/activate
-```
-
-if one wants to skip out of the virtual environment, he/she can do
-
-```bash
-deactivate
-```
-
-If one has multiple python interpreters named something like python3.x, it can be specified by, for example
-
-```bash
-virtualenv -p python3.8 $deepmd_venv
 ```
 
 One should remember to activate the virtual environment every time he/she uses DeePMD-kit.

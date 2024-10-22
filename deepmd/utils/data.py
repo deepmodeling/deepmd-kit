@@ -258,7 +258,7 @@ class DeepmdData:
         i = bisect.bisect_right(self.prefix_sum, index)
         frames = self._load_set(self.dirs[i])
         frame = self._get_subdata(frames, index - self.prefix_sum[i])
-        frame = self.reformat_data_paddle(frame)
+        frame = self.reformat_data_torch(frame)
         frame["fid"] = index
         return frame
 
@@ -493,26 +493,7 @@ class DeepmdData:
                 pass
             else:
                 if kk in data and self.data_dict[kk]["atomic"]:
-                    data[kk] = data[kk].reshape(-1, self.data_dict[kk]["ndof"])
-        data["atype"] = data["type"]
-        if not self.pbc:
-            data["box"] = None
-        return data
-
-    def reformat_data_paddle(self, data):
-        """Modify the data format for the requirements of Paddle backend.
-
-        Parameters
-        ----------
-        data
-            original data
-        """
-        for kk in self.data_dict.keys():
-            if "find_" in kk:
-                pass
-            else:
-                if kk in data and self.data_dict[kk]["atomic"]:
-                    data[kk] = data[kk].reshape([-1, self.data_dict[kk]["ndof"]])
+                    data[kk] = data[kk].reshape((-1, self.data_dict[kk]["ndof"]))
         data["atype"] = data["type"]
         if not self.pbc:
             data["box"] = None

@@ -213,7 +213,7 @@ test-command = [
     "dp_ipi",
     "pytest {project}/source/tests/tf/test_lammps.py"
 ]
-test-extras = ["cpu", "test", "lmp", "ipi", "torch"]
+test-extras = ["cpu", "test", "lmp", "ipi", "torch", "paddle"]
 build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated
