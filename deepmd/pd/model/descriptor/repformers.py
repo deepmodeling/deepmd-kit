@@ -42,7 +42,6 @@ from deepmd.utils.path import (
 from .repformer_layer import (
     RepformerLayer,
 )
-from .repformer_layer_old_impl import RepformerLayer as RepformerLayerOld
 
 # if not hasattr(paddle.ops.deepmd, "border_op"):
 
@@ -103,7 +102,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
-        old_impl: bool = False,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
     ):
         r"""
         The repformer descriptor block.
@@ -172,7 +173,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             The precision of the embedding net parameters.
         smooth : bool, optional
             Whether to use smoothness in processes such as attention weights calculation.
-        exclude_types : List[List[int]], optional
+        exclude_types : list[list[int]], optional
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float, optional
@@ -180,6 +181,12 @@ class DescrptBlockRepformers(DescriptorBlock):
             For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
         trainable_ln : bool, optional
             Whether to use trainable shift and scale weights in layer normalization.
+        use_sqrt_nnei : bool, optional
+            Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly.
+        g1_out_conv : bool, optional
+            Whether to put the convolutional update of g1 separately outside the concatenated MLP update.
+        g1_out_mlp : bool, optional
+            Whether to put the self MLP update of g1 separately outside the concatenated MLP update.
         ln_eps : float, optional
             The epsilon value for layer normalization.
         seed : int, optional
@@ -220,6 +227,9 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.direct_dist = direct_dist
         self.act = ActivationFn(activation_function)
         self.smooth = smooth
+        self.use_sqrt_nnei = use_sqrt_nnei
+        self.g1_out_conv = g1_out_conv
+        self.g1_out_mlp = g1_out_mlp
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
@@ -228,75 +238,48 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
         self.seed = seed
-        self.old_impl = old_impl
 
         self.g2_embd = MLPLayer(
             1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
         )
         layers = []
         for ii in range(nlayers):
-            if self.old_impl:
-                layers.append(
-                    RepformerLayerOld(
-                        self.rcut,
-                        self.rcut_smth,
-                        self.sel,
-                        self.ntypes,
-                        self.g1_dim,
-                        self.g2_dim,
-                        axis_neuron=self.axis_neuron,
-                        update_chnnl_2=(ii != nlayers - 1),
-                        update_g1_has_conv=self.update_g1_has_conv,
-                        update_g1_has_drrd=self.update_g1_has_drrd,
-                        update_g1_has_grrg=self.update_g1_has_grrg,
-                        update_g1_has_attn=self.update_g1_has_attn,
-                        update_g2_has_g1g1=self.update_g2_has_g1g1,
-                        update_g2_has_attn=self.update_g2_has_attn,
-                        update_h2=self.update_h2,
-                        attn1_hidden=self.attn1_hidden,
-                        attn1_nhead=self.attn1_nhead,
-                        attn2_has_gate=self.attn2_has_gate,
-                        attn2_hidden=self.attn2_hidden,
-                        attn2_nhead=self.attn2_nhead,
-                        activation_function=self.activation_function,
-                        update_style=self.update_style,
-                        smooth=self.smooth,
-                    )
+            layers.append(
+                RepformerLayer(
+                    self.rcut,
+                    self.rcut_smth,
+                    self.sel,
+                    self.ntypes,
+                    self.g1_dim,
+                    self.g2_dim,
+                    axis_neuron=self.axis_neuron,
+                    update_chnnl_2=(ii != nlayers - 1),
+                    update_g1_has_conv=self.update_g1_has_conv,
+                    update_g1_has_drrd=self.update_g1_has_drrd,
+                    update_g1_has_grrg=self.update_g1_has_grrg,
+                    update_g1_has_attn=self.update_g1_has_attn,
+                    update_g2_has_g1g1=self.update_g2_has_g1g1,
+                    update_g2_has_attn=self.update_g2_has_attn,
+                    update_h2=self.update_h2,
+                    attn1_hidden=self.attn1_hidden,
+                    attn1_nhead=self.attn1_nhead,
+                    attn2_has_gate=self.attn2_has_gate,
+                    attn2_hidden=self.attn2_hidden,
+                    attn2_nhead=self.attn2_nhead,
+                    activation_function=self.activation_function,
+                    update_style=self.update_style,
+                    update_residual=self.update_residual,
+                    update_residual_init=self.update_residual_init,
+                    smooth=self.smooth,
+                    trainable_ln=self.trainable_ln,
+                    ln_eps=self.ln_eps,
+                    precision=precision,
+                    use_sqrt_nnei=self.use_sqrt_nnei,
+                    g1_out_conv=self.g1_out_conv,
+                    g1_out_mlp=self.g1_out_mlp,
+                    seed=child_seed(child_seed(seed, 1), ii),
                 )
-            else:
-                layers.append(
-                    RepformerLayer(
-                        self.rcut,
-                        self.rcut_smth,
-                        self.sel,
-                        self.ntypes,
-                        self.g1_dim,
-                        self.g2_dim,
-                        axis_neuron=self.axis_neuron,
-                        update_chnnl_2=(ii != nlayers - 1),
-                        update_g1_has_conv=self.update_g1_has_conv,
-                        update_g1_has_drrd=self.update_g1_has_drrd,
-                        update_g1_has_grrg=self.update_g1_has_grrg,
-                        update_g1_has_attn=self.update_g1_has_attn,
-                        update_g2_has_g1g1=self.update_g2_has_g1g1,
-                        update_g2_has_attn=self.update_g2_has_attn,
-                        update_h2=self.update_h2,
-                        attn1_hidden=self.attn1_hidden,
-                        attn1_nhead=self.attn1_nhead,
-                        attn2_has_gate=self.attn2_has_gate,
-                        attn2_hidden=self.attn2_hidden,
-                        attn2_nhead=self.attn2_nhead,
-                        activation_function=self.activation_function,
-                        update_style=self.update_style,
-                        update_residual=self.update_residual,
-                        update_residual_init=self.update_residual_init,
-                        smooth=self.smooth,
-                        trainable_ln=self.trainable_ln,
-                        ln_eps=self.ln_eps,
-                        precision=precision,
-                        seed=child_seed(child_seed(seed, 1), ii),
-                    )
-                )
+            )
         self.layers = paddle.nn.LayerList(layers)
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -413,7 +396,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         atype = extended_atype[:, :nloc]
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
-        nlist = paddle.where(exclude_mask != 0, nlist, -1)
+        nlist = paddle.where(exclude_mask != 0, nlist, paddle.full_like(nlist, -1))
         # nb x nloc x nnei x 4, nb x nloc x nnei x 3, nb x nloc x nnei x 1
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
@@ -501,7 +484,13 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         # nb x nloc x 3 x ng2
         h2g2 = RepformerLayer._cal_hg(
-            g2, h2, nlist_mask, sw, smooth=self.smooth, epsilon=self.epsilon
+            g2,
+            h2,
+            nlist_mask,
+            sw,
+            smooth=self.smooth,
+            epsilon=self.epsilon,
+            use_sqrt_nnei=self.use_sqrt_nnei,
         )
         # (nb x nloc) x ng2 x 3
         rot_mat = paddle.transpose(h2g2, (0, 1, 3, 2))
@@ -518,11 +507,11 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
