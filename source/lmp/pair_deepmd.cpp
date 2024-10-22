@@ -903,7 +903,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
         try {
           const vector<double> &dcoord_const = dcoord;
           const vector<double> &dspin_const = dspin;
-          deep_pot.compute(dener, dforce, dforce_mag, dvirial, dcoord_const, dspin_const, dtype, dbox);
+          deep_pot.compute(dener, dforce, dforce_mag, dvirial, dcoord_const,
+                           dspin_const, dtype, dbox);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }

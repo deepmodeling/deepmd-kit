@@ -695,7 +695,7 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
                         const std::vector<VALUETYPE>& fparam_,
                         const std::vector<VALUETYPE>& aparam_,
                         const bool atomic) {
-    std::cout<<"not support"<<std::endl;
+  std::cout << "not support" << std::endl;
 }
 
 template void DeepPotTF::compute<double, ENERGYTYPE>(
@@ -757,7 +757,6 @@ template void DeepPotTF::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
     const bool atomic);
-
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotTF::compute(ENERGYVTYPE& dener,
@@ -1254,8 +1253,8 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const std::vector<double>& fparam,
                          const std::vector<double>& aparam,
                          const bool atomic) {
-  compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord, spin, atype, box,
-          fparam, aparam, atomic);
+  compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord, spin,
+          atype, box, fparam, aparam, atomic);
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<float>& force,
@@ -1270,8 +1269,8 @@ void DeepPotTF::computew(std::vector<double>& ener,
                          const std::vector<float>& fparam,
                          const std::vector<float>& aparam,
                          const bool atomic) {
-  compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord, spin, atype, box,
-          fparam, aparam, atomic);
+  compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord, spin,
+          atype, box, fparam, aparam, atomic);
 }
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<double>& force,

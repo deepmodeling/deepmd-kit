@@ -74,10 +74,10 @@ class DeepPotPT : public DeepPotBase {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
-  
-   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+
+  /**
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
@@ -86,8 +86,8 @@ class DeepPotPT : public DeepPotBase {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -156,10 +156,10 @@ class DeepPotPT : public DeepPotBase {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
-  
-   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+
+  /**
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
@@ -168,8 +168,8 @@ class DeepPotPT : public DeepPotBase {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.

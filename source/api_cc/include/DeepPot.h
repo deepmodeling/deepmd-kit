@@ -89,8 +89,8 @@ class DeepPotBase {
   /** @} */
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @note The double precision interface is used by i-PI, GROMACS, ABACUS, and
    *CP2k.
    * @param[out] ener The system energy.
@@ -101,8 +101,8 @@ class DeepPotBase {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -204,8 +204,8 @@ class DeepPotBase {
   /** @} */
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @note The double precision interface is used by LAMMPS and AMBER.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
@@ -215,8 +215,8 @@ class DeepPotBase {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -435,15 +435,16 @@ class DeepPot {
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
   /**
-   * @brief Evaluate the energy, force, magnetic force and virial by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force and virial by using this
+   *DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
    * @param[out] virial The virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -530,15 +531,16 @@ class DeepPot {
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
   /**
-   * @brief Evaluate the energy, force, magnetic force and virial by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force and virial by using this
+   *DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
    * @param[out] virial The virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -632,8 +634,8 @@ class DeepPot {
   /** @} */
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
@@ -642,8 +644,8 @@ class DeepPot {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -742,8 +744,8 @@ class DeepPot {
   /** @} */
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
@@ -752,8 +754,8 @@ class DeepPot {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -1076,15 +1078,16 @@ class DeepPotModelDevi {
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
 
   /**
-   * @brief Evaluate the energy, force, magnetic force and virial by using these DP models with spin input.
+   * @brief Evaluate the energy, force, magnetic force and virial by using these
+   *DP models with spin input.
    * @param[out] all_ener The system energies of all models.
    * @param[out] all_force The forces on each atom of all models.
    * @param[out] all_force_mag The magnetic forces on each atom of all models.
    * @param[out] all_virial The virials of all models.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.
@@ -1157,8 +1160,8 @@ class DeepPotModelDevi {
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using these DP models with spin input.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using these DP models with spin input.
    * @param[out] all_ener The system energies of all models.
    * @param[out] all_force The forces on each atom of all models.
    * @param[out] all_force_mag The magnetic forces on each atom of all models.
@@ -1167,8 +1170,8 @@ class DeepPotModelDevi {
    * @param[out] all_atom_virial The atomic virials of all models.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9.

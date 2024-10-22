@@ -98,59 +98,61 @@ inline void _DP_DeepPotCompute<float>(DP_DeepPot *dp,
 // support spin
 template <typename FPTYPE>
 inline void _DP_DeepPotComputeSP(DP_DeepPot *dp,
-                               const int nframes,
-                               const int natom,
-                               const FPTYPE *coord,
-                               const FPTYPE *spin,
-                               const int *atype,
-                               const FPTYPE *cell,
-                               const FPTYPE *fparam,
-                               const FPTYPE *aparam,
-                               double *energy,
-                               FPTYPE *force,
-                               FPTYPE *force_mag,
-                               FPTYPE *virial,
-                               FPTYPE *atomic_energy,
-                               FPTYPE *atomic_virial);
+                                 const int nframes,
+                                 const int natom,
+                                 const FPTYPE *coord,
+                                 const FPTYPE *spin,
+                                 const int *atype,
+                                 const FPTYPE *cell,
+                                 const FPTYPE *fparam,
+                                 const FPTYPE *aparam,
+                                 double *energy,
+                                 FPTYPE *force,
+                                 FPTYPE *force_mag,
+                                 FPTYPE *virial,
+                                 FPTYPE *atomic_energy,
+                                 FPTYPE *atomic_virial);
 
 template <>
 inline void _DP_DeepPotComputeSP<double>(DP_DeepPot *dp,
-                                       const int nframes,
-                                       const int natom,
-                                       const double *coord,
-                                       const double *spin,
-                                       const int *atype,
-                                       const double *cell,
-                                       const double *fparam,
-                                       const double *aparam,
-                                       double *energy,
-                                       double *force,
-                                       double *force_mag,
-                                       double *virial,
-                                       double *atomic_energy,
-                                       double *atomic_virial) {
-  DP_DeepPotCompute2SP(dp, nframes, natom, coord, spin, atype, cell, fparam, aparam,
-                     energy, force, force_mag, virial, atomic_energy, atomic_virial);
+                                         const int nframes,
+                                         const int natom,
+                                         const double *coord,
+                                         const double *spin,
+                                         const int *atype,
+                                         const double *cell,
+                                         const double *fparam,
+                                         const double *aparam,
+                                         double *energy,
+                                         double *force,
+                                         double *force_mag,
+                                         double *virial,
+                                         double *atomic_energy,
+                                         double *atomic_virial) {
+  DP_DeepPotCompute2SP(dp, nframes, natom, coord, spin, atype, cell, fparam,
+                       aparam, energy, force, force_mag, virial, atomic_energy,
+                       atomic_virial);
 }
 
 template <>
 inline void _DP_DeepPotComputeSP<float>(DP_DeepPot *dp,
-                                      const int nframes,
-                                      const int natom,
-                                      const float *coord,
-                                      const float *spin,
-                                      const int *atype,
-                                      const float *cell,
-                                      const float *fparam,
-                                      const float *aparam,
-                                      double *energy,
-                                      float *force,
-                                      float *force_mag,
-                                      float *virial,
-                                      float *atomic_energy,
-                                      float *atomic_virial) {
-  DP_DeepPotComputef2SP(dp, nframes, natom, coord, spin, atype, cell, fparam, aparam,
-                      energy, force, force_mag, virial, atomic_energy, atomic_virial);
+                                        const int nframes,
+                                        const int natom,
+                                        const float *coord,
+                                        const float *spin,
+                                        const int *atype,
+                                        const float *cell,
+                                        const float *fparam,
+                                        const float *aparam,
+                                        double *energy,
+                                        float *force,
+                                        float *force_mag,
+                                        float *virial,
+                                        float *atomic_energy,
+                                        float *atomic_virial) {
+  DP_DeepPotComputef2SP(dp, nframes, natom, coord, spin, atype, cell, fparam,
+                        aparam, energy, force, force_mag, virial, atomic_energy,
+                        atomic_virial);
 }
 
 template <typename FPTYPE>
@@ -941,15 +943,16 @@ class DeepPot {
   };
   // support spin
   /**
-   * @brief Evaluate the energy, force, magnetic force and virial by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force and virial by using this
+   *DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
    * @param[out] virial The virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9 (PBC) or empty (no PBC).
@@ -999,9 +1002,9 @@ class DeepPot {
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
-    _DP_DeepPotComputeSP<VALUETYPE>(dp, nframes, natoms, coord_, spin_, atype_, box_,
-                                  fparam__, aparam__, ener_, force_, force_mag_, virial_,
-                                  nullptr, nullptr);
+    _DP_DeepPotComputeSP<VALUETYPE>(dp, nframes, natoms, coord_, spin_, atype_,
+                                    box_, fparam__, aparam__, ener_, force_,
+                                    force_mag_, virial_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -1072,8 +1075,8 @@ class DeepPot {
   };
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy, and atomic virial
-   *by using this DP with spin input.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
    * @param[out] force_mag The magnetic force on each atom.
@@ -1082,8 +1085,8 @@ class DeepPot {
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be of size
-   *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9 (PBC) or empty (no PBC).
@@ -1140,9 +1143,9 @@ class DeepPot {
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
-    _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, spin_, atype_, box_,
-                                  fparam__, aparam__, ener_, force_, force_mag_, virial_,
-                                  atomic_ener_, atomic_virial_);
+    _DP_DeepPotCompute<VALUETYPE>(
+        dp, nframes, natoms, coord_, spin_, atype_, box_, fparam__, aparam__,
+        ener_, force_, force_mag_, virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
