@@ -127,7 +127,7 @@ def get_pd_version(pd_path: Optional[Union[str, Path]]) -> str:
     Parameters
     ----------
     pd_path : str or Path
-        pd Python library path
+        Paddle Python library path, e.g. "/python3.10/site-packages/paddle/"
 
     Returns
     -------

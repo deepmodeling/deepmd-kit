@@ -217,11 +217,11 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 {{ pytorch_icon }} The path to PyTorch Python library. If not given, by default, the installer only finds PyTorch under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest PyTorch (or the environment variable `PYTORCH_VERSION` if given) from PyPI will be built against.
 :::
 
-:::{envvar} PADDLE_ROOT
+:::{envvar} PADDLE_INFERENCE_DIR
 
-**Type**: Path; **Default**: Detected automatically
+**Type**: Path; **Default**: None
 
-{{ paddle_icon }} The path to Paddle Python library. If not given, by default, the installer only finds Paddle under the user site-package directory (`site.getusersitepackages()`) or the system site-package directory (`sysconfig.get_path("purelib")`) due to the limitation of [PEP-517](https://peps.python.org/pep-0517/). If not found, the latest Paddle (or the environment variable `PADDLE_VERSION` if given) from PyPI will be built against.
+{{ paddle_icon }} The path to Paddle inference library, e.g. `/path/to/paddle_inference_install_dir`. If `DP_ENABLE_PADDLE` is enabled, it needs to be specified manually; otherwise, installation will fail.
 :::
 
 :::{envvar} DP_ENABLE_NATIVE_OPTIMIZATION

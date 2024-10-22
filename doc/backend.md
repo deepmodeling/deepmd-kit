@@ -52,7 +52,7 @@ NumPy 1.21 or above is required.
 
 ### Training
 
-When training and freezing a model, you can use `dp --tf` or `dp --pt` or `dp --pd` in the command line to switch the backend.
+When training and freezing a model, you can use `dp --tf`, `dp --pt` or `dp --pd` in the command line to switch the backend.
 
 ### Inference
 
