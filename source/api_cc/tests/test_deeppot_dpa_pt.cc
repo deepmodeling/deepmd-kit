@@ -310,4 +310,3 @@ TYPED_TEST(TestInferDeepPotDpaPtNopbc, cpu_build_nlist_atomic) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
   }
 }
-
