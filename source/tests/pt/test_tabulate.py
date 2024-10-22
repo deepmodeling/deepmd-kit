@@ -51,13 +51,10 @@ class TestDPTabulate(unittest.TestCase):
             1,
         )
 
-        print(type(dy_tf))
-
         dy_tf_numpy = dy_tf.numpy()
         dy_pt_numpy = dy_pt.detach().numpy()
 
         np.testing.assert_almost_equal(dy_tf_numpy, dy_pt_numpy, decimal=10)
-        print("test pass ---- dy_dx_s")
 
         dy2_tf = op_module.unaggregated_dy2_dx_s(
             tf.constant(self.y, dtype="double"),
@@ -79,7 +76,6 @@ class TestDPTabulate(unittest.TestCase):
         dy2_pt_numpy = dy2_pt.detach().numpy()
 
         np.testing.assert_almost_equal(dy2_tf_numpy, dy2_pt_numpy, decimal=10)
-        print("test pass ---- dy2_dx_s")
 
         dz_tf = op_module.unaggregated_dy_dx(
             tf.constant(self.y, dtype="double"),
@@ -97,14 +93,10 @@ class TestDPTabulate(unittest.TestCase):
             1,
         )
 
-        print("w: ", self.w.shape)  # 3, 4
-        print("dy_pt: ", dy_pt.shape)  # 4, 4
-
         dz_tf_numpy = dz_tf.numpy()
         dz_pt_numpy = dz_pt.detach().numpy()
 
         np.testing.assert_almost_equal(dz_tf_numpy, dz_pt_numpy, decimal=10)
-        print("test pass ---- dy_dx")
 
         dy2_tf = op_module.unaggregated_dy2_dx(
             tf.constant(self.y, dtype="double"),
@@ -128,7 +120,6 @@ class TestDPTabulate(unittest.TestCase):
         dy2_pt_numpy = dy2_pt.detach().numpy()
 
         np.testing.assert_almost_equal(dy2_tf_numpy, dy2_pt_numpy, decimal=10)
-        print("test pass ---- dy2_dx")
 
 
 if __name__ == "__main__":

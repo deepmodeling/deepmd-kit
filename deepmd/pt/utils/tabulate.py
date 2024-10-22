@@ -5,9 +5,6 @@ from functools import (
 )
 from typing import (
     Callable,
-    Dict,
-    List,
-    Tuple,
 )
 
 import numpy as np
@@ -52,9 +49,9 @@ class DPTabulate:
     def __init__(
         self,
         descrpt,
-        neuron: List[int],
+        neuron: list[int],
         type_one_side: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_fn: Callable[[torch.Tensor], torch.Tensor] = torch.tanh,
     ) -> None:
         """Constructor."""
@@ -118,7 +115,7 @@ class DPTabulate:
 
     def build(
         self, min_nbor_dist: float, extrapolate: float, stride0: float, stride1: float
-    ) -> Tuple[Dict[str, int], Dict[str, int]]:
+    ) -> tuple[dict[str, int], dict[str, int]]:
         r"""Build the tables for model compression.
 
         Parameters

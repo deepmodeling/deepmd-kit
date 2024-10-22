@@ -254,7 +254,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
-        self.compress = True
         self.table = DPTabulate(
             self,
             self.serialize()["neuron"],
