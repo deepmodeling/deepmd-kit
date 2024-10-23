@@ -181,8 +181,14 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       torch::Tensor sendnum_tensor =
           torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
       torch::Tensor communicator_tensor;
-      communicator_tensor = torch::from_blob(const_cast<void*>(lmp_list.world),
-                                             {1}, torch::kInt64);
+      if(lmp_list.world == 0)
+      {
+        communicator_tensor = torch::empty({1}, torch::kInt64);
+      }
+      else{
+        communicator_tensor = torch::from_blob(
+          const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+      }
 
       torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
       int total_send =

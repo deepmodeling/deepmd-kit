@@ -87,16 +87,19 @@ class Border : public torch::autograd::Function<Border> {
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
     int cuda_aware = 1;
-    int me;
+    int me = 0;
     MPI_Comm world;
     int world_size = 0;
-    unpack_communicator(communicator_tensor, world);
-    MPI_Comm_rank(world, &me);
-    MPI_Comm_size(world, &world_size);
+    if(mpi_init)
+    {
+      unpack_communicator(communicator_tensor, world);
+      MPI_Comm_rank(world, &me);
+      MPI_Comm_size(world, &world_size);
+    }
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (world_size != 1) {
+    if (world_size >= 1) {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
@@ -211,15 +214,18 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Initialized(&mpi_init);
     int world_size = 0;
     int cuda_aware = 1;
+    int me = 0;
     MPI_Comm world;
-    unpack_communicator(communicator_tensor, world);
-    int me;
-    MPI_Comm_rank(world, &me);
-    MPI_Comm_size(world, &world_size);
+    if(mpi_init)
+    {
+      unpack_communicator(communicator_tensor, world);
+      MPI_Comm_rank(world, &me);
+      MPI_Comm_size(world, &world_size);
+    }
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (world_size != 1) {
+    if (world_size >= 1) {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
