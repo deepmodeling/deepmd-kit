@@ -39,10 +39,4 @@ set.*/force.npy
 set.*/hessian.npy
 ```
 
-This system contains `Nframes` frames with the same atom number `Natoms`, the total number of elements contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
-
-| ID      | Property         | Raw file    | Unit   | Shape                                   | Description                                             |
-| ------- | ---------------- | ----------- | ------ | --------------------------------------- | ------------------------------------------------------- |
-| hessian | Hessian matrices | hessian.npy | eV/Å^2 | Nframes \* (Natoms \* 3 \* Natoms \* 3) | Second-order derivatives of energies w.r.t coordinates. |
-
-Note that the `hessian.npy` should contain the **full** Hessian matrices with shape of `(3Natoms * 3Natoms)` for each frame, rather than the upper or lower triangular matrices with shape of `(3Natoms * (3Natoms + 1) / 2)` for each frame.
+This system contains `Nframes` frames with the same atom number `Natoms`, the total number of elements contained in all frames is `Ntypes`. Note that the `hessian` file should contain the **full** Hessian matrices with shape of `(3Natoms * 3Natoms)` for each frame, rather than the upper or lower triangular matrices with shape of `(3Natoms * (3Natoms + 1) / 2)` for each frame.
