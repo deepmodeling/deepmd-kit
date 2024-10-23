@@ -452,7 +452,7 @@ def extend_coord_with_ghosts(
         # nf x 3
         # *2: ghost copies on + and - directions
         # +1: central cell
-        nbuff = torch.ceil(rcut / to_face).to(torch.long)
+        nbuff = torch.ceil(rcut / to_face).to(torch.int64)
         # 3
         nbuff = torch.amax(nbuff, dim=0)  # faster than torch.max
         nbuff_cpu = nbuff.cpu()
