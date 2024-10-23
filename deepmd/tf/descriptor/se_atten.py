@@ -2288,7 +2288,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
         tebd_suffix : str, optional
             Same as suffix.
         """
-        assert tebd_suffix == "", "DescrptDPA1Compat must use the same tebd_suffix as suffix!"
+        assert (
+            tebd_suffix == ""
+        ), "DescrptDPA1Compat must use the same tebd_suffix as suffix!"
         super().enable_compression(
             min_nbor_dist,
             graph,
