@@ -6,8 +6,12 @@ from typing import (
 from deepmd.common import (
     make_default_mesh,
 )
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 
 from ..common import (
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -19,6 +23,11 @@ if INSTALLED_TF:
     from deepmd.tf.env import (
         GLOBAL_TF_FLOAT_PRECISION,
         tf,
+    )
+if INSTALLED_JAX:
+    from deepmd.jax.common import to_jax_array as numpy_to_jax
+    from deepmd.jax.env import (
+        jnp,
     )
 
 
@@ -60,5 +69,19 @@ class ModelTest:
                 numpy_to_torch(coords),
                 numpy_to_torch(atype),
                 box=numpy_to_torch(box),
+            ).items()
+        }
+
+    def eval_jax_model(self, jax_obj: Any, natoms, coords, atype, box) -> Any:
+        def assert_jax_array(arr):
+            assert isinstance(arr, jnp.ndarray) or arr is None
+            return arr
+
+        return {
+            kk: to_numpy_array(assert_jax_array(vv))
+            for kk, vv in jax_obj(
+                numpy_to_jax(coords),
+                numpy_to_jax(atype),
+                box=numpy_to_jax(box),
             ).items()
         }

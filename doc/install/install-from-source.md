@@ -198,7 +198,7 @@ Enable compilation optimization for the native machine's CPU type. Do not enable
 
 **Type**: string
 
-Control high (double) or low (float) precision of training.
+Additional CMake arguments.
 :::
 
 :::{envvar} <LANG>FLAGS
