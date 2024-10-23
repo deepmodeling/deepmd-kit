@@ -71,7 +71,7 @@ class IOTest:
         for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
-                if not backend.is_available:
+                if not backend.is_available():
                     continue
                 reference_data = copy.deepcopy(self.data)
                 self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
@@ -127,7 +127,7 @@ class IOTest:
         rets = []
         for backend_name in ("tensorflow", "pytorch", "dpmodel"):
             backend = Backend.get_backend(backend_name)()
-            if not backend.is_available:
+            if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
             self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
