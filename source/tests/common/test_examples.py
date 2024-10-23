@@ -60,11 +60,11 @@ input_files = (
     p_examples / "property" / "train" / "input_torch.json",
     p_examples / "water" / "se_e3_tebd" / "input_torch.json",
     p_examples / "hessian"/ "single_task" / "input.json",
-    p_examples / "hessian"/ "multi_task" / "input.json", 
 )
 
 input_files_multi = (
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch.json",
+    p_examples / "hessian"/ "multi_task" / "input.json", 
 )
 
 
