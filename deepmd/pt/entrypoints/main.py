@@ -283,7 +283,9 @@ def train(
     # update init_model or init_frz_model config if necessary
     if (init_model is not None or init_frz_model is not None) and use_pretrain_script:
         if init_model is not None:
-            init_state_dict = torch.load(init_model, map_location=DEVICE)
+            init_state_dict = torch.load(
+                init_model, map_location=DEVICE, weights_only=True
+            )
             if "model" in init_state_dict:
                 init_state_dict = init_state_dict["model"]
             config["model"] = init_state_dict["_extra_state"]["model_params"]
@@ -380,7 +382,9 @@ def change_bias(
     output: Optional[str] = None,
 ):
     if input_file.endswith(".pt"):
-        old_state_dict = torch.load(input_file, map_location=env.DEVICE)
+        old_state_dict = torch.load(
+            input_file, map_location=env.DEVICE, weights_only=True
+        )
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
     elif input_file.endswith(".pth"):
