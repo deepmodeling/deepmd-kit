@@ -13,9 +13,6 @@ from deepmd.jax.model.model import (
     BaseModel,
     get_model,
 )
-from deepmd.jax.utils.network import (
-    ArrayAPIParam,
-)
 
 
 def deserialize_to_file(model_file: str, data: dict) -> None:
@@ -31,14 +28,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     if model_file.endswith(".jax"):
         model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
-        state = nnx.state(model, ArrayAPIParam)
+        _, state = nnx.split(model)
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
         ) as checkpointer:
             checkpointer.save(
                 Path(model_file).absolute(),
                 ocp.args.Composite(
-                    state=ocp.args.StandardSave(state),
+                    state=ocp.args.StandardSave(state.to_pure_dict()),
                     model_def_script=ocp.args.JsonSave(model_def_script),
                 ),
             )
@@ -71,9 +68,22 @@ def serialize_from_file(model_file: str) -> dict:
                 ),
             )
         state = data.state
+
+        # convert str "1" to int 1 key
+        def convert_str_to_int_key(item: dict):
+            for key, value in item.copy().items():
+                if isinstance(value, dict):
+                    convert_str_to_int_key(value)
+                if key.isdigit():
+                    item[int(key)] = item.pop(key)
+
+        convert_str_to_int_key(state)
+
         model_def_script = data.model_def_script
-        model = get_model(model_def_script)
-        nnx.update(model, state)
+        abstract_model = get_model(model_def_script)
+        graphdef, abstract_state = nnx.split(abstract_model)
+        abstract_state.replace_by_pure_dict(state)
+        model = nnx.merge(graphdef, abstract_state)
         model_dict = model.serialize()
         data = {
             "backend": "JAX",

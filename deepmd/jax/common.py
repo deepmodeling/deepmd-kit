@@ -81,3 +81,17 @@ def flax_module(
             return super().__setattr__(name, value)
 
     return FlaxModule
+
+
+class ArrayAPIVariable(nnx.Variable):
+    def __array__(self, *args, **kwargs):
+        return self.value.__array__(*args, **kwargs)
+
+    def __array_namespace__(self, *args, **kwargs):
+        return self.value.__array_namespace__(*args, **kwargs)
+
+    def __dlpack__(self, *args, **kwargs):
+        return self.value.__dlpack__(*args, **kwargs)
+
+    def __dlpack_device__(self, *args, **kwargs):
+        return self.value.__dlpack_device__(*args, **kwargs)

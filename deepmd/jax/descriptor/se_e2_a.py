@@ -5,6 +5,7 @@ from typing import (
 
 from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeAArrayAPI as DescrptSeADP
 from deepmd.jax.common import (
+    ArrayAPIVariable,
     flax_module,
     to_jax_array,
 )
@@ -26,6 +27,8 @@ class DescrptSeA(DescrptSeADP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"dstd", "davg"}:
             value = to_jax_array(value)
+            if value is not None:
+                value = ArrayAPIVariable(value)
         elif name in {"embeddings"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
