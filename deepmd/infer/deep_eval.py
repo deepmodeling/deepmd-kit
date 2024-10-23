@@ -547,7 +547,7 @@ class DeepEval(ABC):
     @property
     def has_hessian(self) -> bool:
         """Check if the model has hessian."""
-        return self.input_param.get("hessian_mode", False)
+        return self.deep_eval.get_has_hessian()
 
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""
