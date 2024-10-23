@@ -90,8 +90,7 @@ class Border : public torch::autograd::Function<Border> {
     int me = 0;
     MPI_Comm world;
     int world_size = 0;
-    if(mpi_init)
-    {
+    if (mpi_init) {
       unpack_communicator(communicator_tensor, world);
       MPI_Comm_rank(world, &me);
       MPI_Comm_size(world, &world_size);
@@ -216,8 +215,7 @@ class Border : public torch::autograd::Function<Border> {
     int cuda_aware = 1;
     int me = 0;
     MPI_Comm world;
-    if(mpi_init)
-    {
+    if (mpi_init) {
       unpack_communicator(communicator_tensor, world);
       MPI_Comm_rank(world, &me);
       MPI_Comm_size(world, &world_size);
