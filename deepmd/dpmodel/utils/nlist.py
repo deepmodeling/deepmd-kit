@@ -290,9 +290,9 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
         nbuff = xp.max(nbuff, axis=0)
-        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1, dtype=nbuff.dtype)
-        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1, dtype=nbuff.dtype)
-        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1, dtype=nbuff.dtype)
+        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1, dtype=xp.int64)
+        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1, dtype=xp.int64)
+        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1, dtype=xp.int64)
         xyz = xp.linalg.outer(xi, xp.asarray([1, 0, 0]))[:, xp.newaxis, xp.newaxis, :]
         xyz = (
             xyz
