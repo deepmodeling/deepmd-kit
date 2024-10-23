@@ -6,10 +6,8 @@ from .dos import (
     DOSLoss,
 )
 from .ener import (
-    EnergyStdLoss,
-)
-from .ener_hess import (
     EnergyHessianStdLoss,
+    EnergyStdLoss,
 )
 from .ener_spin import (
     EnergySpinLoss,
