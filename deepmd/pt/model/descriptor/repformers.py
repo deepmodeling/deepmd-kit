@@ -193,8 +193,8 @@ class DescrptBlockRepformers(DescriptorBlock):
             Random seed for parameter initialization.
         """
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.ntypes = ntypes
         self.nlayers = nlayers
         sel = [sel] if isinstance(sel, int) else sel

@@ -74,8 +74,8 @@ class PairTabAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
-        self.rcut = rcut
-        self.tab = self._set_pairtab(tab_file, rcut)
+        self.rcut = float(rcut)
+        self.tab = self._set_pairtab(tab_file, self.rcut)
 
         self.type_map = type_map
         self.ntypes = len(type_map)

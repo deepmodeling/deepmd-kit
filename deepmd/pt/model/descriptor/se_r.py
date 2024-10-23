@@ -74,8 +74,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         **kwargs,
     ):
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.set_davg_zero = set_davg_zero
