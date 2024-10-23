@@ -512,8 +512,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.tebd_dim = tebd_dim
