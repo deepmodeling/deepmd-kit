@@ -135,6 +135,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        self.compress = False
         self.seat = DescrptBlockSeT(
             rcut,
             rcut_smth,
@@ -281,6 +282,8 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
         self.table = DPTabulate(
             self,
             self.serialize()["neuron"],
@@ -299,6 +302,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         self.seat.enable_compression(
             self.table, self.table_config, self.lower, self.upper
         )
+        self.compress = True
 
     def reinit_exclude(
         self,
@@ -515,7 +519,11 @@ class DescrptBlockSeT(DescriptorBlock):
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
+        # add for compression
         self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_config = []
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
@@ -787,7 +795,7 @@ class DescrptBlockSeT(DescriptorBlock):
                     env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
                         tensor_data.contiguous(),
-                        torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                        torch.tensor(info, dtype=self.prec, device='cpu').contiguous(),
                         ebd_env_ij.contiguous(),
                         env_ij.contiguous(),
                         self.filter_neuron[-1],

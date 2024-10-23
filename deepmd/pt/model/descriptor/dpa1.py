@@ -299,6 +299,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        self.compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
             tebd_dim,
@@ -581,6 +582,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             The overflow check frequency
         """
         # do some checks before the mocel compression process
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
         assert (
             not self.se_atten.resnet_dt
         ), "Model compression error: descriptor resnet_dt must be false!"
@@ -630,6 +633,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.se_atten.enable_compression(
             self.table, self.table_config, self.lower, self.upper
         )
+        self.compress = True
 
     def forward(
         self,

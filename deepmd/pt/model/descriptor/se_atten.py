@@ -178,7 +178,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
             ln_eps = 1e-5
         self.ln_eps = ln_eps
 
+        # add for compression
         self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_config = []
 
         if isinstance(sel, int):
             sel = [sel]
@@ -527,7 +531,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # nfnl x nnei x ng
                 # gg = gg_s * gg_t + gg_s
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-                info_tensor = torch.tensor(info, dtype=self.prec)
+                info_tensor = torch.tensor(info, dtype=self.prec, device='cpu')
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 ss = ss.to(self.prec)
                 rr = rr.to(self.prec)
@@ -535,7 +539,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 is_sorted = len(self.exclude_types) == 0
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
                     tensor_data.contiguous(),
-                    info_tensor.contiguous().cpu(),
+                    info_tensor.contiguous(),
                     ss.contiguous(),
                     rr.contiguous(),
                     gg_t.contiguous(),

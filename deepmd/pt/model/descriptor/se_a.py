@@ -99,6 +99,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        self.compress = False
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -254,6 +255,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
         self.table = DPTabulate(
             self,
             self.serialize()["neuron"],
@@ -273,6 +276,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         self.sea.enable_compression(
             self.table, self.table_config, self.lower, self.upper
         )
+        self.compress = True
 
     def forward(
         self,
@@ -478,7 +482,11 @@ class DescrptBlockSeA(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
 
+        # add for compression
         self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_config = []
 
         ndim = 1 if self.type_one_side else 2
         filter_layers = NetworkCollection(
@@ -696,6 +704,7 @@ class DescrptBlockSeA(DescriptorBlock):
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             if self.type_one_side:
                 ii = embedding_idx
+                ti = -1
                 # torch.jit is not happy with slice(None)
                 # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
                 # applying a mask seems to cause performance degradation
@@ -735,7 +744,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
                     tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                    torch.tensor(info, dtype=self.prec, device='cpu').contiguous(),
                     ss.contiguous(),
                     rr.contiguous(),
                     self.filter_neuron[-1],

@@ -94,7 +94,11 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
+        # add for compression
         self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_config = []
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -330,7 +334,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         check_frequency
             The overflow check frequency
         """
-        self.compress = True
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
         self.table = DPTabulate(
             self,
             self.serialize()["neuron"],
@@ -347,6 +352,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.lower, self.upper = self.table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
+        self.compress = True
 
     def forward(
         self,
@@ -436,7 +442,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
                     tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec).contiguous().cpu(),
+                    torch.tensor(info, dtype=self.prec, device='cpu').contiguous(),
                     ss,
                     self.filter_neuron[-1],
                 )[0]
