@@ -2331,7 +2331,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.final_type_embedding = get_two_side_type_embedding(self, graph, suffix=suffix)
+        self.final_type_embedding = get_two_side_type_embedding(
+            self, graph, suffix=suffix
+        )
         type_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
         self.matrix = get_extra_side_embedding_net_variable(
             self, graph_def, type_side_suffix, "matrix", suffix

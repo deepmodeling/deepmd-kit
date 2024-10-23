@@ -126,7 +126,9 @@ class DPTabulate:
         self.dstd = get_tensor_by_name_from_graph(
             self.graph, f"descrpt_attr{self.suffix}/t_std"
         )
-        self.ntypes = get_tensor_by_name_from_graph(self.graph, f"descrpt_attr{self.suffix}/ntypes")
+        self.ntypes = get_tensor_by_name_from_graph(
+            self.graph, f"descrpt_attr{self.suffix}/ntypes"
+        )
 
         self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(
             self.graph_def, suffix=self.suffix

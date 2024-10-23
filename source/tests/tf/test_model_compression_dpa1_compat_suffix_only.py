@@ -1,19 +1,19 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
 import numpy as np
-from deepmd.tf.descriptor.se_atten import (
-    DescrptDPA1Compat as tf_SeAtten,
+
+from deepmd.common import (
+    make_default_mesh,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.tf.descriptor.se_atten import DescrptDPA1Compat as tf_SeAtten
 from deepmd.tf.env import (
-    default_tf_session_config,
     GLOBAL_TF_FLOAT_PRECISION,
+    default_tf_session_config,
     tf,
-)
-from deepmd.common import (
-    make_default_mesh,
 )
 from deepmd.tf.utils.sess import (
     run_sess,
@@ -115,7 +115,9 @@ class TestDescriptorSeA(unittest.TestCase):
             attn_layer=0,
         )
 
-    def test_tf_pt_consistent(self, ):
+    def test_tf_pt_consistent(
+        self,
+    ):
         with tf.Session(config=default_tf_session_config) as sess:
             graph = tf.get_default_graph()
             ret = build_eval_tf(
@@ -130,7 +132,8 @@ class TestDescriptorSeA(unittest.TestCase):
             output_graph_def = tf.graph_util.convert_variables_to_constants(
                 sess,
                 graph.as_graph_def(),
-                [f"o_{ii}_{self.suffix}" for ii, _ in enumerate(ret)] + [f"descrpt_attr{self.suffix}/ntypes"],
+                [f"o_{ii}_{self.suffix}" for ii, _ in enumerate(ret)]
+                + [f"descrpt_attr{self.suffix}/ntypes"],
             )
             with tf.Graph().as_default() as new_graph:
                 tf.import_graph_def(output_graph_def, name="")
@@ -147,5 +150,5 @@ class TestDescriptorSeA(unittest.TestCase):
             )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
