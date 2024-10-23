@@ -8,7 +8,7 @@ To train a model that takes Hessian matrices, i.e., the second order derivatives
 
 ## Energy Hessian Loss
 
-If you want to train with Hessians, you are expected to add the start and limit prefactors of Hessians, i.e., {ref}`start_pref_h <loss[ener_hess]/start_pref_h>` and {ref}`limit_pref_h <loss[ener_hess]/limit_pref_h>` to the {ref}`loss <loss>` section in the `input.json`:
+If you want to train with Hessians, you are expected to add the start and limit prefactors of Hessians, i.e., {ref}`start_pref_h <loss[ener]/start_pref_h>` and {ref}`limit_pref_h <loss[ener]/limit_pref_h>` to the {ref}`loss <loss>` section in the `input.json`:
 
 ```json
    "loss": {
@@ -24,9 +24,9 @@ If you want to train with Hessians, you are expected to add the start and limit 
    },
 ```
 
-The options {ref}`start_pref_e <loss[ener_hess]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_hess]/limit_pref_e>`, {ref}`start_pref_f <loss[ener_hess]/start_pref_f>`, {ref}`limit_pref_f <loss[ener_hess]/limit_pref_f>`, {ref}`start_pref_v <loss[ener_hess]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_hess]/limit_pref_v>` determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.
+The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` determine the start and limit prefactors of energy, force, and virial, respectively. The calculation and definition of Hessian loss are the same as for the other terms.
 
-If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_hess]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_hess]/limit_pref_v>` to 0.
+If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
 
 ## Hessian format in PyTorch
 
