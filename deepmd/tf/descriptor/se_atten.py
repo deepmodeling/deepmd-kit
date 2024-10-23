@@ -565,16 +565,16 @@ class DescrptSeAtten(DescrptSeA):
             check_switch_range(davg, dstd)
         with tf.variable_scope("descrpt_attr", reuse=reuse):
             t_ntypes = tf.constant(self.ntypes, name="ntypes", dtype=tf.int32)
-        with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
-            if davg is None:
-                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
-            if dstd is None:
-                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_rcut = tf.constant(
                 np.max([self.rcut_r, self.rcut_a]),
                 name="rcut",
                 dtype=GLOBAL_TF_FLOAT_PRECISION,
             )
+        with tf.variable_scope("descrpt_attr" + suffix, reuse=reuse):
+            if davg is None:
+                davg = np.zeros([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
+            if dstd is None:
+                dstd = np.ones([self.ntypes, self.ndescrpt])  # pylint: disable=no-explicit-dtype
             t_ndescrpt = tf.constant(self.ndescrpt, name="ndescrpt", dtype=tf.int32)
             t_sel = tf.constant(self.sel_a, name="sel", dtype=tf.int32)
             t_original_sel = tf.constant(
