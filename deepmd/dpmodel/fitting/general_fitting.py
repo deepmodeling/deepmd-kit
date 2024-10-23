@@ -155,7 +155,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.fparam_inv_std = np.ones(self.numb_fparam)  # pylint: disable=no-explicit-dtype
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
-        if self.numb_aparam > 0:
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             self.aparam_avg = np.zeros(self.numb_aparam)  # pylint: disable=no-explicit-dtype
             self.aparam_inv_std = np.ones(self.numb_aparam)  # pylint: disable=no-explicit-dtype
         else:

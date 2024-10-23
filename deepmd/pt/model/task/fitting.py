@@ -198,7 +198,7 @@ class GeneralFitting(Fitting):
             )
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
-        if self.numb_aparam > 0:
+        if not self.use_aparam_as_mask and self.numb_aparam > 0:
             self.register_buffer(
                 "aparam_avg",
                 torch.zeros(self.numb_aparam, dtype=self.prec, device=device),
