@@ -277,6 +277,10 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
+    def get_has_hessian(self):
+        """Check if the model has hessian."""
+        return False
+
     @abstractmethod
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""

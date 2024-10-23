@@ -245,11 +245,11 @@ class DeepPot(DeepEval):
             force_mag = results["energy_derv_r_mag"].reshape(nframes, natoms, 3)
             mask_mag = results["mask_mag"].reshape(nframes, natoms, 1)
             result = (*list(result), force_mag, mask_mag)
-        if "energy_derv_r_derv_r" in list(results.keys()):
+        if self.deep_eval.get_has_hessian():
             hessian = results["energy_derv_r_derv_r"].reshape(
                 nframes, 3 * natoms, 3 * natoms
             )
-            result += (hessian,)
+            result = (*list(result), hessian)
         return result
 
 
