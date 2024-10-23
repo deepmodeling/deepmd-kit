@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import tempfile
 import unittest
 from copy import (
     deepcopy,
@@ -195,19 +196,25 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
-        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.original_data_path = Path(__file__).parent / "water/data/data_0"
+        # Create a temporary directory for this test
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.temp_data_path = self.temp_dir / "data_0"
+        shutil.copytree(self.original_data_path, self.temp_data_path)
+
+        data_file = [str(self.temp_data_path)]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_se_e2_a)
         self.config["model"]["fitting_net"]["numb_fparam"] = 1
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
-        self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
+        self.set_path = self.temp_data_path / "set.000"
         shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
 
     def tearDown(self) -> None:
-        # may remove file for other threads when testing separately.
-        # (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        # Remove the temporary directory and all its contents
+        shutil.rmtree(self.temp_dir)
         DPTrainTest.tearDown(self)
 
 
