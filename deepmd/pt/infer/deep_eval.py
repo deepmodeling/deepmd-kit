@@ -232,6 +232,10 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has spin atom types."""
         return self._has_spin
 
+    def get_has_hessian(self):
+        """Check if the model has hessian enabled."""
+        return self.input_param.get("hessian_mode", False)
+
     def eval(
         self,
         coords: np.ndarray,
