@@ -133,7 +133,7 @@ class TestDescriptorSeA(unittest.TestCase):
                 sess,
                 graph.as_graph_def(),
                 [f"o_{ii}_{self.suffix}" for ii, _ in enumerate(ret)]
-                + [f"descrpt_attr/ntypes"],
+                + ["descrpt_attr/ntypes"],
             )
             with tf.Graph().as_default() as new_graph:
                 tf.import_graph_def(output_graph_def, name="")
