@@ -55,19 +55,19 @@ from deepmd.utils.argcheck import (
     (False),  # type_one_side
     (20,),  # attn
     (0, 2),  # attn_layer
-    (True, ),  # attn_dotr
+    (True,),  # attn_dotr
     ([], [[0, 1]]),  # excluded_types
     (0.0,),  # env_protection
     (True, False),  # set_davg_zero
     (1.0,),  # scaling_factor
-    (True, ),  # normalize
+    (True,),  # normalize
     (None, 1.0),  # temperature
     (1e-5,),  # ln_eps
-    (True, ),  # smooth_type_embedding
+    (True,),  # smooth_type_embedding
     (True,),  # concat_output_tebd
     ("float64",),  # precision
     (True, False),  # use_econf_tebd
-    (False, ),  # use_tebd_bias
+    (False,),  # use_tebd_bias
 )
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
