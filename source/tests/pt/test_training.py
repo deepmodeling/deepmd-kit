@@ -206,7 +206,8 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
 
     def tearDown(self) -> None:
-        (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        # may remove file for other threads when testing separately.
+        # (self.set_path / "fparam.npy").unlink(missing_ok=True)
         DPTrainTest.tearDown(self)
 
 
