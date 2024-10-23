@@ -245,7 +245,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ):
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -290,7 +289,6 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             seed=child_seed(seed, 1),
-            old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias

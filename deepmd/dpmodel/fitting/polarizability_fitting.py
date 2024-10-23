@@ -107,7 +107,6 @@ class PolarFitting(GeneralFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
-        old_impl: bool = False,
         fit_diag: bool = True,
         scale: Optional[list[float]] = None,
         shift_diag: bool = True,
@@ -165,7 +164,6 @@ class PolarFitting(GeneralFitting):
             type_map=type_map,
             seed=seed,
         )
-        self.old_impl = False
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -192,7 +190,6 @@ class PolarFitting(GeneralFitting):
         data["type"] = "polar"
         data["@version"] = 3
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = self.scale
