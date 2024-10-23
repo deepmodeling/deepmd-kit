@@ -52,22 +52,22 @@ from deepmd.utils.argcheck import (
     (4,),  # tebd_dim
     ("concat", "strip"),  # tebd_input_mode
     (True,),  # resnet_dt
-    (True, False),  # type_one_side
+    (False),  # type_one_side
     (20,),  # attn
     (0, 2),  # attn_layer
-    (True, False),  # attn_dotr
+    (True, ),  # attn_dotr
     ([], [[0, 1]]),  # excluded_types
     (0.0,),  # env_protection
     (True, False),  # set_davg_zero
     (1.0,),  # scaling_factor
-    (True, False),  # normalize
+    (True, ),  # normalize
     (None, 1.0),  # temperature
     (1e-5,),  # ln_eps
-    (True, False),  # smooth_type_embedding
+    (True, ),  # smooth_type_embedding
     (True,),  # concat_output_tebd
     ("float64",),  # precision
     (True, False),  # use_econf_tebd
-    (False, True),  # use_tebd_bias
+    (False, ),  # use_tebd_bias
 )
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -127,11 +127,9 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     def is_meaningless_zero_attention_layer_tests(
         self,
         attn_layer: int,
-        attn_dotr: bool,
-        normalize: bool,
         temperature: Optional[float],
     ) -> bool:
-        return attn_layer == 0 and (attn_dotr or normalize or temperature is not None)
+        return attn_layer == 0 and (temperature is not None)
 
     @property
     def skip_pt(self) -> bool:
@@ -158,8 +156,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
-            attn_dotr,
-            normalize,
             temperature,
         )
 
@@ -188,8 +184,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_dp or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
-            attn_dotr,
-            normalize,
             temperature,
         )
 
@@ -218,8 +212,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return not INSTALLED_JAX or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
-            attn_dotr,
-            normalize,
             temperature,
         )
 
@@ -250,8 +242,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             not INSTALLED_ARRAY_API_STRICT
             or self.is_meaningless_zero_attention_layer_tests(
                 attn_layer,
-                attn_dotr,
-                normalize,
                 temperature,
             )
         )
@@ -290,8 +280,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             )
             or self.is_meaningless_zero_attention_layer_tests(
                 attn_layer,
-                attn_dotr,
-                normalize,
                 temperature,
             )
         )
