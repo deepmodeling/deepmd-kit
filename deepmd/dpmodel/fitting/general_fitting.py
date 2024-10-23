@@ -18,6 +18,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -417,7 +418,9 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         # calcualte the prediction
         if not self.mixed_types:
-            outs = xp.zeros([nf, nloc, net_dim_out], dtype=self.prec)
+            outs = xp.zeros(
+                [nf, nloc, net_dim_out], dtype=get_xp_precision(xp, self.precision)
+            )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
                     xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
@@ -443,4 +446,4 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
         outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
-        return {self.var_name: outs.astype(GLOBAL_NP_FLOAT_PRECISION)}
+        return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}
