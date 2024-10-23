@@ -457,13 +457,13 @@ def extend_coord_with_ghosts(
         nbuff = torch.amax(nbuff, dim=0)  # faster than torch.max
         nbuff_cpu = nbuff.cpu()
         xi = torch.arange(
-            -nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu", dtype=nbuff_cpu.dtype
+            -nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu", dtype=torch.int64
         )
         yi = torch.arange(
-            -nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu", dtype=nbuff_cpu.dtype
+            -nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu", dtype=torch.int64
         )
         zi = torch.arange(
-            -nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu", dtype=nbuff_cpu.dtype
+            -nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu", dtype=torch.int64
         )
         eye_3 = torch.eye(3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device="cpu")
         xyz = xi.view(-1, 1, 1, 1) * eye_3[0]
