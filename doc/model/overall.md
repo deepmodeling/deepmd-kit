@@ -42,7 +42,7 @@ A model has two parts, a descriptor that maps atomic configuration to a set of s
     }
 ```
 
-The two subsections, {ref}`descriptor <model/descriptor>` and {ref}`fitting_net <model/fitting_net>`, define the descriptor and the fitting net, respectively.
+The two subsections, {ref}`descriptor <model[standard]/descriptor>` and {ref}`fitting_net <model[standard]/fitting_net>`, define the descriptor and the fitting net, respectively.
 
 The {ref}`type_map <model/type_map>` is optional, which provides the element names (but not necessarily same as the actual name of the element) of the corresponding atom types. A water model, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by {ref}`type_map <model/type_map>`.
 

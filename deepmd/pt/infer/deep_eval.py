@@ -103,7 +103,9 @@ class DeepEval(DeepEvalBackend):
         self.output_def = output_def
         self.model_path = model_file
         if str(self.model_path).endswith(".pt"):
-            state_dict = torch.load(model_file, map_location=env.DEVICE)
+            state_dict = torch.load(
+                model_file, map_location=env.DEVICE, weights_only=True
+            )
             if "model" in state_dict:
                 state_dict = state_dict["model"]
             self.input_param = state_dict["_extra_state"]["model_params"]

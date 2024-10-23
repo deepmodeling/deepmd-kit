@@ -58,7 +58,7 @@ Two settings make the training input script different from an energy training in
 	},
 ```
 
-The type of fitting is set to {ref}`dipole <model/fitting_net[dipole]>`. The dipole is associated with type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as the atomic dipole because both are 3-dimensional vectors defined on atoms.
+The type of fitting is set to {ref}`dipole <model[standard]/fitting_net[dipole]>`. The dipole is associated with type 0 atoms (oxygens), by the setting `"dipole_type": [0]`. What we trained is the displacement of the WC from the corresponding oxygen atom. It shares the same training input as the atomic dipole because both are 3-dimensional vectors defined on atoms.
 The loss section is provided as follows
 
 ```json
