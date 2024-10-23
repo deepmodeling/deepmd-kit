@@ -138,6 +138,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.trainable = [self.trainable] * (len(self.neuron) + 1)
         self.activation_function = activation_function
         self.precision = precision
+        if self.precision.lower() not in PRECISION_DICT:
+            raise ValueError(
+                f"Unsupported precision '{self.precision}'. Supported options are: {list(PRECISION_DICT.keys())}"
+            )
         self.prec = PRECISION_DICT[self.precision.lower()]
         self.layer_name = layer_name
         self.use_aparam_as_mask = use_aparam_as_mask
