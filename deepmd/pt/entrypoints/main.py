@@ -105,18 +105,7 @@ def get_trainer(
     local_rank = os.environ.get("LOCAL_RANK")
     if local_rank is not None:
         local_rank = int(local_rank)
-        nccl_available = dist.is_nccl_available()
-        gloo_available = dist.is_gloo_available()
-        # nccl first
-        if nccl_available:
-            backend = "nccl"
-        elif gloo_available:
-            backend = "gloo"
-        else:
-            raise RuntimeError(
-                "No suitable backend found. Neither NCCL nor Gloo is available."
-            )
-        dist.init_process_group(backend=backend)
+        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
 
     def prepare_trainer_input_single(
         model_params_single, data_dict_single, rank=0, seed=None
