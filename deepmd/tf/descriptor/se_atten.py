@@ -2248,6 +2248,102 @@ class DescrptDPA1Compat(DescrptSeAtten):
             self.dout = tf.concat([self.dout, atom_embed], axis=-1)
         return self.dout
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+        suffix: str = "",
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        graph : tf.Graph
+            The graph of the model
+        graph_def : tf.GraphDef
+            The graph_def of the model
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        suffix : str, optional
+            The suffix of the scope
+        """
+        # do some checks before the mocel compression process
+        assert (
+            not self.filter_resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.exclude_types:
+            if (tt[0] not in range(self.ntypes)) or (tt[1] not in range(self.ntypes)):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.ntypes)
+                    + "!"
+                )
+        if self.ntypes * self.ntypes - len(self.exclude_types) == 0:
+            raise RuntimeError(
+                "empty embedding-net are not supported in model compression!"
+            )
+
+        if self.attn_layer != 0:
+            raise RuntimeError("can not compress model when attention layer is not 0.")
+
+        ret = get_pattern_nodes_from_graph_def(
+            graph_def,
+            f"filter_type_all{suffix}/.+{get_extra_embedding_net_suffix(type_one_side=False)}",
+        )
+        if len(ret) == 0:
+            raise RuntimeError(
+                f"can not find variables of embedding net `*{get_extra_embedding_net_suffix(type_one_side=False)}` from graph_def, maybe it is not a compressible model."
+            )
+
+        self.compress = True
+        self.table = DPTabulate(
+            self,
+            self.filter_neuron,
+            graph,
+            graph_def,
+            True,
+            self.exclude_types,
+            self.compress_activation_fn,
+            suffix=suffix,
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+
+        self.final_type_embedding = get_two_side_type_embedding(self, graph, suffix=suffix)
+        type_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
+        self.matrix = get_extra_side_embedding_net_variable(
+            self, graph_def, type_side_suffix, "matrix", suffix
+        )
+        self.bias = get_extra_side_embedding_net_variable(
+            self, graph_def, type_side_suffix, "bias", suffix
+        )
+        self.two_embd = make_data(self, self.final_type_embedding)
+
+        self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
+        self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
+
     def init_variables(
         self,
         graph: tf.Graph,
