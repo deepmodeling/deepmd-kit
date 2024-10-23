@@ -52,7 +52,7 @@ from deepmd.utils.argcheck import (
     (4,),  # tebd_dim
     ("concat", "strip"),  # tebd_input_mode
     (True,),  # resnet_dt
-    (False,),  # type_one_side
+    (True,),  # type_one_side
     (20,),  # attn
     (0, 2),  # attn_layer
     (True,),  # attn_dotr
