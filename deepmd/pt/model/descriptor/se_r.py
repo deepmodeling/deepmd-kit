@@ -442,7 +442,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
                     tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec, device='cpu').contiguous(),
+                    torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
                     ss,
                     self.filter_neuron[-1],
                 )[0]

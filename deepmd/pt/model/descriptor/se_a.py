@@ -744,7 +744,7 @@ class DescrptBlockSeA(DescriptorBlock):
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
                     tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec, device='cpu').contiguous(),
+                    torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
                     ss.contiguous(),
                     rr.contiguous(),
                     self.filter_neuron[-1],

@@ -283,10 +283,10 @@ class DPTabulate:
         if isinstance(
             self.descrpt, deepmd.pt.model.descriptor.DescrptSeA
         ) or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
-            tt = np.full((nspline, self.last_layer_size), stride1) # pylint: disable=no-explicit-dtype
+            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
-            tt = np.full((nspline, self.last_layer_size), stride1) # pylint: disable=no-explicit-dtype
+            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[
                 int((lower - extrapolate * lower) / stride1) + 1 : (
                     int((lower - extrapolate * lower) / stride1)
@@ -295,7 +295,7 @@ class DPTabulate:
                 :,
             ] = stride0
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
-            tt = np.full((nspline, self.last_layer_size), stride1) # pylint: disable=no-explicit-dtype
+            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
@@ -390,7 +390,7 @@ class DPTabulate:
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 1), dtype=yy.dtype) # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 1), dtype=yy.dtype)  # pylint: disable=no-explicit-device
                     dy2 = unaggregated_dy2_dx_s(
                         yy - xx,
                         dy,
@@ -409,7 +409,7 @@ class DPTabulate:
                         self.matrix["layer_" + str(layer + 1)][idx],
                         xbar,
                         self.functype,
-                    ) + torch.ones((1, 2), dtype=yy.dtype) # pylint: disable=no-explicit-device
+                    ) + torch.ones((1, 2), dtype=yy.dtype)  # pylint: disable=no-explicit-device
                     dy2 = unaggregated_dy2_dx_s(
                         yy - tt,
                         dy,
@@ -770,7 +770,7 @@ class DPTabulate:
     def _convert_numpy_to_tensor(self):
         """Convert self.data from np.ndarray to torch.Tensor."""
         for ii in self.data:
-            self.data[ii] = torch.tensor(self.data[ii]) # pylint: disable=no-explicit-device&dtype
+            self.data[ii] = torch.tensor(self.data[ii])  # pylint: disable=no-explicit-device&dtype
 
     @property
     @lru_cache

@@ -795,7 +795,7 @@ class DescrptBlockSeT(DescriptorBlock):
                     env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
                         tensor_data.contiguous(),
-                        torch.tensor(info, dtype=self.prec, device='cpu').contiguous(),
+                        torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
                         ebd_env_ij.contiguous(),
                         env_ij.contiguous(),
                         self.filter_neuron[-1],

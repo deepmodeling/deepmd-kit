@@ -531,7 +531,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # nfnl x nnei x ng
                 # gg = gg_s * gg_t + gg_s
                 tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
-                info_tensor = torch.tensor(info, dtype=self.prec, device='cpu')
+                info_tensor = torch.tensor(info, dtype=self.prec, device="cpu")
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 ss = ss.to(self.prec)
                 rr = rr.to(self.prec)
