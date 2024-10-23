@@ -1397,9 +1397,7 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_se_atten_v2 = make_link(
         "se_atten_v2", "model[standard]/descriptor[se_atten_v2]"
     )
-    link_se_a_mask = make_link(
-        "se_a_mask", "model[standard]/descriptor[se_a_mask]"
-    )
+    link_se_a_mask = make_link("se_a_mask", "model[standard]/descriptor[se_a_mask]")
     doc_descrpt_type = f"The type of the descritpor. See explanation below. \n\n\
 - {link_lf}: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
 - {link_se_e2_a}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
