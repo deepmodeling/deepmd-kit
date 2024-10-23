@@ -1397,16 +1397,19 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     link_se_atten_v2 = make_link(
         "se_atten_v2", "model[standard]/descriptor[se_atten_v2]"
     )
-    doc_descrpt_type = "The type of the descritpor. See explanation below. \n\n\
-- `loc_frame`: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
-- `se_e2_a`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
-- `se_e2_r`: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
-- `se_e3`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
-- `se_a_tpe`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
-- `se_atten`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor.\n\n\
-- `se_atten_v2`: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor.\n\n\
-- `se_a_mask`: Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms. \n\n\
-- `hybrid`: Concatenate of a list of descriptors as a new descriptor."
+    link_se_a_mask = make_link(
+        "se_a_mask", "model[standard]/descriptor[se_a_mask]"
+    )
+    doc_descrpt_type = f"The type of the descritpor. See explanation below. \n\n\
+- {link_lf}: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
+- {link_se_e2_a}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
+- {link_se_e2_r}: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
+- {link_se_e3}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
+- {link_se_a_tpe}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
+- {link_se_atten}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor.\n\n\
+- {link_se_atten_v2}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor.\n\n\
+- {link_se_a_mask}: Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms. \n\n\
+- {link_hybrid}: Concatenate of a list of descriptors as a new descriptor."
 
     return Variant(
         "type",
