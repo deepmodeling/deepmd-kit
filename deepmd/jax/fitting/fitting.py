@@ -3,6 +3,7 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
 from deepmd.jax.common import (
     flax_module,
@@ -34,6 +35,13 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
 
 @flax_module
 class EnergyFittingNet(EnergyFittingNetDP):
+    def __setattr__(self, name: str, value: Any) -> None:
+        value = setattr_for_general_fitting(name, value)
+        return super().__setattr__(name, value)
+
+
+@flax_module
+class DOSFittingNet(DOSFittingNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
         value = setattr_for_general_fitting(name, value)
         return super().__setattr__(name, value)

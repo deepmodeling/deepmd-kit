@@ -2,9 +2,6 @@
 import json
 import os
 import unittest
-from argparse import (
-    Namespace,
-)
 from copy import (
     deepcopy,
 )
@@ -123,12 +120,11 @@ class TestDeepPotFrozen(TestDeepPot):
     def setUp(self):
         super().setUp()
         frozen_model = "frozen_model.pth"
-        ns = Namespace(
+        freeze(
             model=self.model,
             output=frozen_model,
             head=None,
         )
-        freeze(ns)
         self.model = frozen_model
 
     # Note: this can not actually disable cuda device to be used

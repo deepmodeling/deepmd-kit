@@ -4,9 +4,6 @@ import os
 import shutil
 import tempfile
 import unittest
-from argparse import (
-    Namespace,
-)
 from copy import (
     deepcopy,
 )
@@ -70,12 +67,11 @@ class TestInitFrzModel(unittest.TestCase):
 
             if imodel in [0, 1]:
                 trainer.run()
-            ns = Namespace(
+            freeze(
                 model="model.pt",
                 output=frozen_model,
                 head=None,
             )
-            freeze(ns)
             self.models.append(frozen_model)
 
     def test_dp_test(self):

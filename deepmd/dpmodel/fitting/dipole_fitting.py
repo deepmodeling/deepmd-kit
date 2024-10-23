@@ -105,7 +105,6 @@ class DipoleFitting(GeneralFitting):
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
-        old_impl=False,
         seed: Optional[Union[int, list[int]]] = None,
     ):
         if tot_ener_zero:
@@ -141,7 +140,6 @@ class DipoleFitting(GeneralFitting):
             type_map=type_map,
             seed=seed,
         )
-        self.old_impl = False
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -151,7 +149,6 @@ class DipoleFitting(GeneralFitting):
         data = super().serialize()
         data["type"] = "dipole"
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["r_differentiable"] = self.r_differentiable
         data["c_differentiable"] = self.c_differentiable
         return data
