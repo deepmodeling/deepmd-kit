@@ -25,7 +25,7 @@ class TestGetXPPrecision(unittest.TestCase):
         self.assertEqual(get_xp_precision(xp, "global"), GLOBAL_NP_FLOAT_PRECISION)
         self.assertEqual(get_xp_precision(xp, "default"), GLOBAL_NP_FLOAT_PRECISION)
         self.assertEqual(get_xp_precision(xp, "bfloat16"), ml_dtypes.bfloat16)
-        
+
         # Test invalid input
         with self.assertRaises(ValueError):
             get_xp_precision(xp, "invalid_precision")
