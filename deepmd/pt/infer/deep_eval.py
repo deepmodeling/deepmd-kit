@@ -233,7 +233,7 @@ class DeepEval(DeepEvalBackend):
         return self._has_spin
 
     def get_has_hessian(self):
-        """Check if the model has hessian enabled."""
+        """Check if the model has hessian."""
         return self.input_param.get("hessian_mode", False)
 
     def eval(
