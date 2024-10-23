@@ -34,82 +34,28 @@
     },
     "model_dict": {
       "H10C5N2O": {
-        "type_map": [
-          "C",
-          "H",
-          "N",
-          "O"
-        ],
-        "descriptor": {
-          "type": "dpa1",
-          "sel": 120,
-          "rcut_smth": 0.5,
-          "rcut": 6.0,
-          "neuron": [
-            25,
-            50,
-            100
-          ],
-          "tebd_dim": 256,
-          "axis_neuron": 16,
-          "type_one_side": true,
-          "attn": 128,
-          "attn_layer": 0,
-          "attn_dotr": true,
-          "attn_mask": false,
-          "activation_function": "tanh",
-          "scaling_factor": 1.0,
-          "normalize": true,
-          "temperature": 1.0
-        },
+        "type_map": "type_map_all",
+        "descriptor": "dpa1_descriptor",
         "fitting_net": {
           "neuron": [
             240,
             240,
             240
           ],
-          "activation_function": "tanh",
           "resnet_dt": true,
           "seed": 1,
           "_comment": " that's all"
         }
       },
       "H8C4N2O": {
-        "type_map": [
-          "C",
-          "H",
-          "N",
-          "O"
-        ],
-        "descriptor": {
-          "type": "dpa1",
-          "sel": 120,
-          "rcut_smth": 0.5,
-          "rcut": 6.0,
-          "neuron": [
-            25,
-            50,
-            100
-          ],
-          "tebd_dim": 256,
-          "axis_neuron": 16,
-          "type_one_side": true,
-          "attn": 128,
-          "attn_layer": 0,
-          "attn_dotr": true,
-          "attn_mask": false,
-          "activation_function": "tanh",
-          "scaling_factor": 1.0,
-          "normalize": true,
-          "temperature": 1.0
-        },
+        "type_map": "type_map_all",
+        "descriptor": "dpa1_descriptor",
         "fitting_net": {
           "neuron": [
             240,
             240,
             240
           ],
-          "activation_function": "tanh",
           "resnet_dt": true,
           "seed": 1,
           "_comment": " that's all"
