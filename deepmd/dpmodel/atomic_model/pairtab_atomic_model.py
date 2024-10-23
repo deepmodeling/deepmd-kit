@@ -204,11 +204,9 @@ class PairTabAtomicModel(BaseAtomicModel):
             self.tab.ntypes, self.tab.ntypes, self.tab.nspline, 4
         )
 
-        # (nframes, nloc, nnei), dtype is the same as atype.
+        # (nframes, nloc, nnei), index type is int64.
         j_type = extended_atype[
-            np.arange(extended_atype.shape[0], dtype=extended_atype.dtype)[
-                :, None, None
-            ],
+            np.arange(extended_atype.shape[0], dtype=np.int64)[:, None, None],
             masked_nlist,
         ]
 

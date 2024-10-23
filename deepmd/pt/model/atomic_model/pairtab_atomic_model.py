@@ -272,7 +272,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             torch.arange(
                 extended_atype.size(0),
                 device=extended_coord.device,
-                dtype=extended_atype.dtype,
+                dtype=torch.int64,
             )[:, None, None],
             masked_nlist,
         ]
