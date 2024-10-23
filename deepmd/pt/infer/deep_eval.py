@@ -158,7 +158,9 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
-        self._has_hessian = hasattr(self, "input_param") and getattr(self.input_param, "hessian_mode", False)
+        self._has_hessian = hasattr(self, "input_param") and getattr(
+            self.input_param, "hessian_mode", False
+        )
         if callable(self._has_hessian):
             self._has_hessian = self._has_hessian()
 
@@ -665,4 +667,3 @@ class DeepEval(DeepEvalBackend):
         descriptor = model.eval_descriptor()
         model.set_eval_descriptor_hook(False)
         return to_numpy_array(descriptor)
-
