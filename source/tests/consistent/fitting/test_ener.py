@@ -60,7 +60,9 @@ else:
     ("float64", "float32", "bfloat16"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
+    (0, 1),  # numb_aparam
     ([], [-12345.6, None]),  # atom_ener
+    (True, False),  # use_aparam_as_mask
 )
 class TestEner(CommonTest, FittingTest, unittest.TestCase):
     @property
@@ -70,15 +72,20 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return {
             "neuron": [5, 5, 5],
             "resnet_dt": resnet_dt,
             "precision": precision,
             "numb_fparam": numb_fparam,
+            "numb_aparam": numb_aparam,
             "seed": 20240217,
             "atom_ener": atom_ener,
+            # use use_aparam_as_mask only when numb_aparam > 0
+            "use_aparam_as_mask": use_aparam_as_mask if numb_aparam else False,
         }
 
     @property
@@ -88,7 +95,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -101,7 +110,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         # TypeError: The array_api_strict namespace does not support the dtype 'bfloat16'
         return not INSTALLED_ARRAY_API_STRICT or precision == "bfloat16"
@@ -123,6 +134,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         # inconsistent if not sorted
         self.atype.sort()
         self.fparam = -np.ones((1,), dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.aparam = np.zeros_like(
+            self.atype, dtype=GLOBAL_NP_FLOAT_PRECISION
+        ).reshape(-1, 1)
 
     @property
     def addtional_data(self) -> dict:
@@ -131,7 +145,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -145,7 +161,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return self.build_tf_fitting(
             obj,
@@ -153,6 +171,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             self.natoms,
             self.atype,
             self.fparam if numb_fparam else None,
+            self.aparam if numb_aparam else None,
             suffix,
         )
 
@@ -162,15 +181,24 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return (
             pt_obj(
                 torch.from_numpy(self.inputs).to(device=PT_DEVICE),
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
-                fparam=torch.from_numpy(self.fparam).to(device=PT_DEVICE)
-                if numb_fparam
-                else None,
+                fparam=(
+                    torch.from_numpy(self.fparam).to(device=PT_DEVICE)
+                    if numb_fparam
+                    else None
+                ),
+                aparam=(
+                    torch.from_numpy(self.aparam).to(device=PT_DEVICE)
+                    if numb_aparam
+                    else None
+                ),
             )["energy"]
             .detach()
             .cpu()
@@ -183,12 +211,15 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return dp_obj(
             self.inputs,
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
+            aparam=self.aparam if numb_aparam else None,
         )["energy"]
 
     def eval_jax(self, jax_obj: Any) -> Any:
@@ -197,13 +228,16 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return np.asarray(
             jax_obj(
                 jnp.asarray(self.inputs),
                 jnp.asarray(self.atype.reshape(1, -1)),
                 fparam=jnp.asarray(self.fparam) if numb_fparam else None,
+                aparam=jnp.asarray(self.aparam) if numb_aparam else None,
             )["energy"]
         )
 
@@ -214,13 +248,16 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         return np.asarray(
             array_api_strict_obj(
                 array_api_strict.asarray(self.inputs),
                 array_api_strict.asarray(self.atype.reshape(1, -1)),
                 fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
+                aparam=array_api_strict.asarray(self.aparam) if numb_aparam else None,
             )["energy"]
         )
 
@@ -238,7 +275,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -257,7 +296,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             atom_ener,
+            use_aparam_as_mask,
         ) = self.param
         if precision == "float64":
             return 1e-10

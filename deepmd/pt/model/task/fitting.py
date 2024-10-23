@@ -126,6 +126,8 @@ class GeneralFitting(Fitting):
         length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
+    use_aparam_as_mask: bool
+        If True, the aparam will not be used in fitting net for embedding.
     """
 
     def __init__(
@@ -147,6 +149,7 @@ class GeneralFitting(Fitting):
         trainable: Union[bool, list[bool]] = True,
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
+        use_aparam_as_mask: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -164,6 +167,7 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.type_map = type_map
+        self.use_aparam_as_mask = use_aparam_as_mask
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -206,7 +210,9 @@ class GeneralFitting(Fitting):
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
 
-        in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
+        in_dim = self.dim_descrpt + self.numb_fparam
+        if not self.use_aparam_as_mask:
+            in_dim += self.numb_aparam
 
         self.filter_layers = NetworkCollection(
             1 if not self.mixed_types else 0,
@@ -291,13 +297,12 @@ class GeneralFitting(Fitting):
             # "trainable": self.trainable ,
             # "atom_ener": self.atom_ener ,
             # "layer_name": self.layer_name ,
-            # "use_aparam_as_mask": self.use_aparam_as_mask ,
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
             "tot_ener_zero": False,
             "trainable": [self.trainable] * (len(self.neuron) + 1),
             "layer_name": None,
-            "use_aparam_as_mask": False,
+            "use_aparam_as_mask": self.use_aparam_as_mask,
             "spin": None,
         }
 
@@ -439,7 +444,7 @@ class GeneralFitting(Fitting):
                     dim=-1,
                 )
         # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0:
+        if not self.use_aparam_as_mask and self.numb_aparam > 0:
             assert aparam is not None, "aparam should not be None"
             assert self.aparam_avg is not None
             assert self.aparam_inv_std is not None
