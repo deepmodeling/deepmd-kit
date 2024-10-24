@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
+import platform
 import site
 from functools import (
     lru_cache,
@@ -107,7 +108,11 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     """
     if pt_version is None:
         return {"torch": []}
-    if os.environ.get("CIBUILDWHEEL", "0") == "1":
+    if (
+        os.environ.get("CIBUILDWHEEL", "0") == "1"
+        and platform.system() == "Linux"
+        and platform.machine() == "x86_64"
+    ):
         cuda_version = os.environ.get("CUDA_VERSION", "12.2")
         if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
             # CUDA 12.2, cudnn 9
