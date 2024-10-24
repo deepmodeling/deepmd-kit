@@ -5,7 +5,6 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
@@ -569,7 +568,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 gg = gg_s * gg_t + gg_s
 
         if not self.compress:
-            if 'gg' not in locals():
+            if "gg" not in locals():
                 raise ValueError("Error: 'gg' has not been initialized before use.")
             input_r = torch.nn.functional.normalize(
                 rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
