@@ -26,9 +26,6 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISON_DICT,
 )
-from deepmd.pt.utils.utils import (
-    ActivationFn,
-)
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
@@ -40,6 +37,9 @@ from deepmd.pt.utils.tabulate import (
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,

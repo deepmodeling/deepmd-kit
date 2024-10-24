@@ -1,10 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from functools import (
+    cached_property,
     lru_cache,
-)
-from typing import (
-    Callable,
 )
 
 import numpy as np
@@ -17,8 +15,6 @@ import deepmd
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
-
-from functools import cached_property
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +68,7 @@ class DPTabulate:
             "softplus": 5,
             "sigmoid": 6,
         }
-        
+
         activation = activation_fn.activation
         if activation in activation_map:
             self.functype = activation_map[activation]
@@ -283,10 +279,11 @@ class DPTabulate:
 
         # tt.shape: [nspline, self.last_layer_size]
         if isinstance(
-            self.descrpt, (
+            self.descrpt,
+            (
                 deepmd.pt.model.descriptor.DescrptSeA,
                 deepmd.pt.model.descriptor.DescrptDPA1,
-            )
+            ),
         ):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0

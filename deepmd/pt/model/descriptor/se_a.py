@@ -55,14 +55,14 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.utils.utils import (
-    ActivationFn,
-)
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
 from deepmd.pt.utils.tabulate import (
     DPTabulate,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 
 from .base_descriptor import (

@@ -24,14 +24,14 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
-from deepmd.pt.utils.utils import (
-    ActivationFn,
-)
 from deepmd.pt.utils.tabulate import (
     DPTabulate,
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,

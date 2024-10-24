@@ -5,11 +5,10 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
-
-import numpy as np
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,

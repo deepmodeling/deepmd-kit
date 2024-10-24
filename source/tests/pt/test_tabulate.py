@@ -15,8 +15,10 @@ from deepmd.tf.env import (
     tf,
 )
 
+
 def setUpModule():
     tf.compat.v1.enable_eager_execution()
+
 
 def tearDownModule():
     tf.compat.v1.disable_eager_execution()
