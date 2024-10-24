@@ -71,7 +71,6 @@ class DescrptSeAttenV2(DescrptDPA1):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ) -> None:
         r"""Construct smooth version of embedding net of type `se_atten_v2`.
 
@@ -111,7 +110,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
-        exclude_types : List[List[int]]
+        exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float
@@ -147,7 +146,7 @@ class DescrptSeAttenV2(DescrptDPA1):
             Whether to use electronic configuration type embedding.
         use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-        type_map : List[str], Optional
+        type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
         spin
             (Only support None to keep consistent with other backend references.)
@@ -191,7 +190,6 @@ class DescrptSeAttenV2(DescrptDPA1):
             # not implemented
             spin=spin,
             type=type,
-            old_impl=old_impl,
         )
 
     def serialize(self) -> dict:

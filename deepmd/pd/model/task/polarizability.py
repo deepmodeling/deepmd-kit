@@ -46,7 +46,7 @@ class PolarFittingNet(GeneralFitting):
         Embedding width per atom.
     embedding_width : int
         The dimension of rotation matrix, m1.
-    neuron : List[int]
+    neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     resnet_dt : bool
         Using time-step in the ResNet construction.
@@ -68,11 +68,11 @@ class PolarFittingNet(GeneralFitting):
     fit_diag : bool
         Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to
         normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
         The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
         Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
 
     """
@@ -114,6 +114,13 @@ class PolarFittingNet(GeneralFitting):
                 raise ValueError(
                     "Scale must be a list of float of length ntypes or a float."
                 )
+        self.scale = paddle.to_tensor(
+            self.scale, dtype=env.GLOBAL_PD_FLOAT_PRECISION, place=env.DEVICE
+        ).reshape([ntypes, 1])
+        self.shift_diag = shift_diag
+        self.constant_matrix = paddle.zeros(
+            [ntypes], dtype=env.GLOBAL_PD_FLOAT_PRECISION
+        ).to(place=env.DEVICE)
         super().__init__(
             var_name="polar",
             ntypes=ntypes,
@@ -131,16 +138,6 @@ class PolarFittingNet(GeneralFitting):
             type_map=type_map,
             **kwargs,
         )
-        self.scale = (
-            paddle.to_tensor(self.scale, dtype=env.GLOBAL_PD_FLOAT_PRECISION)
-            .to(device=env.DEVICE)
-            .reshape([ntypes, 1])
-        )
-        self.shift_diag = shift_diag
-        self.constant_matrix = paddle.zeros(
-            [ntypes], dtype=env.GLOBAL_PD_FLOAT_PRECISION
-        ).to(device=env.DEVICE)
-        self.old_impl = False  # this only supports the new implementation.
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -196,7 +193,6 @@ class PolarFittingNet(GeneralFitting):
         data["type"] = "polar"
         data["@version"] = 3
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
         data["@variables"]["scale"] = to_numpy_array(self.scale)

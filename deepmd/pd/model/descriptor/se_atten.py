@@ -26,10 +26,6 @@ from deepmd.pd.model.network.mlp import (
     MLPLayer,
     NetworkCollection,
 )
-from deepmd.pd.model.network.network import (
-    NeighborWiseAttention,
-    TypeFilter,
-)
 from deepmd.pd.utils import (
     aux,
     env,
@@ -86,7 +82,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ):
         r"""Construct an embedding net of type `se_atten`.
 
@@ -132,7 +127,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version.)
             If mask the diagonal of attention weights
-        exclude_types : List[List[int]]
+        exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float
@@ -183,7 +178,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         if ln_eps is None:
             ln_eps = 1e-5
         self.ln_eps = ln_eps
-        self.old_impl = old_impl
 
         if isinstance(sel, int):
             sel = [sel]
@@ -196,40 +190,22 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.ndescrpt = self.nnei * 4
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
-        if self.old_impl:
-            assert self.tebd_input_mode in [
-                "concat"
-            ], "Old implementation does not support tebd_input_mode != 'concat'."
-            self.dpa1_attention = NeighborWiseAttention(
-                self.attn_layer,
-                self.nnei,
-                self.filter_neuron[-1],
-                self.attn_dim,
-                dotr=self.attn_dotr,
-                do_mask=self.attn_mask,
-                activation=self.activation_function,
-                scaling_factor=self.scaling_factor,
-                normalize=self.normalize,
-                temperature=self.temperature,
-                smooth=self.smooth,
-            )
-        else:
-            self.dpa1_attention = NeighborGatedAttention(
-                self.attn_layer,
-                self.nnei,
-                self.filter_neuron[-1],
-                self.attn_dim,
-                dotr=self.attn_dotr,
-                do_mask=self.attn_mask,
-                scaling_factor=self.scaling_factor,
-                normalize=self.normalize,
-                temperature=self.temperature,
-                trainable_ln=self.trainable_ln,
-                ln_eps=self.ln_eps,
-                smooth=self.smooth,
-                precision=self.precision,
-                seed=child_seed(self.seed, 0),
-            )
+        self.dpa1_attention = NeighborGatedAttention(
+            self.attn_layer,
+            self.nnei,
+            self.filter_neuron[-1],
+            self.attn_dim,
+            dotr=self.attn_dotr,
+            do_mask=self.attn_mask,
+            scaling_factor=self.scaling_factor,
+            normalize=self.normalize,
+            temperature=self.temperature,
+            trainable_ln=self.trainable_ln,
+            ln_eps=self.ln_eps,
+            smooth=self.smooth,
+            precision=self.precision,
+            seed=child_seed(self.seed, 0),
+        )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = paddle.zeros(wanted_shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
@@ -246,48 +222,32 @@ class DescrptBlockSeAtten(DescriptorBlock):
         else:
             self.embd_input_dim = 1
 
-        self.filter_layers_old = None
-        self.filter_layers = None
         self.filter_layers_strip = None
-        if self.old_impl:
-            filter_layers = []
-            one = TypeFilter(
-                0,
-                self.nnei,
-                self.filter_neuron,
-                return_G=True,
-                tebd_dim=self.tebd_dim,
-                use_tebd=True,
-                tebd_mode=self.tebd_input_mode,
-            )
-            filter_layers.append(one)
-            self.filter_layers_old = paddle.nn.LayerList(filter_layers)
-        else:
-            filter_layers = NetworkCollection(
+        filter_layers = NetworkCollection(
+            ndim=0, ntypes=self.ntypes, network_type="embedding_network"
+        )
+        filter_layers[0] = EmbeddingNet(
+            self.embd_input_dim,
+            self.filter_neuron,
+            activation_function=self.activation_function,
+            precision=self.precision,
+            resnet_dt=self.resnet_dt,
+            seed=child_seed(self.seed, 1),
+        )
+        self.filter_layers = filter_layers
+        if self.tebd_input_mode in ["strip"]:
+            filter_layers_strip = NetworkCollection(
                 ndim=0, ntypes=self.ntypes, network_type="embedding_network"
             )
-            filter_layers[0] = EmbeddingNet(
-                self.embd_input_dim,
+            filter_layers_strip[0] = EmbeddingNet(
+                self.tebd_dim_input,
                 self.filter_neuron,
                 activation_function=self.activation_function,
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
-                seed=child_seed(self.seed, 1),
+                seed=child_seed(self.seed, 2),
             )
-            self.filter_layers = filter_layers
-            if self.tebd_input_mode in ["strip"]:
-                filter_layers_strip = NetworkCollection(
-                    ndim=0, ntypes=self.ntypes, network_type="embedding_network"
-                )
-                filter_layers_strip[0] = EmbeddingNet(
-                    self.tebd_dim_input,
-                    self.filter_neuron,
-                    activation_function=self.activation_function,
-                    precision=self.precision,
-                    resnet_dt=self.resnet_dt,
-                    seed=child_seed(self.seed, 2),
-                )
-                self.filter_layers_strip = filter_layers_strip
+            self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
     def get_rcut(self) -> float:
@@ -379,11 +339,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -502,79 +462,54 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.reshape([nb * nloc, nnei])
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            dmatrix = dmatrix.reshape(
-                [-1, self.ndescrpt]
-            )  # shape is [nframes*nall, self.ndescrpt]
-            gg = self.filter_layers_old[0](
-                dmatrix,
-                atype_tebd=atype_tebd_nnei,
-                nlist_tebd=atype_tebd_nlist,
-            )  # shape is [nframes*nall, self.neei, out_size]
-            # input_r = paddle.nn.functional.normalize(
-            #     dmatrix.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
-            # )
-            input_r = aux.normalize(
-                dmatrix.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
-            )
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            inputs_reshape = dmatrix.reshape([-1, self.nnei, 4]).transpose(
-                [0, 2, 1]
-            )  # shape is [nframes*natoms[0], 4, self.neei]
-            xyz_scatter = paddle.matmul(
-                inputs_reshape, gg
-            )  # shape is [nframes*natoms[0], 4, out_size]
-        else:
-            assert self.filter_layers is not None
-            # nfnl x nnei x 4
-            dmatrix = dmatrix.reshape([-1, self.nnei, 4])
-            nfnl = dmatrix.shape[0]
-            # nfnl x nnei x 4
-            rr = dmatrix
-            rr = rr * exclude_mask[:, :, None].astype(rr.dtype)
-            ss = rr[:, :, :1]
-            nlist_tebd = atype_tebd_nlist.reshape([nfnl, nnei, self.tebd_dim])
-            atype_tebd = atype_tebd_nnei.reshape([nfnl, nnei, self.tebd_dim])
-            if self.tebd_input_mode in ["concat"]:
-                if not self.type_one_side:
-                    # nfnl x nnei x (1 + tebd_dim * 2)
-                    ss = paddle.concat([ss, nlist_tebd, atype_tebd], axis=2)
-                else:
-                    # nfnl x nnei x (1 + tebd_dim)
-                    ss = paddle.concat([ss, nlist_tebd], axis=2)
-                # nfnl x nnei x ng
-                gg = self.filter_layers.networks[0](ss)
-            elif self.tebd_input_mode in ["strip"]:
-                # nfnl x nnei x ng
-                gg_s = self.filter_layers.networks[0](ss)
-                assert self.filter_layers_strip is not None
-                if not self.type_one_side:
-                    # nfnl x nnei x (tebd_dim * 2)
-                    tt = paddle.concat([nlist_tebd, atype_tebd], axis=2)
-                else:
-                    # nfnl x nnei x tebd_dim
-                    tt = nlist_tebd
-                # nfnl x nnei x ng
-                gg_t = self.filter_layers_strip.networks[0](tt)
-                if self.smooth:
-                    gg_t = gg_t * sw.reshape([-1, self.nnei, 1])
-                # nfnl x nnei x ng
-                gg = gg_s * gg_t + gg_s
+        assert self.filter_layers is not None
+        # nfnl x nnei x 4
+        dmatrix = dmatrix.reshape([-1, self.nnei, 4])
+        nfnl = dmatrix.shape[0]
+        # nfnl x nnei x 4
+        rr = dmatrix
+        rr = rr * exclude_mask[:, :, None].astype(rr.dtype)
+        ss = rr[:, :, :1]
+        nlist_tebd = atype_tebd_nlist.reshape([nfnl, nnei, self.tebd_dim])
+        atype_tebd = atype_tebd_nnei.reshape([nfnl, nnei, self.tebd_dim])
+        if self.tebd_input_mode in ["concat"]:
+            if not self.type_one_side:
+                # nfnl x nnei x (1 + tebd_dim * 2)
+                ss = paddle.concat([ss, nlist_tebd, atype_tebd], axis=2)
             else:
-                raise NotImplementedError
+                # nfnl x nnei x (1 + tebd_dim)
+                ss = paddle.concat([ss, nlist_tebd], axis=2)
+            # nfnl x nnei x ng
+            gg = self.filter_layers.networks[0](ss)
+        elif self.tebd_input_mode in ["strip"]:
+            # nfnl x nnei x ng
+            gg_s = self.filter_layers.networks[0](ss)
+            assert self.filter_layers_strip is not None
+            if not self.type_one_side:
+                # nfnl x nnei x (tebd_dim * 2)
+                tt = paddle.concat([nlist_tebd, atype_tebd], axis=2)
+            else:
+                # nfnl x nnei x tebd_dim
+                tt = nlist_tebd
+            # nfnl x nnei x ng
+            gg_t = self.filter_layers_strip.networks[0](tt)
+            if self.smooth:
+                gg_t = gg_t * sw.reshape([-1, self.nnei, 1])
+            # nfnl x nnei x ng
+            gg = gg_s * gg_t + gg_s
+        else:
+            raise NotImplementedError
 
-            # input_r = paddle.nn.functional.normalize(
-            #     rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
-            # )
-            input_r = aux.normalize(rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1)
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            # nfnl x 4 x ng
-            xyz_scatter = paddle.matmul(rr.transpose([0, 2, 1]), gg)
+        # input_r = paddle.nn.functional.normalize(
+        #     rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
+        # )
+        input_r = aux.normalize(rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1)
+        gg = self.dpa1_attention(
+            gg, nlist_mask, input_r=input_r, sw=sw
+        )  # shape is [nframes*nloc, self.neei, out_size]
+        # nfnl x 4 x ng
+        xyz_scatter = paddle.matmul(rr.transpose([0, 2, 1]), gg)
+
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.transpose([0, 2, 1])
         rot_mat = xyz_scatter_1[:, :, 1:4]

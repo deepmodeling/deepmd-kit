@@ -44,7 +44,7 @@ class DipoleFittingNet(GeneralFitting):
         Embedding width per atom.
     embedding_width : int
         The dimension of rotation matrix, m1.
-    neuron : List[int]
+    neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     resnet_dt : bool
         Using time-step in the ResNet construction.
@@ -69,7 +69,7 @@ class DipoleFittingNet(GeneralFitting):
     c_differentiable
         If the variable is differentiated with respect to the cell tensor (pbc case).
         Only reducible variable are differentiable.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
 
@@ -113,7 +113,6 @@ class DipoleFittingNet(GeneralFitting):
             type_map=type_map,
             **kwargs,
         )
-        self.old_impl = False  # this only supports the new implementation.
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -123,7 +122,6 @@ class DipoleFittingNet(GeneralFitting):
         data = super().serialize()
         data["type"] = "dipole"
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["r_differentiable"] = self.r_differentiable
         data["c_differentiable"] = self.c_differentiable
         return data
@@ -158,11 +156,11 @@ class DipoleFittingNet(GeneralFitting):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]

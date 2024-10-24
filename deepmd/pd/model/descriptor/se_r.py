@@ -68,7 +68,6 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         resnet_dt: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         trainable: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
@@ -84,7 +83,6 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = False  # this does not support old implementation.
         self.exclude_types = exclude_types
         self.ntypes = len(sel)
         self.type_map = type_map
@@ -247,11 +245,11 @@ class DescrptSeR(BaseDescriptor, paddle.nn.Layer):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
