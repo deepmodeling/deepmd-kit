@@ -177,7 +177,9 @@ class GeneralFitting(Fitting):
         # init constants
         if bias_atom_e is None:
             bias_atom_e = np.zeros([self.ntypes, net_dim_out], dtype=np.float64)
-        bias_atom_e = torch.tensor(bias_atom_e, dtype=self.prec, device=device)
+        bias_atom_e = torch.tensor(
+            bias_atom_e, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=device
+        )
         bias_atom_e = bias_atom_e.view([self.ntypes, net_dim_out])
         if not self.mixed_types:
             assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
