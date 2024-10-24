@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 class DeepmdData:
     """Class for a data system.
 
-    It loads data from hard disk, and mantains the data as a `data_dict`
+    It loads data from hard disk, and maintains the data as a `data_dict`
 
     Parameters
     ----------
@@ -643,9 +643,24 @@ class DeepmdData:
                                 f"({nframes}, {natoms_sel}, {ndof_}) or"
                                 f"({nframes}, {natoms}, {ndof_})"
                             )
-                    data = data.reshape([nframes, natoms, -1])
-                    data = data[:, idx_map, :]
-                    data = data.reshape([nframes, -1])
+                    if key == "hessian":
+                        data = data.reshape(nframes, 3 * natoms, 3 * natoms)
+                        # get idx_map for hessian
+                        num_chunks, chunk_size = len(idx_map), 3
+                        idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
+                        idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
+                        idx_map_hess = idx_map_hess[idx_map]
+                        idx_map_hess = idx_map_hess.flatten()
+                        data = data[:, idx_map_hess, :]
+                        data = data[:, :, idx_map_hess]
+                        data = data.reshape([nframes, -1])
+                        ndof = (
+                            3 * ndof * 3 * ndof
+                        )  # size of hessian is 3Natoms * 3Natoms
+                    else:
+                        data = data.reshape([nframes, natoms, -1])
+                        data = data[:, idx_map, :]
+                        data = data.reshape([nframes, -1])
                 data = np.reshape(data, [nframes, ndof])
             except ValueError as err_message:
                 explanation = "This error may occur when your label mismatch it's name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
