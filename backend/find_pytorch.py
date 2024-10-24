@@ -22,6 +22,9 @@ from typing import (
     Union,
 )
 
+from packaging.specifiers import (
+    SpecifierSet,
+)
 from packaging.version import (
     Version,
 )
@@ -104,6 +107,16 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     """
     if pt_version is None:
         return {"torch": []}
+    if os.environ.get("CIBUILDWHEEL", "0") == "1":
+        cuda_version = os.environ.get("CUDA_VERSION", "12.2")
+        if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
+            # CUDA 12.2, cudnn 9
+            pt_version = "2.5.0"
+        elif cuda_version in SpecifierSet(">=11,<12"):
+            # CUDA 11.8, cudnn 8
+            pt_version = "2.3.1"
+        else:
+            raise RuntimeError("Unsupported CUDA version") from None
     if pt_version == "":
         pt_version = os.environ.get("PYTORCH_VERSION", "")
 
