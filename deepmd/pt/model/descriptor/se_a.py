@@ -58,6 +58,12 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
+)
 
 from .base_descriptor import (
     BaseDescriptor,
@@ -93,6 +99,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        self.compress = False
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -225,11 +232,58 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        self.table = DPTabulate(
+            self,
+            self.serialize()["neuron"],
+            self.serialize()["type_one_side"],
+            self.serialize()["exclude_types"],
+            ActivationFn(self.serialize()["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        self.sea.enable_compression(
+            self.table, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
+
     def forward(
         self,
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
+        extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
@@ -265,7 +319,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.sea.forward(nlist, coord_ext, atype_ext, None, mapping)
+        return self.sea.forward(
+            nlist, coord_ext, atype_ext, extended_atype_embd, mapping
+        )
 
     def set_stat_mean_and_stddev(
         self,
@@ -366,6 +422,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
+    lower: dict[str, int]
+    upper: dict[str, int]
+    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -425,6 +484,12 @@ class DescrptBlockSeA(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
 
+        # add for compression
+        self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_config = []
+
         ndim = 1 if self.type_one_side else 2
         filter_layers = NetworkCollection(
             ndim=ndim, ntypes=len(sel), network_type="embedding_network"
@@ -443,6 +508,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.filter_layers = filter_layers
         self.stats = None
         # set trainable
+        self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
 
@@ -469,6 +535,10 @@ class DescrptBlockSeA(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+
+    def get_dim_rot_mat_1(self) -> int:
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
+        return self.filter_neuron[-1]
 
     def get_dim_emb(self) -> int:
         """Returns the output dimension."""
@@ -578,6 +648,19 @@ class DescrptBlockSeA(DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def enable_compression(
+        self,
+        table,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        self.compress = True
+        self.table = table
+        self.table_config = table_config
+        self.lower = lower
+        self.upper = upper
+
     def forward(
         self,
         nlist: torch.Tensor,
@@ -627,6 +710,7 @@ class DescrptBlockSeA(DescriptorBlock):
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             if self.type_one_side:
                 ii = embedding_idx
+                ti = -1
                 # torch.jit is not happy with slice(None)
                 # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
                 # applying a mask seems to cause performance degradation
@@ -648,10 +732,35 @@ class DescrptBlockSeA(DescriptorBlock):
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
             rr = rr * mm[:, :, None]
             ss = rr[:, :, :1]
-            # nfnl x nt x ng
-            gg = ll.forward(ss)
-            # nfnl x 4 x ng
-            gr = torch.matmul(rr.permute(0, 2, 1), gg)
+
+            if self.compress:
+                if self.type_one_side:
+                    net = "filter_-1_net_" + str(ii)
+                else:
+                    net = "filter_" + str(ti) + "_net_" + str(ii)
+                info = [
+                    self.lower[net],
+                    self.upper[net],
+                    self.upper[net] * self.table_config[0],
+                    self.table_config[1],
+                    self.table_config[2],
+                    self.table_config[3],
+                ]
+                ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
+                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                gr = torch.ops.deepmd.tabulate_fusion_se_a(
+                    tensor_data.contiguous(),
+                    torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
+                    ss.contiguous(),
+                    rr.contiguous(),
+                    self.filter_neuron[-1],
+                )[0]
+            else:
+                # nfnl x nt x ng
+                gg = ll.forward(ss)
+                # nfnl x 4 x ng
+                gr = torch.matmul(rr.permute(0, 2, 1), gg)
+
             if ti_mask is not None:
                 xyz_scatter[ti_mask] += gr
             else:
