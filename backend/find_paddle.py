@@ -109,13 +109,9 @@ def get_pd_requirement(pd_version: str = "") -> dict:
 
     return {
         "paddle": [
-            # uv has different local version behaviors, i.e. `==2.3.1` cannot match `==2.3.1+cpu`
-            # https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#local-version-identifiers
-            # luckily, .* (prefix matching) defined in PEP 440 can match any local version
-            # https://peps.python.org/pep-0440/#version-matching
-            f"paddle=={Version(pd_version).base_version}.*"
+            f"paddlepaddle=={Version(pd_version).base_version}.*"
             if pd_version != ""
-            else "paddlepaddle-gpu>=3.0.0b1",
+            else "paddlepaddle",
         ],
     }
 
