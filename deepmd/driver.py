@@ -67,12 +67,7 @@ class DPDriver(dpdata.driver.Driver):
             cell = data["cells"].reshape((nframes, 9))
         else:
             cell = None
-        results_tmp = self.dp.eval(coords=coord, cells=cell, atom_types=atype)
-        if len(results_tmp) == 3:
-            e, f, v = results_tmp
-        else:
-            e, f, v = results_tmp[:-1]  # results_tmp[-1] is hessian
-        del results_tmp
+        e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)[:3]
         data = data.copy()
         data["energies"] = e.reshape((nframes,))
         data["forces"] = f.reshape((nframes, natoms, 3))
