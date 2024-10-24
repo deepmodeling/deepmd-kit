@@ -419,3 +419,10 @@ plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
 load-plugins = "deepmd_checker"
 disable = "all"
 enable = "E8001,E8002"
+
+[tool.flake8]
+select = [
+    "TOR0",
+    "TOR1",
+    "TOR2",
+]

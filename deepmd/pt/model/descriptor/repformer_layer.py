@@ -605,8 +605,8 @@ class RepformerLayer(torch.nn.Module):
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.ntypes = ntypes
         sel = [sel] if isinstance(sel, int) else sel
         self.nnei = sum(sel)
