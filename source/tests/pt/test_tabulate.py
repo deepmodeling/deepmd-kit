@@ -15,7 +15,11 @@ from deepmd.tf.env import (
     tf,
 )
 
-tf.compat.v1.enable_eager_execution()
+def setUpModule():
+    tf.compat.v1.enable_eager_execution()
+
+def tearDownModule():
+    tf.compat.v1.disable_eager_execution()
 
 
 class TestDPTabulate(unittest.TestCase):

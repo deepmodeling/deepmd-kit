@@ -55,8 +55,8 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.utils.env import (
-    get_activation_func,
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
@@ -262,7 +262,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             self.serialize()["neuron"],
             self.serialize()["type_one_side"],
             self.serialize()["exclude_types"],
-            get_activation_func(self.serialize()["activation_function"]),
+            ActivationFn(self.serialize()["activation_function"]),
         )
         self.table_config = [
             table_extrapolate,
@@ -422,6 +422,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
+    lower: dict[str, Union[np.float32, np.float64]]
+    upper: dict[str, Union[np.float32, np.float64]]
+    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -458,7 +461,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.axis_neuron = axis_neuron
         self.set_davg_zero = set_davg_zero
         self.activation_function = activation_function
-        self.filter_activation_fn = get_activation_func(activation_function)
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt

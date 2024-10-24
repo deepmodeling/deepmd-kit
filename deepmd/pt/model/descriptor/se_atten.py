@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
 
+import numpy as np
+
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -52,6 +54,10 @@ from deepmd.utils.version import (
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(DescriptorBlock):
+    lower: dict[str, Union[np.float32, np.float64]]
+    upper: dict[str, Union[np.float32, np.float64]]
+    table_config: list[Union[int, float]]
+
     def __init__(
         self,
         rcut: float,

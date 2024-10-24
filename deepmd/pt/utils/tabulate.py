@@ -14,9 +14,11 @@ from scipy.special import (
 )
 
 import deepmd
-from deepmd.pt.utils.env import (
-    ACTIVATION_FN_DICT,
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
+
+from functools import cached_property
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class DPTabulate:
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     activation_function
-            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ACTIVATION_FN_DICT.
+            The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ActivationFn.
     """
 
     def __init__(
@@ -52,7 +54,7 @@ class DPTabulate:
         neuron: list[int],
         type_one_side: bool = False,
         exclude_types: list[list[int]] = [],
-        activation_fn: Callable[[torch.Tensor], torch.Tensor] = torch.tanh,
+        activation_fn: ActivationFn = ActivationFn("tanh"),
     ) -> None:
         """Constructor."""
         self.descrpt = descrpt
@@ -61,32 +63,32 @@ class DPTabulate:
         self.exclude_types = exclude_types
 
         # functype
-        if activation_fn == ACTIVATION_FN_DICT["tanh"]:
-            self.functype = 1
-        elif activation_fn in (
-            ACTIVATION_FN_DICT["gelu"],
-            ACTIVATION_FN_DICT["gelu_tf"],
-        ):
-            self.functype = 2
-        elif activation_fn == ACTIVATION_FN_DICT["relu"]:
-            self.functype = 3
-        elif activation_fn == ACTIVATION_FN_DICT["relu6"]:
-            self.functype = 4
-        elif activation_fn == ACTIVATION_FN_DICT["softplus"]:
-            self.functype = 5
-        elif activation_fn == ACTIVATION_FN_DICT["sigmoid"]:
-            self.functype = 6
+        activation_map = {
+            "tanh": 1,
+            "gelu": 2,
+            "gelu_tf": 2,
+            "relu": 3,
+            "relu6": 4,
+            "softplus": 5,
+            "sigmoid": 6,
+        }
+        
+        activation = activation_fn.activation
+        if activation in activation_map:
+            self.functype = activation_map[activation]
         else:
             raise RuntimeError("Unknown activation function type!")
+
         self.activation_fn = activation_fn
 
-        if (
-            isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR)
-            or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA)
-            or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT)
-            or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT)
-            or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1)
-        ):
+        descriptor_classes = (
+            deepmd.pt.model.descriptor.DescrptSeR,
+            deepmd.pt.model.descriptor.DescrptSeA,
+            deepmd.pt.model.descriptor.DescrptSeT,
+            deepmd.pt.model.descriptor.DescrptDPA1,
+        )
+
+        if isinstance(self.descrpt, descriptor_classes):
             self.sel_a = self.descrpt.get_sel()
             self.rcut = self.descrpt.get_rcut()
             self.rcut_smth = self.descrpt.get_rcut_smth()
@@ -281,8 +283,11 @@ class DPTabulate:
 
         # tt.shape: [nspline, self.last_layer_size]
         if isinstance(
-            self.descrpt, deepmd.pt.model.descriptor.DescrptSeA
-        ) or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+            self.descrpt, (
+                deepmd.pt.model.descriptor.DescrptSeA,
+                deepmd.pt.model.descriptor.DescrptDPA1,
+            )
+        ):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
@@ -509,9 +514,9 @@ class DPTabulate:
                 dy = dz
                 yy = zz
 
-        vv = zz.detach().numpy()
-        dd = dy.detach().numpy()
-        d2 = dy2.detach().numpy()
+        vv = zz.detach().cpu().numpy().astype(self.data_type)
+        dd = dy.detach().cpu().numpy().astype(self.data_type)
+        d2 = dy2.detach().cpu().numpy().astype(self.data_type)
         return vv, dd, d2
 
     def _layer_0(self, x, w, b):
@@ -772,8 +777,7 @@ class DPTabulate:
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii])  # pylint: disable=no-explicit-device, no-explicit-dtype
 
-    @property
-    @lru_cache
+    @cached_property
     def _n_all_excluded(self) -> int:
         """Then number of types excluding all types."""
         return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))

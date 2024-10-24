@@ -23,7 +23,9 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
-    get_activation_func,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.pt.utils.tabulate import (
     DPTabulate,
@@ -618,7 +620,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             self.serialize()["neuron"],
             self.serialize()["type_one_side"],
             self.serialize()["exclude_types"],
-            get_activation_func(self.serialize()["activation_function"]),
+            ActivationFn(self.serialize()["activation_function"]),
         )
         self.table_config = [
             table_extrapolate,

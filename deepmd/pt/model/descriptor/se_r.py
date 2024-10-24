@@ -25,7 +25,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISON_DICT,
-    get_activation_func,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
@@ -60,6 +62,10 @@ from .base_descriptor import (
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")
 class DescrptSeR(BaseDescriptor, torch.nn.Module):
+    lower: dict[str, Union[np.float32, np.float64]]
+    upper: dict[str, Union[np.float32, np.float64]]
+    table_config: list[Union[int, float]]
+
     def __init__(
         self,
         rcut,
@@ -341,7 +347,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             self.serialize()["neuron"],
             self.serialize()["type_one_side"],
             self.serialize()["exclude_types"],
-            get_activation_func(self.serialize()["activation_function"]),
+            ActivationFn(self.serialize()["activation_function"]),
         )
         self.table_config = [
             table_extrapolate,
