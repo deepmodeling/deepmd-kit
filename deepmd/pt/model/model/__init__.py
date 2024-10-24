@@ -288,7 +288,7 @@ def get_model(model_params):
     elif model_type == "linear_ener":
         return get_linear_model(model_params)
     else:
-        return get_standard_model(model_params)
+        return BaseModel.get_class_by_type(model_type).get_model(model_params)
 
 
 __all__ = [
