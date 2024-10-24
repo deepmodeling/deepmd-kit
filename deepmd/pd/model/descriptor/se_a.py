@@ -55,7 +55,7 @@ from deepmd.pd.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.utils.exclude_mask import (
+from deepmd.pd.utils.exclude_mask import (
     PairExcludeMask,
 )
 

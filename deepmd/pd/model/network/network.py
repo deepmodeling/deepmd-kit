@@ -169,7 +169,7 @@ class Linear(nn.Linear):
         init.kaiming_normal_(self.weight, nonlinearity="linear")
 
 
-class NonLinearHead(nn.Module):
+class NonLinearHead(nn.Layer):
     def __init__(self, input_dim, out_dim, activation_fn, hidden=None):
         super().__init__()
         hidden = input_dim if not hidden else hidden
@@ -182,7 +182,7 @@ class NonLinearHead(nn.Module):
         return x
 
 
-class MaskLMHead(nn.Module):
+class MaskLMHead(nn.Layer):
     """Head for masked language modeling."""
 
     def __init__(self, embed_dim, output_dim, activation_fn, weight=None):
@@ -193,7 +193,7 @@ class MaskLMHead(nn.Module):
 
         if weight is None:
             weight = nn.Linear(embed_dim, output_dim, bias_attr=False).weight
-        self.weight = weight
+        self.weight = weight.T
         self.bias = self.create_parameter(
             [output_dim],
             dtype=env.GLOBAL_PD_FLOAT_PRECISION,

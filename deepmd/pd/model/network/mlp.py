@@ -219,7 +219,7 @@ class MLPLayer(nn.Layer):
         ori_prec = xx.dtype
         xx = xx.astype(self.prec)
         yy = (
-            paddle.matmul(xx, self.matrix.astype(self.prec)) + self.bias
+            paddle.matmul(xx, self.matrix) + self.bias
             if self.bias is not None
             else paddle.matmul(xx, self.matrix)
         )

@@ -608,6 +608,9 @@ class RepformerLayer(paddle.nn.Layer):
         precision: str = "float64",
         trainable_ln: bool = True,
         ln_eps: Optional[float] = 1e-5,
+        use_sqrt_nnei: bool = True,
+        g1_out_conv: bool = True,
+        g1_out_mlp: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
@@ -647,6 +650,9 @@ class RepformerLayer(paddle.nn.Layer):
         self.ln_eps = ln_eps
         self.precision = precision
         self.seed = seed
+        self.use_sqrt_nnei = use_sqrt_nnei
+        self.g1_out_conv = g1_out_conv
+        self.g1_out_mlp = g1_out_mlp
 
         assert update_residual_init in [
             "norm",
@@ -702,14 +708,52 @@ class RepformerLayer(paddle.nn.Layer):
                         seed=child_seed(seed, 3),
                     )
                 )
-        if self.update_g1_has_conv:
-            self.proj_g1g2 = MLPLayer(
+        if self.g1_out_mlp:
+            self.g1_self_mlp = MLPLayer(
                 g1_dim,
-                g2_dim,
-                bias=False,
+                g1_dim,
                 precision=precision,
-                seed=child_seed(seed, 4),
+                seed=child_seed(seed, 15),
             )
+            if self.update_style == "res_residual":
+                self.g1_residual.append(
+                    get_residual(
+                        g1_dim,
+                        self.update_residual,
+                        self.update_residual_init,
+                        precision=precision,
+                        seed=child_seed(seed, 16),
+                    )
+                )
+        else:
+            self.g1_self_mlp = None
+        if self.update_g1_has_conv:
+            if not self.g1_out_conv:
+                self.proj_g1g2 = MLPLayer(
+                    g1_dim,
+                    g2_dim,
+                    bias=False,
+                    precision=precision,
+                    seed=child_seed(seed, 4),
+                )
+            else:
+                self.proj_g1g2 = MLPLayer(
+                    g2_dim,
+                    g1_dim,
+                    bias=False,
+                    precision=precision,
+                    seed=child_seed(seed, 4),
+                )
+                if self.update_style == "res_residual":
+                    self.g1_residual.append(
+                        get_residual(
+                            g1_dim,
+                            self.update_residual,
+                            self.update_residual_init,
+                            precision=precision,
+                            seed=child_seed(seed, 17),
+                        )
+                    )
         if self.update_g2_has_g1g1:
             self.proj_g1g1g2 = MLPLayer(
                 g1_dim,
@@ -799,12 +843,12 @@ class RepformerLayer(paddle.nn.Layer):
         self.h2_residual = nn.ParameterList(self.h2_residual)
 
     def cal_1_dim(self, g1d: int, g2d: int, ax: int) -> int:
-        ret = g1d
+        ret = g1d if not self.g1_out_mlp else 0
         if self.update_g1_has_grrg:
             ret += g2d * ax
         if self.update_g1_has_drrd:
             ret += g1d * ax
-        if self.update_g1_has_conv:
+        if self.update_g1_has_conv and not self.g1_out_conv:
             ret += g2d
         return ret
 
@@ -854,9 +898,12 @@ class RepformerLayer(paddle.nn.Layer):
         nb, nloc, nnei, _ = g2.shape
         ng1 = gg1.shape[-1]
         ng2 = g2.shape[-1]
-        # gg1  : nb x nloc x nnei x ng2
-        gg1 = self.proj_g1g2(gg1).reshape([nb, nloc, nnei, ng2])
-        # nb x nloc x nnei x ng2
+        if not self.g1_out_conv:
+            # gg1  : nb x nloc x nnei x ng2
+            gg1 = self.proj_g1g2(gg1).reshape([nb, nloc, nnei, ng2])
+        else:
+            gg1 = gg1.reshape([nb, nloc, nnei, ng1])
+        # nb x nloc x nnei x ng2/ng1
         gg1 = _apply_nlist_mask(gg1, nlist_mask)
         if not self.smooth:
             # normalized by number of neighbors, not smooth
@@ -870,8 +917,13 @@ class RepformerLayer(paddle.nn.Layer):
             invnnei = (1.0 / float(nnei)) * paddle.ones(
                 (nb, nloc, 1), dtype=gg1.dtype
             ).to(device=gg1.place)
-        # nb x nloc x ng2
-        g1_11 = paddle.sum(g2 * gg1, axis=2) * invnnei
+        if not self.g1_out_conv:
+            # nb x nloc x ng2
+            g1_11 = paddle.sum(g2 * gg1, axis=2) * invnnei
+        else:
+            g2 = self.proj_g1g2(g2).reshape([nb, nloc, nnei, ng1])
+            # nb x nloc x ng1
+            g1_11 = paddle.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
     @staticmethod
@@ -882,6 +934,7 @@ class RepformerLayer(paddle.nn.Layer):
         sw: paddle.Tensor,
         smooth: bool = True,
         epsilon: float = 1e-4,
+        use_sqrt_nnei: bool = True,
     ) -> paddle.Tensor:
         """
         Calculate the transposed rotation matrix.
@@ -916,15 +969,26 @@ class RepformerLayer(paddle.nn.Layer):
         g2 = _apply_nlist_mask(g2, nlist_mask)
         if not smooth:
             # nb x nloc
-            # must use astype here to convert bool to float, otherwise there will be numerical difference from numpy
-            invnnei = 1.0 / (epsilon + paddle.sum(nlist_mask.astype(g2.dtype), axis=-1))
+            # must use type_as here to convert bool to float, otherwise there will be numerical difference from numpy
+            if not use_sqrt_nnei:
+                invnnei = 1.0 / (epsilon + paddle.sum(nlist_mask.type_as(g2), axis=-1))
+            else:
+                invnnei = 1.0 / (
+                    epsilon + paddle.sqrt(paddle.sum(nlist_mask.type_as(g2), axis=-1))
+                )
             # nb x nloc x 1 x 1
             invnnei = invnnei.unsqueeze(-1).unsqueeze(-1)
         else:
             g2 = _apply_switch(g2, sw)
-            invnnei = (1.0 / float(nnei)) * paddle.ones(
-                (nb, nloc, 1, 1), dtype=g2.dtype
-            ).to(device=g2.place)
+            if not use_sqrt_nnei:
+                invnnei = (1.0 / float(nnei)) * paddle.ones(
+                    (nb, nloc, 1, 1), dtype=g2.dtype
+                ).to(device=g2.place)
+            else:
+                invnnei = paddle.rsqrt(
+                    float(nnei)
+                    * paddle.ones((nb, nloc, 1, 1), dtype=g2.dtype).to(device=g2.place)
+                )
         # nb x nloc x 3 x ng2
         h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei
         return h2g2
@@ -997,7 +1061,15 @@ class RepformerLayer(paddle.nn.Layer):
         # msk: nb x nloc x nnei
         nb, nloc, nnei, _ = g2.shape
         # nb x nloc x 3 x ng2
-        h2g2 = self._cal_hg(g2, h2, nlist_mask, sw, smooth=smooth, epsilon=epsilon)
+        h2g2 = self._cal_hg(
+            g2,
+            h2,
+            nlist_mask,
+            sw,
+            smooth=smooth,
+            epsilon=epsilon,
+            use_sqrt_nnei=self.use_sqrt_nnei,
+        )
         # nb x nloc x (axisxng2)
         g1_13 = self._cal_grrg(h2g2, axis_neuron)
         return g1_13
@@ -1072,7 +1144,11 @@ class RepformerLayer(paddle.nn.Layer):
         g2_update: list[paddle.Tensor] = [g2]
         h2_update: list[paddle.Tensor] = [h2]
         g1_update: list[paddle.Tensor] = [g1]
-        g1_mlp: list[paddle.Tensor] = [g1]
+        g1_mlp: list[paddle.Tensor] = [g1] if not self.g1_out_mlp else []
+        if self.g1_out_mlp:
+            assert self.g1_self_mlp is not None
+            g1_self_mlp = self.act(self.g1_self_mlp(g1))
+            g1_update.append(g1_self_mlp)
 
         if cal_gg1:
             gg1 = _make_nei_g1(g1_ext, nlist)
@@ -1114,7 +1190,11 @@ class RepformerLayer(paddle.nn.Layer):
 
         if self.update_g1_has_conv:
             assert gg1 is not None
-            g1_mlp.append(self._update_g1_conv(gg1, g2, nlist_mask, sw))
+            g1_conv = self._update_g1_conv(gg1, g2, nlist_mask, sw)
+            if not self.g1_out_conv:
+                g1_mlp.append(g1_conv)
+            else:
+                g1_update.append(g1_conv)
 
         if self.update_g1_has_grrg:
             g1_mlp.append(
@@ -1247,6 +1327,9 @@ class RepformerLayer(paddle.nn.Layer):
             "smooth": self.smooth,
             "precision": self.precision,
             "trainable_ln": self.trainable_ln,
+            "use_sqrt_nnei": self.use_sqrt_nnei,
+            "g1_out_conv": self.g1_out_conv,
+            "g1_out_mlp": self.g1_out_mlp,
             "ln_eps": self.ln_eps,
             "linear1": self.linear1.serialize(),
         }
@@ -1294,6 +1377,12 @@ class RepformerLayer(paddle.nn.Layer):
                     "loc_attn": self.loc_attn.serialize(),
                 }
             )
+        if self.g1_out_mlp:
+            data.update(
+                {
+                    "g1_self_mlp": self.g1_self_mlp.serialize(),
+                }
+            )
         if self.update_style == "res_residual":
             data.update(
                 {
@@ -1324,6 +1413,7 @@ class RepformerLayer(paddle.nn.Layer):
         update_h2 = data["update_h2"]
         update_g1_has_attn = data["update_g1_has_attn"]
         update_style = data["update_style"]
+        g1_out_mlp = data["g1_out_mlp"]
 
         linear2 = data.pop("linear2", None)
         proj_g1g2 = data.pop("proj_g1g2", None)
@@ -1333,6 +1423,7 @@ class RepformerLayer(paddle.nn.Layer):
         attn2_lm = data.pop("attn2_lm", None)
         attn2_ev_apply = data.pop("attn2_ev_apply", None)
         loc_attn = data.pop("loc_attn", None)
+        g1_self_mlp = data.pop("g1_self_mlp", None)
         g1_residual = data.pop("g1_residual", [])
         g2_residual = data.pop("g2_residual", [])
         h2_residual = data.pop("h2_residual", [])
@@ -1362,6 +1453,9 @@ class RepformerLayer(paddle.nn.Layer):
         if update_g1_has_attn:
             assert isinstance(loc_attn, dict)
             obj.loc_attn = LocalAtten.deserialize(loc_attn)
+        if g1_out_mlp:
+            assert isinstance(g1_self_mlp, dict)
+            obj.g1_self_mlp = MLPLayer.deserialize(g1_self_mlp)
         if update_style == "res_residual":
             for ii, t in enumerate(obj.g1_residual):
                 t.data = to_paddle_tensor(g1_residual[ii])
