@@ -602,7 +602,14 @@ class EnerFitting(Fitting):
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
 
         aparam = None
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+        if self.numb_aparam > 0:
+            if self.use_aparam_as_mask:
+                t_aparam_avg = tf.zeros(
+                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
+                )
+                t_aparam_istd = tf.ones(
+                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
+                )
             aparam = input_dict["aparam"]
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
