@@ -3,6 +3,9 @@
 
 from scikit_build_core import build as _orig
 
+from .find_paddle import (
+    find_paddle,
+)
 from .find_pytorch import (
     find_pytorch,
 )
@@ -43,6 +46,7 @@ def get_requires_for_build_wheel(
         _orig.get_requires_for_build_wheel(config_settings)
         + find_tensorflow()[1]
         + find_pytorch()[1]
+        + find_paddle()[1]
     )
 
 
@@ -53,4 +57,5 @@ def get_requires_for_build_editable(
         _orig.get_requires_for_build_editable(config_settings)
         + find_tensorflow()[1]
         + find_pytorch()[1]
+        + find_paddle()[1]
     )

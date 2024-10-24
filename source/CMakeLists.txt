@@ -4,6 +4,7 @@ project(DeePMD)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
+option(ENABLE_PADDLE "Enable Paddle interface" OFF)
 option(BUILD_TESTING "Build test and enable converage" OFF)
 set(DEEPMD_C_ROOT
     ""
@@ -20,6 +21,38 @@ if(NOT DEEPMD_C_ROOT)
   # we can still allow C++ 11 for programs linked to the C library
   set_if_higher(CMAKE_CXX_STANDARD 14)
 endif()
+
+if(ENABLE_PADDLE)
+  if(NOT DEFINED PADDLE_INFERENCE_DIR)
+    message(
+      FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when ENABLE_PADDLE=ON")
+  endif()
+
+  set(PADDLE_INFERENCE_DIR
+      ${PADDLE_INFERENCE_DIR}
+      CACHE PATH "Path to 'paddle_inference_install_dir' or 'paddle_inference'")
+
+  # used in api_cc
+  set(PADDLE_LIBRARIES
+      "${PADDLE_INFERENCE_DIR}/paddle/lib/libpaddle_inference.so"
+      CACHE PATH "Path to libpaddle_inference.so")
+
+  include_directories("${PADDLE_INFERENCE_DIR}/")
+  set(PADDLE_LIB_THIRD_PARTY_PATH
+      "${PADDLE_INFERENCE_DIR}/third_party/install/")
+
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/include")
+  include_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/include")
+
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}protobuf/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}glog/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}gflags/lib")
+  link_directories("${PADDLE_LIB_THIRD_PARTY_PATH}xxhash/lib")
+  link_directories("${PADDLE_INFERENCE_DIR}/paddle/lib")
+  # if (USE_ROCM_TOOLKIT) add_definitions(-D_GLIBCXX_USE_CXX11_ABI=1) endif()
+endif(ENABLE_PADDLE)
 
 if(BUILD_TESTING)
   enable_testing()
@@ -255,8 +288,12 @@ if(NOT DEEPMD_C_ROOT)
   if(ENABLE_PYTORCH)
     message(STATUS "- PyTorch")
   endif()
+  if(ENABLE_PADDLE)
+    message(STATUS "- Paddle")
+  endif()
   if(NOT ENABLE_TENSORFLOW
      AND NOT ENABLE_PYTORCH
+     AND NOT ENABLE_PADDLE
      AND NOT BUILD_PY_IF)
     message(FATAL_ERROR "No backend is enabled.")
   endif()
