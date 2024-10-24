@@ -561,7 +561,7 @@ class EnerFitting(Fitting):
                     trainable=False,
                     initializer=tf.constant_initializer(self.fparam_inv_std),
                 )
-            if self.numb_aparam > 0:
+            if self.numb_aparam > 0 and not self.use_aparam_as_mask:
                 t_aparam_avg = tf.get_variable(
                     "t_aparam_avg",
                     self.numb_aparam,
@@ -575,6 +575,13 @@ class EnerFitting(Fitting):
                     dtype=GLOBAL_TF_FLOAT_PRECISION,
                     trainable=False,
                     initializer=tf.constant_initializer(self.aparam_inv_std),
+                )
+            else:
+                t_aparam_avg = tf.zeros(
+                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
+                )
+                t_aparam_istd = tf.ones(
+                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
                 )
 
         inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
@@ -602,14 +609,7 @@ class EnerFitting(Fitting):
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
 
         aparam = None
-        if self.numb_aparam > 0:
-            if self.use_aparam_as_mask:
-                t_aparam_avg = tf.zeros(
-                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
-                )
-                t_aparam_istd = tf.ones(
-                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
-                )
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             aparam = input_dict["aparam"]
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
