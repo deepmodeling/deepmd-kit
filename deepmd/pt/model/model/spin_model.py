@@ -15,6 +15,9 @@ from deepmd.dpmodel import (
 from deepmd.pt.model.atomic_model import (
     DPAtomicModel,
 )
+from deepmd.pt.utils.spin import (
+    concat_switch_virtual,
+)
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
@@ -79,15 +82,15 @@ class SpinModel(torch.nn.Module):
             self.virtual_scale_mask.to(extended_atype.device)
         )[extended_atype].reshape([nframes, nall, 1])
         virtual_extended_atype = extended_atype + self.ntypes_real
-        extended_coord_updated = self.concat_switch_virtual(
+        extended_coord_updated = concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
         )
-        extended_atype_updated = self.concat_switch_virtual(
+        extended_atype_updated = concat_switch_virtual(
             extended_atype, virtual_extended_atype, nloc
         )
         if mapping is not None:
             virtual_mapping = mapping + nloc
-            mapping_updated = self.concat_switch_virtual(mapping, virtual_mapping, nloc)
+            mapping_updated = concat_switch_virtual(mapping, virtual_mapping, nloc)
         else:
             mapping_updated = None
         # extend the nlist
@@ -202,33 +205,6 @@ class SpinModel(torch.nn.Module):
         extended_nlist[first_part_index] += nloc
         extended_nlist[second_part_index] -= nall - nloc
         return extended_nlist
-
-    @staticmethod
-    def concat_switch_virtual(extended_tensor, extended_tensor_virtual, nloc: int):
-        """
-        Concat real and virtual extended tensors, and switch all the local ones to the first nloc * 2 atoms.
-        - [:, :nloc]: original nloc real atoms.
-        - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
-        - [:, nloc + nloc: nloc + nall]: ghost real atoms.
-        - [:, nloc + nall: nall + nall]: virtual atoms corresponding to ghost real atoms.
-        """
-        nframes, nall = extended_tensor.shape[:2]
-        out_shape = list(extended_tensor.shape)
-        out_shape[1] *= 2
-        extended_tensor_updated = torch.zeros(
-            out_shape,
-            dtype=extended_tensor.dtype,
-            device=extended_tensor.device,
-        )
-        extended_tensor_updated[:, :nloc] = extended_tensor[:, :nloc]
-        extended_tensor_updated[:, nloc : nloc + nloc] = extended_tensor_virtual[
-            :, :nloc
-        ]
-        extended_tensor_updated[:, nloc + nloc : nloc + nall] = extended_tensor[
-            :, nloc:
-        ]
-        extended_tensor_updated[:, nloc + nall :] = extended_tensor_virtual[:, nloc:]
-        return extended_tensor_updated.view(out_shape)
 
     @staticmethod
     def expand_aparam(aparam, nloc: int):
@@ -469,6 +445,7 @@ class SpinModel(torch.nn.Module):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
         extra_nlist_sort: bool = False,
     ):
         nframes, nloc = nlist.shape[:2]
@@ -490,6 +467,7 @@ class SpinModel(torch.nn.Module):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
             extra_nlist_sort=extra_nlist_sort,
         )
         model_output_type = self.backbone_model.model_output_type()
@@ -605,6 +583,7 @@ class SpinEnergyModel(SpinModel):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -615,6 +594,7 @@ class SpinEnergyModel(SpinModel):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            comm_dict=comm_dict,
             extra_nlist_sort=self.backbone_model.need_sorted_nlist_for_lower(),
         )
         model_predict = {}

@@ -74,6 +74,20 @@ class DeepPotTF : public DeepPotBase {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& force_mag,
+               std::vector<VALUETYPE>& virial,
+               std::vector<VALUETYPE>& atom_energy,
+               std::vector<VALUETYPE>& atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<VALUETYPE>& spin,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam,
+               const std::vector<VALUETYPE>& aparam,
+               const bool atomic);
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -107,6 +121,23 @@ class DeepPotTF : public DeepPotBase {
                std::vector<VALUETYPE>& atom_energy,
                std::vector<VALUETYPE>& atom_virial,
                const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam,
+               const std::vector<VALUETYPE>& aparam,
+               const bool atomic);
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute(ENERGYVTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& force_mag,
+               std::vector<VALUETYPE>& virial,
+               std::vector<VALUETYPE>& atom_energy,
+               std::vector<VALUETYPE>& atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<VALUETYPE>& spin,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const int nghost,
@@ -236,6 +267,32 @@ class DeepPotTF : public DeepPotBase {
                 const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
+                std::vector<double>& force_mag,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<double>& spin,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& force_mag,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<float>& spin,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
                 std::vector<double>& virial,
                 std::vector<double>& atom_energy,
                 std::vector<double>& atom_virial,
@@ -254,6 +311,38 @@ class DeepPotTF : public DeepPotBase {
                 std::vector<float>& atom_energy,
                 std::vector<float>& atom_virial,
                 const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& force_mag,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<double>& spin,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const bool atomic);
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& force_mag,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<float>& spin,
                 const std::vector<int>& atype,
                 const std::vector<float>& box,
                 const int nghost,
@@ -287,6 +376,28 @@ class DeepPotTF : public DeepPotBase {
                            const std::vector<float>& aparam,
                            const bool atomic);
 
+  template <typename VALUETYPE>
+  void extend(int& extend_inum,
+              std::vector<int>& extend_ilist,
+              std::vector<int>& extend_numneigh,
+              std::vector<std::vector<int>>& extend_neigh,
+              std::vector<int*>& extend_firstneigh,
+              std::vector<VALUETYPE>& extend_dcoord,
+              std::vector<int>& extend_atype,
+              int& extend_nghost,
+              std::map<int, int>& new_idx_map,
+              std::map<int, int>& old_idx_map,
+              const InputNlist& lmp_list,
+              const std::vector<VALUETYPE>& dcoord,
+              const std::vector<int>& atype,
+              const int nghost,
+              const std::vector<VALUETYPE>& spin,
+              const int numb_types,
+              const int numb_types_spin,
+              const std::vector<VALUETYPE>& virtual_len,
+              const std::vector<VALUETYPE>& spin_norm);
+  void cum_sum(std::map<int, int>&, std::map<int, int>&);
+
  private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -294,6 +405,9 @@ class DeepPotTF : public DeepPotBase {
   bool inited;
   template <class VT>
   VT get_scalar(const std::string& name) const;
+  template <class VT>
+  void get_vector(std::vector<VT>& vec, const std::string& name) const;
+
   double rcut;
   int dtype;
   double cell_size;
@@ -301,6 +415,19 @@ class DeepPotTF : public DeepPotBase {
   std::string model_version;
   int ntypes;
   int ntypes_spin;
+  // std::vector<double> virtual_len;
+  // std::vector<double> spin_norm;
+  int extend_inum;
+  std::vector<int> extend_ilist;
+  std::vector<int> extend_numneigh;
+  std::vector<std::vector<int>> extend_neigh;
+  std::vector<int*> extend_firstneigh;
+  // std::vector<double> extend_dcoord;
+  std::vector<int> extend_dtype;
+  int extend_nghost;
+  // for spin systems, search new index of atoms by their old index
+  std::map<int, int> new_idx_map;
+  std::map<int, int> old_idx_map;
   int dfparam;
   int daparam;
   bool aparam_nall;
