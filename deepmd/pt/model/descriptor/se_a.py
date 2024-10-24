@@ -395,8 +395,8 @@ class DescrptBlockSeA(DescriptorBlock):
         - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
         """
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
