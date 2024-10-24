@@ -123,12 +123,7 @@ class DP(Calculator):
             cell = None
         symbols = self.atoms.get_chemical_symbols()
         atype = [self.type_dict[k] for k in symbols]
-        results_tmp = self.dp.eval(coords=coord, cells=cell, atom_types=atype)
-        if len(results_tmp) == 3:
-            e, f, v = results_tmp
-        else:
-            e, f, v = results_tmp[:-1]  # results_tmp[-1] is hessian
-        del results_tmp
+        e, f, v = self.dp.eval(coords=coord, cells=cell, atom_types=atype)[:3]
         self.results["energy"] = e[0][0]
         # see https://gitlab.com/ase/ase/-/merge_requests/2485
         self.results["free_energy"] = e[0][0]
