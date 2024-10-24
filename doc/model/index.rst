@@ -24,3 +24,4 @@ Model
    linear
    pairtab
    change-bias
+   precision

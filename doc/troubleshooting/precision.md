@@ -60,6 +60,7 @@ See [FAQ: How to tune Fitting/embedding-net size](./howtoset_netsize.md) for det
 
 In some cases, one may want to use the FP32 precision to make the model faster.
 For some applications, FP32 is enough and thus is recommended, but one should still be aware that the precision of FP32 is not as high as that of FP64.
+See [Floating-point precision of the model](../model/precision.md) section for how to set the precision.
 
 ## Training
 
