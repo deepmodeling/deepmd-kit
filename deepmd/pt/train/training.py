@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
     PropertyLoss,
+    TaskLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -1258,7 +1259,8 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["task_dim"] = task_dim
         return PropertyLoss(**loss_params)
     else:
-        raise NotImplementedError
+        loss_params["starter_learning_rate"] = start_lr
+        return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)
 
 
 def get_single_model(

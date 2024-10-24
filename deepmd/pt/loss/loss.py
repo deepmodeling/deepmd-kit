@@ -9,9 +9,12 @@ import torch
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.plugin import (
+    make_plugin_registry,
+)
 
 
-class TaskLoss(torch.nn.Module, ABC):
+class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
     def __init__(self, **kwargs):
         """Construct loss."""
         super().__init__()
