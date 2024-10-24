@@ -198,7 +198,7 @@ class GeneralFitting(Fitting):
             )
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
-        if not self.use_aparam_as_mask and self.numb_aparam > 0:
+        if self.numb_aparam > 0:
             self.register_buffer(
                 "aparam_avg",
                 torch.zeros(self.numb_aparam, dtype=self.prec, device=device),
@@ -210,9 +210,11 @@ class GeneralFitting(Fitting):
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
 
-        in_dim = self.dim_descrpt + self.numb_fparam
-        if not self.use_aparam_as_mask:
-            in_dim += self.numb_aparam
+        in_dim = (
+            self.dim_descrpt
+            + self.numb_fparam
+            + (0 if self.use_aparam_as_mask else self.numb_aparam)
+        )
 
         self.filter_layers = NetworkCollection(
             1 if not self.mixed_types else 0,
@@ -444,7 +446,7 @@ class GeneralFitting(Fitting):
                     dim=-1,
                 )
         # check aparam dim, concate to input descriptor
-        if not self.use_aparam_as_mask and self.numb_aparam > 0:
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
             assert self.aparam_avg is not None
             assert self.aparam_inv_std is not None

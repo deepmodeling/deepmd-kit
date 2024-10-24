@@ -155,15 +155,17 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.fparam_inv_std = np.ones(self.numb_fparam)  # pylint: disable=no-explicit-dtype
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+        if self.numb_aparam > 0:
             self.aparam_avg = np.zeros(self.numb_aparam)  # pylint: disable=no-explicit-dtype
             self.aparam_inv_std = np.ones(self.numb_aparam)  # pylint: disable=no-explicit-dtype
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
         # init networks
-        in_dim = self.dim_descrpt + self.numb_fparam
-        if not self.use_aparam_as_mask:
-            in_dim += self.numb_aparam
+        in_dim = (
+            self.dim_descrpt
+            + self.numb_fparam
+            + (0 if self.use_aparam_as_mask else self.numb_aparam)
+        )
         self.nets = NetworkCollection(
             1 if not self.mixed_types else 0,
             self.ntypes,
@@ -391,7 +393,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     axis=-1,
                 )
         # check aparam dim, concate to input descriptor
-        if not self.use_aparam_as_mask and self.numb_aparam > 0:
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
             if aparam.shape[-1] != self.numb_aparam:
                 raise ValueError(

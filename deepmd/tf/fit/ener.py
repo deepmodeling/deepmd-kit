@@ -340,7 +340,7 @@ class EnerFitting(Fitting):
                     self.fparam_std[ii] = protection
             self.fparam_inv_std = 1.0 / self.fparam_std
         # stat aparam
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+        if self.numb_aparam > 0:
             sys_sumv = []
             sys_sumv2 = []
             sys_sumn = []
@@ -505,7 +505,7 @@ class EnerFitting(Fitting):
                 self.fparam_avg = 0.0
             if self.fparam_inv_std is None:
                 self.fparam_inv_std = 1.0
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+        if self.numb_aparam > 0:
             if self.aparam_avg is None:
                 self.aparam_avg = 0.0
             if self.aparam_inv_std is None:
@@ -561,7 +561,7 @@ class EnerFitting(Fitting):
                     trainable=False,
                     initializer=tf.constant_initializer(self.fparam_inv_std),
                 )
-            if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+            if self.numb_aparam > 0:
                 t_aparam_avg = tf.get_variable(
                     "t_aparam_avg",
                     self.numb_aparam,
@@ -602,7 +602,7 @@ class EnerFitting(Fitting):
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
 
         aparam = None
-        if not self.use_aparam_as_mask and self.numb_aparam > 0:
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             aparam = input_dict["aparam"]
             aparam = tf.reshape(aparam, [-1, self.numb_aparam])
             aparam = (aparam - t_aparam_avg) * t_aparam_istd
@@ -895,9 +895,6 @@ class EnerFitting(Fitting):
         dict
             The serialized data
         """
-        in_dim = self.dim_descrpt + self.numb_fparam
-        if not self.use_aparam_as_mask:
-            in_dim += self.numb_aparam
         data = {
             "@class": "Fitting",
             "type": "ener",
@@ -924,7 +921,11 @@ class EnerFitting(Fitting):
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
                 ndim=0 if self.mixed_types else 1,
-                in_dim=in_dim,
+                in_dim=(
+                    self.dim_descrpt
+                    + self.numb_fparam
+                    + (0 if self.use_aparam_as_mask else self.numb_aparam)
+                ),
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
