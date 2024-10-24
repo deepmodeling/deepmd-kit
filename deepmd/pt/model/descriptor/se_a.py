@@ -422,8 +422,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
-    lower: dict[str, Union[np.float32, np.float64]]
-    upper: dict[str, Union[np.float32, np.float64]]
+    lower: dict[str, int]
+    upper: dict[str, int]
     table_config: list[Union[int, float]]
 
     def __init__(

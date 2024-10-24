@@ -266,6 +266,7 @@ class DPTabulate:
         else:
             raise RuntimeError("Unsupported descriptor")
         self._convert_numpy_to_tensor()
+        self._convert_numpy_float_to_int()
 
         return self.lower, self.upper
 
@@ -371,8 +372,21 @@ class DPTabulate:
         self.lower[net] = lower
 
     def _make_data(self, xx, idx):
-        xx = torch.from_numpy(xx)
-        xx = xx.view(xx.size(0), -1)
+        """Generate tabulation data for the given input.
+
+        Parameters
+        ----------
+        xx : np.ndarray
+            Input values to tabulate
+        idx : int
+            Index for accessing the correct network parameters
+            
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            Values, first derivatives, and second derivatives
+        """
+        xx = torch.from_numpy(xx).view(-1, 1)
         for layer in range(self.layer_size):
             if layer == 0:
                 xbar = torch.matmul(
@@ -773,6 +787,11 @@ class DPTabulate:
         """Convert self.data from np.ndarray to torch.Tensor."""
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii])  # pylint: disable=no-explicit-device, no-explicit-dtype
+    
+    def _convert_numpy_float_to_int(self):
+        """convert self.lower and self.upper from np.float32 or np.float64 to int"""
+        self.lower = {k: int(v) for k, v in self.lower.items()}
+        self.upper = {k: int(v) for k, v in self.upper.items()}
 
     @cached_property
     def _n_all_excluded(self) -> int:

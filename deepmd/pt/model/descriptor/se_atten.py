@@ -53,8 +53,8 @@ from deepmd.utils.version import (
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(DescriptorBlock):
-    lower: dict[str, Union[np.float32, np.float64]]
-    upper: dict[str, Union[np.float32, np.float64]]
+    lower: dict[str, int]
+    upper: dict[str, int]
     table_config: list[Union[int, float]]
 
     def __init__(
@@ -569,6 +569,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 gg = gg_s * gg_t + gg_s
 
         if not self.compress:
+            if 'gg' not in locals():
+                raise ValueError("Error: 'gg' has not been initialized before use.")
             input_r = torch.nn.functional.normalize(
                 rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
             )
