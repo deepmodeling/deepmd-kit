@@ -19,6 +19,9 @@ from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
 )
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
@@ -56,8 +59,12 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
         self.n_out = len(self.bias_keys)
-        out_bias_data = np.zeros([self.n_out, ntypes, self.max_out_size])  # pylint: disable=no-explicit-dtype
-        out_std_data = np.ones([self.n_out, ntypes, self.max_out_size])  # pylint: disable=no-explicit-dtype
+        out_bias_data = np.zeros(
+            [self.n_out, ntypes, self.max_out_size], dtype=GLOBAL_NP_FLOAT_PRECISION
+        )
+        out_std_data = np.ones(
+            [self.n_out, ntypes, self.max_out_size], dtype=GLOBAL_NP_FLOAT_PRECISION
+        )
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 

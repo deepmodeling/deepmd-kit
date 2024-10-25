@@ -6,6 +6,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+
 
 class Spin:
     """Class for spin, mainly processes the spin type-related information.
@@ -36,6 +40,7 @@ class Spin:
         use_spin: list[bool],
         virtual_scale: Union[list[float], float],
     ) -> None:
+        type_dtype = np.int32
         self.ntypes_real = len(use_spin)
         self.ntypes_spin = use_spin.count(True)
         self.use_spin = np.array(use_spin)
@@ -43,19 +48,24 @@ class Spin:
         self.ntypes_real_and_spin = self.ntypes_real + self.ntypes_spin
         self.ntypes_placeholder = self.ntypes_real - self.ntypes_spin
         self.ntypes_input = 2 * self.ntypes_real  # with placeholder for input types
-        self.real_type = np.arange(self.ntypes_real)  # pylint: disable=no-explicit-dtype
-        self.spin_type = np.arange(self.ntypes_real)[self.use_spin] + self.ntypes_real  # pylint: disable=no-explicit-dtype
+        self.real_type = np.arange(self.ntypes_real, dtype=type_dtype)
+        self.spin_type = self.real_type[self.use_spin] + self.ntypes_real
         self.real_and_spin_type = np.concatenate([self.real_type, self.spin_type])
         self.placeholder_type = (
-            np.arange(self.ntypes_real)[~self.use_spin] + self.ntypes_real  # pylint: disable=no-explicit-dtype
+            np.arange(self.ntypes_real, dtype=type_dtype)[~self.use_spin]
+            + self.ntypes_real
         )
-        self.spin_placeholder_type = np.arange(self.ntypes_real) + self.ntypes_real  # pylint: disable=no-explicit-dtype
-        self.input_type = np.arange(self.ntypes_real * 2)  # pylint: disable=no-explicit-dtype
+        self.spin_placeholder_type = (
+            np.arange(self.ntypes_real, dtype=type_dtype) + self.ntypes_real
+        )
+        self.input_type = np.arange(self.ntypes_real * 2, dtype=type_dtype)
         if isinstance(virtual_scale, list):
             if len(virtual_scale) == self.ntypes_real:
                 self.virtual_scale = virtual_scale
             elif len(virtual_scale) == self.ntypes_spin:
-                self.virtual_scale = np.zeros(self.ntypes_real)  # pylint: disable=no-explicit-dtype
+                self.virtual_scale = np.zeros(
+                    self.ntypes_real, dtype=GLOBAL_NP_FLOAT_PRECISION
+                )
                 self.virtual_scale[self.use_spin] = virtual_scale
             else:
                 raise ValueError(

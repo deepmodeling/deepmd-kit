@@ -13,6 +13,7 @@ from deepmd.dpmodel.descriptor.dpa1 import (
     NeighborGatedAttentionLayer as NeighborGatedAttentionLayerDP,
 )
 from deepmd.jax.common import (
+    ArrayAPIVariable,
     flax_module,
     to_jax_array,
 )
@@ -65,6 +66,8 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"mean", "stddev"}:
             value = to_jax_array(value)
+            if value is not None:
+                value = ArrayAPIVariable(value)
         elif name in {"embeddings", "embeddings_strip"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
