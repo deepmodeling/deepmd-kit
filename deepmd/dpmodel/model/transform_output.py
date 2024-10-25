@@ -97,9 +97,7 @@ def communicate_extended_output(
                     derv_r_ext_dims = list(vdef.shape) + [3]  # noqa:RUF005
                     mapping = xp.reshape(mapping, (mldims + [1] * len(derv_r_ext_dims)))
                     mapping = xp.tile(mapping, [1] * len(mldims) + derv_r_ext_dims)
-                    force = xp.zeros(
-                        vldims + derv_r_ext_dims, dtype=vv.dtype, device=vv.device
-                    )
+                    force = xp.zeros(vldims + derv_r_ext_dims, dtype=vv.dtype)
                     # jax only
                     if array_api_compat.is_jax_array(force):
                         from deepmd.jax.common import (
@@ -126,7 +124,8 @@ def communicate_extended_output(
                         mapping, [1] * (len(mldims) + len(vdef.shape)) + [3]
                     )
                     virial = xp.zeros(
-                        vldims + derv_c_ext_dims, dtype=vv.dtype, device=vv.device
+                        vldims + derv_c_ext_dims,
+                        dtype=vv.dtype,
                     )
                     # jax only
                     if array_api_compat.is_jax_array(virial):
