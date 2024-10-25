@@ -64,6 +64,7 @@ from .base_descriptor import (
 class DescrptSeR(BaseDescriptor, torch.nn.Module):
     lower: dict[str, int]
     upper: dict[str, int]
+    table_data: dict[str, torch.Tensor]
     table_config: list[Union[int, float]]
 
     def __init__(
@@ -104,6 +105,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.compress = False
         self.lower = {}
         self.upper = {}
+        self.table_data = {}
         self.table_config = []
 
         self.sel = sel
@@ -358,6 +360,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.lower, self.upper = self.table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
+        self.table_data = self.table.data
         self.compress = True
 
     def forward(
@@ -400,7 +403,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        del mapping
+        del mapping, comm_dict
         nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
@@ -445,7 +448,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                     self.table_config[2],
                     self.table_config[3],
                 ]
-                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                tensor_data = self.table_data[net].to(env.DEVICE).to(dtype=self.prec)
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
                     tensor_data.contiguous(),
                     torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
@@ -465,7 +468,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             result = torch.mean(xyz_scatter, dim=1) * res_rescale
         else:
             result = xyz_scatter * res_rescale
-        result = result.view(-1, nloc, self.filter_neuron[-1])
+        result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,

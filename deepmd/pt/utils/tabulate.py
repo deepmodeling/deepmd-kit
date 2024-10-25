@@ -789,7 +789,7 @@ class DPTabulate:
             self.data[ii] = torch.tensor(self.data[ii])  # pylint: disable=no-explicit-device, no-explicit-dtype
     
     def _convert_numpy_float_to_int(self):
-        """convert self.lower and self.upper from np.float32 or np.float64 to int"""
+        """Convert self.lower and self.upper from np.float32 or np.float64 to int."""
         self.lower = {k: int(v) for k, v in self.lower.items()}
         self.upper = {k: int(v) for k, v in self.upper.items()}
 

@@ -55,6 +55,7 @@ from deepmd.utils.version import (
 class DescrptBlockSeAtten(DescriptorBlock):
     lower: dict[str, int]
     upper: dict[str, int]
+    table_data: dict[str, torch.Tensor]
     table_config: list[Union[int, float]]
 
     def __init__(
@@ -187,6 +188,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.compress = False
         self.lower = {}
         self.upper = {}
+        self.table_data = {}
         self.table_config = []
 
         if isinstance(sel, int):
@@ -400,13 +402,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def enable_compression(
         self,
-        table,
+        table_data,
         table_config,
         lower,
         upper,
     ) -> None:
         self.compress = True
-        self.table = table
+        self.table_data = table_data
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
@@ -508,6 +510,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ss = torch.concat([ss, nlist_tebd], dim=2)
             # nfnl x nnei x ng
             gg = self.filter_layers.networks[0](ss)
+            input_r = torch.nn.functional.normalize(
+                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            # nfnl x 4 x ng
+            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         elif self.tebd_input_mode in ["strip"]:
             if self.compress:
                 net = "filter_net"
@@ -535,7 +545,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
                 # nfnl x nnei x ng
                 # gg = gg_s * gg_t + gg_s
-                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                tensor_data = self.table_data[net].to(env.DEVICE).to(dtype=self.prec)
                 info_tensor = torch.tensor(info, dtype=self.prec, device="cpu")
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 ss = ss.to(self.prec)
@@ -567,18 +577,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
                 # nfnl x nnei x ng
                 gg = gg_s * gg_t + gg_s
-
-        if not self.compress:
-            if 'gg' not in locals():
-                raise ValueError("Error: 'gg' has not been initialized before use.")
-            input_r = torch.nn.functional.normalize(
-                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-            )
-            gg = self.dpa1_attention(
-                gg, nlist_mask, input_r=input_r, sw=sw
-            )  # shape is [nframes*nloc, self.neei, out_size]
-            # nfnl x 4 x ng
-            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+                input_r = torch.nn.functional.normalize(
+                    rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+                )
+                gg = self.dpa1_attention(
+                    gg, nlist_mask, input_r=input_r, sw=sw
+                )  # shape is [nframes*nloc, self.neei, out_size]
+                # nfnl x 4 x ng
+                xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
 
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

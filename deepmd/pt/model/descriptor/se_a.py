@@ -274,7 +274,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
         self.sea.enable_compression(
-            self.table, self.table_config, self.lower, self.upper
+            self.table.data, self.table_config, self.lower, self.upper
         )
         self.compress = True
 
@@ -424,6 +424,7 @@ class DescrptBlockSeA(DescriptorBlock):
     __constants__: ClassVar[list] = ["ndescrpt"]
     lower: dict[str, int]
     upper: dict[str, int]
+    table_data: dict[str, torch.Tensor]
     table_config: list[Union[int, float]]
 
     def __init__(
@@ -488,6 +489,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.compress = False
         self.lower = {}
         self.upper = {}
+        self.table_data = {}
         self.table_config = []
 
         ndim = 1 if self.type_one_side else 2
@@ -646,13 +648,13 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def enable_compression(
         self,
-        table,
+        table_data,
         table_config,
         lower,
         upper,
     ) -> None:
         self.compress = True
-        self.table = table
+        self.table_data = table_data
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
@@ -743,7 +745,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     self.table_config[3],
                 ]
                 ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
-                tensor_data = self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                tensor_data = self.table_data[net].to(env.DEVICE).to(dtype=self.prec)
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
                     tensor_data.contiguous(),
                     torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),

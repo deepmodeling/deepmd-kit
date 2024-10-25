@@ -300,7 +300,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             min_nbor_dist, table_extrapolate, table_stride_1 * 10, table_stride_2 * 10
         )
         self.seat.enable_compression(
-            self.table, self.table_config, self.lower, self.upper
+            self.table.data, self.table_config, self.lower, self.upper
         )
         self.compress = True
 
@@ -450,6 +450,7 @@ class DescrptBlockSeT(DescriptorBlock):
     __constants__: ClassVar[list] = ["ndescrpt"]
     lower: dict[str, int]
     upper: dict[str, int]
+    table_data: dict[str, torch.Tensor]
     table_config: list[Union[int, float]]
 
     def __init__(
@@ -526,6 +527,7 @@ class DescrptBlockSeT(DescriptorBlock):
         self.compress = False
         self.lower = {}
         self.upper = {}
+        self.table_data = {}
         self.table_config = []
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -686,13 +688,13 @@ class DescrptBlockSeT(DescriptorBlock):
 
     def enable_compression(
         self,
-        table,
+        table_data,
         table_config,
         lower,
         upper,
     ) -> None:
         self.compress = True
-        self.table = table
+        self.table_data = table_data
         self.table_config = table_config
         self.lower = lower
         self.upper = upper
@@ -792,7 +794,7 @@ class DescrptBlockSeT(DescriptorBlock):
                         self.table_config[3],
                     ]
                     tensor_data = (
-                        self.table.data[net].to(env.DEVICE).to(dtype=self.prec)
+                        self.table_data[net].to(env.DEVICE).to(dtype=self.prec)
                     )
                     ebd_env_ij = ebd_env_ij.to(env.DEVICE).to(dtype=self.prec)
                     env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)

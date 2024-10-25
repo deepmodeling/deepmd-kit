@@ -633,7 +633,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         )
 
         self.se_atten.enable_compression(
-            self.table, self.table_config, self.lower, self.upper
+            self.table.data, self.table_config, self.lower, self.upper
         )
         self.compress = True
 
