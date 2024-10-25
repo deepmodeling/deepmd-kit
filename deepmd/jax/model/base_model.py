@@ -57,7 +57,16 @@ def forward_common_atomic(
                 for ss in range(size):
 
                     def eval_output(
-                        cc_ext, extended_atype, nlist, mapping, fparam, aparam
+                        cc_ext,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                        *,
+                        _kk=kk,
+                        _ss=ss,
+                        _atom_axis=atom_axis,
                     ):
                         atomic_ret = self.atomic_model.forward_common_atomic(
                             cc_ext[None, ...],
@@ -67,7 +76,7 @@ def forward_common_atomic(
                             fparam=fparam[None, ...] if fparam is not None else None,
                             aparam=aparam[None, ...] if aparam is not None else None,
                         )
-                        return jnp.sum(atomic_ret[kk][0], axis=atom_axis)[ss]
+                        return jnp.sum(atomic_ret[_kk][0], axis=_atom_axis)[_ss]
 
                     ffi = -jax.vmap(jax.grad(eval_output, argnums=0))(
                         extended_coord,

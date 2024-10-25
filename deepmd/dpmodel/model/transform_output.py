@@ -102,18 +102,16 @@ def communicate_extended_output(
                     )
                     # jax only
                     if array_api_compat.is_jax_array(force):
-                        from deepmd.jax.env import (
-                            jnp,
+                        from deepmd.jax.common import (
+                            scatter_sum,
                         )
 
-                        f_idx = xp.arange(force.size, dtype=xp.int64).reshape(
-                            force.shape
+                        force = scatter_sum(
+                            force,
+                            1,
+                            mapping,
+                            model_ret[kk_derv_r],
                         )
-                        new_idx = jnp.take_along_axis(f_idx, mapping, axis=1).ravel()
-                        f_shape = force.shape
-                        force = force.ravel()
-                        force = force.at[new_idx].add(model_ret[kk_derv_r].ravel())
-                        force = force.reshape(f_shape)
                     else:
                         raise NotImplementedError("Only JAX arrays are supported.")
                     new_ret[kk_derv_r] = force
@@ -132,18 +130,16 @@ def communicate_extended_output(
                     )
                     # jax only
                     if array_api_compat.is_jax_array(virial):
-                        from deepmd.jax.env import (
-                            jnp,
+                        from deepmd.jax.common import (
+                            scatter_sum,
                         )
 
-                        v_idx = xp.arange(virial.size, dtype=xp.int64).reshape(
-                            virial.shape
+                        virial = scatter_sum(
+                            virial,
+                            1,
+                            mapping,
+                            model_ret[kk_derv_c],
                         )
-                        new_idx = jnp.take_along_axis(v_idx, mapping, axis=1).ravel()
-                        v_shape = virial.shape
-                        virial = virial.ravel()
-                        virial = virial.at[new_idx].add(model_ret[kk_derv_c].ravel())
-                        virial = virial.reshape(v_shape)
                     else:
                         raise NotImplementedError("Only JAX arrays are supported.")
                     new_ret[kk_derv_c] = virial
