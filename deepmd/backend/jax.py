@@ -38,7 +38,7 @@ class JAXBackend(Backend):
         # | Backend.Feature.NEIGHBOR_STAT
     )
     """The features of the backend."""
-    suffixes: ClassVar[list[str]] = [".jax"]
+    suffixes: ClassVar[list[str]] = [".hlo", ".jax"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -71,7 +71,11 @@ class JAXBackend(Backend):
         type[DeepEvalBackend]
             The Deep Eval backend of the backend.
         """
-        raise NotImplementedError
+        from deepmd.jax.infer.deep_eval import (
+            DeepEval,
+        )
+
+        return DeepEval
 
     @property
     def neighbor_stat(self) -> type["NeighborStat"]:
