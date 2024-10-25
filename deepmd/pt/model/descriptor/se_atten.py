@@ -561,6 +561,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     self.filter_neuron[-1],
                     self.is_sorted,
                 )[0]
+                # to make torchscript happy
+                gg = torch.empty(nframes, nloc, self.nnei, self.filter_neuron[-1], dtype=gg_t.dtype, device=gg_t.device)
             else:
                 # nfnl x nnei x ng
                 gg_s = self.filter_layers.networks[0](ss)
