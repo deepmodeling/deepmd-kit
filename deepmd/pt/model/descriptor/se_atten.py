@@ -595,11 +595,11 @@ class DescrptBlockSeAtten(DescriptorBlock):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
-        
+
         if self.compress:
             return (
                 result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
-                None, 
+                None,
                 dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
                 rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
                 sw,
@@ -607,7 +607,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         else:
             return (
                 result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
-                gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1]), 
+                gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1]),
                 dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
                 rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
                 sw,
