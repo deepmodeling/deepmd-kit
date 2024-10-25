@@ -103,8 +103,9 @@ def forward_common_atomic(
                     *out_lead_shape, 9
                 )
                 # the correction sums to zero, which does not contribute to global virial
-                if do_atomic_virial:
-                    raise NotImplementedError("Atomic virial is not implemented yet.")
+                # cannot jit
+                # if do_atomic_virial:
+                #     raise NotImplementedError("Atomic virial is not implemented yet.")
                 # to [...,3,3] -> [...,9]
                 model_predict[kk_derv_c] = extended_virial
     return model_predict
