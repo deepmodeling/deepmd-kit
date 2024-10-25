@@ -185,6 +185,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
         # add for compression
         self.compress = False
+        self.is_sorted = False
         self.lower = {}
         self.upper = {}
         self.table_data = {}
@@ -397,6 +398,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
+        self.is_sorted = len(self.exclude_types) == 0
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def enable_compression(
@@ -558,7 +560,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ss = ss.to(self.prec)
                 rr = rr.to(self.prec)
                 gg_t = gg_t.to(self.prec)
-                is_sorted = len(self.exclude_types) == 0
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
                     tensor_data.contiguous(),
                     info_tensor.contiguous(),
@@ -566,7 +567,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     rr.contiguous(),
                     gg_t.contiguous(),
                     self.filter_neuron[-1],
-                    is_sorted,
+                    self.is_sorted,
                 )[0]
             else:
                 # nfnl x nnei x ng
@@ -592,6 +593,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 )  # shape is [nframes*nloc, self.neei, out_size]
                 # nfnl x 4 x ng
                 xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
+        else:
+            raise NotImplementedError
 
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
@@ -601,22 +604,13 @@ class DescrptBlockSeAtten(DescriptorBlock):
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
 
-        if not self.compress:
-            return (
-                result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
-                gg.view(-1, nloc, self.nnei, self.filter_neuron[-1]),
-                dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-                rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
-                sw,
-            )
-        else:
-            return (
-                result.view(-1, nloc, self.filter_neuron[-1] * self.axis_neuron),
-                None,
-                dmatrix.view(-1, nloc, self.nnei, 4)[..., 1:],
-                rot_mat.view(-1, nloc, self.filter_neuron[-1], 3),
-                sw,
-            )
+        return (
+            result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
+            gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1]) if not self.compress else None, 
+            dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
+            rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
+            sw,
+        )
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
