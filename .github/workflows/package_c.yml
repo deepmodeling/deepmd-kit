@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - tensorflow_build_version: "2.15"
+          - tensorflow_build_version: "2.18"
             tensorflow_version: ""
             filename: libdeepmd_c.tar.gz
           - tensorflow_build_version: "2.14"
