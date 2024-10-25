@@ -16,6 +16,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
+    SKIP_FLAG,
     CommonTest,
     parameterized,
 )
@@ -93,6 +94,21 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     pt_class = EnergyModelPT
     jax_class = EnergyModelJAX
     args = model_args()
+
+    def get_reference_backend(self):
+        """Get the reference backend.
+
+        We need a reference backend that can reproduce forces.
+        """
+        if not self.skip_pt:
+            return self.RefBackend.PT
+        if not self.skip_tf:
+            return self.RefBackend.TF
+        if not self.skip_jax:
+            return self.RefBackend.JAX
+        if not self.skip_dp:
+            return self.RefBackend.DP
+        raise ValueError("No available reference")
 
     @property
     def skip_tf(self):
@@ -195,11 +211,19 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
-            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
+            return (ret["energy_redu"].ravel(), ret["energy"].ravel(), SKIP_FLAG)
         elif backend is self.RefBackend.PT:
-            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
+            return (
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+            )
         elif backend is self.RefBackend.TF:
-            return (ret[0].ravel(), ret[1].ravel())
+            return (ret[0].ravel(), ret[1].ravel(), ret[2].ravel())
         elif backend is self.RefBackend.JAX:
-            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
+            return (
+                ret["energy_redu"].ravel(),
+                ret["energy"].ravel(),
+                ret["energy_derv_r"].ravel(),
+            )
         raise ValueError(f"Unknown backend: {backend}")

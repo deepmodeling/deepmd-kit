@@ -9,6 +9,7 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
+    OutputVariableDef,
     get_deriv_name,
     get_reduce_name,
 )
@@ -47,6 +48,15 @@ def fit_output_to_model_output(
     return model_ret
 
 
+def get_leading_dims(
+    vv: np.ndarray,
+    vdef: OutputVariableDef,
+):
+    """Get the dimensions of nf x nloc."""
+    vshape = vv.shape
+    return list(vshape[: (len(vshape) - len(vdef.shape))])
+
+
 def communicate_extended_output(
     model_ret: dict[str, np.ndarray],
     model_output_def: ModelOutputDef,
@@ -57,6 +67,7 @@ def communicate_extended_output(
     local and ghost (extended) atoms to local atoms.
 
     """
+    xp = array_api_compat.get_namespace(mapping)
     new_ret = {}
     for kk in model_output_def.keys_outp():
         vv = model_ret[kk]
@@ -67,8 +78,35 @@ def communicate_extended_output(
             new_ret[kk_redu] = model_ret[kk_redu]
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
-                # name holders
-                new_ret[kk_derv_r] = None
+                if model_ret[kk_derv_r] is not None:
+                    mldims = list(mapping.shape)
+                    vldims = get_leading_dims(vv, vdef)
+                    derv_r_ext_dims = list(vdef.shape) + [3]  # noqa:RUF005
+                    mapping = xp.reshape(mapping, (mldims + [1] * len(derv_r_ext_dims)))
+                    mapping = xp.tile(mapping, [1] * len(mldims) + derv_r_ext_dims)
+                    force = xp.zeros(
+                        vldims + derv_r_ext_dims, dtype=vv.dtype, device=vv.device
+                    )
+                    # jax only
+                    if array_api_compat.is_jax_array(force):
+                        from deepmd.jax.env import (
+                            jnp,
+                        )
+
+                        f_idx = xp.arange(force.size, dtype=xp.int64).reshape(
+                            force.shape
+                        )
+                        new_idx = jnp.take_along_axis(f_idx, mapping, axis=1).ravel()
+                        f_shape = force.shape
+                        force = force.ravel()
+                        force = force.at[new_idx].add(model_ret[kk_derv_r].ravel())
+                        force = force.reshape(f_shape)
+                    else:
+                        raise NotImplementedError("Only JAX arrays are supported.")
+                    new_ret[kk_derv_r] = force
+                else:
+                    # name holders
+                    new_ret[kk_derv_r] = None
             if vdef.c_differentiable:
                 assert vdef.r_differentiable
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
