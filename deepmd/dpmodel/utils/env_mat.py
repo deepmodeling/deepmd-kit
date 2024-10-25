@@ -62,8 +62,8 @@ def _make_env_mat(
     diff = coord_r - coord_l
     # nf x nloc x nnei
     # the grad of JAX vector_norm is NaN at x=0
-    diff = xp.where(xp.abs(diff) < 1e-30, xp.full_like(diff, 1e-30), diff)
-    length = xp.linalg.vector_norm(diff, axis=-1, keepdims=True)
+    diff_ = xp.where(xp.abs(diff) < 1e-30, xp.full_like(diff, 1e-30), diff)
+    length = xp.linalg.vector_norm(diff_, axis=-1, keepdims=True)
     # for index 0 nloc atom
     length = length + xp.astype(~xp.expand_dims(mask, axis=-1), length.dtype)
     t0 = 1 / (length + protection)
