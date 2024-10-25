@@ -41,3 +41,23 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
             whether the property is found
         """
         return loss if bool(find_property) else torch.nan
+
+    @classmethod
+    def get_loss(cls, loss_params: dict) -> "TaskLoss":
+        """Get the loss module by the parameters.
+
+        By default, all the parameters are directly passed to the constructor.
+        If not, override this method.
+
+        Parameters
+        ----------
+        loss_params : dict
+            The loss parameters
+
+        Returns
+        -------
+        TaskLoss
+            The loss module
+        """
+        loss = cls(**loss_params)
+        return loss
