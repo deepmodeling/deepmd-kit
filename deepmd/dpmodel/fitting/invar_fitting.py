@@ -139,10 +139,6 @@ class InvarFitting(GeneralFitting):
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
-        if use_aparam_as_mask:
-            raise NotImplementedError("use_aparam_as_mask is not implemented")
-        if use_aparam_as_mask:
-            raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
 

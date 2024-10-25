@@ -40,6 +40,7 @@ PropertyFittingTF = object
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
+    (0, 1),  # numb_aparam
     (1, 3),  # task_dim
     (True, False),  # intensive
 )
@@ -51,6 +52,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -59,6 +61,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "precision": precision,
             "numb_fparam": numb_fparam,
+            "numb_aparam": numb_aparam,
             "seed": 20240217,
             "task_dim": task_dim,
             "intensive": intensive,
@@ -71,6 +74,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -95,6 +99,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
         # inconsistent if not sorted
         self.atype.sort()
         self.fparam = -np.ones((1,), dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.aparam = np.zeros_like(
+            self.atype, dtype=GLOBAL_NP_FLOAT_PRECISION
+        ).reshape(-1, 1)
 
     @property
     def addtional_data(self) -> dict:
@@ -103,6 +110,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -118,6 +126,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -127,6 +136,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             self.natoms,
             self.atype,
             self.fparam if numb_fparam else None,
+            self.aparam if numb_aparam else None,
             suffix,
         )
 
@@ -136,6 +146,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -145,6 +156,9 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 fparam=torch.from_numpy(self.fparam).to(device=PT_DEVICE)
                 if numb_fparam
+                else None,
+                aparam=torch.from_numpy(self.aparam).to(device=PT_DEVICE)
+                if numb_aparam
                 else None,
             )["property"]
             .detach()
@@ -158,6 +172,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -165,6 +180,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             self.inputs,
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
+            aparam=self.aparam if numb_aparam else None,
         )["property"]
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
@@ -181,6 +197,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
@@ -199,6 +216,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             task_dim,
             intensive,
         ) = self.param
