@@ -53,6 +53,7 @@ def forward_common_atomic(
                     size *= ii
 
                 split_ff = []
+                split_vv = []
                 for ss in range(size):
 
                     def eval_output(
@@ -76,13 +77,25 @@ def forward_common_atomic(
                         fparam,
                         aparam,
                     )
+                    aviri = ffi[..., None] @ extended_coord[..., None, :]
                     ffi = ffi[..., None, :]
                     split_ff.append(ffi)
+                    aviri = aviri[..., None, :]
+                    split_vv.append(aviri)
                 out_lead_shape = list(extended_coord.shape[:-1]) + vdef.shape
-                ff = jnp.concatenate(split_ff, axis=-2).reshape(*out_lead_shape, 3)
+                extended_force = jnp.concat(split_ff, axis=-2).reshape(
+                    *out_lead_shape, 3
+                )
 
-                model_predict[kk_derv_r] = ff
+                model_predict[kk_derv_r] = extended_force
             if vdef.c_differentiable:
                 assert vdef.r_differentiable
-                model_predict[kk_derv_c] = None
+                extended_virial = jnp.concat(split_vv, axis=-2).reshape(
+                    *out_lead_shape, 9
+                )
+                # the correction sums to zero, which does not contribute to global virial
+                if do_atomic_virial:
+                    raise NotImplementedError("Atomic virial is not implemented yet.")
+                # to [...,3,3] -> [...,9]
+                model_predict[kk_derv_c] = extended_virial
     return model_predict

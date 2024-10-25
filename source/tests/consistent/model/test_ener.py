@@ -211,19 +211,26 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
-            return (ret["energy_redu"].ravel(), ret["energy"].ravel(), SKIP_FLAG)
+            return (
+                ret["energy_redu"].ravel(),
+                ret["energy"].ravel(),
+                SKIP_FLAG,
+                SKIP_FLAG,
+            )
         elif backend is self.RefBackend.PT:
             return (
                 ret["energy"].ravel(),
                 ret["atom_energy"].ravel(),
                 ret["force"].ravel(),
+                ret["virial"].ravel(),
             )
         elif backend is self.RefBackend.TF:
-            return (ret[0].ravel(), ret[1].ravel(), ret[2].ravel())
+            return (ret[0].ravel(), ret[1].ravel(), ret[2].ravel(), ret[3].ravel())
         elif backend is self.RefBackend.JAX:
             return (
                 ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
                 ret["energy_derv_r"].ravel(),
+                ret["energy_derv_c_redu"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
