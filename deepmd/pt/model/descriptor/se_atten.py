@@ -5,7 +5,6 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as torch_func
@@ -510,6 +509,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ss = torch.concat([ss, nlist_tebd], dim=2)
             # nfnl x nnei x ng
             gg = self.filter_layers.networks[0](ss)
+            input_r = torch.nn.functional.normalize(
+                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            # nfnl x 4 x ng
+            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
             input_r = torch.nn.functional.normalize(
                 rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
             )

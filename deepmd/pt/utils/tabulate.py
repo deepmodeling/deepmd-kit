@@ -380,7 +380,7 @@ class DPTabulate:
             Input values to tabulate
         idx : int
             Index for accessing the correct network parameters
-            
+
         Returns
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
@@ -787,7 +787,7 @@ class DPTabulate:
         """Convert self.data from np.ndarray to torch.Tensor."""
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii])  # pylint: disable=no-explicit-device, no-explicit-dtype
-    
+
     def _convert_numpy_float_to_int(self):
         """Convert self.lower and self.upper from np.float32 or np.float64 to int."""
         self.lower = {k: int(v) for k, v in self.lower.items()}
