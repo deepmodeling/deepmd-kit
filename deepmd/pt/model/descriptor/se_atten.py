@@ -606,7 +606,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
         return (
             result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
-            gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1]) if not self.compress else None, 
+            gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1])
+            if not self.compress
+            else None,
             dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
             rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
             sw,
