@@ -132,12 +132,15 @@ cu12 = [
     "nvidia-curand-cu12",
     "nvidia-cusolver-cu12",
     "nvidia-cusparse-cu12",
-    "nvidia-cudnn-cu12<9",
+    "nvidia-cudnn-cu12",
     "nvidia-cuda-nvcc-cu12",
 ]
 jax = [
     'jax>=0.4.33;python_version>="3.10"',
-    'flax>=0.8.0;python_version>="3.10"',
+    'flax>=0.10.0;python_version>="3.10"',
+    'orbax-checkpoint;python_version>="3.10"',
+    # The pinning of ml_dtypes may conflict with TF
+    # 'jax-ai-stack;python_version>="3.10"',
 ]
 
 [tool.deepmd_build_backend.scripts]
@@ -276,8 +279,6 @@ PATH = "/usr/lib64/mpich/bin:$PATH"
 UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 # trick to find the correction version of mpich
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
-# PT 2.4.0 requires cudnn 9, incompatible with TF with cudnn 8
-PYTORCH_VERSION = "2.3.1"
 
 [tool.cibuildwheel.windows]
 test-extras = ["cpu", "torch"]
@@ -402,6 +403,7 @@ banned-module-level-imports = [
 # Also ignore `E402` in all `__init__.py` files.
 "deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253"]
+"deepmd/jax/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
 "source/tests/universal/pt/**" = ["TID253"]
