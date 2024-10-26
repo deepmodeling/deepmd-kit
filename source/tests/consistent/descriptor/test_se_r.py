@@ -38,13 +38,13 @@ from deepmd.utils.argcheck import (
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_e2_r import DescrptSeR as DescrptSeRJAX
 else:
-    DescrptSeAJAX = None
+    DescrptSeRJAX = None
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.se_e2_r import (
         DescrptSeR as DescrptSeRArrayAPIStrict,
     )
 else:
-    DescrptSeAArrayAPIStrict = None
+    DescrptSeRArrayAPIStrict = None
 
 
 @parameterized(
