@@ -19,6 +19,10 @@ from deepmd.pt.utils.nlist import (
     extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
 )
 
+from ...consistent.common import (
+    parameterized,
+)
+from itertools import product
 
 def eval_pt_descriptor(
     pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
@@ -40,10 +44,13 @@ def eval_pt_descriptor(
     result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)
     return result
 
+dtypes = ["float32", "float64"]
+type_one_side_values = [True, False]
 
+@parameterized.expand(product(dtypes, type_one_side_values))
 class TestDescriptorSeA(unittest.TestCase):
     def setUp(self):
-        self.dtype = "float32"
+        (self.dtype, self.type_one_side) = self.param
         if self.dtype == "float32":
             self.atol = 1e-5
         elif self.dtype == "float64":
@@ -91,7 +98,7 @@ class TestDescriptorSeA(unittest.TestCase):
             self.sel,
             self.neuron,
             self.axis_neuron,
-            type_one_side=False,
+            type_one_side=self.type_one_side,
             seed=21,
             precision=self.dtype,
         )

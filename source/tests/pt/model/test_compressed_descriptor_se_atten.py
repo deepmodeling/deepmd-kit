@@ -19,6 +19,10 @@ from deepmd.pt.utils.nlist import (
     extend_coord_with_ghosts as extend_coord_with_ghosts_pt,
 )
 
+from ...consistent.common import (
+    parameterized,
+)
+from itertools import product
 
 def eval_pt_descriptor(
     pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
@@ -40,10 +44,13 @@ def eval_pt_descriptor(
     result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)
     return result
 
+dtypes = ["float32", "float64"]
+type_one_side_values = [True, False]
 
-class TestDescriptorSeT(unittest.TestCase):
+@parameterized.expand(product(dtypes, type_one_side_values))
+class TestDescriptorSeAtten(unittest.TestCase):
     def setUp(self):
-        self.dtype = "float32"
+        (self.dtype, self.type_one_side) = self.param
         if self.dtype == "float32":
             self.atol = 1e-5
         elif self.dtype == "float64":
@@ -97,7 +104,7 @@ class TestDescriptorSeT(unittest.TestCase):
             attn_layer=0,
             seed=21,
             precision=self.dtype,
-            type_one_side=False,
+            type_one_side=self.type_one_side,
             tebd_input_mode="strip",
         )
 
@@ -109,8 +116,13 @@ class TestDescriptorSeT(unittest.TestCase):
             self.atype,
             self.box,
         )
+
         if self.dtype == "float32":
             result_pt = result_pt.to(torch.float32)
+        elif self.dtype == "float64":
+            result_pt = result_pt.to(torch.float64)
+        else:
+            RuntimeError("No implement precesion")
 
         self.se_atten.enable_compression(1.0)
         result_pt_compressed = eval_pt_descriptor(
