@@ -4,20 +4,13 @@ from typing import (
     Optional,
 )
 
-from deepmd.dpmodel.model.transform_output import (
-    communicate_extended_output,
+from deepmd.dpmodel.model.make_model import (
+    model_call_from_call_lower,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
     OutputVariableDef,
-)
-from deepmd.dpmodel.utils.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
-)
-from deepmd.dpmodel.utils.region import (
-    normalize_coord,
 )
 from deepmd.jax.env import (
     jax_export,
@@ -148,44 +141,19 @@ class HLO(BaseModel):
             The keys are defined by the `ModelOutputDef`.
 
         """
-        nframes, nloc = atype.shape[:2]
-        cc, bb, fp, ap = coord, box, fparam, aparam
-        del coord, box, fparam, aparam
-        if bb is not None:
-            coord_normalized = normalize_coord(
-                cc.reshape(nframes, nloc, 3),
-                bb.reshape(nframes, 3, 3),
-            )
-        else:
-            coord_normalized = cc.copy()
-        extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-            coord_normalized, atype, bb, self.get_rcut()
-        )
-        nlist = build_neighbor_list(
-            extended_coord,
-            extended_atype,
-            nloc,
-            self.get_rcut(),
-            self.get_sel(),
-            distinguish_types=not self.mixed_types(),
-        )
-        extended_coord = extended_coord.reshape(nframes, -1, 3)
-        model_predict_lower = self.call_lower(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam=fp,
-            aparam=ap,
+        return model_call_from_call_lower(
+            call_lower=self.call_lower,
+            rcut=self.get_rcut(),
+            sel=self.get_sel(),
+            mixed_types=self.mixed_types(),
+            model_output_def=self.model_output_def(),
+            coord=coord,
+            atype=atype,
+            box=box,
+            fparam=fparam,
+            aparam=aparam,
             do_atomic_virial=do_atomic_virial,
         )
-        model_predict = communicate_extended_output(
-            model_predict_lower,
-            self.model_output_def(),
-            mapping,
-            do_atomic_virial=do_atomic_virial,
-        )
-        return model_predict
 
     def model_output_def(self):
         return ModelOutputDef(
@@ -284,7 +252,6 @@ class HLO(BaseModel):
 
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        # for C++ interface
         return self.nsel
 
     def get_sel(self) -> list[int]:

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Callable,
     Optional,
 )
 
@@ -37,6 +38,95 @@ from .transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
+
+
+def model_call_from_call_lower(
+    *,  # enforce keyword-only arguments
+    call_lower: Callable[
+        [
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            Optional[np.ndarray],
+            Optional[np.ndarray],
+            bool,
+        ],
+        dict[str, np.ndarray],
+    ],
+    rcut: float,
+    sel: list[int],
+    mixed_types: bool,
+    model_output_def: ModelOutputDef,
+    coord: np.ndarray,
+    atype: np.ndarray,
+    box: Optional[np.ndarray] = None,
+    fparam: Optional[np.ndarray] = None,
+    aparam: Optional[np.ndarray] = None,
+    do_atomic_virial: bool = False,
+):
+    """Return model prediction from lower interface.
+
+    Parameters
+    ----------
+    coord
+        The coordinates of the atoms.
+        shape: nf x (nloc x 3)
+    atype
+        The type of atoms. shape: nf x nloc
+    box
+        The simulation box. shape: nf x 9
+    fparam
+        frame parameter. nf x ndf
+    aparam
+        atomic parameter. nf x nloc x nda
+    do_atomic_virial
+        If calculate the atomic virial.
+
+    Returns
+    -------
+    ret_dict
+        The result dict of type dict[str,np.ndarray].
+        The keys are defined by the `ModelOutputDef`.
+
+    """
+    nframes, nloc = atype.shape[:2]
+    cc, bb, fp, ap = coord, box, fparam, aparam
+    del coord, box, fparam, aparam
+    if bb is not None:
+        coord_normalized = normalize_coord(
+            cc.reshape(nframes, nloc, 3),
+            bb.reshape(nframes, 3, 3),
+        )
+    else:
+        coord_normalized = cc.copy()
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord_normalized, atype, bb, rcut
+    )
+    nlist = build_neighbor_list(
+        extended_coord,
+        extended_atype,
+        nloc,
+        rcut,
+        sel,
+        distinguish_types=not mixed_types,
+    )
+    extended_coord = extended_coord.reshape(nframes, -1, 3)
+    model_predict_lower = call_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        fparam=fp,
+        aparam=ap,
+        do_atomic_virial=do_atomic_virial,
+    )
+    model_predict = communicate_extended_output(
+        model_predict_lower,
+        model_output_def,
+        mapping,
+        do_atomic_virial=do_atomic_virial,
+    )
+    return model_predict
 
 
 def make_model(T_AtomicModel: type[BaseAtomicModel]):
@@ -130,43 +220,21 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            nframes, nloc = atype.shape[:2]
             cc, bb, fp, ap, input_prec = self.input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
-            if bb is not None:
-                coord_normalized = normalize_coord(
-                    cc.reshape(nframes, nloc, 3),
-                    bb.reshape(nframes, 3, 3),
-                )
-            else:
-                coord_normalized = cc.copy()
-            extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-                coord_normalized, atype, bb, self.get_rcut()
-            )
-            nlist = build_neighbor_list(
-                extended_coord,
-                extended_atype,
-                nloc,
-                self.get_rcut(),
-                self.get_sel(),
-                distinguish_types=not self.mixed_types(),
-            )
-            extended_coord = extended_coord.reshape(nframes, -1, 3)
-            model_predict_lower = self.call_lower(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
+            model_predict = model_call_from_call_lower(
+                call_lower=self.call_lower,
+                rcut=self.get_rcut(),
+                sel=self.get_sel(),
+                mixed_types=self.mixed_types(),
+                model_output_def=self.model_output_def(),
+                coord=cc,
+                atype=atype,
+                box=bb,
                 fparam=fp,
                 aparam=ap,
-                do_atomic_virial=do_atomic_virial,
-            )
-            model_predict = communicate_extended_output(
-                model_predict_lower,
-                self.model_output_def(),
-                mapping,
                 do_atomic_virial=do_atomic_virial,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
