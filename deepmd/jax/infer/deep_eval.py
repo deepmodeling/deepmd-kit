@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """NumPy backend implementaion of DeepEval.
+    """NumPy backend implementation of DeepEval.
 
     Parameters
     ----------
@@ -132,7 +132,7 @@ class DeepEval(DeepEvalBackend):
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
-        """The the evaluator of the model type."""
+        """The evaluator of the model type."""
         model_output_type = self.dp.model_output_type()
         if "energy" in model_output_type:
             return DeepPot
@@ -389,5 +389,5 @@ class DeepEval(DeepEvalBackend):
             raise RuntimeError("unknown category")
 
     def get_model_def_script(self) -> dict:
-        """Get model defination script."""
+        """Get model definition script."""
         return json.loads(self.model.get_model_def_script())
