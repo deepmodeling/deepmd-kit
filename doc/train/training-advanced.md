@@ -114,7 +114,7 @@ The section {ref}`mixed_precision <training/mixed_precision>` specifies the mixe
 - {ref}`output_prec <training/mixed_precision/output_prec>` precision used in the output tensors, only `float32` is supported currently.
 - {ref}`compute_prec <training/mixed_precision/compute_prec>` precision used in the computing tensors, only `float16` is supported currently.
   Note there are several limitations about mixed precision training:
-- Only {ref}`se_e2_a <model/descriptor[se_e2_a]>` type descriptor is supported by the mixed precision training workflow.
+- Only {ref}`se_e2_a <model[standard]/descriptor[se_e2_a]>` type descriptor is supported by the mixed precision training workflow.
 - The precision of the embedding net and the fitting net are forced to be set to `float32`.
 
 Other keys in the {ref}`training <training>` section are explained below:

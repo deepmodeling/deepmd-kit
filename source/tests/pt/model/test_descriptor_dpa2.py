@@ -123,10 +123,10 @@ class TestDPA2(unittest.TestCase):
             **dparams,
         ).to(env.DEVICE)
         target_dict = des.state_dict()
-        source_dict = torch.load(self.file_model_param)
+        source_dict = torch.load(self.file_model_param, weights_only=True)
         # type_embd of repformer is removed
         source_dict.pop("type_embedding.embedding.embedding_net.layers.0.bias")
-        type_embd_dict = torch.load(self.file_type_embed)
+        type_embd_dict = torch.load(self.file_type_embed, weights_only=True)
         target_dict = translate_type_embd_dicts_to_dpa2(
             target_dict,
             source_dict,

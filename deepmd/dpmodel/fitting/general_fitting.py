@@ -14,9 +14,11 @@ import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -26,6 +28,9 @@ from deepmd.dpmodel.utils import (
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
@@ -133,6 +138,11 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.trainable = [self.trainable] * (len(self.neuron) + 1)
         self.activation_function = activation_function
         self.precision = precision
+        if self.precision.lower() not in PRECISION_DICT:
+            raise ValueError(
+                f"Unsupported precision '{self.precision}'. Supported options are: {list(PRECISION_DICT.keys())}"
+            )
+        self.prec = PRECISION_DICT[self.precision.lower()]
         self.layer_name = layer_name
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
@@ -146,18 +156,20 @@ class GeneralFitting(NativeOP, BaseFitting):
         net_dim_out = self._net_out_dim()
         # init constants
         if bias_atom_e is None:
-            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])  # pylint: disable=no-explicit-dtype
+            self.bias_atom_e = np.zeros(
+                [self.ntypes, net_dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION
+            )
         else:
             assert bias_atom_e.shape == (self.ntypes, net_dim_out)
-            self.bias_atom_e = bias_atom_e
+            self.bias_atom_e = bias_atom_e.astype(GLOBAL_NP_FLOAT_PRECISION)
         if self.numb_fparam > 0:
-            self.fparam_avg = np.zeros(self.numb_fparam)  # pylint: disable=no-explicit-dtype
-            self.fparam_inv_std = np.ones(self.numb_fparam)  # pylint: disable=no-explicit-dtype
+            self.fparam_avg = np.zeros(self.numb_fparam, dtype=self.prec)
+            self.fparam_inv_std = np.ones(self.numb_fparam, dtype=self.prec)
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
         if self.numb_aparam > 0:
-            self.aparam_avg = np.zeros(self.numb_aparam)  # pylint: disable=no-explicit-dtype
-            self.aparam_inv_std = np.ones(self.numb_aparam)  # pylint: disable=no-explicit-dtype
+            self.aparam_avg = np.zeros(self.numb_aparam, dtype=self.prec)
+            self.aparam_inv_std = np.ones(self.numb_aparam, dtype=self.prec)
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
         # init networks
@@ -410,7 +422,9 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         # calcualte the prediction
         if not self.mixed_types:
-            outs = xp.zeros([nf, nloc, net_dim_out])  # pylint: disable=no-explicit-dtype
+            outs = xp.zeros(
+                [nf, nloc, net_dim_out], dtype=get_xp_precision(xp, self.precision)
+            )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
                     xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
@@ -436,4 +450,4 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
         outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
-        return {self.var_name: outs}
+        return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}
