@@ -1035,9 +1035,19 @@ class Trainer:
                 )
         if self.multi_task:
             for model_key in self.model_keys:
-                del self.training_data[model_key], self.training_dataloader[model_key], self.validation_data[model_key], self.validation_dataloader[model_key]
+                del (
+                    self.training_data[model_key],
+                    self.training_dataloader[model_key],
+                    self.validation_data[model_key],
+                    self.validation_dataloader[model_key],
+                )
         else:
-            del self.training_data, self.training_dataloader, self.validation_data, self.validation_dataloader
+            del (
+                self.training_data,
+                self.training_dataloader,
+                self.validation_data,
+                self.validation_dataloader,
+            )
 
     def save_model(self, save_path, lr=0.0, step=0):
         module = (
