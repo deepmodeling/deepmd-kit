@@ -15,6 +15,9 @@ import deepmd
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
+from deepmd.pt.utils import (
+    env,
+)
 
 log = logging.getLogger(__name__)
 
@@ -386,12 +389,12 @@ class DPTabulate:
         tuple[np.ndarray, np.ndarray, np.ndarray]
             Values, first derivatives, and second derivatives
         """
-        xx = torch.from_numpy(xx).view(-1, 1)
+        xx = torch.from_numpy(xx).view(-1, 1).to(env.DEVICE)
         for layer in range(self.layer_size):
             if layer == 0:
                 xbar = torch.matmul(
-                    xx, torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx])
-                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx])
+                    xx, torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
+                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
                 if self.neuron[0] == 1:
                     yy = (
                         self._layer_0(
@@ -454,8 +457,8 @@ class DPTabulate:
                     )
             else:
                 ybar = torch.matmul(
-                    yy, torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx])
-                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx])
+                    yy, torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
+                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
                 if self.neuron[layer] == self.neuron[layer - 1]:
                     zz = (
                         self._layer_0(
@@ -531,13 +534,13 @@ class DPTabulate:
         return vv, dd, d2
 
     def _layer_0(self, x, w, b):
-        w = torch.from_numpy(w)
-        b = torch.from_numpy(b)
+        w = torch.from_numpy(w).to(env.DEVICE)
+        b = torch.from_numpy(b).to(env.DEVICE)
         return self.activation_fn(torch.matmul(x, w) + b)
 
     def _layer_1(self, x, w, b):
-        w = torch.from_numpy(w)
-        b = torch.from_numpy(b)
+        w = torch.from_numpy(w).to(env.DEVICE)
+        b = torch.from_numpy(b).to(env.DEVICE)
         t = torch.cat([x, x], dim=1)
         return t, self.activation_fn(torch.matmul(x, w) + b) + t
 
@@ -638,10 +641,8 @@ class DPTabulate:
                             node = self.embedding_net_nodes[ii]["layers"][layer - 1][
                                 "@variables"
                             ]["b"]
-                            # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
-                            # bias["layer_" + str(layer)].append(torch.tensor([]))
                             bias["layer_" + str(layer)].append(np.array([]))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
@@ -649,14 +650,11 @@ class DPTabulate:
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            # node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer - 1]["@variables"]["b"]
                             node = self.embedding_net_nodes[
                                 (ii % self.ntypes) * self.ntypes + ii // self.ntypes
                             ]["layers"][layer - 1]["@variables"]["b"]
-                            # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
-                            # bias["layer_" + str(layer)].append(torch.tensor([]))
                             bias["layer_" + str(layer)].append(np.array([]))
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
@@ -664,7 +662,6 @@ class DPTabulate:
                         node = self.embedding_net_nodes[jj * self.ntypes + ii][
                             "layers"
                         ][layer - 1]["@variables"]["b"]
-                        # node = torch.from_numpy(node)
                         bias["layer_" + str(layer)].append(node)
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
                 if self.type_one_side:
@@ -673,10 +670,8 @@ class DPTabulate:
                             node = self.embedding_net_nodes[ii]["layers"][layer - 1][
                                 "@variables"
                             ]["b"]
-                            # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
-                            # bias["layer_" + str(layer)].append(torch.tensor([]))
                             bias["layer_" + str(layer)].append(np.array([]))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
@@ -687,10 +682,8 @@ class DPTabulate:
                             node = self.embedding_net_nodes[
                                 (ii % self.ntypes) * self.ntypes + ii // self.ntypes
                             ]["layers"][layer - 1]["@variables"]["b"]
-                            # node = torch.from_numpy(node)
                             bias["layer_" + str(layer)].append(node)
                         else:
-                            # bias["layer_" + str(layer)].append(torch.tensor([]))
                             bias["layer_" + str(layer)].append(np.array([]))
             else:
                 raise RuntimeError("Unsupported descriptor")
@@ -712,10 +705,8 @@ class DPTabulate:
                             node = self.embedding_net_nodes[ii]["layers"][layer - 1][
                                 "@variables"
                             ]["w"]
-                            # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
-                            # matrix["layer_" + str(layer)].append(torch.tensor([]))
                             matrix["layer_" + str(layer)].append(np.array([]))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
@@ -723,14 +714,11 @@ class DPTabulate:
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            # node = self.embedding_net_nodes[ii // self.ntypes][ii % self.ntypes]["layers"][layer - 1]["@variables"]["w"]
                             node = self.embedding_net_nodes[
                                 (ii % self.ntypes) * self.ntypes + ii // self.ntypes
                             ]["layers"][layer - 1]["@variables"]["w"]
-                            # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
-                            # matrix["layer_" + str(layer)].append(torch.tensor([]))
                             matrix["layer_" + str(layer)].append(np.array([]))
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
                 for ii in range(self.ntypes):
@@ -738,7 +726,6 @@ class DPTabulate:
                         node = self.embedding_net_nodes[jj * self.ntypes + ii][
                             "layers"
                         ][layer - 1]["@variables"]["w"]
-                        # node = torch.from_numpy(node)
                         matrix["layer_" + str(layer)].append(node)
             elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeR):
                 if self.type_one_side:
@@ -747,10 +734,8 @@ class DPTabulate:
                             node = self.embedding_net_nodes[ii]["layers"][layer - 1][
                                 "@variables"
                             ]["w"]
-                            # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
-                            # matrix["layer_" + str(layer)].append(torch.tensor([]))
                             matrix["layer_" + str(layer)].append(np.array([]))
                 else:
                     for ii in range(0, self.ntypes * self.ntypes):
@@ -761,10 +746,8 @@ class DPTabulate:
                             node = self.embedding_net_nodes[
                                 (ii % self.ntypes) * self.ntypes + ii // self.ntypes
                             ]["layers"][layer - 1]["@variables"]["w"]
-                            # node = torch.from_numpy(node)
                             matrix["layer_" + str(layer)].append(node)
                         else:
-                            # matrix["layer_" + str(layer)].append(torch.tensor([]))
                             matrix["layer_" + str(layer)].append(np.array([]))
             else:
                 raise RuntimeError("Unsupported descriptor")
@@ -786,7 +769,7 @@ class DPTabulate:
     def _convert_numpy_to_tensor(self):
         """Convert self.data from np.ndarray to torch.Tensor."""
         for ii in self.data:
-            self.data[ii] = torch.tensor(self.data[ii])  # pylint: disable=no-explicit-device, no-explicit-dtype
+            self.data[ii] = torch.tensor(self.data[ii], device=env.DEVICE)  # pylint: disable=no-explicit-dtype
 
     def _convert_numpy_float_to_int(self):
         """Convert self.lower and self.upper from np.float32 or np.float64 to int."""
@@ -862,9 +845,9 @@ def grad_grad(xbar, y, functype):
 
 
 def unaggregated_dy_dx_s(
-    y: torch.Tensor, w: np.array, xbar: torch.Tensor, functype: int
+    y: torch.Tensor, w_np: np.ndarray, xbar: torch.Tensor, functype: int
 ):
-    w = torch.from_numpy(w)
+    w = torch.from_numpy(w_np).to(env.DEVICE)
     if y.dim() != 2:
         raise ValueError("Dim of input y should be 2")
     if w.dim() != 2:
@@ -884,9 +867,9 @@ def unaggregated_dy_dx_s(
 
 
 def unaggregated_dy2_dx_s(
-    y: torch.Tensor, dy: torch.tensor, w: np.array, xbar: torch.Tensor, functype: int
+    y: torch.Tensor, dy: torch.Tensor, w_np: np.ndarray, xbar: torch.Tensor, functype: int
 ):
-    w = torch.from_numpy(w)
+    w = torch.from_numpy(w_np).to(env.DEVICE)
     if y.dim() != 2:
         raise ValueError("Dim of input y should be 2")
     if dy.dim() != 2:
@@ -910,9 +893,9 @@ def unaggregated_dy2_dx_s(
 
 
 def unaggregated_dy_dx(
-    z: torch.Tensor, w: np.array, dy_dx: torch.Tensor, ybar: torch.Tensor, functype: int
+    z: torch.Tensor, w_np: np.ndarray, dy_dx: torch.Tensor, ybar: torch.Tensor, functype: int
 ):
-    w = torch.from_numpy(w)
+    w = torch.from_numpy(w_np).to(env.DEVICE)
     if z.dim() != 2:
         raise ValueError("z tensor must have 2 dimensions")
     if w.dim() != 2:
@@ -944,13 +927,13 @@ def unaggregated_dy_dx(
 
 def unaggregated_dy2_dx(
     z: torch.Tensor,
-    w: np.array,
+    w_np: np.ndarray,
     dy_dx: torch.Tensor,
     dy2_dx: torch.Tensor,
     ybar: torch.Tensor,
     functype: int,
 ):
-    w = torch.from_numpy(w)
+    w = torch.from_numpy(w_np).to(env.DEVICE)
     if z.dim() != 2:
         raise ValueError("z tensor must have 2 dimensions")
     if w.dim() != 2:
