@@ -78,6 +78,8 @@ def forward_common_atomic(
                         )
                         return jnp.sum(atomic_ret[_kk][0], axis=_atom_axis)[_ss]
 
+                    # extended_coord: [nf, nall, 3]
+                    # ffi: [nf, nall, 3]
                     ffi = -jax.vmap(jax.grad(eval_output, argnums=0))(
                         extended_coord,
                         extended_atype,
@@ -86,12 +88,21 @@ def forward_common_atomic(
                         fparam,
                         aparam,
                     )
+                    # ffi[..., None]: [nf, nall, 3, 1]
+                    # extended_coord[..., None, :]: [nf, nall, 1, 3]
+                    # aviri: [nf, nall, 3, 3]
                     aviri = ffi[..., None] @ extended_coord[..., None, :]
+                    # aviri: [nf, nall, 9]
+                    aviri = aviri.reshape(*aviri.shape[:-2], 9)
+                    # ffi: [nf, nall, 1, 3]
                     ffi = ffi[..., None, :]
                     split_ff.append(ffi)
+                    # aviri: [nf, nall, 1, 9]
                     aviri = aviri[..., None, :]
                     split_vv.append(aviri)
                 out_lead_shape = list(extended_coord.shape[:-1]) + vdef.shape
+                # extended_force: [nf, nall, def_size, 3]
+                # extended_force: [nf, nall, *def, 3]
                 extended_force = jnp.concat(split_ff, axis=-2).reshape(
                     *out_lead_shape, 3
                 )
@@ -99,6 +110,8 @@ def forward_common_atomic(
                 model_predict[kk_derv_r] = extended_force
             if vdef.c_differentiable:
                 assert vdef.r_differentiable
+                # extended_virial: [nf, nall, def_size, 9]
+                # extended_virial: [nf, nall, *def, 9]
                 extended_virial = jnp.concat(split_vv, axis=-2).reshape(
                     *out_lead_shape, 9
                 )
