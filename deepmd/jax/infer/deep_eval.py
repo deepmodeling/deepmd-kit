@@ -382,8 +382,6 @@ class DeepEval(DeepEvalBackend):
             return [nframes, *odef.shape[:-1], natoms, 3]
         elif odef.category == OutputVariableCategory.OUT:
             # atom_energy, atom_tensor
-            # Something wrong here?
-            # return [nframes, *shape, natoms, 1]
             return [nframes, natoms, *odef.shape, 1]
         else:
             raise RuntimeError("unknown category")
