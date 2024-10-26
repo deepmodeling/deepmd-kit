@@ -62,7 +62,7 @@ class DeepEval(DeepEvalBackend):
 
     Parameters
     ----------
-    model_file : Path
+    model_file : str
         The name of the frozen model file.
     output_def : ModelOutputDef
         The output definition of the model.
@@ -188,7 +188,7 @@ class DeepEval(DeepEvalBackend):
         cells
             The cell of the region.
             If None then non-PBC is assumed, otherwise using PBC.
-            The array should be of size nframes x 9
+            The array should be of size nframes x 3 x 3
         atom_types
             The atom types
             The list should contain natoms ints
@@ -388,4 +388,4 @@ class DeepEval(DeepEvalBackend):
 
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
-        return json.loads(self.model.get_model_def_script())
+        return json.loads(self.dp.get_model_def_script())
