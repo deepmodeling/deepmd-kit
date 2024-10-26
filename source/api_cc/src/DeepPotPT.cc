@@ -80,6 +80,7 @@ void DeepPotPT::init(const std::string& model,
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
+    c10::cuda::set_device(gpu_id);
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }
