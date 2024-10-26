@@ -18,9 +18,6 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
-from deepmd.dpmodel.utils.batch_size import (
-    AutoBatchSize,
-)
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
 )
@@ -51,6 +48,9 @@ from deepmd.jax.common import (
 )
 from deepmd.jax.model.hlo import (
     HLO,
+)
+from deepmd.jax.utils.auto_batch_size import (
+    AutoBatchSize,
 )
 
 if TYPE_CHECKING:
