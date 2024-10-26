@@ -23,6 +23,7 @@ from ...consistent.common import (
     parameterized,
 )
 
+
 def eval_pt_descriptor(
     pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
 ) -> Any:
@@ -42,6 +43,7 @@ def eval_pt_descriptor(
     )
     result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)
     return result
+
 
 @parameterized(("float32", "float64"))
 class TestDescriptorSeR(unittest.TestCase):

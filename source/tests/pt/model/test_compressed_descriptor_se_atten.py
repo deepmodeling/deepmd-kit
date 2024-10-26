@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from itertools import (
+    product,
+)
 from typing import (
     Any,
 )
@@ -22,7 +25,7 @@ from deepmd.pt.utils.nlist import (
 from ...consistent.common import (
     parameterized,
 )
-from itertools import product
+
 
 def eval_pt_descriptor(
     pt_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
@@ -44,8 +47,10 @@ def eval_pt_descriptor(
     result, _, _, _, _ = pt_obj(ext_coords, ext_atype, nlist, mapping=mapping)
     return result
 
+
 dtypes = ["float32", "float64"]
 type_one_side_values = [True, False]
+
 
 @parameterized.expand(product(dtypes, type_one_side_values))
 class TestDescriptorSeAtten(unittest.TestCase):

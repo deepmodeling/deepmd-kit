@@ -12,11 +12,11 @@ from scipy.special import (
 )
 
 import deepmd
-from deepmd.pt.utils.utils import (
-    ActivationFn,
-)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 
 log = logging.getLogger(__name__)
@@ -393,8 +393,13 @@ class DPTabulate:
         for layer in range(self.layer_size):
             if layer == 0:
                 xbar = torch.matmul(
-                    xx, torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
-                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
+                    xx,
+                    torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(
+                        env.DEVICE
+                    ),
+                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx]).to(
+                    env.DEVICE
+                )
                 if self.neuron[0] == 1:
                     yy = (
                         self._layer_0(
@@ -457,8 +462,13 @@ class DPTabulate:
                     )
             else:
                 ybar = torch.matmul(
-                    yy, torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
-                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx]).to(env.DEVICE)
+                    yy,
+                    torch.from_numpy(self.matrix["layer_" + str(layer + 1)][idx]).to(
+                        env.DEVICE
+                    ),
+                ) + torch.from_numpy(self.bias["layer_" + str(layer + 1)][idx]).to(
+                    env.DEVICE
+                )
                 if self.neuron[layer] == self.neuron[layer - 1]:
                     zz = (
                         self._layer_0(
@@ -867,7 +877,11 @@ def unaggregated_dy_dx_s(
 
 
 def unaggregated_dy2_dx_s(
-    y: torch.Tensor, dy: torch.Tensor, w_np: np.ndarray, xbar: torch.Tensor, functype: int
+    y: torch.Tensor,
+    dy: torch.Tensor,
+    w_np: np.ndarray,
+    xbar: torch.Tensor,
+    functype: int,
 ):
     w = torch.from_numpy(w_np).to(env.DEVICE)
     if y.dim() != 2:
@@ -893,7 +907,11 @@ def unaggregated_dy2_dx_s(
 
 
 def unaggregated_dy_dx(
-    z: torch.Tensor, w_np: np.ndarray, dy_dx: torch.Tensor, ybar: torch.Tensor, functype: int
+    z: torch.Tensor,
+    w_np: np.ndarray,
+    dy_dx: torch.Tensor,
+    ybar: torch.Tensor,
+    functype: int,
 ):
     w = torch.from_numpy(w_np).to(env.DEVICE)
     if z.dim() != 2:
