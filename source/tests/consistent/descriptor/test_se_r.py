@@ -12,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -33,6 +35,17 @@ from deepmd.utils.argcheck import (
     descrpt_se_r_args,
 )
 
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.se_e2_r import DescrptSeR as DescrptSeRJAX
+else:
+    DescrptSeRJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.se_e2_r import (
+        DescrptSeR as DescrptSeRArrayAPIStrict,
+    )
+else:
+    DescrptSeRArrayAPIStrict = None
+
 
 @parameterized(
     (True, False),  # resnet_dt
@@ -40,7 +53,7 @@ from deepmd.utils.argcheck import (
     ([], [[0, 1]]),  # excluded_types
     ("float32", "float64"),  # precision
 )
-class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
+class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (
@@ -81,9 +94,31 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return not type_one_side or CommonTest.skip_dp
 
+    @property
+    def skip_jax(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_JAX
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_ARRAY_API_STRICT
+
     tf_class = DescrptSeRTF
     dp_class = DescrptSeRDP
     pt_class = DescrptSeRPT
+    jax_class = DescrptSeRJAX
+    array_api_strict_class = DescrptSeRArrayAPIStrict
     args = descrpt_se_r_args()
 
     def setUp(self):
@@ -142,6 +177,24 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
             self.natoms,
             self.coords,
             self.atype,
