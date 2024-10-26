@@ -69,6 +69,23 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_t"):
+
+    def tabulate_fusion_se_t(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_t is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for DPA-2 for details."
+        )
+    
+    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_t = tabulate_fusion_se_t
+
 
 @BaseDescriptor.register("se_e3")
 @BaseDescriptor.register("se_at")
