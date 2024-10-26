@@ -16,13 +16,11 @@ For CUDA 11.8 support, use the `devel_cu11` tag.
 
 ## Install with pip
 
-Below is an one-line shell command to download the [artifact](https://nightly.link/deepmodeling/deepmd-kit/workflows/build_wheel/devel/artifact.zip) containing wheels and install it with `pip`:
+Follow [the documentation for the stable version](easy-install.md#install-python-interface-with-pip), but add `--pre` and `--extra-index-url` options like below:
 
 ```sh
 pip install -U --pre deepmd-kit[gpu,cu12,lmp,torch] --extra-index-url https://deepmodeling.github.io/deepmd-kit/simple
 ```
-
-`cu12` and `lmp` are optional, which is the same as the stable version.
 
 ## Download pre-compiled C Library {{ tensorflow_icon }}
 
