@@ -45,10 +45,7 @@ def eval_pt_descriptor(
     return result
 
 
-@parameterized(
-    ("float32", "float64"),
-    (True, False)
-)
+@parameterized(("float32", "float64"), (True, False))
 class TestDescriptorSeA(unittest.TestCase):
     def setUp(self):
         (self.dtype, self.type_one_side) = self.param
