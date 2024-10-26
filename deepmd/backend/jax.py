@@ -34,7 +34,7 @@ class JAXBackend(Backend):
     features: ClassVar[Backend.Feature] = (
         Backend.Feature.IO
         # Backend.Feature.ENTRY_POINT
-        # | Backend.Feature.DEEP_EVAL
+        | Backend.Feature.DEEP_EVAL
         # | Backend.Feature.NEIGHBOR_STAT
     )
     """The features of the backend."""
