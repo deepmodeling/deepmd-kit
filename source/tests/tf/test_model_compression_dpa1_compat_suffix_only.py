@@ -132,8 +132,7 @@ class TestDescriptorSeA(unittest.TestCase):
             output_graph_def = tf.graph_util.convert_variables_to_constants(
                 sess,
                 graph.as_graph_def(),
-                [f"o_{ii}_{self.suffix}" for ii, _ in enumerate(ret)]
-                + ["descrpt_attr/ntypes"],
+                [f"o_{ii}_{self.suffix}" for ii, _ in enumerate(ret)],
             )
             with tf.Graph().as_default() as new_graph:
                 tf.import_graph_def(output_graph_def, name="")
