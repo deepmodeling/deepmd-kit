@@ -122,8 +122,6 @@ class TestDescriptorSeAtten(unittest.TestCase):
             result_pt = result_pt.to(torch.float32)
         elif self.dtype == "float64":
             result_pt = result_pt.to(torch.float64)
-        else:
-            RuntimeError("No implement precesion")
 
         self.se_atten.enable_compression(1.0)
         result_pt_compressed = eval_pt_descriptor(
