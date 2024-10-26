@@ -1033,6 +1033,11 @@ class Trainer:
                 log.info(
                     f"The profiling trace have been saved to: {self.profiling_file}"
                 )
+        if self.multi_task:
+            for model_key in self.model_keys:
+                del self.training_data[model_key], self.training_dataloader[model_key]
+        else:
+            del self.training_data, self.training_dataloader
 
     def save_model(self, save_path, lr=0.0, step=0):
         module = (
