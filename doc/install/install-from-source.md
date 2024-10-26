@@ -78,6 +78,21 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+To install [JAX AI Stack](https://github.com/jax-ml/jax-ai-stack), run
+
+```sh
+pip install jax-ai-stack
+```
+
+One can also install packages in JAX AI Stack manually.
+Follow [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX built against different CUDA versions or without CUDA.
+
+One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
+
+:::
+
 ::::
 
 It is important that every time a new shell is started and one wants to use `DeePMD-kit`, the virtual environment should be activated by
