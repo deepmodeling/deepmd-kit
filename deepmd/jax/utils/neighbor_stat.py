@@ -27,7 +27,7 @@ from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
 
 
 class NeighborStat(BaseNeighborStat):
-    """Neighbor statistics using pure NumPy.
+    """Neighbor statistics using JAX.
 
     Parameters
     ----------
@@ -52,7 +52,7 @@ class NeighborStat(BaseNeighborStat):
     def iterator(
         self, data: DeepmdDataSystem
     ) -> Iterator[tuple[np.ndarray, float, str]]:
-        """Abstract method for producing data.
+        """Iterator method for producing neighbor statistics data.
 
         Yields
         ------
