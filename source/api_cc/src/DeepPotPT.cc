@@ -2,6 +2,7 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
+#include <c10/cuda/CUDAGuard.h>
 #include <torch/csrc/jit/runtime/jit_exception.h>
 
 #include <cstdint>
@@ -80,7 +81,7 @@ void DeepPotPT::init(const std::string& model,
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
-    c10::cuda::set_device(gpu_id);
+    c10::cuda::CUDAGuard guard_(device);
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }
