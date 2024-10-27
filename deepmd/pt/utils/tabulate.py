@@ -557,9 +557,10 @@ class DPTabulate:
     # Change the embedding net range to sw / min_nbor_dist
     def _get_env_mat_range(self, min_nbor_dist):
         sw = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
-        if isinstance(
-            self.descrpt, deepmd.pt.model.descriptor.DescrptSeA
-        ) or isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+        if isinstance(self.descrpt, (
+            deepmd.pt.model.descriptor.DescrptSeA,
+            deepmd.pt.model.descriptor.DescrptDPA1,
+        )):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
@@ -827,8 +828,8 @@ def grad(xbar, y, functype):  # functype=tanh, gelu, ..
         return 1.0 - 1.0 / (1.0 + np.exp(xbar))
     elif functype == 6:
         return y * (1 - y)
-    else:
-        return -1.0
+    
+    raise ValueError(f"Unsupported function type: {functype}")
 
 
 def grad_grad(xbar, y, functype):
@@ -842,9 +843,7 @@ def grad_grad(xbar, y, functype):
             - SQRT_2_PI * xbar * var2 * (3 * GGELU * xbar**2 + 1) * var1
             + var2
         )
-    elif functype == 3:
-        return 0
-    elif functype == 4:
+    elif functype in [3, 4]:
         return 0
     elif functype == 5:
         return np.exp(xbar) / ((1 + np.exp(xbar)) * (1 + np.exp(xbar)))

@@ -257,7 +257,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------

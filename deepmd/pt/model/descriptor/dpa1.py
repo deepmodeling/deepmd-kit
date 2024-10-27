@@ -568,7 +568,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -606,14 +606,14 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             == 0
         ):
             raise RuntimeError(
-                "empty embedding-net are not supported in model compression!"
+                "Empty embedding-nets are not supported in model compression!"
             )
 
         if self.se_atten.attn_layer != 0:
-            raise RuntimeError("can not compress model when attention layer is not 0.")
+            raise RuntimeError("Cannot compress model when attention layer is not 0.")
 
         if self.tebd_input_mode != "strip":
-            raise RuntimeError("can not compress model when tebd_input_mode = concat")
+            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
 
         self.table = DPTabulate(
             self,

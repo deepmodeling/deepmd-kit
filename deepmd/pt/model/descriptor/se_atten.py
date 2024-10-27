@@ -568,9 +568,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 tensor_data = self.table_data[net].to(gg_t.device).to(dtype=self.prec)
                 info_tensor = torch.tensor(info, dtype=self.prec, device="cpu")
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
-                ss = ss.to(self.prec)
-                rr = rr.to(self.prec)
-                gg_t = gg_t.to(self.prec)
+                # Convert all tensors to the required precision at once
+                ss, rr, gg_t = [t.to(self.prec) for t in (ss, rr, gg_t)]
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
                     tensor_data.contiguous(),
                     info_tensor.contiguous(),

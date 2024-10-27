@@ -284,7 +284,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -307,14 +307,16 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             exclude_types=self.serialize()["exclude_types"],
             activation_fn=ActivationFn(self.serialize()["activation_function"]),
         )
+        stride_1_scaled = table_stride_1 * 10
+        stride_2_scaled = table_stride_2 * 10
         self.table_config = [
             table_extrapolate,
-            table_stride_1 * 10,
-            table_stride_2 * 10,
+            stride_1_scaled,
+            stride_2_scaled,
             check_frequency,
         ]
         self.lower, self.upper = self.table.build(
-            min_nbor_dist, table_extrapolate, table_stride_1 * 10, table_stride_2 * 10
+            min_nbor_dist, table_extrapolate, stride_1_scaled, stride_2_scaled
         )
         self.seat.enable_compression(
             self.table.data, self.table_config, self.lower, self.upper
@@ -813,8 +815,8 @@ class DescrptBlockSeT(DescriptorBlock):
                     tensor_data = (
                         self.table_data[net].to(env_ij.device).to(dtype=self.prec)
                     )
-                    ebd_env_ij = ebd_env_ij.to(env_ij.device).to(dtype=self.prec)
-                    env_ij = env_ij.to(env_ij.device).to(dtype=self.prec)
+                    ebd_env_ij = ebd_env_ij.to(dtype=self.prec)
+                    env_ij = env_ij.to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
                         tensor_data.contiguous(),
                         torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
