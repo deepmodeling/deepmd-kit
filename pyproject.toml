@@ -136,8 +136,13 @@ cu12 = [
     "nvidia-cuda-nvcc-cu12",
 ]
 jax = [
+    # below is a funny workaround for
+    # https://github.com/astral-sh/uv/issues/8601
+    'jax>=0.4.33;python_version>="3.10"',
     'jax>=0.4.33;python_version>="3.10"',
     'flax>=0.10.0;python_version>="3.10"',
+    'flax>=0.10.0;python_version>="3.10"',
+    'orbax-checkpoint;python_version>="3.10"',
     'orbax-checkpoint;python_version>="3.10"',
     # The pinning of ml_dtypes may conflict with TF
     # 'jax-ai-stack;python_version>="3.10"',
@@ -145,6 +150,13 @@ jax = [
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
+
+[dependency-groups]
+dev = [
+  "pre-commit",
+  "cmake",
+  "mpich",
+]
 
 [tool.setuptools_scm]
 
@@ -428,3 +440,11 @@ select = [
     "TOR1",
     "TOR2",
 ]
+
+[tool.uv.sources]
+mpich = { index = "mpi4py" }
+
+[[tool.uv.index]]
+name = "mpi4py"
+url = "https://pypi.anaconda.org/mpi4py/simple"
+explicit = true
