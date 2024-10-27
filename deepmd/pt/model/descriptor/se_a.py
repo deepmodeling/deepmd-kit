@@ -762,7 +762,7 @@ class DescrptBlockSeA(DescriptorBlock):
                     self.table_config[3],
                 ]
                 ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
-                tensor_data = self.table_data[net].to(env.DEVICE).to(dtype=self.prec)
+                tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
                     tensor_data.contiguous(),
                     torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),

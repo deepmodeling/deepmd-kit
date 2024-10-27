@@ -811,10 +811,10 @@ class DescrptBlockSeT(DescriptorBlock):
                         self.table_config[3],
                     ]
                     tensor_data = (
-                        self.table_data[net].to(env.DEVICE).to(dtype=self.prec)
+                        self.table_data[net].to(env_ij.device).to(dtype=self.prec)
                     )
-                    ebd_env_ij = ebd_env_ij.to(env.DEVICE).to(dtype=self.prec)
-                    env_ij = env_ij.to(env.DEVICE).to(dtype=self.prec)
+                    ebd_env_ij = ebd_env_ij.to(env_ij.device).to(dtype=self.prec)
+                    env_ij = env_ij.to(env_ij.device).to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
                         tensor_data.contiguous(),
                         torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
