@@ -52,8 +52,7 @@ class TestDescriptorSeT(unittest.TestCase):
         if self.dtype == "float32":
             self.atol = 1e-5
         elif self.dtype == "float64":
-            # WY: not sure the reason, but 1e-10 cannot pass the grad test
-            self.atol = 1e-6
+            self.atol = 1e-10
         self.seed = 21
         self.sel = [9, 10]
         self.rcut_smth = 5.80
@@ -108,7 +107,7 @@ class TestDescriptorSeT(unittest.TestCase):
             self.box,
         )
 
-        self.se_t.enable_compression(1.0)
+        self.se_t.enable_compression(0.5)
         result_pt_compressed = eval_pt_descriptor(
             self.se_t,
             self.natoms,
@@ -117,8 +116,6 @@ class TestDescriptorSeT(unittest.TestCase):
             self.box,
         )
 
-        # print("result_pt: ", result_pt[:, :, :10])
-        # print("result_pt_compressed: ", result_pt_compressed[:, :, :10])
         self.assertEqual(result_pt.shape, result_pt_compressed.shape)
         torch.testing.assert_close(
             result_pt,

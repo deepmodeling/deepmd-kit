@@ -107,7 +107,7 @@ class TestDescriptorSeR(unittest.TestCase):
             self.box,
         )
 
-        self.se_r.enable_compression(1.0)
+        self.se_r.enable_compression(0.5)
         result_pt_compressed = eval_pt_descriptor(
             self.se_r,
             self.natoms,

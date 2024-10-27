@@ -120,7 +120,7 @@ class TestDescriptorSeAtten(unittest.TestCase):
         elif self.dtype == "float64":
             result_pt = result_pt.to(torch.float64)
 
-        self.se_atten.enable_compression(1.0)
+        self.se_atten.enable_compression(0.5)
         result_pt_compressed = eval_pt_descriptor(
             self.se_atten,
             self.natoms,
