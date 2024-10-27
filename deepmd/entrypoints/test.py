@@ -356,7 +356,7 @@ def test_ener(
     force = force.reshape([numb_test, -1])
     virial = virial.reshape([numb_test, 9])
     if dp.has_hessian:
-        hessian = ret[-1]
+        hessian = ret[3]
         hessian = hessian.reshape([numb_test, -1])
     if has_atom_ener:
         ae = ret[3]
