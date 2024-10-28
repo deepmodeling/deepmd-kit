@@ -128,6 +128,6 @@ do
         v) VERSION=${OPTARG} && DEEPMD_PATCH_ROOT=${DEEPMD_PATCH_ROOT}/${VERSION} ;;
         p) check_version ${VERSION} && dp_gmx_patch ${GMX_ROOT} ;;
         r) check_version ${VERSION} && dp_gmx_revert ${GMX_ROOT} ;;
-        *) echo "- ERROR: Invaild option ${opt}" && exit 1 ;;
+        *) echo "- ERROR: Invalid option ${opt}" && exit 1 ;;
     esac
 done

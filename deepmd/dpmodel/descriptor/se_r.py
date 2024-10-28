@@ -46,7 +46,7 @@ from .base_descriptor import (
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")
 class DescrptSeR(NativeOP, BaseDescriptor):
-    r"""DeepPot-SE_R constructed from only the radial imformation of atomic configurations.
+    r"""DeepPot-SE_R constructed from only the radial information of atomic configurations.
 
 
     Parameters
@@ -233,7 +233,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         raise NotImplementedError
 
@@ -303,7 +303,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         nlist
             The neighbor list. shape: nf x nloc x nnei
         mapping
-            The index mapping from extended to lcoal region. not used by this descriptor.
+            The index mapping from extended to local region. not used by this descriptor.
 
         Returns
         -------
@@ -404,7 +404,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

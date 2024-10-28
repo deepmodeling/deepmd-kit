@@ -42,7 +42,7 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, to, prec, ect in itertools.product(
+        for idt, to, prec, etc in itertools.product(
             [False, True],  # resnet_dt
             [False, True],  # type_one_side
             [
@@ -64,8 +64,8 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 type_one_side=to,
-                use_econf_tebd=ect,
-                type_map=["O", "H"] if ect else None,
+                use_econf_tebd=etc,
+                type_map=["O", "H"] if etc else None,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -113,7 +113,7 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec, to, ect in itertools.product(
+        for idt, prec, to, etc in itertools.product(
             [
                 False,
             ],  # resnet_dt
@@ -135,8 +135,8 @@ class TestDescrptSeAttenV2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 precision=prec,
                 resnet_dt=idt,
                 type_one_side=to,
-                use_econf_tebd=ect,
-                type_map=["O", "H"] if ect else None,
+                use_econf_tebd=etc,
+                type_map=["O", "H"] if etc else None,
                 seed=GLOBAL_SEED,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)

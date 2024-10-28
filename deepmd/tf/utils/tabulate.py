@@ -97,7 +97,7 @@ class DPTabulate:
         elif activation_fn == ACTIVATION_FN_DICT["sigmoid"]:
             self.functype = 6
         else:
-            raise RuntimeError("Unknown actication function type!")
+            raise RuntimeError("Unknown activation function type!")
         self.activation_fn = activation_fn
 
         # self.sess = tf.Session(graph = self.graph)

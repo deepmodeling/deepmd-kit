@@ -48,7 +48,7 @@ def extend_input_and_build_neighbor_list(
     return extended_coord, extended_atype, mapping, nlist
 
 
-## translated from torch implemantation by chatgpt
+## translated from torch implementation by chatgpt
 def build_neighbor_list(
     coord: np.ndarray,
     atype: np.ndarray,
@@ -57,7 +57,7 @@ def build_neighbor_list(
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> np.ndarray:
-    """Build neightbor list for a single frame. keeps nsel neighbors.
+    """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
@@ -185,7 +185,7 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
     return str(rcut) + "_" + str(nsel)
 
 
-## translated from torch implemantation by chatgpt
+## translated from torch implementation by chatgpt
 def build_multiple_neighbor_list(
     coord: np.ndarray,
     nlist: np.ndarray,
@@ -243,7 +243,7 @@ def build_multiple_neighbor_list(
     return ret
 
 
-## translated from torch implemantation by chatgpt
+## translated from torch implementation by chatgpt
 def extend_coord_with_ghosts(
     coord: np.ndarray,
     atype: np.ndarray,
@@ -272,7 +272,7 @@ def extend_coord_with_ghosts(
     extended_atype: np.ndarray
         extended atom type of shape [-1, nall].
     index_mapping: np.ndarray
-        maping extended index to the local index
+        mapping extended index to the local index
 
     """
     xp = array_api_compat.array_namespace(coord, atype)

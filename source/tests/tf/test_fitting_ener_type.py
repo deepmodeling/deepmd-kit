@@ -79,7 +79,7 @@ class TestModel(tf.test.TestCase):
         is_training = tf.placeholder(tf.bool)
         t_fparam = None
 
-        dout = np.array(
+        doubt = np.array(
             [
                 0.0005722682145569174,
                 -0.00020202686217742682,
@@ -159,11 +159,11 @@ class TestModel(tf.test.TestCase):
         )
         atype = np.array([0, 0, 1, 1, 1, 1], dtype=np.int32)
 
-        dout = dout.reshape([-1, 10])
+        doubt = doubt.reshape([-1, 10])
         type_embedding = type_embedding.reshape([ntypes, -1])
         atype = atype.reshape([-1])
         atom_ener = fitting.build(
-            tf.convert_to_tensor(dout),
+            tf.convert_to_tensor(doubt),
             t_natoms,
             {
                 "type_embedding": tf.convert_to_tensor(type_embedding),

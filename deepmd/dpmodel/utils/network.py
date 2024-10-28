@@ -600,7 +600,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
         resnet_dt
             Use time step at the resnet architecture.
         precision
-            Floating point precision for the model paramters.
+            Floating point precision for the model parameters.
         seed : int, optional
             Random seed.
         bias : bool, Optional
@@ -704,7 +704,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
         resnet_dt
             Use time step at the resnet architecture.
         precision
-            Floating point precision for the model paramters.
+            Floating point precision for the model parameters.
         bias_out
             The last linear layer has bias.
         seed : int, optional
@@ -794,7 +794,7 @@ FittingNet = make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)
 class NetworkCollection:
     """A collection of networks for multiple elements.
 
-    The number of dimesions for types might be 0, 1, or 2.
+    The number of dimensions for types might be 0, 1, or 2.
     - 0: embedding or fitting with type embedding, in ()
     - 1: embedding with type_one_side, or fitting, in (type_i)
     - 2: embedding without type_one_side, in (type_i, type_j)

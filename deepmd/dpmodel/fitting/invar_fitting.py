@@ -28,7 +28,7 @@ from .general_fitting import (
 @GeneralFitting.register("invar")
 @fitting_check_output
 class InvarFitting(GeneralFitting):
-    r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
+    r"""Fitting the energy (or a rotationally invariant property of `dim_out`) of the system. The force and the virial can also be trained.
 
     Lets take the energy fitting task as an example.
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -90,7 +90,7 @@ class InvarFitting(GeneralFitting):
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision

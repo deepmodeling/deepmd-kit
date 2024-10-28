@@ -15,7 +15,7 @@ All units in LAMMPS except `lj` are supported. `lj` is not supported.
 
 The most commonly used units are `metal`, since the internal units of distance, energy, force, and charge in DeePMD-kit are `\AA`, `eV`, `eV / \AA`, and `proton charge`, respectively. These units are consistent with the `metal` units in LAMMPS.
 
-If one wants to use other units like `real` or `si`, it is welcome to do so. There is no need to do the unit conversion mannualy. The unit conversion is done automatically by LAMMPS.
+If one wants to use other units like `real` or `si`, it is welcome to do so. There is no need to do the unit conversion manually. The unit conversion is done automatically by LAMMPS.
 
 The only thing that one needs to take care is the unit of the output of `compute deeptensor/atom`. Working with `metal` units for `compute deeptensor/atom` is totally fine, since there is no unit conversion. For other unit styles, we currently assume that the output of the `compute deeptensor/atom` command has the unit of distance and have applied the unit conversion factor of distance. If a user wants to infer quantities with units other than distance, the user is encouraged to open a GitHub feature request, so that the unit conversion factor can be added.
 
@@ -95,7 +95,7 @@ Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Po
 
 This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
-The model deviation evalulates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
+The model deviation evaluates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
 The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lammps.org/pair_hybrid.html) is not applied.
 
 By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation of the force will be output, including values output by the keyword `atomic`. The relative model deviation of the force on atom $i$ is defined by

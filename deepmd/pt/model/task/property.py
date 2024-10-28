@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 @Fitting.register("property")
 class PropertyFittingNet(InvarFitting):
-    """Fitting the rotationally invariant porperties of `task_dim` of the system.
+    """Fitting the rotationally invariant properties of `task_dim` of the system.
 
     Parameters
     ----------

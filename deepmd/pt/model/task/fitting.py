@@ -59,7 +59,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -96,7 +96,7 @@ class GeneralFitting(Fitting):
     neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     bias_atom_e : torch.Tensor, optional
-        Average enery per atom for each element.
+        Average energy per atom for each element.
     resnet_dt : bool
         Using time-step in the ResNet construction.
     numb_fparam : int
@@ -121,9 +121,9 @@ class GeneralFitting(Fitting):
         Now this only supports setting all the parameters in the fitting net at one state.
         When in list[bool], the trainable will be True only if all the boolean parameters are True.
     remove_vaccum_contribution: list[bool], optional
-        Remove vaccum contribution before the bias is added. The list assigned each
+        Remove vacuum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
-        length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
+        length as `ntypes` signaling if or not removing the vacuum contribution for the atom types in the list.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     """
@@ -400,9 +400,9 @@ class GeneralFitting(Fitting):
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
             # TODO: compute the input for vaccm when remove_vaccum_contribution is set
-            # Idealy, the input for vaccum should be computed;
+            # Ideally, the input for vacuum should be computed;
             # we consider it as always zero for convenience.
-            # Needs a compute_input_stats for vaccum passed from the
+            # Needs a compute_input_stats for vacuum passed from the
             # descriptor.
             xx_zeros = torch.zeros_like(xx)
         else:

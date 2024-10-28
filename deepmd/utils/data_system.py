@@ -91,12 +91,12 @@ class DeepmdDataSystem:
             - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
             - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
             - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." :
-                                the list of systems is devided into blocks. A block is specified by `stt_idx:end_idx:weight`,
+                                the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`,
                                 where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system,
                                 the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional
                 to the number of batches in the system.
         sort_atoms : bool
-            Sort atoms by atom types. Required to enable when the data is directly feeded to
+            Sort atoms by atom types. Required to enable when the data is directly fed to
             descriptors except mixed types.
         """
         # init data
@@ -184,7 +184,7 @@ class DeepmdDataSystem:
         # ! altered by Marián Rynik
         # test size
         # now test size can be set as a percentage of systems data or test size
-        # can be set for each system individualy in the same manner as batch
+        # can be set for each system individually in the same manner as batch
         # size. This enables one to use systems with diverse number of
         # structures and different number of atoms.
         self.test_size = test_size
@@ -277,7 +277,7 @@ class DeepmdDataSystem:
                "repeat": repeat,
            }
 
-        For the explaination of the keys see `add`
+        For the explanation of the keys see `add`
         """
         for kk in adict:
             self.add(
@@ -759,7 +759,7 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
         msg = "cannot find valid a data system"
         log.fatal(msg)
         raise OSError(msg, help_msg)
-    # rougly check all items in systems are valid
+    # roughly check all items in systems are valid
     for ii in systems:
         ii = DPPath(ii)
         if not ii.is_dir():

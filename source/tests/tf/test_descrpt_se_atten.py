@@ -112,7 +112,7 @@ class TestModel(tf.test.TestCase):
             + "_se_atten_type_des_ebd_2sdies",
         )
 
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -142,7 +142,7 @@ class TestModel(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
         np.savetxt("two.out", model_dout.reshape([1, -1]), delimiter=",")
 
@@ -290,7 +290,7 @@ class TestModel(tf.test.TestCase):
             + "_se_atten_type_des_ebd_1side",
         )
 
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -320,7 +320,7 @@ class TestModel(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
         np.savetxt("one.out", model_dout.reshape([1, -1]), delimiter=",")
 
@@ -464,7 +464,7 @@ class TestModel(tf.test.TestCase):
             ntypes, suffix=self.filename + "-" + inspect.stack()[0][3]
         )
 
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -491,7 +491,7 @@ class TestModel(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
         np.savetxt("two1.out", model_dout.reshape([1, -1]), delimiter=",")
 
@@ -640,7 +640,7 @@ class TestModel(tf.test.TestCase):
             + "_se_atten_type_des_ebd_2sdies",
         )
 
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -670,7 +670,7 @@ class TestModel(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
         np.savetxt("two.out", model_dout.reshape([1, -1]), delimiter=",")
 

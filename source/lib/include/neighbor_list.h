@@ -126,7 +126,7 @@ int max_numneigh(const InputNlist& to_nlist);
 //	c_cpy, nloc, nall, mem_size, rcut, region
 //	mem_size is the size of allocated memory for jlist.
 // returns
-//	0: succssful
+//	0: successful
 //	1: the memory is not large enough to hold all neighbors.
 //	   i.e. max_list_size > mem_nall
 template <typename FPTYPE>
@@ -190,7 +190,7 @@ void use_nlist_map(int* nlist,
 //	c_cpy, nloc, nall, mem_size, rcut, region
 //	mem_size is the size of allocated memory for jlist.
 // returns
-//	0: succssful
+//	0: successful
 //	1: the memory is not large enough to hold all neighbors.
 //	   i.e. max_list_size > mem_nall
 template <typename FPTYPE>

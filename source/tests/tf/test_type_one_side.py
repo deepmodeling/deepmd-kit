@@ -69,7 +69,7 @@ class TestModel(tf.test.TestCase):
 
         # successful
         descrpt = Descriptor(**jdata["model"]["descriptor"])
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -125,8 +125,8 @@ class TestModel(tf.test.TestCase):
 
         with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
-            [model_dout1] = sess.run([dout], feed_dict=feed_dict_test1)
-            [model_dout2] = sess.run([dout], feed_dict=feed_dict_test2)
+            [model_dout1] = sess.run([doubt], feed_dict=feed_dict_test1)
+            [model_dout2] = sess.run([doubt], feed_dict=feed_dict_test2)
             [model_dout1_failed] = sess.run([dout_failed], feed_dict=feed_dict_test1)
             [model_dout2_failed] = sess.run([dout_failed], feed_dict=feed_dict_test2)
         model_dout1 = model_dout1.reshape([6, -1])
@@ -175,7 +175,7 @@ class TestModel(tf.test.TestCase):
 
         # successful
         descrpt = Descriptor(**jdata["model"]["descriptor"])
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -231,8 +231,8 @@ class TestModel(tf.test.TestCase):
 
         with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
-            [model_dout1] = sess.run([dout], feed_dict=feed_dict_test1)
-            [model_dout2] = sess.run([dout], feed_dict=feed_dict_test2)
+            [model_dout1] = sess.run([doubt], feed_dict=feed_dict_test1)
+            [model_dout2] = sess.run([doubt], feed_dict=feed_dict_test2)
             [model_dout1_failed] = sess.run([dout_failed], feed_dict=feed_dict_test1)
             [model_dout2_failed] = sess.run([dout_failed], feed_dict=feed_dict_test2)
         model_dout1 = model_dout1.reshape([6, -1])

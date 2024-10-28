@@ -181,7 +181,7 @@ class DescrptSeAMaskOp : public OpKernel {
           for (int jj = 0; jj < natoms * 3; ++jj) {
             rij(kk, ii * natoms * 3 + jj) = 0.;
           }
-          // Save the neighbor atoms indicies.
+          // Save the neighbor atoms indices.
           for (int jj = 0; jj < natoms; jj++) {
             nlist(kk, ii * natoms + jj) = -1;
           }
@@ -304,7 +304,7 @@ class DescrptSeAMaskOp : public OpKernel {
         for (int jj = 0; jj < natoms * 3; ++jj) {
           rij(kk, ii * natoms * 3 + jj) = rij_atom[jj];
         }
-        // Save the neighbor atoms indicies.
+        // Save the neighbor atoms indices.
         for (int jj = 0; jj < natoms; ++jj) {
           nlist(kk, ii * natoms + jj) = sorted_nlist[jj];
         }

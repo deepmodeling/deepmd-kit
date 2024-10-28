@@ -384,7 +384,7 @@ def test_pair_deepmd_lr(lammps):
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
     lammps.bond_coeff("*")
-    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.special_bonds("lj/could 1 1 1 angle no")
     lammps.kspace_style("pppm/dplr 1e-5")
     lammps.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
     lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
@@ -410,7 +410,7 @@ def test_pair_deepmd_lr_efield_constant(lammps):
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
     lammps.bond_coeff("*")
-    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.special_bonds("lj/could 1 1 1 angle no")
     lammps.fix(
         f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 1"
     )
@@ -446,7 +446,7 @@ def test_pair_deepmd_lr_efield_variable(lammps):
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
     lammps.bond_coeff("*")
-    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.special_bonds("lj/could 1 1 1 angle no")
     lammps.fix(
         f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 v_EFIELD_Z"
     )
@@ -481,7 +481,7 @@ def test_min_dplr(lammps):
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
     lammps.bond_coeff("*")
-    lammps.special_bonds("lj/coul 1 1 1 angle no")
+    lammps.special_bonds("lj/could 1 1 1 angle no")
     lammps.kspace_style("pppm/dplr 1e-5")
     lammps.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
     lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
@@ -505,7 +505,7 @@ def test_pair_deepmd_lr_type_map(lammps_type_map):
     lammps_type_map.pair_coeff("* * H O")
     lammps_type_map.bond_style("zero")
     lammps_type_map.bond_coeff("*")
-    lammps_type_map.special_bonds("lj/coul 1 1 1 angle no")
+    lammps_type_map.special_bonds("lj/could 1 1 1 angle no")
     lammps_type_map.kspace_style("pppm/dplr 1e-5")
     lammps_type_map.kspace_modify(
         f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
@@ -535,7 +535,7 @@ def test_pair_deepmd_lr_si(lammps_si):
     lammps_si.pair_coeff("* *")
     lammps_si.bond_style("zero")
     lammps_si.bond_coeff("*")
-    lammps_si.special_bonds("lj/coul 1 1 1 angle no")
+    lammps_si.special_bonds("lj/could 1 1 1 angle no")
     lammps_si.kspace_style("pppm/dplr 1e-5")
     lammps_si.kspace_modify(
         f"gewald {beta / constants.dist_metal2si:.6e} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"

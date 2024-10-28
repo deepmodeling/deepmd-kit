@@ -92,7 +92,7 @@ class TestModel(tf.test.TestCase):
 
         type_embedding = typeebd.build(ntypes, suffix="_se_a_type_des_ebd_2sdies")
 
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -119,7 +119,7 @@ class TestModel(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
 
         ref_dout = [
@@ -257,7 +257,7 @@ class TestModel(tf.test.TestCase):
 
         type_embedding = typeebd.build(ntypes, suffix="_se_a_type_des_ebd_1side")
 
-        dout = descrpt.build(
+        doubt = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -284,7 +284,7 @@ class TestModel(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
         model_dout = model_dout.reshape([-1])
 
         ref_dout = [
