@@ -180,10 +180,10 @@ html_theme = "sphinx_book_theme"
 html_logo = "_static/logo.svg"
 
 html_theme_options = {
-   "logo": {
-      "image_light": "_static/logo.svg",
-      "image_dark": "_static/logo-dark.svg",
-   }
+    "logo": {
+        "image_light": "_static/logo.svg",
+        "image_dark": "_static/logo-dark.svg",
+    }
 }
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
