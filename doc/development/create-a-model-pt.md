@@ -142,9 +142,9 @@ class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
 When creating a new component, the floating-point precision should obey the [Floating-point precision of the model](../model/precision.md) section.
 In implementation, the component should
 
-- store parameters in the component precision, except those for input and output normalization;
-- store normalization parameters in {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`;
-- after input normalization, cast the input tensor to the component precision; before output normalization, cast the output tensor to the {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`.
+- store parameters in the component precision, except those for output normalization;
+- store output normalization parameters in {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`;
+- before input normalization, cast the input tensor to the component precision; before output normalization, cast the output tensor to the {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`.
 
 ## Register new arguments
 
