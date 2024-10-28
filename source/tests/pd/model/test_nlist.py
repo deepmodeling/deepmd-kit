@@ -171,6 +171,7 @@ class TestNeighList(unittest.TestCase):
             nlist2,
         )
 
+    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/69012")
     def test_extend_coord(self):
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut

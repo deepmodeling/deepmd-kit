@@ -132,6 +132,7 @@ class TestSaveLoadDPA1(unittest.TestCase):
                 label_dict[item] = batch_data[item].to(env.DEVICE)
         return input_dict, label_dict
 
+    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/69012")
     def test_saveload(self):
         result1 = self.get_model_result()
         result2 = self.get_model_result(read=True)

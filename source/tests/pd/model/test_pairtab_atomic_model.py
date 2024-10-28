@@ -64,6 +64,7 @@ class TestPairTab(unittest.TestCase):
             [[[1, 2], [0, 2]], [[1, 2], [0, 3]]], place=env.DEVICE
         )
 
+    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/69012")
     def test_without_mask(self):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
