@@ -611,6 +611,10 @@ struct InputNlist {
   int *numneigh;
   /// @brief Array stores the core region atom's neighbor index
   int **firstneigh;
+  /**
+   * @brief Set mask for this neighbor list.
+   */
+  void set_mask(int mask) { DP_NlistSetMask(nl, mask); };
 };
 
 /**

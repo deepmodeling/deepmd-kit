@@ -463,6 +463,7 @@ void FixDPLR::pre_force(int vflag) {
   NeighList *list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                      list->firstneigh);
+  lmp_list.set_mask(NEIGHMASK);
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute

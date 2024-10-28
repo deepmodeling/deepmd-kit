@@ -241,6 +241,9 @@ void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
     int jnum = inlist.numneigh[ii];
     jlist[ii].resize(jnum);
     memcpy(&jlist[ii][0], inlist.firstneigh[ii], jnum * sizeof(int));
+    for (int jj = 0; jj < jnum; ++jj) {
+      jlist[ii][jj] &= inlist.mask;
+    }
   }
 }
 
