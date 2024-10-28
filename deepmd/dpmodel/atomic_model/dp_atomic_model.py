@@ -100,7 +100,7 @@ class DPAtomicModel(BaseAtomicModel):
         Parameters
         ----------
         extended_coord
-            coodinates in extended region
+            coordinates in extended region
         extended_atype
             atomic type in extended region
         nlist
@@ -169,7 +169,7 @@ class DPAtomicModel(BaseAtomicModel):
         )
         return dd
 
-    # for subclass overriden
+    # for subclass overridden
     base_descriptor_cls = BaseDescriptor
     """The base descriptor class."""
     base_fitting_cls = BaseFitting

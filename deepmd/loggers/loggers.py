@@ -23,7 +23,7 @@ logging.getLogger(__name__)
 
 __all__ = ["set_log_handles"]
 
-# logger formater
+# logger formatter
 FFORMATTER = logging.Formatter(
     "[%(asctime)s] %(app_name)s %(levelname)-7s %(name)-45s %(message)s"
 )
@@ -61,7 +61,7 @@ class _MPIRankFilter(logging.Filter):
 
 
 class _MPIMasterFilter(logging.Filter):
-    """Filter that lets through only messages emited from rank==0."""
+    """Filter that lets through only messages emitted from rank==0."""
 
     def __init__(self, rank: int) -> None:
         super().__init__(name="MPI_master_log")
@@ -138,7 +138,7 @@ class _MPIHandler(logging.FileHandler):
         return _MPIFileStream(self.baseFilename, self.MPI, self.mode)
 
     def setStream(self, stream):
-        """Stream canot be reasigned in MPI mode."""
+        """Stream cannot be reasigned in MPI mode."""
         raise NotImplementedError("Unable to do for MPI file handler!")
 
 
@@ -254,7 +254,7 @@ def set_log_handles(
             fh.setFormatter(FFORMATTER_MPI)
         elif mpi_log == "workers":
             rank = MPI.COMM_WORLD.Get_rank()
-            # if file has suffix than inser rank number before suffix
+            # if file has suffix than insert rank number before suffix
             # e.g deepmd.log -> deepmd_<rank>.log
             # if no suffix is present, insert rank as suffix
             # e.g. deepmdlog -> deepmdlog.<rank>

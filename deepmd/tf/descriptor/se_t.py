@@ -145,7 +145,7 @@ class DescrptSeT(DescrptSe):
         self.ntypes = len(self.sel_a)
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
-        # numb of neighbors and numb of descrptors
+        # numb of neighbors and numb of descriptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
         self.nnei = self.nnei_a + self.nnei_r
@@ -332,7 +332,7 @@ class DescrptSeT(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------

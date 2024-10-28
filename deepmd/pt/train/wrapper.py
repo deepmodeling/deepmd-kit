@@ -63,7 +63,7 @@ class ModelWrapper(torch.nn.Module):
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         supported_types = ["descriptor", "fitting_net"]
         for shared_item in shared_links:

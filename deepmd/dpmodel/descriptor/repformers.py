@@ -307,11 +307,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             raise KeyError(key)
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -1480,7 +1480,7 @@ class RepformerLayer(NativeOP):
         """
         Parameters
         ----------
-        g1_ext : nf x nall x ng1         extended single-atom chanel
+        g1_ext : nf x nall x ng1         extended single-atom channel
         g2 : nf x nloc x nnei x ng2  pair-atom channel, invariant
         h2 : nf x nloc x nnei x 3    pair-atom channel, equivariant
         nlist : nf x nloc x nnei        neighbor list (padded neis are set to 0)
@@ -1489,7 +1489,7 @@ class RepformerLayer(NativeOP):
 
         Returns
         -------
-        g1:     nf x nloc x ng1         updated single-atom chanel
+        g1:     nf x nloc x ng1         updated single-atom channel
         g2:     nf x nloc x nnei x ng2  updated pair-atom channel, invariant
         h2:     nf x nloc x nnei x 3    updated pair-atom channel, equivariant
         """

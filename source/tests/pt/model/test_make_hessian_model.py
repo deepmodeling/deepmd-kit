@@ -99,7 +99,7 @@ class HessianTest:
         aparam = torch.rand(
             [nf, natoms * nap], dtype=dtype, device=env.DEVICE, generator=generator
         )
-        # forward hess and valu models
+        # forward hess and value models
         ret_dict0 = self.model_hess.forward_common(
             coord, atype, box=cell, fparam=fparam, aparam=aparam
         )

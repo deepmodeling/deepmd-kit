@@ -40,7 +40,7 @@ class AtomicModelTestCase:
     expected_has_message_passing: bool
     """Expected whether having message passing."""
     forward_wrapper: Callable[[Any], Any]
-    """Calss wrapper for forward method."""
+    """Class wrapper for forward method."""
     aprec_dict: dict[str, Optional[float]]
     """Dictionary of absolute precision in each test."""
     rprec_dict: dict[str, Optional[float]]

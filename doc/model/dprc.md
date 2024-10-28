@@ -66,7 +66,7 @@ In a DPRc model, QM atoms and MM atoms have different atom types. Assuming we ha
 "type_map": ["C", "H", "HW", "O", "OW", "P"]
 ```
 
-As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\text{QM/MM}$ within the cutoff, so we use a hybrid descriptor to describe them separatedly:
+As described in the paper, the DPRc model only corrects $E_\text{QM}$ and $E_\text{QM/MM}$ within the cutoff, so we use a hybrid descriptor to describe them separately:
 
 ::::{tab-set}
 

@@ -331,14 +331,14 @@ legacy_tox_ini = """
 # be silenced
 
 # W504 - line break after binary operator - there is conflict between W503 and W504 in
-# some lintners. One recomends line bread after and one before binary operator so we
-# swith W504 off and recomend this coding style:
+# some lintners. One recommends line bread after and one before binary operator so we
+# switch W504 off and recommend this coding style:
 # a = (b +     -> instead of -> a = (b
 #      c)                            + c)
 [tool.autopep8]
 ignore = "W504"
 
-# D413 - Missing blank line after last section - makes no sense only adds empy lines in
+# D413 - Missing blank line after last section - makes no sense only adds empty lines in
 # docstrings
 # D416 - Section name should end with a colon - only applicable to RST type docstrings,
 # we are using numpy style

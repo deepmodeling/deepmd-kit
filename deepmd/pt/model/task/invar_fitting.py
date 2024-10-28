@@ -50,7 +50,7 @@ class InvarFitting(GeneralFitting):
     neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
     bias_atom_e : torch.Tensor, optional
-        Average enery per atom for each element.
+        Average energy per atom for each element.
     resnet_dt : bool
         Using time-step in the ResNet construction.
     numb_fparam : int
@@ -74,7 +74,7 @@ class InvarFitting(GeneralFitting):
         Specifying atomic energy contribution in vacuum.
         The value is a list specifying the bias. the elements can be None or np.array of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
-        The `set_davg_zero` key in the descrptor should be set.
+        The `set_davg_zero` key in the descriptor should be set.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool

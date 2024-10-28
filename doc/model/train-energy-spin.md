@@ -145,7 +145,7 @@ We list the details about spin system data format in TensorFlow backend:
 
 ### Spin data format in PyTorch/DP
 
-In the PyTorch backend, spin and magnetic forces are listed in seperate files, and the data format may contain the following files:
+In the PyTorch backend, spin and magnetic forces are listed in separate files, and the data format may contain the following files:
 
 ```
 type.raw

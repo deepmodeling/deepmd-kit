@@ -122,7 +122,7 @@ class Encode:
 
     def extend_list(self, slbin, nfull):
         r"""Extend the list (slbin) to the length (nfull)
-        the attched element of list is 0.
+        the attached element of list is 0.
 
         such as, when
 

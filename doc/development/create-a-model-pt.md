@@ -6,7 +6,7 @@
 In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
 :::
 
-If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
+If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainer, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
 

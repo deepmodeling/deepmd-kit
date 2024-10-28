@@ -272,7 +272,7 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
   bool enable_se_atten = two_embed != nullptr;
   GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
-  const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
+  const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usually 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
   int lane_idx = threadIdx.x % WARP_SIZE;
   int breakpoint = nnei - 1;
@@ -531,7 +531,7 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
     const int last_layer_size) {
   GPU_DYNAMIC_SHARED_MEM_DECL(int, _data);
   const int_64 block_idx = blockIdx.x;  // nloc
-  const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
+  const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usually 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, threadIdx.x / WARP_SIZE, 0);
   int lane_idx = threadIdx.x % WARP_SIZE;
   FPTYPE* iteratorA = (FPTYPE*)&_data[0];  // dy
@@ -678,7 +678,7 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
     const int nnei,
     const int last_layer_size) {
   const int_64 block_idx = blockIdx.x;  // nloc
-  const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usally 128 here~
+  const int thread_idx = threadIdx.x;   // KTILE * WARP_SIZE, usually 128 here~
   int warp_idx = GpuShuffleSync(0xffffffff, thread_idx / WARP_SIZE, 0);
   int lane_idx = thread_idx % WARP_SIZE;
   __syncthreads();

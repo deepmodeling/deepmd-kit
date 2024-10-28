@@ -109,9 +109,9 @@ class EnerFitting(Fitting):
     Parameters
     ----------
     ntypes
-            The ntypes of the descrptor :math:`\mathcal{D}`
+            The ntypes of the descriptor :math:`\mathcal{D}`
     dim_descrpt
-            The dimension of the descrptor :math:`\mathcal{D}`
+            The dimension of the descriptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -132,7 +132,7 @@ class EnerFitting(Fitting):
     seed
             Random seed for initializing the network parameters.
     atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -252,7 +252,7 @@ class EnerFitting(Fitting):
         return self.numb_aparam
 
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
-        """Compute the ouput statistics.
+        """Compute the output statistics.
 
         Parameters
         ----------
@@ -828,7 +828,7 @@ class EnerFitting(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------
@@ -995,7 +995,7 @@ def change_energy_bias_lower(
     bias_adjust_mode : str
         The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
         'change-by-statistic' : perform predictions on energies of target dataset,
-                and do least sqaure on the errors to obtain the target shift as bias.
+                and do least square on the errors to obtain the target shift as bias.
         'set-by-statistic' : directly use the statistic energy bias in the target dataset.
     ntest : int
         The number of test samples in a system to change the energy bias.
