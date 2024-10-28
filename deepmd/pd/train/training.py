@@ -34,6 +34,8 @@ from deepmd.pd.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    PropertyLoss,
+    TaskLoss,
     TensorLoss,
 )
 from deepmd.pd.model.model import (
@@ -495,7 +497,7 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
-                            if _new_fitting and ".fitting_net." in item_key:
+                            if _new_fitting and (".descriptor." not in item_key):
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
@@ -781,7 +783,10 @@ class Trainer:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
             # Log and persist
-            if self.display_in_training and _step_id % self.disp_freq == 0:
+            display_step_id = _step_id + 1
+            if self.display_in_training and (
+                display_step_id % self.disp_freq == 0 or display_step_id == 1
+            ):
                 self.wrapper.eval()
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
@@ -833,7 +838,7 @@ class Trainer:
                     if self.rank == 0:
                         log.info(
                             format_training_message_per_task(
-                                batch=_step_id,
+                                batch=display_step_id,
                                 task_name="trn",
                                 rmse=train_results,
                                 learning_rate=cur_lr,
@@ -842,7 +847,7 @@ class Trainer:
                         if valid_results:
                             log.info(
                                 format_training_message_per_task(
-                                    batch=_step_id,
+                                    batch=display_step_id,
                                     task_name="val",
                                     rmse=valid_results,
                                     learning_rate=None,
@@ -873,7 +878,7 @@ class Trainer:
                         if self.rank == 0:
                             log.info(
                                 format_training_message_per_task(
-                                    batch=_step_id,
+                                    batch=display_step_id,
                                     task_name=_key + "_trn",
                                     rmse=train_results[_key],
                                     learning_rate=cur_lr,
@@ -882,7 +887,7 @@ class Trainer:
                             if valid_results[_key]:
                                 log.info(
                                     format_training_message_per_task(
-                                        batch=_step_id,
+                                        batch=display_step_id,
                                         task_name=_key + "_val",
                                         rmse=valid_results[_key],
                                         learning_rate=None,
@@ -895,14 +900,15 @@ class Trainer:
                 if self.rank == 0 and self.timing_in_training:
                     log.info(
                         format_training_message(
-                            batch=_step_id,
+                            batch=display_step_id,
                             wall_time=train_time,
                         )
                     )
                 # the first training time is not accurate
                 if (
-                    _step_id + 1
-                ) > self.disp_freq or self.num_steps < 2 * self.disp_freq:
+                    (_step_id + 1 - self.start_step) > self.disp_freq
+                    or self.num_steps - self.start_step < 2 * self.disp_freq
+                ):
                     self.total_train_time += train_time
 
                 if fout:
@@ -910,7 +916,7 @@ class Trainer:
                         self.print_header(fout, train_results, valid_results)
                         self.lcurve_should_print_header = False
                     self.print_on_training(
-                        fout, _step_id, cur_lr, train_results, valid_results
+                        fout, display_step_id, cur_lr, train_results, valid_results
                     )
 
             if (
@@ -932,9 +938,11 @@ class Trainer:
                     f.write(str(self.latest_model))
 
             # tensorboard
-            if self.enable_tensorboard and _step_id % self.tensorboard_freq == 0:
-                writer.add_scalar(f"{task_key}/lr", cur_lr, _step_id)
-                writer.add_scalar(f"{task_key}/loss", loss.item(), _step_id)
+            if self.enable_tensorboard and (
+                display_step_id % self.tensorboard_freq == 0 or display_step_id == 1
+            ):
+                writer.add_scalar(f"{task_key}/lr", cur_lr, display_step_id)
+                writer.add_scalar(f"{task_key}/loss", loss, display_step_id)
                 for item in more_loss:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item].item(), _step_id
@@ -947,7 +955,9 @@ class Trainer:
                 continue
             if self.multi_task:
                 chosen_index_list = dp_random.choice(
-                    np.arange(self.num_model),  # pylint: disable=no-explicit-dtype
+                    np.arange(
+                        self.num_model, dtype=np.int32
+                    ),  # int32 should be enough for # models...
                     p=np.array(self.model_prob),
                     size=self.world_size,
                     replace=True,
@@ -995,13 +1005,14 @@ class Trainer:
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            if self.timing_in_training and self.num_steps // self.disp_freq > 0:
-                if self.num_steps >= 2 * self.disp_freq:
+            elapsed_batch = self.num_steps - self.start_step
+            if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
+                if self.start_step >= 2 * self.disp_freq:
                     log.info(
                         "average training time: %.4f s/batch (exclude first %d batches)",
                         self.total_train_time
                         / (
-                            self.num_steps // self.disp_freq * self.disp_freq
+                            elapsed_batch // self.disp_freq * self.disp_freq
                             - self.disp_freq
                         ),
                         self.disp_freq,
@@ -1010,7 +1021,7 @@ class Trainer:
                     log.info(
                         "average training time: %.4f s/batch",
                         self.total_train_time
-                        / (self.num_steps // self.disp_freq * self.disp_freq),
+                        / (elapsed_batch // self.disp_freq * self.disp_freq),
                     )
 
             if JIT:
@@ -1026,6 +1037,7 @@ class Trainer:
         if self.enable_tensorboard:
             writer.close()
         if self.enable_profiler or self.profiling:
+            prof.stop()
             if self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
@@ -1245,8 +1257,13 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["label_name"] = label_name
         loss_params["tensor_name"] = label_name
         return TensorLoss(**loss_params)
+    elif loss_type == "property":
+        task_dim = _model.get_task_dim()
+        loss_params["task_dim"] = task_dim
+        return PropertyLoss(**loss_params)
     else:
-        raise NotImplementedError
+        loss_params["starter_learning_rate"] = start_lr
+        return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)
 
 
 def get_single_model(
