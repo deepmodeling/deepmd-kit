@@ -63,7 +63,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         of the atomic model. Implemented by removing the pairs from the nlist.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_out_bias : Dict[str, List[Optional[paddle.Tensor]]], optional
+    preset_out_bias : Dict[str, list[Optional[paddle.Tensor]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
         The value is a list specifying the bias. the elements can be None or np.array of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
@@ -359,11 +359,11 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -382,11 +382,11 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -432,11 +432,11 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
 
         Parameters
         ----------
-        sample_merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         bias_adjust_mode : str
@@ -456,6 +456,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
+                atomic_output=self.atomic_output_def(),
             )
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
@@ -466,6 +467,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
+                atomic_output=self.atomic_output_def(),
             )
             self._store_out_stat(bias_out, std_out)
         else:
