@@ -64,7 +64,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rpz,
             sm,
             prec,
-            etc,
+            ect,
             ns,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
@@ -152,8 +152,8 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 exclude_types=[],
                 add_tebd_to_repinit_out=False,
                 precision=prec,
-                use_econf_tebd=etc,
-                type_map=["O", "H"] if etc else None,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
@@ -219,7 +219,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
             rpz,
             sm,
             prec,
-            etc,
+            ect,
             ns,
         ) in itertools.product(
             ["concat", "strip"],  # repinit_tebd_input_mode
@@ -308,8 +308,8 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 exclude_types=[],
                 add_tebd_to_repinit_out=False,
                 precision=prec,
-                use_econf_tebd=etc,
-                type_map=["O", "H"] if etc else None,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
