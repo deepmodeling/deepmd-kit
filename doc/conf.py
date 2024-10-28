@@ -217,4 +217,4 @@ napoleon_numpy_docstring = False
 
 bibtex_bibfiles = ["../CITATIONS.bib"]
 
-remove_from_toctrees = ["autoapi/*", "API_CC/*", "api_c/*", "api_core/*"]
+remove_from_toctrees = ["autoapi/**/*", "API_CC/*", "api_c/*", "api_core/*"]
