@@ -472,10 +472,10 @@ def extend_coord_with_ghosts(
         # *2: ghost copies on + and - directions
         # +1: central cell
         nbuff = paddle.ceil(rcut / to_face)
-        INT64_MAX = 9223372036854775808
+        INT64_MIN = -9223372036854775808
         nbuff = paddle.where(
             paddle.isinf(nbuff),
-            paddle.full_like(nbuff, -INT64_MAX, dtype=paddle.int64),
+            paddle.full_like(nbuff, INT64_MIN, dtype=paddle.int64),
             nbuff.astype(paddle.int64),
         )
         # 3
