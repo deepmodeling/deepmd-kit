@@ -681,14 +681,6 @@ def test_pair_deepmd_si(lammps_si):
     [(["--balance"],), ([],)],
 )
 def test_pair_deepmd_mpi(balance_args: list):
-    if balance_args == []:
-        # python:5331 terminated with signal 11 at PC=7f3e940e3806 SP=7ffd5787edc0.  Backtrace:
-        # /home/runner/work/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_op_pt.so(+0x95806)[0x7f3e940e3806]
-        # /home/runner/work/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_op_pt.so(+0x8f76e)[0x7f3e940dd76e]
-        # /home/runner/work/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_op_pt.so(+0x9a38a)[0x7f3e940e838a]
-        # /home/runner/work/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_op_pt.so(_Z9border_opRKN2at6TensorES2_S2_S2_S2_S2_S2_S2_S2_+0x8e)[0x7f3e940dda63]
-        # /home/runner/work/deepmd-kit/deepmd-kit/dp_test/lib/libdeepmd_op_pt.so(+0xaeac3)[0x7f3e940fcac3]
-        pytest.skip(reason="Known segfault, see comments for details")
     with tempfile.NamedTemporaryFile() as f:
         sp.check_call(
             [

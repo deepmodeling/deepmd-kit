@@ -74,8 +74,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         **kwargs,
     ):
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.set_davg_zero = set_davg_zero
@@ -207,8 +207,16 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                     base_env.stats[kk] += self.get_stats()[kk]
                 mean, stddev = base_env()
                 if not base_class.set_davg_zero:
-                    base_class.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
-                base_class.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+                    base_class.mean.copy_(
+                        torch.tensor(
+                            mean, device=env.DEVICE, dtype=base_class.mean.dtype
+                        )
+                    )
+                base_class.stddev.copy_(
+                    torch.tensor(
+                        stddev, device=env.DEVICE, dtype=base_class.stddev.dtype
+                    )
+                )
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
             # self.load_state_dict(base_class.state_dict()) # this does not work, because it only inits the model
@@ -267,8 +275,12 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+            self.mean.copy_(
+                torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
+            )
+        self.stddev.copy_(
+            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

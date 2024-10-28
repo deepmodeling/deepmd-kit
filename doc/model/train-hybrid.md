@@ -25,7 +25,7 @@ This way, one can set the different cutoff radii for different descriptors.[^1]
 
 ## Instructions
 
-To use the descriptor in DeePMD-kit, one firstly set the {ref}`type <model/descriptor/type>` to {ref}`hybrid <model/descriptor[hybrid]>`, then provide the definitions of the descriptors by the items in the `list`,
+To use the descriptor in DeePMD-kit, one firstly set the {ref}`type <model[standard]/descriptor/type>` to {ref}`hybrid <model[standard]/descriptor[hybrid]>`, then provide the definitions of the descriptors by the items in the `list`,
 
 ```json
         "descriptor" :{

@@ -28,6 +28,7 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
     PropertyLoss,
+    TaskLoss,
     TensorLoss,
 )
 from deepmd.pt.model.model import (
@@ -400,7 +401,9 @@ class Trainer:
         optimizer_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
-            state_dict = torch.load(resume_model, map_location=DEVICE)
+            state_dict = torch.load(
+                resume_model, map_location=DEVICE, weights_only=True
+            )
             if "model" in state_dict:
                 optimizer_state_dict = (
                     state_dict["optimizer"] if finetune_model is None else None
@@ -941,7 +944,9 @@ class Trainer:
                 continue
             if self.multi_task:
                 chosen_index_list = dp_random.choice(
-                    np.arange(self.num_model),  # pylint: disable=no-explicit-dtype
+                    np.arange(
+                        self.num_model, dtype=np.int32
+                    ),  # int32 should be enough for # models...
                     p=np.array(self.model_prob),
                     size=self.world_size,
                     replace=True,
@@ -1256,7 +1261,8 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
         loss_params["task_dim"] = task_dim
         return PropertyLoss(**loss_params)
     else:
-        raise NotImplementedError
+        loss_params["starter_learning_rate"] = start_lr
+        return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)
 
 
 def get_single_model(

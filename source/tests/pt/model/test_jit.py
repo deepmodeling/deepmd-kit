@@ -144,5 +144,27 @@ class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
         JITTest.tearDown(self)
 
 
+class TestEnergyModelDPA2IntRcut(unittest.TestCase, JITTest):
+    def setUp(self):
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_dpa2)
+        self.config["model"]["descriptor"]["repinit"]["rcut"] = int(
+            self.config["model"]["descriptor"]["repinit"]["rcut"]
+        )
+        self.config["model"]["descriptor"]["repinit"]["rcut_smth"] = int(
+            self.config["model"]["descriptor"]["repinit"]["rcut_smth"]
+        )
+        self.config["training"]["numb_steps"] = 10
+        self.config["training"]["save_freq"] = 10
+
+    def tearDown(self):
+        JITTest.tearDown(self)
+
+
 if __name__ == "__main__":
     unittest.main()
