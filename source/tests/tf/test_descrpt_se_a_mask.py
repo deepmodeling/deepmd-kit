@@ -257,7 +257,7 @@ class TestModel(tf.test.TestCase):
         is_training = tf.placeholder(tf.bool)
         t_aparam = tf.placeholder(tf.int32, [None, None], name="i_aparam")
 
-        doubt = descrpt.build(
+        dout = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -281,7 +281,7 @@ class TestModel(tf.test.TestCase):
         }
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [op_dout] = sess.run([doubt], feed_dict=feed_dict_test)
+        [op_dout] = sess.run([dout], feed_dict=feed_dict_test)
         op_dout = op_dout.reshape([-1])
 
         ref_dout = np.zeros(op_dout.shape, dtype=float)

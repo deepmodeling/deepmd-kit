@@ -138,7 +138,7 @@ class TestModel(tf.test.TestCase):
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
-        # np.savetxt('tmp.out', sess.run(descrpt.doubt, feed_dict = feed_dict_test), fmt='%.10e')
+        # np.savetxt('tmp.out', sess.run(descrpt.dout, feed_dict = feed_dict_test), fmt='%.10e')
         # # print(sess.run(model.atype_embed, feed_dict = feed_dict_test))
         # print(sess.run(fitting.inputs, feed_dict = feed_dict_test))
         # print(sess.run(fitting.outs, feed_dict = feed_dict_test))
@@ -239,7 +239,7 @@ class TestModel(tf.test.TestCase):
         type_embedding = typeebd.build(
             ntypes, suffix=self.filename + "-" + inspect.stack()[0][3]
         )
-        doubt = descrpt.build(
+        dout = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -262,7 +262,7 @@ class TestModel(tf.test.TestCase):
 
         with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
-            [des] = sess.run([doubt], feed_dict=feed_dict_test1)
+            [des] = sess.run([dout], feed_dict=feed_dict_test1)
 
         np.testing.assert_almost_equal(des[:, 0:2], 0.0, 10)
         with self.assertRaises(AssertionError):
@@ -364,7 +364,7 @@ class TestModel(tf.test.TestCase):
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
-        # np.savetxt('tmp.out', sess.run(descrpt.doubt, feed_dict = feed_dict_test), fmt='%.10e')
+        # np.savetxt('tmp.out', sess.run(descrpt.dout, feed_dict = feed_dict_test), fmt='%.10e')
         # # print(sess.run(model.atype_embed, feed_dict = feed_dict_test))
         # print(sess.run(fitting.inputs, feed_dict = feed_dict_test))
         # print(sess.run(fitting.outs, feed_dict = feed_dict_test))
@@ -468,7 +468,7 @@ class TestModel(tf.test.TestCase):
         type_embedding = typeebd.build(
             ntypes, suffix=self.filename + "-" + inspect.stack()[0][3]
         )
-        doubt = descrpt.build(
+        dout = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -491,7 +491,7 @@ class TestModel(tf.test.TestCase):
 
         with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
-            [des] = sess.run([doubt], feed_dict=feed_dict_test1)
+            [des] = sess.run([dout], feed_dict=feed_dict_test1)
 
         np.testing.assert_almost_equal(des[:, 0:2], 0.0, 10)
         with self.assertRaises(AssertionError):
@@ -597,7 +597,7 @@ class TestModel(tf.test.TestCase):
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
-        # np.savetxt('tmp.out', sess.run(descrpt.doubt, feed_dict = feed_dict_test), fmt='%.10e')
+        # np.savetxt('tmp.out', sess.run(descrpt.dout, feed_dict = feed_dict_test), fmt='%.10e')
         # # print(sess.run(model.atype_embed, feed_dict = feed_dict_test))
         # print(sess.run(fitting.inputs, feed_dict = feed_dict_test))
         # print(sess.run(fitting.outs, feed_dict = feed_dict_test))
@@ -703,7 +703,7 @@ class TestModel(tf.test.TestCase):
             ntypes,
             suffix=self.filename + "-" + inspect.stack()[0][3] + "_type_embedding",
         )
-        doubt = descrpt.build(
+        dout = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -729,7 +729,7 @@ class TestModel(tf.test.TestCase):
 
         with self.cached_session() as sess:
             sess.run(tf.global_variables_initializer())
-            [des] = sess.run([doubt], feed_dict=feed_dict_test1)
+            [des] = sess.run([dout], feed_dict=feed_dict_test1)
 
         np.testing.assert_almost_equal(des[:, 0:2], 0.0, 10)
         with self.assertRaises(AssertionError):

@@ -126,7 +126,7 @@ class TestModel(tf.test.TestCase):
         sess.run(tf.global_variables_initializer())
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         # print(sess.run(model.type_embedding))
-        # np.savetxt('tmp.out', sess.run(descrpt.doubt, feed_dict = feed_dict_test), fmt='%.10e')
+        # np.savetxt('tmp.out', sess.run(descrpt.dout, feed_dict = feed_dict_test), fmt='%.10e')
         # # print(sess.run(model.atype_embed, feed_dict = feed_dict_test))
         # print(sess.run(fitting.inputs, feed_dict = feed_dict_test))
         # print(sess.run(fitting.outs, feed_dict = feed_dict_test))

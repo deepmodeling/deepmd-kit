@@ -81,7 +81,7 @@ class TestModel(tf.test.TestCase):
         is_training = tf.placeholder(tf.bool)
         t_fparam = None
 
-        doubt = np.array(
+        dout = np.array(
             [
                 0.0005722682145569174,
                 -0.00020202686217742682,
@@ -148,7 +148,7 @@ class TestModel(tf.test.TestCase):
 
         atype = np.array([0, 0, 1, 1, 1, 1], dtype=np.int32)
 
-        doubt = doubt.reshape([-1, 10])
+        dout = dout.reshape([-1, 10])
         atype = atype.reshape([-1])
 
         natoms = 6
@@ -158,7 +158,7 @@ class TestModel(tf.test.TestCase):
         test_data["atom_dos"] = tmp_atom_dos
 
         atom_dos = fitting.build(
-            tf.convert_to_tensor(doubt),
+            tf.convert_to_tensor(dout),
             t_natoms,
             {
                 "atype": tf.convert_to_tensor(atype),

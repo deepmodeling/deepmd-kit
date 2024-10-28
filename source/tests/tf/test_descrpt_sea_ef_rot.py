@@ -83,7 +83,7 @@ class TestEfRot(tf.test.TestCase):
                     "uniform_seed": True,
                 }
             )
-        doubt = descrpt.build(
+        dout = descrpt.build(
             dcoord,
             dtype,
             tnatoms,
@@ -93,8 +93,8 @@ class TestEfRot(tf.test.TestCase):
             suffix=name,
             reuse=reuse,
         )
-        doubt = tf.reshape(doubt, [-1, descrpt.get_dim_out()])
-        atom_ener = tf.reduce_sum(doubt, axis=1)
+        dout = tf.reshape(dout, [-1, descrpt.get_dim_out()])
+        atom_ener = tf.reduce_sum(dout, axis=1)
         atom_ener_reshape = tf.reshape(atom_ener, [-1, self.natoms[0]])
         energy = tf.reduce_sum(atom_ener_reshape, axis=1)
         force, virial, atom_vir = descrpt.prod_force_virial(atom_ener, tnatoms)
