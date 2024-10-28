@@ -74,31 +74,25 @@ class SimpleLinear(nn.Layer):
         self.use_timestep = use_timestep
         self.activate = ActivationFn(activate)
 
-        t = Tensor(num_in, num_out)
         self.matrix = self.create_parameter(
             [num_in, num_out],
-            dtype=t.dtype,
-            default_initializer=nn.initializer.Assign(t),
+            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
         )
-        init.normal_(self.matrix.data, std=stddev / np.sqrt(num_out + num_in))
+        init.normal_(self.matrix, std=stddev / np.sqrt(num_out + num_in))
         if bias:
-            t = Tensor(1, num_out)
             self.bias = self.create_parameter(
                 (1, num_out),
-                dtype=t.dtype,
-                default_initializer=nn.initializer.Assign(t),
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION,
             )
-            init.normal_(self.bias.data, mean=bavg, std=stddev)
+            init.normal_(self.bias, mean=bavg, std=stddev)
         else:
             self.bias = None
         if self.use_timestep:
-            t = Tensor(1, num_out)
             self.idt = self.create_parameter(
                 (1, num_out),
-                dtype=t.dtype,
-                default_initializer=nn.initializer.Assign(t),
+                dtype=env.GLOBAL_PD_FLOAT_PRECISION,
             )
-            init.normal_(self.idt.data, mean=0.1, std=0.001)
+            init.normal_(self.idt, mean=0.1, std=0.001)
 
     def forward(self, inputs):
         """Return X*W+b."""
@@ -464,7 +458,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             assert (
                 not do_resnet or self.activation_function == "Linear"
             ), "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
-            first_layer_matrix = self.embedding_net.layers[0].matrix.data
+            first_layer_matrix = self.embedding_net.layers[0].matrix
             eye_vector = paddle.eye(self.ntypes, dtype=self.prec).to(
                 device=first_layer_matrix.place
             )

@@ -227,7 +227,7 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
         MultiTaskTrainTest.tearDown(self)
 
 
-@unittest.skip("Paddle do not support MultiTaskDPA1.")
+# @unittest.skip("Paddle do not support MultiTaskDPA1.")
 class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
     def setUp(self):
         multitask_DPA1 = deepcopy(multitask_template)

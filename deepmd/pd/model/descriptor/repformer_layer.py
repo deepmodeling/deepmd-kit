@@ -1138,15 +1138,18 @@ class RepformerLayer(paddle.nn.Layer):
         nb, nloc, nnei, _ = g2.shape
         nall = g1_ext.shape[1]
         g1, _ = paddle.split(g1_ext, [nloc, nall - nloc], axis=1)
-        assert [nb, nloc] == g1.shape[:2]
-        assert [nb, nloc, nnei] == h2.shape[:3]
+        if paddle.in_dynamic_mode():
+            assert [nb, nloc] == g1.shape[:2]
+        if paddle.in_dynamic_mode():
+            assert [nb, nloc, nnei] == h2.shape[:3]
 
         g2_update: list[paddle.Tensor] = [g2]
         h2_update: list[paddle.Tensor] = [h2]
         g1_update: list[paddle.Tensor] = [g1]
         g1_mlp: list[paddle.Tensor] = [g1] if not self.g1_out_mlp else []
         if self.g1_out_mlp:
-            assert self.g1_self_mlp is not None
+            if paddle.in_dynamic_mode():
+                assert self.g1_self_mlp is not None
             g1_self_mlp = self.act(self.g1_self_mlp(g1))
             g1_update.append(g1_self_mlp)
 
@@ -1157,28 +1160,34 @@ class RepformerLayer(paddle.nn.Layer):
 
         if self.update_chnnl_2:
             # mlp(g2)
-            assert self.linear2 is not None
+            if paddle.in_dynamic_mode():
+                assert self.linear2 is not None
             # nb x nloc x nnei x ng2
             g2_1 = self.act(self.linear2(g2))
             g2_update.append(g2_1)
 
             if self.update_g2_has_g1g1:
                 # linear(g1_i * g1_j)
-                assert gg1 is not None
-                assert self.proj_g1g1g2 is not None
+                if paddle.in_dynamic_mode():
+                    assert gg1 is not None
+                if paddle.in_dynamic_mode():
+                    assert self.proj_g1g1g2 is not None
                 g2_update.append(
                     self.proj_g1g1g2(self._update_g2_g1g1(g1, gg1, nlist_mask, sw))
                 )
 
             if self.update_g2_has_attn or self.update_h2:
                 # gated_attention(g2, h2)
-                assert self.attn2g_map is not None
+                if paddle.in_dynamic_mode():
+                    assert self.attn2g_map is not None
                 # nb x nloc x nnei x nnei x nh
                 AAg = self.attn2g_map(g2, h2, nlist_mask, sw)
 
                 if self.update_g2_has_attn:
-                    assert self.attn2_mh_apply is not None
-                    assert self.attn2_lm is not None
+                    if paddle.in_dynamic_mode():
+                        assert self.attn2_mh_apply is not None
+                    if paddle.in_dynamic_mode():
+                        assert self.attn2_lm is not None
                     # nb x nloc x nnei x ng2
                     g2_2 = self.attn2_mh_apply(AAg, g2)
                     g2_2 = self.attn2_lm(g2_2)
@@ -1189,7 +1198,8 @@ class RepformerLayer(paddle.nn.Layer):
                     h2_update.append(self._update_h2(h2, AAg))
 
         if self.update_g1_has_conv:
-            assert gg1 is not None
+            if paddle.in_dynamic_mode():
+                assert gg1 is not None
             g1_conv = self._update_g1_conv(gg1, g2, nlist_mask, sw)
             if not self.g1_out_conv:
                 g1_mlp.append(g1_conv)
@@ -1210,7 +1220,8 @@ class RepformerLayer(paddle.nn.Layer):
             )
 
         if self.update_g1_has_drrd:
-            assert gg1 is not None
+            if paddle.in_dynamic_mode():
+                assert gg1 is not None
             g1_mlp.append(
                 self.symmetrization_op(
                     gg1,

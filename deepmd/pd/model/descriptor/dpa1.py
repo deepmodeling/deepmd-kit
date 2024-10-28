@@ -154,7 +154,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version. True option is not implemented.)
             If mask the diagonal of attention weights
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -188,7 +188,7 @@ class DescrptDPA1(BaseDescriptor, paddle.nn.Layer):
             Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
             (Only support None to keep consistent with other backend references.)

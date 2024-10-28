@@ -415,12 +415,15 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         # [nframes, nloc, tebd_dim]
         if comm_dict is None:
-            assert isinstance(extended_atype_embd, paddle.Tensor)  # for jit
+            if paddle.in_dynamic_mode():
+                assert isinstance(extended_atype_embd, paddle.Tensor)  # for jit
             atype_embd = extended_atype_embd[:, :nloc, :]
-            assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
+            if paddle.in_dynamic_mode():
+                assert list(atype_embd.shape) == [nframes, nloc, self.g1_dim]
         else:
             atype_embd = extended_atype_embd
-        assert isinstance(atype_embd, paddle.Tensor)  # for jit
+            if paddle.in_dynamic_mode():
+                assert isinstance(atype_embd, paddle.Tensor)  # for jit
         g1 = self.act(atype_embd)
         # nb x nloc x nnei x 1,  nb x nloc x nnei x 3
         if not self.direct_dist:

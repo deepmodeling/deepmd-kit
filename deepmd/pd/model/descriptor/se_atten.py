@@ -462,7 +462,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.reshape([nb * nloc, nnei])
-        assert self.filter_layers is not None
         # nfnl x nnei x 4
         dmatrix = dmatrix.reshape([-1, self.nnei, 4])
         nfnl = dmatrix.shape[0]
@@ -509,7 +508,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )  # shape is [nframes*nloc, self.neei, out_size]
         # nfnl x 4 x ng
         xyz_scatter = paddle.matmul(rr.transpose([0, 2, 1]), gg)
-
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.transpose([0, 2, 1])
         rot_mat = xyz_scatter_1[:, :, 1:4]

@@ -46,6 +46,8 @@ class DPAtomicModel(BaseAtomicModel):
             For example `type_map[1]` gives the name of the type 1.
     """
 
+    eval_descriptor_list: list[paddle.Tensor]
+
     def __init__(
         self,
         descriptor,
@@ -62,6 +64,8 @@ class DPAtomicModel(BaseAtomicModel):
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
         super().init_out_stat()
+        self.enable_eval_descriptor_hook = False
+        self.eval_descriptor_list = []
 
         # register 'type_map' as buffer
         def _string_to_array(s: str) -> list[int]:
@@ -72,12 +76,13 @@ class DPAtomicModel(BaseAtomicModel):
             paddle.to_tensor(_string_to_array(" ".join(self.type_map)), dtype="int32"),
         )
         self.buffer_type_map.name = "buffer_type_map"
-        # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
-        self.register_buffer(
-            "buffer_has_message_passing",
-            paddle.to_tensor(self.has_message_passing(), dtype="int32"),
-        )
-        self.buffer_has_message_passing.name = "buffer_has_message_passing"
+        if hasattr(self.descriptor, "has_message_passing"):
+            # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
+            self.register_buffer(
+                "buffer_has_message_passing",
+                paddle.to_tensor(self.descriptor.has_message_passing(), dtype="int32"),
+            )
+            self.buffer_has_message_passing.name = "buffer_has_message_passing"
         # register 'ntypes' as buffer
         self.register_buffer(
             "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int32")
@@ -88,22 +93,35 @@ class DPAtomicModel(BaseAtomicModel):
             "buffer_rcut", paddle.to_tensor(self.rcut, dtype="float64")
         )
         self.buffer_rcut.name = "buffer_rcut"
-        # register 'dfparam' as buffer
-        self.register_buffer(
-            "buffer_dfparam", paddle.to_tensor(self.get_dim_fparam(), dtype="int32")
-        )
-        self.buffer_dfparam.name = "buffer_dfparam"
-        # register 'daparam' as buffer
-        self.register_buffer(
-            "buffer_daparam", paddle.to_tensor(self.get_dim_aparam(), dtype="int32")
-        )
-        self.buffer_daparam.name = "buffer_daparam"
+        if hasattr(self.fitting_net, "get_dim_fparam"):
+            # register 'dfparam' as buffer
+            self.register_buffer(
+                "buffer_dfparam",
+                paddle.to_tensor(self.fitting_net.get_dim_fparam(), dtype="int32"),
+            )
+            self.buffer_dfparam.name = "buffer_dfparam"
+        if hasattr(self.fitting_net, "get_dim_aparam"):
+            # register 'daparam' as buffer
+            self.register_buffer(
+                "buffer_daparam",
+                paddle.to_tensor(self.fitting_net.get_dim_aparam(), dtype="int32"),
+            )
+            self.buffer_daparam.name = "buffer_daparam"
         # register 'aparam_nall' as buffer
         self.register_buffer(
             "buffer_aparam_nall",
-            paddle.to_tensor(self.is_aparam_nall(), dtype="int32"),
+            paddle.to_tensor(False, dtype="int32"),
         )
         self.buffer_aparam_nall.name = "buffer_aparam_nall"
+
+    def set_eval_descriptor_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
+        self.enable_eval_descriptor_hook = enable
+        self.eval_descriptor_list = []
+
+    def eval_descriptor(self) -> paddle.Tensor:
+        """Evaluate the descriptor."""
+        return paddle.concat(self.eval_descriptor_list)
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -232,6 +250,8 @@ class DPAtomicModel(BaseAtomicModel):
             comm_dict=comm_dict,
         )
         assert descriptor is not None
+        if self.enable_eval_descriptor_hook:
+            self.eval_descriptor_list.append(descriptor)
         # energy, force
         fit_ret = self.fitting_net(
             descriptor,

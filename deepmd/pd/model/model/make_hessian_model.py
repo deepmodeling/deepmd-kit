@@ -121,6 +121,7 @@ def make_hessian_model(T_Model):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
         ) -> dict[str, paddle.Tensor]:
+            raise NotImplementedError("paddle do not support full hessian.")
             nf, nloc = atype.shape
             coord = coord.reshape([nf, (nloc * 3)])
             box = box.reshape([nf, 9]) if box is not None else None
@@ -166,6 +167,7 @@ def make_hessian_model(T_Model):
             fparam: Optional[paddle.Tensor] = None,
             aparam: Optional[paddle.Tensor] = None,
         ) -> paddle.Tensor:
+            raise NotImplementedError("paddle do not support full hessian.")
             # coord, # (nloc x 3)
             # atype, # nloc
             # box: Optional[paddle.Tensor] = None,     # 9

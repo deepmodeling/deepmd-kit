@@ -379,7 +379,7 @@ def build_multiple_neighbor_list(
         return {}
     nb, nloc, nsel = nlist.shape
     if nsel < nsels[-1]:
-        pad = -1 * paddle.ones(
+        pad = -paddle.ones(
             [nb, nloc, nsels[-1] - nsel],
             dtype=nlist.dtype,
         ).to(device=nlist.place)
@@ -471,24 +471,27 @@ def extend_coord_with_ghosts(
         # nf x 3
         # *2: ghost copies on + and - directions
         # +1: central cell
-        nbuff = paddle.ceil(rcut / to_face).to(paddle.int64)
+        nbuff = paddle.ceil(rcut / to_face)
+        nbuff = paddle.where(
+            paddle.isinf(nbuff), nbuff.to(paddle.int64) + 1, nbuff.to(paddle.int64)
+        )
         # 3
         nbuff = paddle.amax(nbuff, axis=0)  # faster than paddle.max
-        # nbuff_cpu = nbuff.cpu()
+        nbuff_cpu = nbuff.cpu()
         xi = (
-            paddle.arange(-nbuff[0], nbuff[0] + 1, 1).to(
+            paddle.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1).to(
                 dtype=env.GLOBAL_PD_FLOAT_PRECISION
             )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         yi = (
-            paddle.arange(-nbuff[1], nbuff[1] + 1, 1).to(
+            paddle.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1).to(
                 dtype=env.GLOBAL_PD_FLOAT_PRECISION
             )
             # .cpu()
         )  # pylint: disable=no-explicit-dtype
         zi = (
-            paddle.arange(-nbuff[2], nbuff[2] + 1, 1).to(
+            paddle.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1).to(
                 dtype=env.GLOBAL_PD_FLOAT_PRECISION
             )
             # .cpu()

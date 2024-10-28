@@ -118,7 +118,9 @@ class DeepEval(DeepEvalBackend):
             self.dp = ModelWrapper(model)
             self.dp.set_state_dict(state_dict)
         else:
-            raise ValueError("Unknown model file format!")
+            # self.dp = paddle.jit.load(self.model_path.split(".json")[0])
+            raise ValueError(f"Unknown model file format: {self.model_path}!")
+
         self.rcut = self.dp.model["Default"].get_rcut()
         self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):

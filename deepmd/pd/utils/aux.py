@@ -10,6 +10,7 @@
 import paddle
 
 __all__ = [
+    "softmax",
     "norm",
     "take_along_axis",
     "scatter_reduce",
@@ -18,15 +19,23 @@ __all__ = [
 ]
 
 
-def norm(
+# decomposition for forward function
+def softmax_decomp(x: paddle.Tensor, axis: int = -1) -> paddle.Tensor:
+    x_max = paddle.max(x, axis=axis, keepdim=True)
+    x = x - x_max
+    return paddle.exp(x) / paddle.sum(paddle.exp(x), axis=axis, keepdim=True)
+
+
+def norm_decomp(
     x: paddle.Tensor, p: float = 2, axis: bool = -1, keepdim: bool = False
 ) -> paddle.Tensor:
     if p == 2 or p == 2.0:
-        return (x * x).sum(axis=axis, keepdim=keepdim) ** 0.5
+        # clip for negative indexing, or 1/(0^(k-1)) will cause inf in backward
+        return (x * x).sum(axis=axis, keepdim=keepdim).clip(1e-12) ** 0.5
     return (x**p).sum(axis=axis, keepdim=keepdim) ** (1 / p)
 
 
-def take_along_axis(
+def take_along_axis_decomp(
     x: paddle.Tensor, indices: paddle.Tensor, axis: int, broadcast: bool = True
 ):
     """Broadcast no used now."""
@@ -41,7 +50,7 @@ def take_along_axis(
     return out
 
 
-def scatter_reduce(
+def scatter_reduce_decomp(
     input: paddle.Tensor,
     axis: int,
     index: paddle.Tensor,
@@ -75,7 +84,7 @@ def sec(l: int, size: int) -> list[int]:
     return [size] * (l // size) + [l % size]
 
 
-def masked_add_(
+def masked_add__decomp(
     x: paddle.Tensor, mask: paddle.Tensor, v: paddle.Tensor
 ) -> paddle.Tensor:
     assert mask.dtype == paddle.bool, f"mask must be bool type, but got {mask.dtype}"
@@ -95,10 +104,19 @@ def masked_add_(
     return x
 
 
-def normalize(
+def normalize_decomp(
     x: paddle.Tensor,
     p: float = 2,
     axis: int = 1,
     epsilon: float = 1e-12,
 ) -> paddle.Tensor:
     return x / (norm(x, p=p, axis=axis, keepdim=True).clip(min=epsilon))
+
+
+# alias for decomposed functions for convinience
+normalize = normalize_decomp
+masked_add_ = masked_add__decomp
+scatter_reduce = scatter_reduce_decomp
+take_along_axis = take_along_axis_decomp
+norm = norm_decomp
+softmax = softmax_decomp

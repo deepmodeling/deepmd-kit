@@ -35,8 +35,7 @@ class DPTrainTest:
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
         state_dict_trained = trainer.wrapper.model.state_dict()
-        # for k, v in state_dict_trained.items():
-        #     print(f"{k} {v.shape}")
+
         # test fine-tuning using same input
         finetune_model = self.config["training"].get("save_ckpt", "model.ckpt") + ".pd"
         self.config["model"], finetune_links = get_finetune_rules(
@@ -174,7 +173,6 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
-@unittest.skip("EnergyZBLModelSeA not supported at the moment")
 class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/zbl.json")
@@ -245,7 +243,6 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
-@unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
@@ -320,7 +317,7 @@ class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
         DPTrainTest.tearDown(self)
 
 
-@unittest.skip("DipoleModelDPA2 not supported at the moment")
+@unittest.skip("Unable to fill empty grad inputs")
 class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")

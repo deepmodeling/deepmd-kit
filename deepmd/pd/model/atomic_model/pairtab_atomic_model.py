@@ -54,7 +54,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
-    type_map : List[str]
+    type_map : list[str]
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     rcond : float, optional
@@ -86,7 +86,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             (
                 tab_info,
                 tab_data,
-            ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
+            ) = self.tab.get()  # this returns -> tuple[np.array, np.array]
             nspline, ntypes_tab = tab_info[-2:].astype(int)
             self.register_buffer("tab_info", paddle.to_tensor(tab_info))
             self.register_buffer(
@@ -227,11 +227,11 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -337,14 +337,13 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         # if nnei of atom 0 has -1 in the nlist, uu would be 0.
         # this is to handle the nlist where the mask is set to 0, so that we don't raise exception for those atoms.
-        uu = paddle.where(nlist != -1, uu, float(nspline + 1))
+        uu = paddle.where(nlist != -1, uu, paddle.full_like(uu, nspline + 1))
 
         if paddle.any(uu < 0):
             raise Exception("coord go beyond table lower boundary")
 
         idx = uu.to(paddle.int32)
-
-        uu -= idx
+        uu -= idx.astype(uu.dtype)
 
         table_coef = self._extract_spline_coefficient(
             i_type, j_type, idx, self.tab_data, nspline
@@ -466,7 +465,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
         a3, a2, a1, a0 = paddle.unbind(coef, axis=-1)
-        etmp = (a3 * uu.astype(coef.dtype) + a2) * uu.astype(
+        etmp = (a3 * uu + a2) * uu.astype(
             coef.dtype
         ) + a1  # this should be elementwise operations.
         ener = (

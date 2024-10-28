@@ -338,6 +338,13 @@ def train(FLAGS):
 
 
 def freeze(FLAGS):
+    paddle.set_flags(
+        {
+            "FLAGS_save_cf_stack_op": 1,
+            "FLAGS_prim_enable_dynamic": 1,
+            "FLAGS_enable_pir_api": 1,
+        }
+    )
     model = inference.Tester(FLAGS.model, head=FLAGS.head).model
     model.eval()
     from paddle.static import (
@@ -351,13 +358,6 @@ def freeze(FLAGS):
     """
     # NOTE: 'FLAGS_save_cf_stack_op', 'FLAGS_prim_enable_dynamic' and
     # 'FLAGS_enable_pir_api' shoule be enabled when freezing model.
-    paddle.set_flags(
-        {
-            "FLAGS_save_cf_stack_op": 1,
-            "FLAGS_prim_enable_dynamic": 1,
-            "FLAGS_enable_pir_api": 1,
-        }
-    )
     model = paddle.jit.to_static(
         model.forward_lower,
         full_graph=True,
@@ -367,6 +367,8 @@ def freeze(FLAGS):
             InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
         ],
     )
+    if FLAGS.output.endswith(".json"):
+        FLAGS.output = FLAGS.output[:-5]
     paddle.jit.save(
         model,
         path=FLAGS.output,
