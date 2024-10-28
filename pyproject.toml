@@ -282,6 +282,9 @@ UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu https://www.paddlepad
 # trick to find the correction version of mpich
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
 [tool.cibuildwheel.windows]
 test-extras = ["cpu", "torch", "paddle"]
 test-command = [
