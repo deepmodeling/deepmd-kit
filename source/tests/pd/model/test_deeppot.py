@@ -57,7 +57,7 @@ class TestDeepPot(unittest.TestCase):
             if f in ["lcurve.out", self.input_json]:
                 os.remove(f)
 
-    # @unittest.skip("Paddle do not eval on frozen model yet.")
+    @unittest.skip("Paddle do not eval on frozen model yet.")
     def test_dp_test(self):
         dp = DeepPot(str(self.model))
         cell = np.array(

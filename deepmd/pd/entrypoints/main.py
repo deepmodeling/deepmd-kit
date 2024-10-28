@@ -358,7 +358,7 @@ def freeze(FLAGS):
     """
     # NOTE: 'FLAGS_save_cf_stack_op', 'FLAGS_prim_enable_dynamic' and
     # 'FLAGS_enable_pir_api' shoule be enabled when freezing model.
-    model = paddle.jit.to_static(
+    jit_model = paddle.jit.to_static(
         model.forward_lower,
         full_graph=True,
         input_spec=[
@@ -370,7 +370,7 @@ def freeze(FLAGS):
     if FLAGS.output.endswith(".json"):
         FLAGS.output = FLAGS.output[:-5]
     paddle.jit.save(
-        model,
+        jit_model,
         path=FLAGS.output,
         skip_prune_program=True,
     )

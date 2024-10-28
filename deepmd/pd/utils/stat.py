@@ -12,6 +12,9 @@ from typing import (
 import numpy as np
 import paddle
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+)
 from deepmd.pd.utils import (
     AtomExcludeMask,
 )
@@ -237,8 +240,9 @@ def compute_output_stats(
     keys: Union[str, list[str]] = ["energy"],
     stat_file_path: Optional[DPPath] = None,
     rcond: Optional[float] = None,
-    preset_bias: Optional[dict[str, list[Optional[paddle.Tensor]]]] = None,
+    preset_bias: Optional[dict[str, list[Optional[np.ndarray]]]] = None,
     model_forward: Optional[Callable[..., paddle.Tensor]] = None,
+    atomic_output: Optional[FittingOutputDef] = None,
 ):
     """
     Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -268,6 +272,8 @@ def compute_output_stats(
         If not None, the model will be utilized to generate the original energy prediction,
         which will be subtracted from the energy label of the data.
         The difference will then be used to calculate the delta complement energy bias for each type.
+    atomic_output : FittingOutputDef, optional
+        The output of atomic model.
     """
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
@@ -356,6 +362,7 @@ def compute_output_stats(
             rcond,
             preset_bias,
             model_pred_g,
+            atomic_output,
         )
         bias_atom_a, std_atom_a = compute_output_stats_atomic(
             sampled,
@@ -398,6 +405,7 @@ def compute_output_stats_global(
     rcond: Optional[float] = None,
     preset_bias: Optional[dict[str, list[Optional[paddle.Tensor]]]] = None,
     model_pred: Optional[dict[str, np.ndarray]] = None,
+    atomic_output: Optional[FittingOutputDef] = None,
 ):
     """This function only handle stat computation from reduced global labels."""
     # return directly if model predict is empty for global
@@ -468,6 +476,13 @@ def compute_output_stats_global(
     std_atom_e = {}
     for kk in keys:
         if kk in stats_input:
+            if atomic_output is not None and atomic_output.get_data()[kk].intensive:
+                task_dim = stats_input[kk].shape[1]
+                assert merged_natoms[kk].shape == (nf[kk], ntypes)
+                stats_input[kk] = (
+                    merged_natoms[kk].sum(axis=1).reshape([-1, 1]) * stats_input[kk]
+                )
+                assert stats_input[kk].shape == (nf[kk], task_dim)
             bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                 stats_input[kk],
                 merged_natoms[kk],
@@ -573,7 +588,13 @@ def compute_output_stats_atomic(
             # correction for missing types
             missing_types = ntypes - merged_natoms[kk].max() - 1
             if missing_types > 0:
-                nan_padding = np.empty((missing_types, bias_atom_e[kk].shape[1]))  # pylint: disable=no-explicit-dtype
+                assert (
+                    bias_atom_e[kk].dtype is std_atom_e[kk].dtype
+                ), "bias and std should be of the same dtypes"
+                nan_padding = np.empty(
+                    (missing_types, bias_atom_e[kk].shape[1]),
+                    dtype=bias_atom_e[kk].dtype,
+                )
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
                 std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
