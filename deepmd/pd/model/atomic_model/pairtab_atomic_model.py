@@ -465,7 +465,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             The atomic energy for all local atoms for all frames. (nframes, nloc, nnei)
         """
         a3, a2, a1, a0 = paddle.unbind(coef, axis=-1)
-        etmp = (a3 * uu + a2) * uu.astype(
+        etmp = (a3 * uu.astype(a3.dtype) + a2) * uu.astype(
             coef.dtype
         ) + a1  # this should be elementwise operations.
         ener = (
