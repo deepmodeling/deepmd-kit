@@ -39,7 +39,7 @@
    LEXCH  = PE
    EATOM  =   432.3788 eV,   31.7789 Ry
 
-   TITLE  = PAW_PBE O_h 06Feb2004
+   TITEL  = PAW_PBE O_h 06Feb2004
    LULTRA =        F    use ultrasoft PP ?
    IUNSCR =        1    unscreen: 0-lin 1-nonlin 2-no
    RPACOR =    0.800    partial core radius
@@ -93,7 +93,7 @@
    LEXCH  = PE
    EATOM  =    12.4884 eV,    0.9179 Ry
 
-   TITLE  = PAW_PBE H_h 06Feb2004
+   TITEL  = PAW_PBE H_h 06Feb2004
    LULTRA =        F    use ultrasoft PP ?
    IUNSCR =        0    unscreen: 0-lin 1-nonlin 2-no
    RPACOR =    0.000    partial core radius
@@ -297,8 +297,8 @@ Space group operators:
 
  Intra band minimization:
    WEIMIN = 0.0000     energy-eigenvalue tresh-hold
-   EBREAK =  0.16E-09  absolute break condition
-   DEPER  =   0.30     relative break condition
+   EBREAK =  0.16E-09  absolut break condition
+   DEPER  =   0.30     relativ break condition
 
    TIME   =   0.40     timestep for ELM
 
@@ -339,7 +339,7 @@ Space group operators:
    KINTER  =     0    interpolate to denser k-point grid
    CSHIFT  =0.1000    complex shift for real part using Kramers Kronig
    OMEGAMAX=  -1.0    maximum frequency
-   DEG_THRESHOLD= 0.2000000E-02 threshold for treating states as degenerate
+   DEG_THRESHOLD= 0.2000000E-02 threshold for treating states as degnerate
    RTIME   =   -0.100 relaxation time in fs
   (WPLASMAI=    0.000 imaginary part of plasma frequency in eV, 0.658/RTIME)
    DFIELD  = 0.0000000 0.0000000 0.0000000 field for delta impulse in time
@@ -2475,7 +2475,7 @@ Space group operators:
 
 
 
- General timing and accounting information for this job:
+ General timing and accounting informations for this job:
  ========================================================
 
                   Total CPU time used (sec):      877.816

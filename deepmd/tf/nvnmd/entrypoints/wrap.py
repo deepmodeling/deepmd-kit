@@ -116,16 +116,16 @@ class Wrap:
         # extend data according to the number of bits per row of BRAM
         nbit = 32
         if nvnmd_cfg.version == 0:
-            data = [hcfg, hfps, hbps, hswt, hdsw, hfea, hgra]
+            datas = [hcfg, hfps, hbps, hswt, hdsw, hfea, hgra]
             keys = "cfg fps bps swt dsw fea gra".split()
         if nvnmd_cfg.version == 1:
             keys = "cfg fps bps swt dsw std fea gra gtt avc".split()
-            data = [hcfg, hfps, hbps, hswt, hdsw, hstd, hfea, hgra, hgtt, havc]
+            datas = [hcfg, hfps, hbps, hswt, hdsw, hstd, hfea, hgra, hgtt, havc]
         nhs = []
         nws = []
-        for ii in range(len(data)):
+        for ii in range(len(datas)):
             k = keys[ii]
-            d = data[ii]
+            d = datas[ii]
             h = len(d)
             w = len(d[0])  # nhex
             w4 = w * 4  # nbit
@@ -138,7 +138,7 @@ class Wrap:
             if jdata_sys["debug"]:
                 log.info("%s: %d x % d bit" % (k, h, w * 4))
                 FioTxt().save(f"nvnmd/wrap/h{k}.txt", d)
-            data[ii] = d
+            datas[ii] = d
         # update h & w of nvnmd_cfg
         nvnmd_cfg.size["NH_DATA"] = nhs
         nvnmd_cfg.size["NW_DATA"] = nws
@@ -146,7 +146,7 @@ class Wrap:
         head = self.wrap_head(nhs, nws)
         # output model
         hs = [*head]
-        for d in data:
+        for d in datas:
             hs.extend(d)
 
         FioBin().save(self.model_file, hs)

@@ -168,7 +168,7 @@ pair_style      deepmd ener.pb
 pair_coeff      * *
 bond_style      zero
 bond_coeff      *
-special_bonds   lj/could 1 1 1 angle no
+special_bonds   lj/coul 1 1 1 angle no
 ```
 
 Type 1 and 2 (O and H) are `real_atom`s, while type 3 (WCs) are `virtual_atom`s. The model file `ener.pb` stores both the DW and DPLR models, so the position of WCs and the energy can be inferred from it. A virtual bond type is specified by `bond_style zero`. The `special_bonds` command switches off the exclusion of intramolecular interactions.

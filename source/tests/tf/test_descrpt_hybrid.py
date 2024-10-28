@@ -88,7 +88,7 @@ class TestHybrid(tf.test.TestCase):
 
         type_embedding = typeebd.build(ntypes, suffix="_hybrid")
 
-        doubt = descrpt.build(
+        dout = descrpt.build(
             t_coord,
             t_type,
             t_natoms,
@@ -115,7 +115,7 @@ class TestHybrid(tf.test.TestCase):
 
         sess = self.cached_session().__enter__()
         sess.run(tf.global_variables_initializer())
-        [model_dout] = sess.run([doubt], feed_dict=feed_dict_test)
+        [model_dout] = sess.run([dout], feed_dict=feed_dict_test)
 
         ref_dout1 = [
             1.34439289e-03,

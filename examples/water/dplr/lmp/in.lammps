@@ -6,7 +6,7 @@ variable	KMESH		equal 32
 variable        THERMO_FREQ     equal 2
 variable        DUMP_FREQ       equal 20
 variable        TEMP            equal 300.000000
-variable        PRESS            equal 1.000000
+variable        PRES            equal 1.000000
 variable        TAU_T           equal 0.100000
 variable        TAU_P           equal 0.500000
 
@@ -33,7 +33,7 @@ pair_style	deepmd ener.pb
 pair_coeff	* *
 bond_style	zero
 bond_coeff	*
-special_bonds   lj/could 1 1 1 angle no
+special_bonds   lj/coul 1 1 1 angle no
 
 # kspace_style "pppm/dplr" should be used. in addition the
 # gewald(1/distance) should be set the same as that used in

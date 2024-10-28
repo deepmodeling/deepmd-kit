@@ -42,7 +42,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, sm, to, tm, prec, etc in itertools.product(
+        for idt, sm, to, tm, prec, ect in itertools.product(
             [False, True],  # resnet_dt
             [False, True],  # smooth_type_embedding
             [False, True],  # type_one_side
@@ -68,8 +68,8 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 smooth_type_embedding=sm,
                 type_one_side=to,
                 tebd_input_mode=tm,
-                use_econf_tebd=etc,
-                type_map=["O", "H"] if etc else None,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
@@ -117,7 +117,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dstd = rng.normal(size=(self.nt, nnei, 4))
         dstd = 0.1 + np.abs(dstd)
 
-        for idt, prec, sm, to, tm, etc in itertools.product(
+        for idt, prec, sm, to, tm, ect in itertools.product(
             [
                 False,
             ],  # resnet_dt
@@ -145,8 +145,8 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 smooth_type_embedding=sm,
                 type_one_side=to,
                 tebd_input_mode=tm,
-                use_econf_tebd=etc,
-                type_map=["O", "H"] if etc else None,
+                use_econf_tebd=ect,
+                type_map=["O", "H"] if ect else None,
                 seed=GLOBAL_SEED,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
