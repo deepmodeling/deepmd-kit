@@ -105,7 +105,7 @@ def get_pd_requirement(pd_version: str = "") -> dict:
 
     return {
         "paddle": [
-            "paddlepaddle>=3.0.0b1" if pd_version != "" else "paddlepaddle>=3.0.0b1",
+            "paddlepaddle" if pd_version != "" else "paddlepaddle",
         ],
     }
 
