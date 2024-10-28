@@ -24,9 +24,29 @@ endif()
 
 if(ENABLE_PADDLE)
   if(NOT DEFINED PADDLE_INFERENCE_DIR)
+    # message( FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when
+    # ENABLE_PADDLE=ON")
     message(
-      FATAL_ERROR "Make sure PADDLE_INFERENCE_DIR is set when ENABLE_PADDLE=ON")
+      STATUS
+        "PADDLE_INFERENCE_DIR is not defined. Downloading and extracting...")
+    set(DOWNLOAD_URL
+        "https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/ce51e82e84fc97e0a55a162037f1554746159cad/paddle_inference.tgz"
+    )
+    set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
+    set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
+    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE} SHOW_PROGRESS)
+    execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE})
+    file(REMOVE ${TGZ_FILE})
+    set(PADDLE_INFERENCE_DIR
+        ${EXTRACTED_DIR}
+        CACHE PATH
+              "Path to 'paddle_inference_install_dir' or 'paddle_inference'")
+  else()
+    message(
+      STATUS "PADDLE_INFERENCE_DIR is already defined: ${PADDLE_INFERENCE_DIR}")
   endif()
+
+  message(STATUS "Final PADDLE_INFERENCE_DIR is set to ${PADDLE_INFERENCE_DIR}")
 
   set(PADDLE_INFERENCE_DIR
       ${PADDLE_INFERENCE_DIR}
