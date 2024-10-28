@@ -70,6 +70,7 @@ extensions = [
     "autoapi.extension",
     "sphinxcontrib.programoutput",
     "sphinxcontrib.moderncmakedomain",
+    "sphinx_remove_toctrees",
 ]
 
 # breathe_domain_by_extension = {
@@ -215,3 +216,10 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 bibtex_bibfiles = ["../CITATIONS.bib"]
+
+remove_from_toctrees = [
+    "autoapi/*",
+    "API_CC/*",
+    "api_c/*",
+    "api_core/*"
+]

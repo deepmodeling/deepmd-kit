@@ -105,6 +105,7 @@ docs = [
     "sphinx-autoapi>=3.0.0",
     "sphinxcontrib-programoutput",
     "sphinxcontrib-moderncmakedomain",
+    "sphinx-remove-toctrees",
 ]
 lmp = [
     "lammps~=2024.8.29.1.0",
