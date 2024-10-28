@@ -22,10 +22,6 @@ from typing import (
     Union,
 )
 
-from packaging.version import (
-    Version,
-)
-
 
 @lru_cache
 def find_paddle() -> tuple[Optional[str], list[str]]:
@@ -109,9 +105,7 @@ def get_pd_requirement(pd_version: str = "") -> dict:
 
     return {
         "paddle": [
-            f"paddlepaddle=={Version(pd_version).base_version}.*"
-            if pd_version != ""
-            else "paddlepaddle",
+            "paddlepaddle>=3.0.0b1" if pd_version != "" else "paddlepaddle>=3.0.0b1",
         ],
     }
 

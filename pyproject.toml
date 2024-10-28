@@ -235,6 +235,7 @@ PIP_PREFER_BINARY = "1"
 DP_LAMMPS_VERSION = "stable_29Aug2024_update1"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
+DP_ENABLE_PADDLE = "1"
 # for unclear reason, when enabling PyTorch, OpenMP is found accidentally
 CMAKE_ARGS = "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=1"
 
@@ -271,17 +272,18 @@ PIP_PREFER_BINARY = "1"
 DP_LAMMPS_VERSION = "stable_29Aug2024_update1"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
+DP_ENABLE_PADDLE = "1"
 MPI_HOME = "/usr/lib64/mpich"
 PATH = "/usr/lib64/mpich/bin:$PATH"
 # use CPU version of torch for building, which should also work for GPU
 # note: uv has different behavior from pip on extra index url
 # https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md#packages-that-exist-on-multiple-indexes
-UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
+UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu https://www.paddlepaddle.org.cn/packages/stable/cpu/ https://www.paddlepaddle.org.cn/packages/nightly/cpu/"
 # trick to find the correction version of mpich
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
-test-extras = ["cpu", "torch"]
+test-extras = ["cpu", "torch", "paddle"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
@@ -289,6 +291,7 @@ test-command = [
 [tool.cibuildwheel.windows.environment]
 PIP_PREFER_BINARY = "1"
 DP_ENABLE_PYTORCH = "1"
+DP_ENABLE_PADDLE = "1"
 
 # One can run `tox` or `tox -e gpu`
 # to run pytest in an isolated environment
