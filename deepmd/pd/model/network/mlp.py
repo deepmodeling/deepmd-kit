@@ -230,8 +230,8 @@ class MLPLayer(nn.Layer):
                 yy += xx
             elif 2 * xx.shape[-1] == yy.shape[-1]:
                 yy += paddle.concat([xx, xx], axis=-1)
-            else:
-                yy = yy
+            # else:
+            #     yy = yy
         yy = yy.astype(ori_prec)
         return yy
 
