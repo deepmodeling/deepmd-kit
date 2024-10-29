@@ -42,6 +42,8 @@ struct InputNlist {
   int* recvproc;
   /// MPI_comm data in lmp
   void* world;
+  /// mask to the neighbor index
+  int mask = 0xFFFFFFFF;
   InputNlist()
       : inum(0),
         ilist(NULL),
@@ -93,6 +95,10 @@ struct InputNlist {
         recvproc(recvproc),
         world(world) {};
   ~InputNlist() {};
+  /**
+   * @brief Set mask for this neighbor list.
+   */
+  void set_mask(int mask_) { mask = mask_; };
 };
 
 /**
