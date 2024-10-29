@@ -146,7 +146,7 @@ class TestSeA(unittest.TestCase):
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.np_batch, self.paddle_batch = get_single_batch(ds)
 
-    @unittest.skip("remainder_grad need to be supported")
+    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/68961")
     def test_consistency(self):
         dp_d = DescrptSeA_tf(
             rcut=self.rcut,
