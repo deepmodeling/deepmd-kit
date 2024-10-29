@@ -437,10 +437,9 @@ void PairDeepMD::print_summary(const string pre) const {
     cout << pre << "source branch:      " << STR_GIT_BRANCH << endl;
     cout << pre << "source commit:      " << STR_GIT_HASH << endl;
     cout << pre << "source commit at:   " << STR_GIT_DATE << endl;
-    cout << pre << "build float prec:   " << STR_FLOAT_PREC << endl;
-    cout << pre << "build with tf inc:  " << STR_TensorFlow_INCLUDE_DIRS
+    cout << pre << "build with inc:     " << STR_TensorFlow_INCLUDE_DIRS
          << endl;
-    cout << pre << "build with tf lib:  " << STR_TensorFlow_LIBRARY << endl;
+    cout << pre << "build with lib:     " << STR_TensorFlow_LIBRARY << endl;
 
     std::cout.rdbuf(sbuf);
     utils::logmesg(lmp, buffer.str());
