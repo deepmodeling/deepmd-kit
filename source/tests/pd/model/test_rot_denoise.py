@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.infer.deep_eval import (
@@ -62,13 +63,15 @@ class RotDenoiseTest:
         )
         update_c1 = update_c1 - (coord_rot + shift).unsqueeze(0)
         ret1 = {"updated_coord": update_c1.squeeze(0), "logits": logits1.squeeze(0)}
-        assert paddle.allclose(
-            paddle.matmul(ret0["updated_coord"], rmat),
-            ret1["updated_coord"],
+        np.testing.assert_allclose(
+            paddle.matmul(ret0["updated_coord"], rmat).numpy(),
+            ret1["updated_coord"].numpy(),
             rtol=prec,
             atol=prec,
         )
-        assert paddle.allclose(ret0["logits"], ret1["logits"], rtol=prec, atol=prec)
+        np.testing.assert_allclose(
+            ret0["logits"].numpy(), ret1["logits"].numpy(), rtol=prec, atol=prec
+        )
 
         # rotate coord and cell
         paddle.seed(0)
@@ -91,10 +94,12 @@ class RotDenoiseTest:
             denoise=True,
         )
         ret1 = {"updated_coord": update_c1.squeeze(0), "logits": logits1.squeeze(0)}
-        assert paddle.allclose(ret0["logits"], ret1["logits"], rtol=prec, atol=prec)
-        assert paddle.allclose(
-            paddle.matmul(ret0["updated_coord"], rmat),
-            ret1["updated_coord"],
+        np.testing.assert_allclose(
+            ret0["logits"].numpy(), ret1["logits"].numpy(), rtol=prec, atol=prec
+        )
+        np.testing.assert_allclose(
+            paddle.matmul(ret0["updated_coord"], rmat).numpy(),
+            ret1["updated_coord"].numpy(),
             rtol=prec,
             atol=prec,
         )

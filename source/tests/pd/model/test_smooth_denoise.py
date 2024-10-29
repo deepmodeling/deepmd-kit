@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.infer.deep_eval import (
@@ -87,11 +88,14 @@ class SmoothDenoiseTest:
         ret3 = {"updated_coord": update_c3.squeeze(0), "logits": logits3.squeeze(0)}
 
         def compare(ret0, ret1):
-            assert paddle.allclose(
-                ret0["updated_coord"], ret1["updated_coord"], rtol=rprec, atol=aprec
+            np.testing.assert_allclose(
+                ret0["updated_coord"].numpy(),
+                ret1["updated_coord"].numpy(),
+                rtol=rprec,
+                atol=aprec,
             )
-            assert paddle.allclose(
-                ret0["logits"], ret1["logits"], rtol=rprec, atol=aprec
+            np.testing.assert_allclose(
+                ret0["logits"].numpy(), ret1["logits"].numpy(), rtol=rprec, atol=aprec
             )
 
         compare(ret0, ret1)

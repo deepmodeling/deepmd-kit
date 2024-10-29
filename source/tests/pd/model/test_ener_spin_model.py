@@ -144,11 +144,12 @@ class SpinTest:
             force_real, force_mag, _ = self.model.process_spin_output(
                 self.atype, force_all
             )
-            assert paddle.allclose(
-                force_real, force_all[:, :nloc] + force_all[:, nloc:]
+            np.testing.assert_allclose(
+                force_real.numpy(), (force_all[:, :nloc] + force_all[:, nloc:]).numpy()
             )
-            assert paddle.allclose(
-                force_mag, force_all[:, nloc:] * virtual_scale.unsqueeze(-1)
+            np.testing.assert_allclose(
+                force_mag.numpy(),
+                (force_all[:, nloc:] * virtual_scale.unsqueeze(-1)).numpy(),
             )
 
         # 3. test forward_lower input process
@@ -204,18 +205,20 @@ class SpinTest:
         # compare coords of real and virtual atoms
         virtual_coord = extended_coord + extended_spin * virtual_scale.unsqueeze(-1)
         assert np.allclose(extended_coord_updated.shape, [nframes, nall * 2, 3])
-        assert paddle.allclose(
-            extended_coord_updated[:, :nloc], extended_coord[:, :nloc]
+        np.testing.assert_allclose(
+            extended_coord_updated[:, :nloc].numpy(), extended_coord[:, :nloc].numpy()
         )
-        assert paddle.allclose(
-            extended_coord_updated[:, nloc : nloc + nloc], virtual_coord[:, :nloc]
+        np.testing.assert_allclose(
+            extended_coord_updated[:, nloc : nloc + nloc].numpy(),
+            virtual_coord[:, :nloc].numpy(),
         )
-        assert paddle.allclose(
-            extended_coord_updated[:, nloc + nloc : nloc + nall],
-            extended_coord[:, nloc:nall],
+        np.testing.assert_allclose(
+            extended_coord_updated[:, nloc + nloc : nloc + nall].numpy(),
+            extended_coord[:, nloc:nall].numpy(),
         )
-        assert paddle.allclose(
-            extended_coord_updated[:, nloc + nall :], virtual_coord[:, nloc:nall]
+        np.testing.assert_allclose(
+            extended_coord_updated[:, nloc + nall :].numpy(),
+            virtual_coord[:, nloc:nall].numpy(),
         )
 
         # compare mapping
@@ -276,11 +279,13 @@ class SpinTest:
             force_all_switched[:, nloc:nall] = force_all[:, nloc + nloc : nloc + nall]
             force_all_switched[:, nall : nall + nloc] = force_all[:, nloc : nloc + nloc]
             force_all_switched[:, nall + nloc :] = force_all[:, nloc + nall :]
-            assert paddle.allclose(
-                force_real, force_all_switched[:, :nall] + force_all_switched[:, nall:]
+            np.testing.assert_allclose(
+                force_real.numpy(),
+                (force_all_switched[:, :nall] + force_all_switched[:, nall:]).numpy(),
             )
-            assert paddle.allclose(
-                force_mag, force_all_switched[:, nall:] * virtual_scale.unsqueeze(-1)
+            np.testing.assert_allclose(
+                force_mag.numpy(),
+                (force_all_switched[:, nall:] * virtual_scale.unsqueeze(-1)).numpy(),
             )
 
     def test_jit(self):

@@ -117,7 +117,9 @@ class TestWeightCalculation(unittest.TestCase):
             dtype=paddle.float64,
             place=env.DEVICE,
         )
-        assert paddle.allclose(results, excepted_res, rtol=0.0001, atol=0.0001)
+        np.testing.assert_allclose(
+            results.numpy(), excepted_res.numpy(), rtol=0.0001, atol=0.0001
+        )
 
 
 class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):

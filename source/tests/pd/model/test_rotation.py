@@ -93,18 +93,19 @@ class TestRotation(unittest.TestCase):
         result1 = self.model(**get_data(self.origin_batch))
         result2 = self.model(**get_data(self.rotated_batch))
         rotation = paddle.to_tensor(self.rotation).to(env.DEVICE)
-        assert paddle.allclose(result1["energy"], result2["energy"])
+        np.testing.assert_allclose(result1["energy"].numpy(), result2["energy"].numpy())
         if "force" in result1:
-            assert paddle.allclose(
-                result2["force"][0], paddle.matmul(rotation, result1["force"][0].T).T
+            np.testing.assert_allclose(
+                result2["force"][0].numpy(),
+                paddle.matmul(rotation, result1["force"][0].T).T.numpy(),
             )
         if "virial" in result1:
-            assert paddle.allclose(
-                result2["virial"][0].view([3, 3]),
+            np.testing.assert_allclose(
+                result2["virial"][0].view([3, 3]).numpy(),
                 paddle.matmul(
                     paddle.matmul(rotation, result1["virial"][0].view([3, 3]).T),
                     rotation.T,
-                ),
+                ).numpy(),
             )
 
 

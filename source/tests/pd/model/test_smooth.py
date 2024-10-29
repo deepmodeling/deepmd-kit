@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.infer.deep_eval import (
@@ -123,16 +124,24 @@ class SmoothTest:
         def compare(ret0, ret1):
             for key in test_keys:
                 if key in ["energy"]:
-                    assert paddle.allclose(ret0[key], ret1[key], rtol=rprec, atol=aprec)
+                    np.testing.assert_allclose(
+                        ret0[key].numpy(), ret1[key].numpy(), rtol=rprec, atol=aprec
+                    )
                 elif key in ["force", "force_mag"]:
                     # plus 1. to avoid the divided-by-zero issue
-                    assert paddle.allclose(
-                        1.0 + ret0[key], 1.0 + ret1[key], rtol=rprec, atol=aprec
+                    np.testing.assert_allclose(
+                        (1.0 + ret0[key]).numpy(),
+                        (1.0 + ret1[key]).numpy(),
+                        rtol=rprec,
+                        atol=aprec,
                     )
                 elif key == "virial":
                     if not hasattr(self, "test_virial") or self.test_virial:
-                        assert paddle.allclose(
-                            1.0 + ret0[key], 1.0 + ret1[key], rtol=rprec, atol=aprec
+                        np.testing.assert_allclose(
+                            (1.0 + ret0[key]).numpy(),
+                            (1.0 + ret1[key]).numpy(),
+                            rtol=rprec,
+                            atol=aprec,
                         )
                 else:
                     raise RuntimeError(f"Unexpected test key {key}")

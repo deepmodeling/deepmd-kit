@@ -22,6 +22,7 @@ from ..common import (
 CUR_DIR = os.path.dirname(__file__)
 
 dtype = paddle.float64
+import numpy as np
 
 model_se_e2_a = {
     "type_map": ["O", "H", "B"],
@@ -377,14 +378,18 @@ class PermutationTest:
         prec = 1e-10
         for key in test_keys:
             if key in ["energy"]:
-                assert paddle.allclose(ret0[key], ret1[key], rtol=prec, atol=prec)
+                np.testing.assert_allclose(
+                    ret0[key].numpy(), ret1[key].numpy(), rtol=prec, atol=prec
+                )
             elif key in ["force", "force_mag"]:
-                assert paddle.allclose(
-                    ret0[key][idx_perm], ret1[key], rtol=prec, atol=prec
+                np.testing.assert_allclose(
+                    ret0[key][idx_perm].numpy(), ret1[key].numpy(), rtol=prec, atol=prec
                 )
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
-                    assert paddle.allclose(ret0[key], ret1[key], rtol=prec, atol=prec)
+                    np.testing.assert_allclose(
+                        ret0[key], ret1[key], rtol=prec, atol=prec
+                    )
             else:
                 raise RuntimeError(f"Unexpected test key {key}")
 

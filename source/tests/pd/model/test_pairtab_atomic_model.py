@@ -64,7 +64,6 @@ class TestPairTab(unittest.TestCase):
             [[[1, 2], [0, 2]], [[1, 2], [0, 3]]], place=env.DEVICE
         )
 
-    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/69012")
     def test_without_mask(self):
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
@@ -75,8 +74,8 @@ class TestPairTab(unittest.TestCase):
             place=env.DEVICE,
         )
 
-        assert paddle.allclose(
-            result["energy"], expected_result, rtol=0.0001, atol=0.0001
+        np.testing.assert_allclose(
+            result["energy"].numpy(), expected_result.numpy(), rtol=0.0001, atol=0.0001
         )
 
     @unittest.skip("Temporarily skip")
@@ -94,8 +93,8 @@ class TestPairTab(unittest.TestCase):
             place=env.DEVICE,
         )
 
-        assert paddle.allclose(
-            result["energy"], expected_result, rtol=0.0001, atol=0.0001
+        np.testing.assert_allclose(
+            result["energy"].numpy(), expected_result.numpy(), rtol=0.0001, atol=0.0001
         )
 
     def test_jit(self):
@@ -106,8 +105,8 @@ class TestPairTab(unittest.TestCase):
 
     def test_deserialize(self):
         model1 = PairTabAtomicModel.deserialize(self.model.serialize())
-        assert paddle.allclose(self.model.tab_data, model1.tab_data)
-        assert paddle.allclose(self.model.tab_info, model1.tab_info)
+        np.testing.assert_allclose(self.model.tab_data.numpy(), model1.tab_data.numpy())
+        np.testing.assert_allclose(self.model.tab_info.numpy(), model1.tab_info.numpy())
 
         self.nlist = paddle.to_tensor(
             [[[1, -1], [0, 2]], [[1, 2], [0, 3]]], place=env.DEVICE
@@ -119,8 +118,11 @@ class TestPairTab(unittest.TestCase):
             self.extended_coord, self.extended_atype, self.nlist
         )
 
-        assert paddle.allclose(
-            result["energy"], expected_result["energy"], rtol=0.0001, atol=0.0001
+        np.testing.assert_allclose(
+            result["energy"].numpy(),
+            expected_result["energy"].numpy(),
+            rtol=0.0001,
+            atol=0.0001,
         )
 
         # model1 = paddle.jit.to_static(model1)
@@ -267,7 +269,7 @@ class TestPairTabTwoAtoms(unittest.TestCase):
         ).reshape([14, 2])
         results = paddle.stack(results).reshape([14, 2])
 
-        assert paddle.allclose(results, expected_result, rtol=0.0001, atol=0.0001)
+        np.testing.assert_allclose(results, expected_result, rtol=0.0001, atol=0.0001)
 
 
 if __name__ == "__main__":

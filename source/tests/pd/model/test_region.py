@@ -38,8 +38,11 @@ class TestRegion(unittest.TestCase):
         for ii in range(4):
             for jj in range(5):
                 expected_phys = paddle.matmul(inter[ii, jj], self.cell[ii, jj])
-                assert paddle.allclose(
-                    phys[ii, jj], expected_phys, rtol=self.prec, atol=self.prec
+                np.testing.assert_allclose(
+                    phys[ii, jj].numpy(),
+                    expected_phys.numpy(),
+                    rtol=self.prec,
+                    atol=self.prec,
                 )
 
     def test_to_face_dist(self):
@@ -57,8 +60,11 @@ class TestRegion(unittest.TestCase):
         expected = paddle.to_tensor([dx, dy, dz], dtype=dists.dtype).to(device="cpu")
         for ii in range(4):
             for jj in range(5):
-                assert paddle.allclose(
-                    dists[ii][jj], expected, rtol=self.prec, atol=self.prec
+                np.testing.assert_allclose(
+                    dists[ii][jj].numpy(),
+                    expected.numpy(),
+                    rtol=self.prec,
+                    atol=self.prec,
                 )
 
 
@@ -75,14 +81,18 @@ class TestLegacyRegion(unittest.TestCase):
         reg = Region3D(self.cell)
         phys = reg.inter2phys(inter)
         expected_phys = paddle.matmul(inter, self.cell)
-        assert paddle.allclose(phys, expected_phys, rtol=self.prec, atol=self.prec)
+        np.testing.assert_allclose(
+            phys.numpy(), expected_phys.numpy(), rtol=self.prec, atol=self.prec
+        )
 
     def test_inter_to_inter(self):
         generator = paddle.seed(GLOBAL_SEED)
         inter = paddle.rand([3, 3], dtype=dtype).to(device=env.DEVICE)
         reg = Region3D(self.cell)
         new_inter = reg.phys2inter(reg.inter2phys(inter))
-        assert paddle.allclose(inter, new_inter, rtol=self.prec, atol=self.prec)
+        np.testing.assert_allclose(
+            inter.numpy(), new_inter.numpy(), rtol=self.prec, atol=self.prec
+        )
 
     def test_to_face_dist(self):
         pass

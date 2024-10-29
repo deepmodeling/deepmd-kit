@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.model.model import (
@@ -78,18 +79,23 @@ class RotTest:
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         for key in test_keys:
             if key in ["energy"]:
-                assert paddle.allclose(ret0[key], ret1[key], rtol=prec, atol=prec)
+                np.testing.assert_allclose(
+                    ret0[key].numpy(), ret1[key].numpy(), rtol=prec, atol=prec
+                )
             elif key in ["force", "force_mag"]:
-                assert paddle.allclose(
-                    paddle.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
+                np.testing.assert_allclose(
+                    paddle.matmul(ret0[key], rmat).numpy(),
+                    ret1[key].numpy(),
+                    rtol=prec,
+                    atol=prec,
                 )
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
-                    assert paddle.allclose(
+                    np.testing.assert_allclose(
                         paddle.matmul(
                             rmat.T, paddle.matmul(ret0[key].reshape([3, 3]), rmat)
-                        ),
-                        ret1[key].reshape([3, 3]),
+                        ).numpy(),
+                        ret1[key].reshape([3, 3]).numpy(),
                         rtol=prec,
                         atol=prec,
                     )
@@ -126,18 +132,23 @@ class RotTest:
         ret1 = {key: result_1[key].squeeze(0) for key in test_keys}
         for key in test_keys:
             if key in ["energy"]:
-                assert paddle.allclose(ret0[key], ret1[key], rtol=prec, atol=prec)
+                np.testing.assert_allclose(
+                    ret0[key].numpy(), ret1[key].numpy(), rtol=prec, atol=prec
+                )
             elif key in ["force", "force_mag"]:
-                assert paddle.allclose(
-                    paddle.matmul(ret0[key], rmat), ret1[key], rtol=prec, atol=prec
+                np.testing.assert_allclose(
+                    paddle.matmul(ret0[key], rmat).numpy(),
+                    ret1[key].numpy(),
+                    rtol=prec,
+                    atol=prec,
                 )
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
-                    assert paddle.allclose(
+                    np.testing.assert_allclose(
                         paddle.matmul(
                             rmat.T, paddle.matmul(ret0[key].reshape([3, 3]), rmat)
-                        ),
-                        ret1[key].reshape([3, 3]),
+                        ).numpy(),
+                        ret1[key].reshape([3, 3]).numpy(),
                         rtol=prec,
                         atol=prec,
                     )

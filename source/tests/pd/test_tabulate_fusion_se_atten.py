@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.cxx_op import (
@@ -1592,9 +1593,9 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(descriptor_tensor.shape, self.expected_descriptor_tensor.shape)
 
         # Check the values
-        assert paddle.allclose(
-            descriptor_tensor,
-            self.expected_descriptor_tensor,
+        np.testing.assert_allclose(
+            descriptor_tensor.numpy(),
+            self.expected_descriptor_tensor.numpy(),
             atol=self.prec,
             rtol=self.prec,
         )
@@ -1614,9 +1615,9 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         descriptor_tensor = forward_result[0]
 
         # Check the forward
-        assert paddle.allclose(
-            descriptor_tensor,
-            self.expected_descriptor_tensor,
+        np.testing.assert_allclose(
+            descriptor_tensor.numpy(),
+            self.expected_descriptor_tensor.numpy(),
             atol=self.prec,
             rtol=self.prec,
         )
@@ -1634,15 +1635,18 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
         self.assertEqual(self.em_tensor.grad.shape, self.expected_dy_dem.shape)
 
         # Check the values of the gradients
-        assert paddle.allclose(
-            self.em_x_tensor.grad,
-            self.expected_dy_dem_x,
+        np.testing.assert_allclose(
+            self.em_x_tensor.grad.numpy(),
+            self.expected_dy_dem_x.numpy(),
             atol=self.prec,
             rtol=self.prec,
         )
 
-        assert paddle.allclose(
-            self.em_tensor.grad, self.expected_dy_dem, atol=self.prec, rtol=self.prec
+        np.testing.assert_allclose(
+            self.em_tensor.grad.numpy(),
+            self.expected_dy_dem.numpy(),
+            atol=self.prec,
+            rtol=self.prec,
         )
 
 

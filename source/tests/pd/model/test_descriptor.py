@@ -124,7 +124,6 @@ class TestSeA(unittest.TestCase):
         self.ntypes = len(self.sel)
         self.nnei = sum(self.sel)
 
-    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/68961")
     def test_consistency(self):
         avg_zero = paddle.zeros(
             [self.ntypes, self.nnei * 4],

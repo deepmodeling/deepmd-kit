@@ -129,7 +129,6 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str, str]:
         cmake_args.extend(
             [
                 "-DENABLE_PADDLE=ON",
-                f"-DCMAKE_PREFIX_PATH={pd_install_dir}",
             ]
         )
     else:

@@ -101,7 +101,7 @@ class TestChangeBias(unittest.TestCase):
             _bias_adjust_mode="change-by-statistic",
         )
         expected_bias = expected_model.get_out_bias()
-        assert paddle.allclose(updated_bias, expected_bias)
+        np.testing.assert_allclose(updated_bias.numpy(), expected_bias.numpy())
 
     def test_change_bias_with_data_sys_file(self):
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
@@ -122,7 +122,7 @@ class TestChangeBias(unittest.TestCase):
             _bias_adjust_mode="change-by-statistic",
         )
         expected_bias = expected_model.get_out_bias()
-        assert paddle.allclose(updated_bias, expected_bias)
+        np.testing.assert_allclose(updated_bias.numpy(), expected_bias.numpy())
 
     def test_change_bias_with_user_defined(self):
         user_bias = [0.1, 3.2, -0.5]
@@ -138,7 +138,7 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = to_paddle_tensor(np.array(user_bias)).reshape(
             updated_bias.shape
         )
-        assert paddle.allclose(updated_bias, expected_bias)
+        np.testing.assert_allclose(updated_bias.numpy(), expected_bias.numpy())
 
     def tearDown(self):
         for f in os.listdir("."):

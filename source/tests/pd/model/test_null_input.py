@@ -54,9 +54,13 @@ class NullTest:
         expect_v = paddle.zeros([9], dtype=dtype).to(device=env.DEVICE)
         self.assertEqual(list(ret0["energy"].shape), expect_e_shape)
         self.assertFalse(np.isnan(to_numpy_array(ret0["energy"])[0]))
-        assert paddle.allclose(ret0["force"], expect_f, rtol=prec, atol=prec)
+        np.testing.assert_allclose(
+            ret0["force"].numpy(), expect_f.numpy(), rtol=prec, atol=prec
+        )
         if not hasattr(self, "test_virial") or self.test_virial:
-            assert paddle.allclose(ret0["virial"], expect_v, rtol=prec, atol=prec)
+            np.testing.assert_allclose(
+                ret0["virial"].numpy(), expect_v.numpy(), rtol=prec, atol=prec
+            )
 
     def test_nloc_2_far(
         self,
@@ -79,9 +83,13 @@ class NullTest:
         expect_v = paddle.zeros([9], dtype=dtype).to(device=env.DEVICE)
         self.assertEqual(list(ret0["energy"].shape), expect_e_shape)
         self.assertFalse(np.isnan(to_numpy_array(ret0["energy"])[0]))
-        assert paddle.allclose(ret0["force"], expect_f, rtol=prec, atol=prec)
+        np.testing.assert_allclose(
+            ret0["force"].numpy(), expect_f.numpy(), rtol=prec, atol=prec
+        )
         if not hasattr(self, "test_virial") or self.test_virial:
-            assert paddle.allclose(ret0["virial"], expect_v, rtol=prec, atol=prec)
+            np.testing.assert_allclose(
+                ret0["virial"].numpy(), expect_v.numpy(), rtol=prec, atol=prec
+            )
 
 
 class TestEnergyModelSeA(unittest.TestCase, NullTest):

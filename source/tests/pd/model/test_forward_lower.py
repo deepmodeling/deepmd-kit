@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.infer.deep_eval import (
@@ -110,21 +111,27 @@ class ForwardLowerTest:
         result_forward_lower = self.model.forward_lower(**input_dict)
         for key in test_keys:
             if key in ["energy"]:
-                assert paddle.allclose(
-                    result_forward_lower[key], result_forward[key], rtol=prec, atol=prec
+                np.testing.assert_allclose(
+                    result_forward_lower[key].numpy(),
+                    result_forward[key].numpy(),
+                    rtol=prec,
+                    atol=prec,
                 )
             elif key in ["force", "force_mag"]:
                 reduced_vv = reduce_tensor(
                     result_forward_lower[f"extended_{key}"], mapping, natoms
                 )
-                assert paddle.allclose(
-                    reduced_vv, result_forward[key], rtol=prec, atol=prec
+                np.testing.assert_allclose(
+                    reduced_vv.numpy(),
+                    result_forward[key].numpy(),
+                    rtol=prec,
+                    atol=prec,
                 )
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
-                    assert paddle.allclose(
-                        result_forward_lower[key],
-                        result_forward[key],
+                    np.testing.assert_allclose(
+                        result_forward_lower[key].numpy(),
+                        result_forward[key].numpy(),
                         rtol=prec,
                         atol=prec,
                     )

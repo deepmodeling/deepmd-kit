@@ -101,7 +101,9 @@ class HessianTest:
             coord, atype, box=cell, fparam=fparam, aparam=aparam
         )
         # compare hess and value models
-        assert paddle.allclose(ret_dict0["energy"], ret_dict1["energy"])
+        np.testing.assert_allclose(
+            ret_dict0["energy"].numpy(), ret_dict1["energy"].numpy()
+        )
         ana_hess = ret_dict0["energy_derv_r_derv_r"]
 
         # compute finite difference

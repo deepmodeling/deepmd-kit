@@ -6,6 +6,7 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import paddle
 
 from deepmd.pd.model.descriptor import (
@@ -289,8 +290,8 @@ class TestDPA1(unittest.TestCase):
         self.assertAlmostEqual(6.0, des.get_rcut())
         self.assertEqual(30, des.get_nsel())
         self.assertEqual(2, des.get_ntypes())
-        assert paddle.allclose(
-            descriptor.reshape([-1]), self.ref_d, atol=1e-10, rtol=1e-10
+        np.testing.assert_allclose(
+            descriptor.reshape([-1]).numpy(), self.ref_d.numpy(), atol=1e-10, rtol=1e-10
         )
 
     def test_descriptor(self):
@@ -342,8 +343,8 @@ class TestDPA1(unittest.TestCase):
         self.assertAlmostEqual(6.0, des.get_rcut())
         self.assertEqual(30, des.get_nsel())
         self.assertEqual(2, des.get_ntypes())
-        assert paddle.allclose(
-            descriptor.reshape([-1]), self.ref_d, atol=1e-10, rtol=1e-10
+        np.testing.assert_allclose(
+            descriptor.reshape([-1]).numpy(), self.ref_d.numpy(), atol=1e-10, rtol=1e-10
         )
 
         dparams["concat_output_tebd"] = True

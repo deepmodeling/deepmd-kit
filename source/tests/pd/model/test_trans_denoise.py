@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.infer.deep_eval import (
@@ -55,10 +56,15 @@ class TransDenoiseTest:
         updated_c1 = updated_c1 - coord_s.unsqueeze(0)
         ret1 = {"updated_coord": updated_c1.squeeze(0), "logits": logits1.squeeze(0)}
         prec = 1e-10
-        assert paddle.allclose(
-            ret0["updated_coord"], ret1["updated_coord"], rtol=prec, atol=prec
+        np.testing.assert_allclose(
+            ret0["updated_coord"].numpy(),
+            ret1["updated_coord"].numpy(),
+            rtol=prec,
+            atol=prec,
         )
-        assert paddle.allclose(ret0["logits"], ret1["logits"], rtol=prec, atol=prec)
+        np.testing.assert_allclose(
+            ret0["logits"].numpy(), ret1["logits"].numpy(), rtol=prec, atol=prec
+        )
 
 
 @unittest.skip("support of the denoise is temporally disabled")

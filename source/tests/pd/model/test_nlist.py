@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.utils import (
@@ -77,9 +78,9 @@ class TestNeighList(unittest.TestCase):
         nlist_mask = nlist[0] == -1
         nlist_loc = mapping[0][nlist[0]]
         nlist_loc[nlist_mask] = -1
-        assert paddle.allclose(
-            paddle.sort(nlist_loc, axis=-1).astype("float32"),
-            paddle.sort(self.ref_nlist, axis=-1).astype("float32"),
+        np.testing.assert_allclose(
+            paddle.sort(nlist_loc, axis=-1).numpy(),
+            paddle.sort(self.ref_nlist, axis=-1).numpy(),
         )
         # test a very large sel
         nlist = build_neighbor_list(
@@ -93,9 +94,11 @@ class TestNeighList(unittest.TestCase):
         nlist_mask = nlist[0] == -1
         nlist_loc = mapping[0][nlist[0]]
         nlist_loc[nlist_mask] = -1
-        assert paddle.allclose(
-            paddle.sort(nlist_loc, descending=True, axis=-1)[:, : sum(self.nsel)],
-            paddle.sort(self.ref_nlist, descending=True, axis=-1),
+        np.testing.assert_allclose(
+            paddle.sort(nlist_loc, descending=True, axis=-1)[
+                :, : sum(self.nsel)
+            ].numpy(),
+            paddle.sort(self.ref_nlist, descending=True, axis=-1).numpy(),
         )
 
     def test_build_type(self):
@@ -110,16 +113,18 @@ class TestNeighList(unittest.TestCase):
             self.nsel,
             distinguish_types=True,
         )
-        assert paddle.allclose(nlist[0], nlist[1])
+        np.testing.assert_allclose(nlist[0].numpy(), nlist[1].numpy())
         nlist_mask = nlist[0] == -1
         nlist_loc = mapping[0][nlist[0]]
         nlist_loc[nlist_mask] = -1
         for ii in range(2):
-            assert paddle.allclose(
-                paddle.sort(paddle.split(nlist_loc, (self.nsel), axis=-1)[ii], axis=-1),
+            np.testing.assert_allclose(
+                paddle.sort(
+                    paddle.split(nlist_loc, (self.nsel), axis=-1)[ii], axis=-1
+                ).numpy(),
                 paddle.sort(
                     paddle.split(self.ref_nlist, (self.nsel), axis=-1)[ii], axis=-1
-                ),
+                ).numpy(),
             )
 
     def test_build_multiple_nlist(self):
@@ -154,16 +159,15 @@ class TestNeighList(unittest.TestCase):
                 nlists[get_multiple_nlist_key(rcuts[dd], nsels[dd])].shape[-1],
                 nsels[dd],
             )
-        assert paddle.allclose(
-            nlists[get_multiple_nlist_key(rcuts[0], nsels[0])],
-            nlist0,
+        np.testing.assert_allclose(
+            nlists[get_multiple_nlist_key(rcuts[0], nsels[0])].numpy(),
+            nlist0.numpy(),
         )
-        assert paddle.allclose(
-            nlists[get_multiple_nlist_key(rcuts[1], nsels[1])],
-            nlist2,
+        np.testing.assert_allclose(
+            nlists[get_multiple_nlist_key(rcuts[1], nsels[1])].numpy(),
+            nlist2.numpy(),
         )
 
-    @unittest.skip("Wait for https://github.com/PaddlePaddle/Paddle/pull/69012")
     def test_extend_coord(self):
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
@@ -173,8 +177,11 @@ class TestNeighList(unittest.TestCase):
         self.assertEqual(list(eatype.shape), [self.nf, self.nall])
         self.assertEqual(list(mapping.shape), [self.nf, self.nall])
         # check the nloc part is identical with original coord
-        assert paddle.allclose(
-            ecoord[:, : self.nloc * 3], self.coord, rtol=self.prec, atol=self.prec
+        np.testing.assert_allclose(
+            ecoord[:, : self.nloc * 3].numpy(),
+            self.coord.numpy(),
+            rtol=self.prec,
+            atol=self.prec,
         )
         # check the shift vectors are aligned with grid
         shift_vec = (
@@ -189,34 +196,36 @@ class TestNeighList(unittest.TestCase):
         # nf x nall x 3
         shift_vec = paddle.round(shift_vec)
         # check: identical shift vecs
-        assert paddle.allclose(
-            shift_vec[0], shift_vec[1], rtol=self.prec, atol=self.prec
+        np.testing.assert_allclose(
+            shift_vec[0].numpy(), shift_vec[1].numpy(), rtol=self.prec, atol=self.prec
         )
         # check: shift idx aligned with grid
         mm, cc = paddle.unique(shift_vec[0][:, 0], axis=-1, return_counts=True)
-        assert paddle.allclose(
-            mm,
-            paddle.to_tensor([-2, -1, 0, 1, 2], dtype=dtype).to(device=env.DEVICE),
+        np.testing.assert_allclose(
+            mm.numpy(),
+            paddle.to_tensor([-2, -1, 0, 1, 2], dtype=dtype)
+            .to(device=env.DEVICE)
+            .numpy(),
             rtol=self.prec,
             atol=self.prec,
         )
-        assert paddle.allclose(
-            cc,
+        np.testing.assert_allclose(
+            cc.numpy(),
             paddle.to_tensor(
                 [self.ns * self.nloc // 5] * 5, dtype=paddle.int64, place=env.DEVICE
-            ),
+            ).numpy(),
             rtol=self.prec,
             atol=self.prec,
         )
         mm, cc = paddle.unique(shift_vec[1][:, 1], axis=-1, return_counts=True)
-        assert paddle.allclose(
-            mm,
+        np.testing.assert_allclose(
+            mm.numpy(),
             paddle.to_tensor([-2, -1, 0, 1, 2], dtype=dtype).to(device=env.DEVICE),
             rtol=self.prec,
             atol=self.prec,
         )
-        assert paddle.allclose(
-            cc,
+        np.testing.assert_allclose(
+            cc.numpy(),
             paddle.to_tensor(
                 [self.ns * self.nloc // 5] * 5, dtype=paddle.int64, place=env.DEVICE
             ),
@@ -224,17 +233,17 @@ class TestNeighList(unittest.TestCase):
             atol=self.prec,
         )
         mm, cc = paddle.unique(shift_vec[1][:, 2], axis=-1, return_counts=True)
-        assert paddle.allclose(
-            mm,
-            paddle.to_tensor([-1, 0, 1], dtype=dtype).to(device=env.DEVICE),
+        np.testing.assert_allclose(
+            mm.numpy(),
+            paddle.to_tensor([-1, 0, 1], dtype=dtype).to(device=env.DEVICE).numpy(),
             rtol=self.prec,
             atol=self.prec,
         )
-        assert paddle.allclose(
-            cc,
+        np.testing.assert_allclose(
+            cc.numpy(),
             paddle.to_tensor(
                 [self.ns * self.nloc // 3] * 3, dtype=paddle.int64, place=env.DEVICE
-            ),
+            ).numpy(),
             rtol=self.prec,
             atol=self.prec,
         )
@@ -285,17 +294,11 @@ class TestNeighList(unittest.TestCase):
                 mysel,
                 distinguish_types=distinguish_types,
             )
-            assert paddle.allclose(
-                nlist[0].astype("float32"), nlist[1].astype("float32")
-            )
-            assert paddle.allclose(
-                nlist[0].astype("float32"), nlist[2].astype("float32")
-            )
-            assert paddle.allclose(
+            np.testing.assert_allclose(nlist[0].numpy(), nlist[1].numpy())
+            np.testing.assert_allclose(nlist[0].numpy(), nlist[2].numpy())
+            np.testing.assert_allclose(
                 paddle.sort(nlist[0], descending=True, axis=-1)[
                     :, : sum(self.nsel)
-                ].astype("float32"),
-                paddle.sort(nlist_full[0][1:2], descending=True, axis=-1).astype(
-                    "float32"
-                ),
+                ].numpy(),
+                paddle.sort(nlist_full[0][1:2], descending=True, axis=-1).numpy(),
             )

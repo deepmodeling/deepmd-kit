@@ -2,6 +2,7 @@
 import copy
 import unittest
 
+import numpy as np
 import paddle
 
 from deepmd.pd.model.model import (
@@ -75,10 +76,14 @@ class TransTest:
         prec = 1e-7
         for key in test_keys:
             if key in ["energy", "force", "force_mag"]:
-                assert paddle.allclose(ret0[key], ret1[key], rtol=prec, atol=prec)
+                np.testing.assert_allclose(
+                    ret0[key].numpy(), ret1[key].numpy(), rtol=prec, atol=prec
+                )
             elif key == "virial":
                 if not hasattr(self, "test_virial") or self.test_virial:
-                    assert paddle.allclose(ret0[key], ret1[key], rtol=prec, atol=prec)
+                    np.testing.assert_allclose(
+                        ret0[key].numpy(), ret1[key].numpy(), rtol=prec, atol=prec
+                    )
             else:
                 raise RuntimeError(f"Unexpected test key {key}")
 

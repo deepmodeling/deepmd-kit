@@ -10,7 +10,7 @@ from pathlib import (
     Path,
 )
 
-import paddle
+import numpy as np
 
 from deepmd.pd.entrypoints.main import (
     get_trainer,
@@ -62,9 +62,9 @@ class MultiTaskTrainTest:
             if "model_2" in state_key:
                 self.assertIn(state_key.replace("model_2", "model_1"), multi_state_dict)
             if "model_1.descriptor" in state_key:
-                assert paddle.allclose(
-                    multi_state_dict[state_key],
-                    multi_state_dict[state_key.replace("model_1", "model_2")],
+                np.testing.assert_allclose(
+                    multi_state_dict[state_key].numpy(),
+                    multi_state_dict[state_key.replace("model_1", "model_2")].numpy(),
                 )
 
         # test multitask fine-tuning
@@ -145,33 +145,29 @@ class MultiTaskTrainTest:
         multi_state_dict_finetuned = trainer_finetune.wrapper.model.state_dict()
         for state_key in multi_state_dict_finetuned:
             if "model_1" in state_key:
-                assert paddle.allclose(
-                    multi_state_dict[state_key].astype("float32"),
-                    multi_state_dict_finetuned[state_key].astype("float32"),
-                ).item()
+                np.testing.assert_allclose(
+                    multi_state_dict[state_key].numpy(),
+                    multi_state_dict_finetuned[state_key].numpy(),
+                )
             elif "model_2" in state_key and "out_bias" not in state_key:
-                assert paddle.allclose(
-                    multi_state_dict[state_key].astype("float32"),
-                    multi_state_dict_finetuned[state_key].astype("float32"),
-                ).item()
+                np.testing.assert_allclose(
+                    multi_state_dict[state_key].numpy(),
+                    multi_state_dict_finetuned[state_key].numpy(),
+                )
             elif "model_3" in state_key and "out_bias" not in state_key:
-                assert paddle.allclose(
-                    multi_state_dict[state_key.replace("model_3", "model_2")].astype(
-                        "float32"
-                    ),
-                    multi_state_dict_finetuned[state_key].astype("float32"),
-                ).item()
+                np.testing.assert_allclose(
+                    multi_state_dict[state_key.replace("model_3", "model_2")].numpy(),
+                    multi_state_dict_finetuned[state_key].numpy(),
+                )
             elif (
                 "model_4" in state_key
                 and "fitting_net" not in state_key
                 and "out_bias" not in state_key
             ):
-                assert paddle.allclose(
-                    multi_state_dict[state_key.replace("model_4", "model_2")].astype(
-                        "float32"
-                    ),
-                    multi_state_dict_finetuned[state_key].astype("float32"),
-                ).item()
+                np.testing.assert_allclose(
+                    multi_state_dict[state_key.replace("model_4", "model_2")].numpy(),
+                    multi_state_dict_finetuned[state_key].numpy(),
+                )
 
         # check running
         trainer_finetune.run()

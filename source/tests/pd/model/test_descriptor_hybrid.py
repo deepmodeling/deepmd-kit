@@ -119,7 +119,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = ddsub1(coord_ext, atype_ext, nlist2[:, :, :-1])
         ret2 = ddsub2(coord_ext, atype_ext, nlist1[:, :, [0, 1, 2, self.sel[0]]])
-        assert paddle.allclose(
-            ret[0],
-            paddle.concat([ret0[0], ret1[0], ret2[0]], axis=2),
+        np.testing.assert_allclose(
+            ret[0].numpy(),
+            paddle.concat([ret0[0], ret1[0], ret2[0]], axis=2).numpy(),
         )
