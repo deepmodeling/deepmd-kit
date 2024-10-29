@@ -32,7 +32,7 @@ __all__ = ["DP"]
 class DP(Calculator):
     """Implementation of ASE deepmd calculator.
 
-    Implemented propertie are `energy`, `forces` and `stress`
+    Implemented properties are `energy`, `forces` and `stress`
 
     Parameters
     ----------

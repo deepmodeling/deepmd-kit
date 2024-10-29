@@ -300,7 +300,7 @@ class TestEnergy(unittest.TestCase):
             limit_pref_f=self.limit_pref_f,
         )
 
-        # Keep statistics consistency between 2 implentations
+        # Keep statistics consistency between 2 implementations
         my_em = my_model.get_descriptor()
         mean = stat_dict["descriptor.mean"].reshape([self.ntypes, my_em.get_nsel(), 4])
         stddev = stat_dict["descriptor.stddev"].reshape(
@@ -314,7 +314,7 @@ class TestEnergy(unittest.TestCase):
             stat_dict["fitting_net.bias_atom_e"], device=DEVICE
         )
 
-        # Keep parameter value consistency between 2 implentations
+        # Keep parameter value consistency between 2 implementations
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
             var_name = torch2tf(name, last_layer_id=len(self.n_neuron))

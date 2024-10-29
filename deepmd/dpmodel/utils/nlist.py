@@ -48,7 +48,7 @@ def extend_input_and_build_neighbor_list(
     return extended_coord, extended_atype, mapping, nlist
 
 
-## translated from torch implemantation by chatgpt
+## translated from torch implementation by chatgpt
 def build_neighbor_list(
     coord: np.ndarray,
     atype: np.ndarray,
@@ -57,7 +57,7 @@ def build_neighbor_list(
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> np.ndarray:
-    """Build neightbor list for a single frame. keeps nsel neighbors.
+    """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
@@ -131,7 +131,7 @@ def build_neighbor_list(
         nlist = nlist[:, :, :nsel]
     else:
         rr = xp.concatenate(
-            [rr, xp.ones([batch_size, nloc, nsel - nnei]) + rcut],  # pylint: disable=no-explicit-dtype
+            [rr, xp.ones([batch_size, nloc, nsel - nnei], dtype=rr.dtype) + rcut],
             axis=-1,
         )
         nlist = xp.concatenate(
@@ -185,7 +185,7 @@ def get_multiple_nlist_key(rcut: float, nsel: int) -> str:
     return str(rcut) + "_" + str(nsel)
 
 
-## translated from torch implemantation by chatgpt
+## translated from torch implementation by chatgpt
 def build_multiple_neighbor_list(
     coord: np.ndarray,
     nlist: np.ndarray,
@@ -243,7 +243,7 @@ def build_multiple_neighbor_list(
     return ret
 
 
-## translated from torch implemantation by chatgpt
+## translated from torch implementation by chatgpt
 def extend_coord_with_ghosts(
     coord: np.ndarray,
     atype: np.ndarray,
@@ -272,12 +272,13 @@ def extend_coord_with_ghosts(
     extended_atype: np.ndarray
         extended atom type of shape [-1, nall].
     index_mapping: np.ndarray
-        maping extended index to the local index
+        mapping extended index to the local index
 
     """
     xp = array_api_compat.array_namespace(coord, atype)
     nf, nloc = atype.shape
-    aidx = xp.tile(xp.arange(nloc)[xp.newaxis, :], (nf, 1))  # pylint: disable=no-explicit-dtype
+    # int64 for index
+    aidx = xp.tile(xp.arange(nloc, dtype=xp.int64)[xp.newaxis, :], (nf, 1))
     if cell is None:
         nall = nloc
         extend_coord = coord
@@ -289,9 +290,9 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = xp.astype(xp.ceil(rcut / to_face), xp.int64)
         nbuff = xp.max(nbuff, axis=0)
-        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1)  # pylint: disable=no-explicit-dtype
-        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1)  # pylint: disable=no-explicit-dtype
-        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1)  # pylint: disable=no-explicit-dtype
+        xi = xp.arange(-int(nbuff[0]), int(nbuff[0]) + 1, 1, dtype=xp.int64)
+        yi = xp.arange(-int(nbuff[1]), int(nbuff[1]) + 1, 1, dtype=xp.int64)
+        zi = xp.arange(-int(nbuff[2]), int(nbuff[2]) + 1, 1, dtype=xp.int64)
         xyz = xp.linalg.outer(xi, xp.asarray([1, 0, 0]))[:, xp.newaxis, xp.newaxis, :]
         xyz = (
             xyz

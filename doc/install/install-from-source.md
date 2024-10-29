@@ -319,7 +319,7 @@ pip install -U cmake
 
 You must enable at least one backend.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
-We recommend using [conda pacakges](https://docs.deepmodeling.org/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
+We recommend using [conda packages](https://docs.deepmodeling.org/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
 
@@ -427,7 +427,7 @@ See also [ROCm documentation](https://rocm.docs.amd.com/en/latest/conceptual/cma
 
 **Type**: `PATH`
 
-Only neccessary for using [LAMMPS plugin mode](./install-lammps.md#install-lammps-plugin-mode).
+Only necessary for using [LAMMPS plugin mode](./install-lammps.md#install-lammps-plugin-mode).
 The path to the [LAMMPS source code](install-lammps.md).
 LAMMPS 8Apr2021 or later is supported.
 If not assigned, the plugin mode will not be enabled.

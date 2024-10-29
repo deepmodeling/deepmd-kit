@@ -97,7 +97,7 @@ class DPTabulate:
         elif activation_fn == ACTIVATION_FN_DICT["sigmoid"]:
             self.functype = 6
         else:
-            raise RuntimeError("Unknown actication function type!")
+            raise RuntimeError("Unknown activation function type!")
         self.activation_fn = activation_fn
 
         # self.sess = tf.Session(graph = self.graph)
@@ -126,7 +126,7 @@ class DPTabulate:
         self.dstd = get_tensor_by_name_from_graph(
             self.graph, f"descrpt_attr{self.suffix}/t_std"
         )
-        self.ntypes = get_tensor_by_name_from_graph(self.graph, "descrpt_attr/ntypes")
+        self.ntypes = self.descrpt.get_ntypes()
 
         self.embedding_net_nodes = get_embedding_net_nodes_from_graph_def(
             self.graph_def, suffix=self.suffix

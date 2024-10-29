@@ -78,7 +78,7 @@ where items are defined as:
 | --------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | version   | the version of network structure                                      | 0 or 1                                                                       |
 | max_nnei  | the maximum number of neighbors that do not distinguish element types | 128 or 256                                                                   |
-| net_size  | the size of nueral network                                            | 128                                                                          |
+| net_size  | the size of neural network                                            | 128                                                                          |
 | sel       | the number of neighbors                                               | version 0: integer list of lengths 1 to 4 are acceptable; version 1: integer |
 | rcut      | the cutoff radial                                                     | (0, 8.0]                                                                     |
 | rcut_smth | the smooth cutoff parameter                                           | (0, 8.0]                                                                     |
@@ -162,7 +162,7 @@ where items are defined as:
 
 | Item       | Mean                                                | Optional Value     |
 | ---------- | --------------------------------------------------- | ------------------ |
-| seed       | the randome seed                                    | a integer          |
+| seed       | the random seed                                     | a integer          |
 | stop_batch | the total training steps                            | a positive integer |
 | numb_test  | the accuracy is test by using {numb_test} sample    | a positive integer |
 | disp_file  | the log file where the training message display     | a string           |
@@ -213,7 +213,7 @@ where the frozen model file to import is given via the `-m` command line flag, t
 
 # Running MD in Bohrium
 
-After CNN and QNN training, you can upload the ML model to our online NVNMD system and run MD there through Bohrium (https://bohrium.dp.tech). Bohrium is a research platfrom designed for AI for Science Era. For more information, please refer to [Bohrium Introduction](https://bohrium-doc.dp.tech/en/docs/WhatIsBohrium/).
+After CNN and QNN training, you can upload the ML model to our online NVNMD system and run MD there through Bohrium (https://bohrium.dp.tech). Bohrium is a research platform designed for AI for Science Era. For more information, please refer to [Bohrium Introduction](https://bohrium-doc.dp.tech/en/docs/WhatIsBohrium/).
 
 ## Registration
 

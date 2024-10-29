@@ -157,7 +157,7 @@ class DescrptSeAMask(DescrptSeA):
         self.ntypes = len(self.sel_a)
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
-        # numb of neighbors and numb of descrptors
+        # numb of neighbors and numb of descriptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei = self.nnei_a
         # to be compat with old option of `stripped_type_embedding`
@@ -435,7 +435,7 @@ class DescrptSeAMask(DescrptSeA):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

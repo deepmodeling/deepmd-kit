@@ -13,7 +13,7 @@ ROOT_DIR = get_op_dir()
 
 
 def _program(name: str, args: list[str]):
-    """Execuate a program.
+    """Execute a program.
 
     Parameters
     ----------

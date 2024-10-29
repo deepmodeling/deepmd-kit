@@ -286,7 +286,7 @@ class DeepEvalBackend(ABC):
         """Get the number of spin atom types of this model. Only used in old implement."""
 
     def get_model_def_script(self) -> dict:
-        """Get model defination script."""
+        """Get model definition script."""
         raise NotImplementedError("Not implemented in this backend.")
 
 
@@ -558,5 +558,5 @@ class DeepEval(ABC):
         return self.deep_eval.get_ntypes_spin()
 
     def get_model_def_script(self) -> dict:
-        """Get model defination script."""
+        """Get model definition script."""
         return self.deep_eval.get_model_def_script()

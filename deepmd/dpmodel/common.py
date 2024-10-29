@@ -30,7 +30,7 @@ PRECISION_DICT = {
     "int64": np.int64,
     "bool": bool,
     "default": GLOBAL_NP_FLOAT_PRECISION,
-    # NumPy doesn't have bfloat16 (and does't plan to add)
+    # NumPy doesn't have bfloat16 (and doesn't plan to add)
     # ml_dtypes is a solution, but it seems not supporting np.save/np.load
     # hdf5 hasn't supported bfloat16 as well (see https://forum.hdfgroup.org/t/11975)
     "bfloat16": ml_dtypes.bfloat16,
@@ -48,6 +48,33 @@ RESERVED_PRECISON_DICT = {
 }
 assert set(RESERVED_PRECISON_DICT.keys()) == set(PRECISION_DICT.values())
 DEFAULT_PRECISION = "float64"
+
+
+def get_xp_precision(
+    xp: Any,
+    precision: str,
+):
+    """Get the precision from the API compatible namespace."""
+    if precision == "float16" or precision == "half":
+        return xp.float16
+    elif precision == "float32" or precision == "single":
+        return xp.float32
+    elif precision == "float64" or precision == "double":
+        return xp.float64
+    elif precision == "int32":
+        return xp.int32
+    elif precision == "int64":
+        return xp.int64
+    elif precision == "bool":
+        return bool
+    elif precision == "default":
+        return get_xp_precision(xp, RESERVED_PRECISON_DICT[PRECISION_DICT[precision]])
+    elif precision == "global":
+        return get_xp_precision(xp, RESERVED_PRECISON_DICT[GLOBAL_NP_FLOAT_PRECISION])
+    elif precision == "bfloat16":
+        return ml_dtypes.bfloat16
+    else:
+        raise ValueError(f"unsupported precision {precision} for {xp}")
 
 
 class NativeOP(ABC):

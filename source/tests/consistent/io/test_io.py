@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import shutil
 import unittest
 from pathlib import (
     Path,
@@ -18,6 +19,11 @@ from deepmd.env import (
 )
 from deepmd.infer.deep_eval import (
     DeepEval,
+)
+
+from ...utils import (
+    CI,
+    TEST_DEVICE,
 )
 
 infer_path = Path(__file__).parent.parent.parent / "infer"
@@ -60,15 +66,18 @@ class IOTest:
     def tearDown(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for ii in Path(".").glob(prefix + ".*"):
-            if Path(ii).exists():
+            if Path(ii).is_file():
                 Path(ii).unlink()
+            elif Path(ii).is_dir():
+                shutil.rmtree(ii)
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
-        for backend_name in ("tensorflow", "pytorch", "dpmodel"):
+        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
-                if not backend.is_available:
+                if not backend.is_available():
                     continue
                 reference_data = copy.deepcopy(self.data)
                 self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
@@ -80,6 +89,7 @@ class IOTest:
                     "backend",
                     "tf_version",
                     "pt_version",
+                    "jax_version",
                     "@variables",
                     # dpmodel only
                     "software",
@@ -123,7 +133,7 @@ class IOTest:
         rets = []
         for backend_name in ("tensorflow", "pytorch", "dpmodel"):
             backend = Backend.get_backend(backend_name)()
-            if not backend.is_available:
+            if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
             self.save_data_to_model(prefix + backend.suffixes[0], reference_data)

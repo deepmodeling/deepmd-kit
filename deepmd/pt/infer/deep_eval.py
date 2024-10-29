@@ -70,7 +70,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """PyTorch backend implementaion of DeepEval.
+    """PyTorch backend implementation of DeepEval.
 
     Parameters
     ----------
@@ -407,6 +407,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
+        prec = NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -416,9 +417,7 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coord_input = torch.tensor(
-            coords.reshape([nframes, natoms, 3]).astype(
-                NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
-            ),
+            coords.reshape([nframes, natoms, 3]).astype(prec),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
@@ -429,9 +428,7 @@ class DeepEval(DeepEvalBackend):
         )
         if cells is not None:
             box_input = torch.tensor(
-                cells.reshape([nframes, 3, 3]).astype(
-                    NP_PRECISION_DICT[RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]]
-                ),
+                cells.reshape([nframes, 3, 3]).astype(prec),
                 dtype=GLOBAL_PT_FLOAT_PRECISION,
                 device=DEVICE,
             )
@@ -473,7 +470,7 @@ class DeepEval(DeepEvalBackend):
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 results.append(
-                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                    np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
         return tuple(results)
 
@@ -553,7 +550,13 @@ class DeepEval(DeepEvalBackend):
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 results.append(
-                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                    np.full(
+                        np.abs(shape),
+                        np.nan,
+                        dtype=NP_PRECISION_DICT[
+                            RESERVED_PRECISON_DICT[GLOBAL_PT_FLOAT_PRECISION]
+                        ],
+                    )
                 )  # this is kinda hacky
         return tuple(results)
 
@@ -612,7 +615,7 @@ class DeepEval(DeepEvalBackend):
         return to_numpy_array(typeebd)
 
     def get_model_def_script(self) -> str:
-        """Get model defination script."""
+        """Get model definition script."""
         return self.model_def_script
 
     def eval_descriptor(

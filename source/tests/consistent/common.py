@@ -500,7 +500,7 @@ class CommonTest(ABC):
 def parameterized(*attrs: tuple, **subblock_attrs: tuple) -> Callable:
     """Parameterized test.
 
-    Orginal class will not be actually generated. Avoid inherbiting from it.
+    Original class will not be actually generated. Avoid inherbiting from it.
     New classes are generated with the name of the original class and the
     parameters.
 

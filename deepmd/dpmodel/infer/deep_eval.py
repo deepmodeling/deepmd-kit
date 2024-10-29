@@ -24,6 +24,9 @@ from deepmd.dpmodel.utils.batch_size import (
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
 )
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -49,7 +52,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """NumPy backend implementaion of DeepEval.
+    """NumPy backend implementation of DeepEval.
 
     Parameters
     ----------
@@ -340,12 +343,12 @@ class DeepEval(DeepEvalBackend):
                 if batch_output[dp_name] is not None:
                     out = batch_output[dp_name].reshape(shape)
                 else:
-                    out = np.full(shape, np.nan)  # pylint: disable=no-explicit-dtype
+                    out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 results.append(
-                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 )  # this is kinda hacky
         return tuple(results)
 
@@ -371,5 +374,5 @@ class DeepEval(DeepEvalBackend):
             raise RuntimeError("unknown category")
 
     def get_model_def_script(self) -> dict:
-        """Get model defination script."""
+        """Get model definition script."""
         return json.loads(self.model.get_model_def_script())

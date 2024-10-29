@@ -175,7 +175,7 @@ class DPAtomicModel(BaseAtomicModel):
         Parameters
         ----------
         extended_coord
-            coodinates in extended region
+            coordinates in extended region
         extended_atype
             atomic type in extended region
         nlist

@@ -248,7 +248,7 @@ def save_txt_file(
     header : str, optional
         header string to use in file, by default ""
     append : bool, optional
-        if true file will be appended insted of overwriting, by default False
+        if true file will be appended instead of overwriting, by default False
     """
     flags = "ab" if append else "w"
     with fname.open(flags) as fp:
@@ -1052,7 +1052,7 @@ def test_polar(
     detail_file : Optional[str]
         file where test details will be output
     atomic : bool
-        wheter to use glovbal version of polar potential
+        whether to use glovbal version of polar potential
 
     Returns
     -------

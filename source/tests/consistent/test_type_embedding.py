@@ -90,7 +90,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        # implict argument not input by users
+        # implicit argument not input by users
         return {
             "ntypes": self.ntypes,
             "padding": padding,

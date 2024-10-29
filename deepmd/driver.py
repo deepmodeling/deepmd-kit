@@ -3,7 +3,7 @@
 
 # Derived from https://github.com/deepmodeling/dpdata/blob/18a0ed5ebced8b1f6887038883d46f31ae9990a4/dpdata/plugins/deepmd.py#L361-L443
 # under LGPL-3.0-or-later license.
-# The original deepmd driver maintained in the dpdata package will be overriden.
+# The original deepmd driver maintained in the dpdata package will be overridden.
 # The class in the dpdata package needs to handle different situations for v1 and v2 interface,
 # which is too complex with the development of deepmd-kit.
 # So, it will be a good idea to ship it with DeePMD-kit itself.

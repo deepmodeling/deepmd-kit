@@ -62,9 +62,9 @@ class DOSFitting(Fitting):
     Parameters
     ----------
     ntypes
-            The ntypes of the descrptor :math:`\mathcal{D}`
+            The ntypes of the descriptor :math:`\mathcal{D}`
     dim_descrpt
-            The dimension of the descrptor :math:`\mathcal{D}`
+            The dimension of the descriptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -187,7 +187,7 @@ class DOSFitting(Fitting):
 
     # not used
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
-        """Compute the ouput statistics.
+        """Compute the output statistics.
 
         Parameters
         ----------
@@ -628,7 +628,7 @@ class DOSFitting(Fitting):
             pass
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------
