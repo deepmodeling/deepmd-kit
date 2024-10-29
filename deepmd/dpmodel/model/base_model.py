@@ -190,6 +190,33 @@ def make_base_model() -> type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
+        
+        @abstractmethod
+        def enable_compression(
+            self,
+            min_nbor_dist: float,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+            Parameters
+            ----------
+            min_nbor_dist
+                The nearest distance between atoms
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            # for tabulate model compression
+            pass
 
         @classmethod
         def get_model(cls, model_params: dict) -> "BaseBaseModel":
