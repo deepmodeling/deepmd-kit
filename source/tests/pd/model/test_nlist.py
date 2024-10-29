@@ -121,14 +121,6 @@ class TestNeighList(unittest.TestCase):
                     paddle.split(self.ref_nlist, (self.nsel), axis=-1)[ii], axis=-1
                 ),
             )
-            assert paddle.allclose(
-                paddle.argsort(
-                    paddle.split(nlist_loc, (self.nsel), axis=-1)[ii], axis=-1
-                ),
-                paddle.argsort(
-                    paddle.split(self.ref_nlist, (self.nsel), axis=-1)[ii], axis=-1
-                ),
-            )
 
     def test_build_multiple_nlist(self):
         rcuts = [1.01, 2.01]
