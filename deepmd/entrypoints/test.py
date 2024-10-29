@@ -545,7 +545,6 @@ def test_ener(
         )
         if dp.has_hessian:
             _n_frames_, _n_hessian_ = test_data["hessian"][:numb_test].shape
-            _n_atoms_ = np.int32(np.sqrt(_n_hessian_) / 3)  # n_hessian = 3na*3na
             data_h = test_data["hessian"][:numb_test].reshape(-1, 1)
             pred_h = hessian.reshape(-1, 1)
             h = np.concatenate(
@@ -558,7 +557,7 @@ def test_ener(
             save_txt_file(
                 detail_path.with_suffix(".h.out"),
                 h,
-                header=f"{system}: data_h pred_h",
+                header=f"{system}: data_h pred_h (3N×3N matrix in row-major order)",
                 append=append_detail,
             )
     if not out_put_spin:
