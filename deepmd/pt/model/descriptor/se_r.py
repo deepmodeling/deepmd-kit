@@ -68,7 +68,7 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_r"):
     ) -> list[torch.Tensor]:
         raise NotImplementedError(
             "tabulate_fusion_se_r is not available since customized PyTorch OP library is not built when freezing the model. "
-            "See documentation for DPA-2 for details."
+            "See documentation for model compression for details."
         )
 
     # Note: this hack cannot actually save a model that can be runned using LAMMPS.
