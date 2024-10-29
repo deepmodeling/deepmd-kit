@@ -32,6 +32,8 @@ if os.environ.get("DEVICE") == "cpu" or paddle.device.cuda.device_count() <= 0:
 else:
     DEVICE = f"gpu:{LOCAL_RANK}"
 
+paddle.device.set_device(DEVICE)
+
 JIT = False
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
