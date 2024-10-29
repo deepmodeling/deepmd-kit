@@ -301,11 +301,12 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """
         if self.compress:
             raise ValueError("Compression is already enabled.")
+        data = self.serialize()
         self.table = DPTabulate(
             self,
-            self.serialize()["neuron"],
-            exclude_types=self.serialize()["exclude_types"],
-            activation_fn=ActivationFn(self.serialize()["activation_function"]),
+            data["neuron"],
+            exclude_types=data["exclude_types"],
+            activation_fn=ActivationFn(data["activation_function"]),
         )
         stride_1_scaled = table_stride_1 * 10
         stride_2_scaled = table_stride_2 * 10

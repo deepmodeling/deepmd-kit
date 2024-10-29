@@ -615,12 +615,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         if self.tebd_input_mode != "strip":
             raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
 
+        data = self.serialize()
         self.table = DPTabulate(
             self,
-            self.serialize()["neuron"],
-            self.serialize()["type_one_side"],
-            self.serialize()["exclude_types"],
-            ActivationFn(self.serialize()["activation_function"]),
+            data["neuron"],
+            data["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["activation_function"]),
         )
         self.table_config = [
             table_extrapolate,
