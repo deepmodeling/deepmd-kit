@@ -61,7 +61,7 @@ class EnvMatStat(BaseEnvMatStat):
 
 
 class EnvMatStatSe(EnvMatStat):
-    """Environmental matrix statistics for the se_a/se_r environemntal matrix.
+    """Environmental matrix statistics for the se_a/se_r environmental matrix.
 
     Parameters
     ----------

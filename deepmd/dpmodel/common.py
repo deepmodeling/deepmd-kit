@@ -30,7 +30,7 @@ PRECISION_DICT = {
     "int64": np.int64,
     "bool": bool,
     "default": GLOBAL_NP_FLOAT_PRECISION,
-    # NumPy doesn't have bfloat16 (and does't plan to add)
+    # NumPy doesn't have bfloat16 (and doesn't plan to add)
     # ml_dtypes is a solution, but it seems not supporting np.save/np.load
     # hdf5 hasn't supported bfloat16 as well (see https://forum.hdfgroup.org/t/11975)
     "bfloat16": ml_dtypes.bfloat16,

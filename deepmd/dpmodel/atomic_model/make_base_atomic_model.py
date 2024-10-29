@@ -152,7 +152,7 @@ def make_base_atomic_model(
             self,
             atype: t_tensor,
         ) -> t_tensor:
-            """The atoms with type < 0 are treated as virutal atoms,
+            """The atoms with type < 0 are treated as virtual atoms,
             which serves as place-holders for multi-frame calculations
             with different number of atoms in different frames.
 
@@ -164,7 +164,7 @@ def make_base_atomic_model(
             Returns
             -------
             mask
-                True for real atoms and False for virutal atoms.
+                True for real atoms and False for virtual atoms.
 
             """
             # supposed to be supported by all backends

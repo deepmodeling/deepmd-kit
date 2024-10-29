@@ -39,7 +39,7 @@ class DeepDipoleOld(DeepTensor):
     --------
     For developers: `DeepTensor` initializer must be called at the end after
     `self.tensors` are modified because it uses the data in `self.tensors` dict.
-    Do not chanage the order!
+    Do not change the order!
     """
 
     def __init__(

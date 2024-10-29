@@ -249,7 +249,7 @@ class TestDPA1(unittest.TestCase):
         coord = self.coord
         atype = self.atype
         box = self.cell
-        # handel type_embedding
+        # handle type_embedding
         type_embedding = TypeEmbedNet(ntypes, 8, use_tebd_bias=True).to(env.DEVICE)
         type_embedding.load_state_dict(
             torch.load(self.file_type_embed, weights_only=True)

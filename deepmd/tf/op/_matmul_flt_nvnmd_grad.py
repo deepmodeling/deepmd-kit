@@ -24,7 +24,7 @@ def _MatmulFltNvnmdGrad(op, grad):
     else:
         x_T = tf.transpose(x)
         w_T = tf.transpose(w)
-    # calcualte
+    # calculate
     modex = (normx >> 4) & 15
     modew = (normw >> 4) & 15
     if modex:

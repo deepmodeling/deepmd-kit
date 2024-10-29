@@ -266,7 +266,7 @@ def compute_output_stats(
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
         The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
-        The `set_davg_zero` key in the descrptor should be set.
+        The `set_davg_zero` key in the descriptor should be set.
     model_forward : Callable[..., torch.Tensor], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,

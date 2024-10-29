@@ -102,7 +102,7 @@ def set_default_nthreads():
 
 
 def get_default_nthreads() -> tuple[int, int]:
-    """Get paralellism settings.
+    """Get parallelism settings.
 
     The method will first read the environment variables with the prefix `DP_`.
     If not found, it will read the environment variables with the prefix `TF_`

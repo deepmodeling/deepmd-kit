@@ -51,7 +51,7 @@ class ModelTest:
             {},
             suffix=suffix,
         )
-        return [ret["energy"], ret["atom_ener"]], {
+        return [ret["energy"], ret["atom_ener"], ret["force"], ret["virial"]], {
             t_coord: coords,
             t_type: atype,
             t_natoms: natoms,

@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 class DescrptSeAEbdV2(DescrptSeA):
     r"""A compressible se_a_ebd model.
 
-    This model is a warpper for DescriptorSeA, which set tebd_input_mode='strip'.
+    This model is a wrapper for DescriptorSeA, which set tebd_input_mode='strip'.
     """
 
     def __init__(

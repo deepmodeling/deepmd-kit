@@ -673,7 +673,7 @@ class EnerSpinLoss(Loss):
             error_ae_train,
         ) = train_out
 
-        # than test data, if tensorboard log writter is present, commpute summary
+        # than test data, if tensorboard log writer is present, compute summary
         # and write tensorboard logs
         if tb_writer:
             summary_merged_op = tf.summary.merge(

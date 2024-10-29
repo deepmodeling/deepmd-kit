@@ -70,7 +70,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """PyTorch backend implementaion of DeepEval.
+    """PyTorch backend implementation of DeepEval.
 
     Parameters
     ----------
@@ -601,7 +601,7 @@ class DeepEval(DeepEvalBackend):
         return to_numpy_array(typeebd)
 
     def get_model_def_script(self) -> str:
-        """Get model defination script."""
+        """Get model definition script."""
         return self.model_def_script
 
     def eval_descriptor(

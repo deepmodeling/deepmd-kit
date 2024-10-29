@@ -25,7 +25,7 @@ from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
 
 
 class NeighborStatOP(torch.nn.Module):
-    """Class for getting neighbor statics data information.
+    """Class for getting neighbor statistics data information.
 
     Parameters
     ----------

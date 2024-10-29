@@ -18,7 +18,7 @@ def import_ops():
 
     Notes
     -----
-    Initialy this subdir is unpopulated. CMake will install all the op module python
+    Initially this subdir is unpopulated. CMake will install all the op module python
     files and shared libs.
     """
     for module_file in Path(__file__).parent.glob("*.py"):

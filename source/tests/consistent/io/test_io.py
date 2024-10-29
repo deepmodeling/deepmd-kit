@@ -21,6 +21,11 @@ from deepmd.infer.deep_eval import (
     DeepEval,
 )
 
+from ...utils import (
+    CI,
+    TEST_DEVICE,
+)
+
 infer_path = Path(__file__).parent.parent.parent / "infer"
 
 
@@ -66,6 +71,7 @@ class IOTest:
             elif Path(ii).is_dir():
                 shutil.rmtree(ii)
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (

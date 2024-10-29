@@ -21,7 +21,7 @@ def compute_stats_from_redu(
     """Compute the output statistics.
 
     Given the reduced output value and the number of atoms for each atom,
-    compute the least-squares solution as the atomic output bais and std.
+    compute the least-squares solution as the atomic output bias and std.
 
     Parameters
     ----------
@@ -93,7 +93,7 @@ def compute_stats_from_atomic(
     """Compute the output statistics.
 
     Given the output value and the type of atoms,
-    compute the atomic output bais and std.
+    compute the atomic output bias and std.
 
     Parameters
     ----------

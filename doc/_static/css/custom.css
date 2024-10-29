@@ -11,7 +11,7 @@ pre {
 img.platform-icon {
   height: 2ex;
 }
-@media (prefers-color-scheme: dark) {
+html[data-theme="dark"] {
   .wy-side-nav-search .wy-dropdown > a img.logo,
   .wy-side-nav-search > a img.logo {
     content: url("../logo-dark.svg");

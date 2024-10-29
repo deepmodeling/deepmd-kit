@@ -48,7 +48,7 @@ class SummaryPrinter(ABC):
     BUILD: ClassVar = {
         "installed to": "\n".join(deepmd.__path__),
         "source": GLOBAL_CONFIG["git_summ"],
-        "source brach": GLOBAL_CONFIG["git_branch"],
+        "source branch": GLOBAL_CONFIG["git_branch"],
         "source commit": GLOBAL_CONFIG["git_hash"],
         "source commit at": GLOBAL_CONFIG["git_date"],
         "use float prec": global_float_prec,

@@ -33,9 +33,9 @@ class JAXBackend(Backend):
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = (
         Backend.Feature.IO
-        # Backend.Feature.ENTRY_POINT
+        | Backend.Feature.ENTRY_POINT
         | Backend.Feature.DEEP_EVAL
-        # | Backend.Feature.NEIGHBOR_STAT
+        | Backend.Feature.NEIGHBOR_STAT
     )
     """The features of the backend."""
     suffixes: ClassVar[list[str]] = [".hlo", ".jax"]
@@ -86,7 +86,11 @@ class JAXBackend(Backend):
         type[NeighborStat]
             The neighbor statistics of the backend.
         """
-        raise NotImplementedError
+        from deepmd.jax.utils.neighbor_stat import (
+            NeighborStat,
+        )
+
+        return NeighborStat
 
     @property
     def serialize_hook(self) -> Callable[[str], dict]:
