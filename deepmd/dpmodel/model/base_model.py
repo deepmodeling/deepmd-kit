@@ -190,7 +190,7 @@ def make_base_model() -> type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
-        
+
         @abstractmethod
         def enable_compression(
             self,
