@@ -12,6 +12,7 @@ from pathlib import (
 )
 
 from deepmd.pt.loss import (
+    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
 )
@@ -52,6 +53,18 @@ class LossCommonTest(unittest.TestCase):
         if not self.spin:
             self.system = str(Path(__file__).parent / "water/data/data_0")
             self.type_map = ["H", "O"]
+            if self.hess:
+                self.system = str(Path(__file__).parent / "hessian/data/H8C4N2O")
+                self.type_map = ["C", "H", "N", "O"]
+                energy_data_requirement.append(
+                    DataRequirementItem(
+                        "hessian",
+                        ndof=1,
+                        atomic=True,
+                        must=False,
+                        high_prec=False,
+                    )
+                )
         else:
             self.system = str(Path(__file__).parent / "NiO/data/data_0")
             self.type_map = ["Ni", "O"]
@@ -238,6 +251,14 @@ class LossCommonTest(unittest.TestCase):
                 "drdq": torch.from_numpy(drdq),
                 "atom_ener_coeff": torch.from_numpy(atom_ener_coeff),
             }
+            if self.hess:
+                l_hessian = np_batch["hessian"]
+                p_hessian = np.ones_like(l_hessian)
+                self.model_pred["hessian"] = torch.from_numpy(p_hessian)
+                self.label["hessian"] = torch.from_numpy(l_hessian)
+                self.label["find_hessian"] = 1.0
+                self.label_absent["hessian"] = torch.from_numpy(l_hessian)
+
         else:
             self.model_pred = {
                 "energy": torch.from_numpy(p_energy),
@@ -310,6 +331,7 @@ class TestEnerStdLoss(LossCommonTest):
             self.limit_pref_v,
         )
         self.spin = False
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):
@@ -399,6 +421,7 @@ class TestEnerStdLossAePfGf(LossCommonTest):
             numb_generalized_coord=self.numb_generalized_coord,
         )
         self.spin = False
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):
@@ -469,6 +492,7 @@ class TestEnerStdLossAecoeff(LossCommonTest):
             enable_atom_ener_coeff=True,
         )
         self.spin = False
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):
@@ -539,6 +563,7 @@ class TestEnerStdLossRelativeF(LossCommonTest):
             relative_f=0.1,
         )
         self.spin = False
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):
@@ -577,6 +602,112 @@ class TestEnerStdLossRelativeF(LossCommonTest):
             self.assertTrue(np.isnan(pt_more_loss_absent[f"l2_{key}_loss"]))
 
 
+class TestEnerHessStdLoss(LossCommonTest):
+    def setUp(self):
+        self.start_lr = 1.1
+        self.start_pref_e = 0.02
+        self.limit_pref_e = 1.0
+        self.start_pref_f = 1000.0
+        self.limit_pref_f = 1.0
+        self.start_pref_v = 0.02
+        self.limit_pref_v = 1.0
+        self.start_pref_h = 10.0
+        self.limit_pref_h = 1.0
+        # tf
+        self.tf_loss = EnerStdLoss(
+            self.start_lr,
+            self.start_pref_e,
+            self.limit_pref_e,
+            self.start_pref_f,
+            self.limit_pref_f,
+            self.start_pref_v,
+            self.limit_pref_v,
+        )
+        # pt
+        self.pt_loss = EnergyStdLoss(
+            self.start_lr,
+            self.start_pref_e,
+            self.limit_pref_e,
+            self.start_pref_f,
+            self.limit_pref_f,
+            self.start_pref_v,
+            self.limit_pref_v,
+        )
+        # pt-hess
+        self.pt_loss_h = EnergyHessianStdLoss(
+            starter_learning_rate=self.start_lr,
+            start_pref_e=self.start_pref_e,
+            limit_pref_e=self.limit_pref_e,
+            start_pref_f=self.start_pref_f,
+            limit_pref_f=self.limit_pref_f,
+            start_pref_v=self.start_pref_v,
+            limit_pref_v=self.limit_pref_v,
+            start_pref_h=self.start_pref_h,
+            limit_pref_h=self.limit_pref_h,
+        )
+        self.spin = False
+        self.hess = True
+        super().setUp()
+
+    def test_consistency(self):
+        with tf.Session(graph=self.g) as sess:
+            tf_loss, tf_more_loss = sess.run(
+                self.tf_loss_sess, feed_dict=self.feed_dict
+            )
+
+        def fake_model():
+            return self.model_pred
+
+        _, pt_loss, pt_more_loss = self.pt_loss(
+            {},
+            fake_model,
+            self.label,
+            self.nloc,
+            self.cur_lr,
+        )
+        _, pt_loss_absent, pt_more_loss_absent = self.pt_loss(
+            {},
+            fake_model,
+            self.label_absent,
+            self.nloc,
+            self.cur_lr,
+        )
+        pt_loss = pt_loss.detach().cpu()
+        pt_loss_absent = pt_loss_absent.detach().cpu()
+        _, pt_loss_h, pt_more_loss_h = self.pt_loss_h(
+            {},
+            fake_model,
+            self.label,
+            self.nloc,
+            self.cur_lr,
+        )
+        _, pt_loss_h_absent, pt_more_loss_h_absent = self.pt_loss_h(
+            {},
+            fake_model,
+            self.label_absent,
+            self.nloc,
+            self.cur_lr,
+        )
+        pt_loss_h_absent = pt_loss_h_absent.detach().cpu()
+        self.assertTrue(np.allclose(tf_loss, pt_loss.numpy()))
+        self.assertTrue(np.allclose(0.0, pt_loss_absent.numpy()))
+        self.assertTrue(np.allclose(0.0, pt_loss_h_absent.numpy()))
+        for key in ["ener", "force", "virial"]:
+            self.assertTrue(
+                np.allclose(
+                    tf_more_loss[f"l2_{key}_loss"], pt_more_loss[f"l2_{key}_loss"]
+                )
+            )
+            self.assertTrue(
+                np.allclose(
+                    pt_more_loss[f"l2_{key}_loss"], pt_more_loss_h[f"l2_{key}_loss"]
+                )
+            )
+            self.assertTrue(np.isnan(pt_more_loss_absent[f"l2_{key}_loss"]))
+        for key in ["ener", "force", "virial", "hessian"]:
+            self.assertTrue(np.isnan(pt_more_loss_h_absent[f"l2_{key}_loss"]))
+
+
 class TestEnerSpinLoss(LossCommonTest):
     def setUp(self):
         self.start_lr = 1.1
@@ -610,6 +741,7 @@ class TestEnerSpinLoss(LossCommonTest):
             self.limit_pref_fm,
         )
         self.spin = True
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):
@@ -687,6 +819,7 @@ class TestEnerSpinLossAe(LossCommonTest):
             limit_pref_ae=self.limit_pref_ae,
         )
         self.spin = True
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):
@@ -760,6 +893,7 @@ class TestEnerSpinLossAecoeff(LossCommonTest):
             enable_atom_ener_coeff=True,
         )
         self.spin = True
+        self.hess = False
         super().setUp()
 
     def test_consistency(self):

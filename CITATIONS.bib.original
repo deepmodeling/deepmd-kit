@@ -1,0 +1,364 @@
+The proposed feature of each article is described in the "annote" field.
+Please cite a article if any feature is used
+@article{Wang_ComputPhysCommun_2018_v228_p178,
+  annote       = {general purpose},
+  author       = {Wang, Han and Zhang, Linfeng and Han, Jiequn and E, Weinan},
+  doi          = {10.1016/j.cpc.2018.03.016},
+  year         = 2018,
+  month        = {jul},
+  publisher    = {Elsevier {BV}},
+  volume       = 228,
+  journal      = {Comput. Phys. Comm.},
+  title        = {
+    {DeePMD-kit: A deep learning package for many-body potential energy
+    representation and molecular dynamics}
+  },
+  pages        = {178--184},
+}
+
+@article{Zeng_JChemPhys_2023_v159_p054801,
+  annote       = {general purpose},
+  title        = {{DeePMD-kit v2: A software package for deep potential models}},
+  author       = {
+    Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo and Zeyu Li and
+    Yixiao Chen and Mari{\'a}n Rynik and Li'ang Huang and Ziyao Li and Shaochen
+    Shi and Yingze Wang and Haotian Ye and Ping Tuo and Jiabin Yang and Ye Ding
+    and Yifan Li and Davide Tisi and Qiyu Zeng and Han Bao and Yu Xia and
+    Jiameng Huang and Koki Muraoka and Yibo Wang and Junhan Chang and Fengbo
+    Yuan and Sigbj{\o}rn L{\o}land Bore and Chun Cai and Yinnian Lin and Bo
+    Wang and Jiayan Xu and Jia-Xin Zhu and Chenxing Luo and Yuzhi Zhang and
+    Rhys E A Goodall and Wenshuo Liang and Anurag Kumar Singh and Sikai Yao and
+    Jingchao Zhang and Renata Wentzcovitch and Jiequn Han and Jie Liu and Weile
+    Jia and Darrin M York and Weinan E and Roberto Car and Linfeng Zhang and
+    Han Wang
+  },
+  journal      = {J. Chem. Phys.},
+  volume       = 159,
+  issue        = 5,
+  year         = 2023,
+  pages        = 054801,
+  doi          = {10.1063/5.0155600},
+}
+
+@article{Lu_CompPhysCommun_2021_v259_p107624,
+  annote       = {GPU support},
+  title        = {
+    {86 PFLOPS Deep Potential Molecular Dynamics simulation of 100 million
+    atoms with ab initio accuracy}
+  },
+  author       = {
+    Lu, Denghui and Wang, Han and Chen, Mohan and Lin, Lin and Car, Roberto and
+    E, Weinan and Jia, Weile and Zhang, Linfeng
+  },
+  journal      = {Comput. Phys. Comm.},
+  volume       = 259,
+  pages        = 107624,
+  year         = 2021,
+  publisher    = {Elsevier},
+  doi          = {10.1016/j.cpc.2020.107624},
+}
+
+@article{Zhang_PhysRevLett_2018_v120_p143001,
+  annote       = {local frame (loc\_frame)},
+  author       = {Linfeng Zhang and Jiequn Han and Han Wang and Roberto Car and Weinan E},
+  journal      = {Phys. Rev. Lett.},
+  number       = 14,
+  pages        = 143001,
+  publisher    = {APS},
+  title        = {
+    {Deep potential molecular dynamics: a scalable model with the accuracy of
+    quantum mechanics}
+  },
+  volume       = 120,
+  year         = 2018,
+  doi          = {10.1103/PhysRevLett.120.143001},
+}
+
+@incollection{Zhang_BookChap_NIPS_2018_v31_p4436,
+  annote       = {DeepPot-SE (se\_e2\_a, se\_e2\_r, se\_e3, se\_atten)},
+  title        = {
+    {End-to-end Symmetry Preserving Inter-atomic Potential Energy Model for
+    Finite and Extended Systems}
+  },
+  author       = {
+    Zhang, Linfeng and Han, Jiequn and Wang, Han and Saidi, Wissam and Car,
+    Roberto and E, Weinan
+  },
+  booktitle    = {Advances in Neural Information Processing Systems 31},
+  editor       = {
+    S. Bengio and H. Wallach and H. Larochelle and K. Grauman and N.
+    Cesa-Bianchi and R. Garnett
+  },
+  pages        = {4436--4446},
+  year         = 2018,
+  publisher    = {Curran Associates, Inc.},
+  url          = {https://dl.acm.org/doi/10.5555/3327345.3327356},
+}
+
+@article{Wang_NuclFusion_2022_v62_p126013,
+  annote       = {three-body embedding DeepPot-SE (se\_e3)},
+  author       = {Xiaoyang Wang and Yinan Wang and Linfeng Zhang and Fuzhi Dai and Han Wang},
+  title        = {
+    {A tungsten deep neural-network potential for simulating mechanical
+    property degradation under fusion service environment}
+  },
+  journal      = {Nucl. Fusion},
+  year         = 2022,
+  volume       = 62,
+  issue        = 12,
+  pages        = 126013,
+  doi          = {10.1088/1741-4326/ac888b},
+}
+
+@article{Zhang_NpjComputMater_2024_v10_p94,
+  annote       = {DPA-1, attention-based descriptor},
+  author       = {
+    Duo Zhang and Hangrui Bi and Fu-Zhi Dai and Wanrun Jiang and Xinzijian Liu
+    and Linfeng Zhang and Han Wang
+  },
+  title        = {
+    {Pretraining of attention-based deep learning potential model for molecular
+    simulation}
+  },
+  journal      = {Npj Comput. Mater},
+  year         = 2024,
+  volume       = 10,
+  issue        = 1,
+  pages        = 94,
+  doi          = {10.1038/s41524-024-01278-7},
+}
+
+@misc{Zhang_2023_DPA2,
+  annote       = {DPA-2},
+  author       = {
+    Duo Zhang and Xinzijian Liu and Xiangyu Zhang and Chengqian Zhang and Chun
+    Cai and Hangrui Bi and Yiming Du and Xuejian Qin and Jiameng Huang and
+    Bowen Li and Yifan Shan and Jinzhe Zeng and Yuzhi Zhang and Siyuan Liu and
+    Yifan Li and Junhan Chang and Xinyan Wang and Shuo Zhou and Jianchuan Liu
+    and Xiaoshan Luo and Zhenyu Wang and Wanrun Jiang and Jing Wu and Yudi Yang
+    and Jiyuan Yang and Manyi Yang and Fu-Qiang Gong and Linshuang Zhang and
+    Mengchao Shi and Fu-Zhi Dai and Darrin M. York and Shi Liu and Tong Zhu and
+    Zhicheng Zhong and Jian Lv and Jun Cheng and Weile Jia and Mohan Chen and
+    Guolin Ke and Weinan E and Linfeng Zhang and Han Wang
+  },
+  title        = {
+    {DPA-2: Towards a universal large atomic model for molecular and material
+    simulation}
+  },
+  publisher    = {arXiv},
+  year         = 2023,
+  doi          = {10.48550/arXiv.2312.15492},
+}
+
+@article{Zhang_PhysPlasmas_2020_v27_p122704,
+  annote       = {frame-specific parameters (e.g. electronic temperature)},
+  author       = {
+    Zhang, Yuzhi and Gao, Chang and Liu, Qianrui and Zhang, Linfeng and Wang,
+    Han and Chen, Mohan
+  },
+  title        = {
+    {Warm dense matter simulation via electron temperature dependent deep
+    potential molecular dynamics}
+  },
+  journal      = {Phys. Plasmas},
+  volume       = 27,
+  number       = 12,
+  pages        = 122704,
+  year         = 2020,
+  month        = 12,
+  doi          = {10.1063/5.0023265},
+}
+
+@misc{Zeng_2023_TTMDPMD,
+  annote       = {atom-specific parameter (e.g. electron temperature)},
+  author       = {
+    Zeng, Qiyu and Chen, Bo and Zhang, Shen and Kang, Dongdong and Wang, Han
+    and Yu, Xiaoxiang and Dai, Jiayu
+  },
+  title        = {{Full-scale ab initio simulations of laser-driven atomistic dynamics}},
+  publisher    = {arXiv},
+  year         = 2023,
+  doi          = {10.48550/arXiv.2308.13863},
+}
+
+@article{Zhang_PhysRevB_2020_v102_p41121,
+  annote       = {fit dipole},
+  title        = {{Deep neural network for the dielectric response of insulators}},
+  author       = {
+    Zhang, Linfeng and Chen, Mohan and Wu, Xifan and Wang, Han and E, Weinan
+    and Car, Roberto
+  },
+  journal      = {Phys. Rev. B},
+  volume       = 102,
+  number       = 4,
+  pages        = {041121},
+  year         = 2020,
+  publisher    = {APS},
+  doi          = {10.1103/PhysRevB.102.041121},
+}
+
+@article{Sommers_PhysChemChemPhys_2020_v22_p10592,
+  annote       = {fit polarizability},
+  title        = {
+    {Raman spectrum and polarizability of liquid water from deep neural
+    networks}
+  },
+  author       = {
+    Sommers, Grace M and Andrade, Marcos F Calegari and Zhang, Linfeng and
+    Wang, Han and Car, Roberto
+  },
+  journal      = {Phys. Chem. Chem. Phys.},
+  volume       = 22,
+  number       = 19,
+  pages        = {10592--10602},
+  year         = 2020,
+  publisher    = {Royal Society of Chemistry},
+  doi          = {10.1039/D0CP01893G},
+}
+
+@article{Zeng_JChemTheoryComput_2023_v19_p1261,
+  annote       = {fit relative energies},
+  author       = {Jinzhe Zeng and Yujun Tao and Timothy J Giese and Darrin M York},
+  title        = {{QD{\pi}: A Quantum Deep Potential Interaction Model for Drug Discovery}},
+  journal      = {J. Chem. Theory Comput.},
+  year         = 2023,
+  volume       = 19,
+  issue        = 4,
+  pages        = {1261--1275},
+  doi          = {10.1021/acs.jctc.2c01172},
+}
+
+@article{Zeng_PhysRevB_2022_v105_p174109,
+  annote       = {fit density of states},
+  author       = {
+    Qiyu Zeng and Bo Chen and Xiaoxiang Yu and Shen Zhang and Dongdong Kang and
+    Han Wang and Jiayu Dai
+  },
+  title        = {
+    {Towards large-scale and spatiotemporally resolved diagnosis of electronic
+    density of states by deep learning}
+  },
+  journal      = {Phys. Rev. B},
+  year         = 2022,
+  volume       = 105,
+  issue        = 17,
+  pages        = 174109,
+  doi          = {10.1103/PhysRevB.105.174109},
+}
+
+@article{Zhang_JChemPhys_2022_v156_p124107,
+  annote       = {DPLR, se\_e2\_r, hybrid descriptor},
+  author       = {
+    Linfeng Zhang and Han Wang and Maria Carolina Muniz and Athanassios Z
+    Panagiotopoulos and Roberto Car and Weinan E
+  },
+  title        = {{A deep potential model with long-range electrostatic interactions}},
+  journal      = {J. Chem. Phys.},
+  year         = 2022,
+  volume       = 156,
+  issue        = 12,
+  pages        = 124107,
+  doi          = {10.1063/5.0083669},
+}
+
+@article{Zeng_JChemTheoryComput_2021_v17_p6993,
+  annote       = {DPRc},
+  title        = {
+    {Development of Range-Corrected Deep Learning Potentials for Fast, Accurate
+    Quantum Mechanical/molecular Mechanical Simulations of Chemical Reactions
+    in Solution}
+  },
+  author       = {
+    Zeng, Jinzhe and Giese, Timothy J and Ekesan, {\c{S}}{\"o}len and York,
+    Darrin M
+  },
+  journal      = {J. Chem. Theory Comput.},
+  year         = 2021,
+  volume       = 17,
+  issue        = 11,
+  pages        = {6993--7009},
+  doi          = {10.1021/acs.jctc.1c00201},
+}
+
+@article{Wang_ApplPhysLett_2019_v114_p244101,
+  annote       = {Interpolation with a pair-wise potential},
+  title        = {
+    {Deep learning inter-atomic potential model for accurate irradiation damage
+    simulations}
+  },
+  author       = {Wang, Hao and Guo, Xun and Zhang, Linfeng and Wang, Han and Xue, Jianming},
+  journal      = {Appl. Phys. Lett.},
+  volume       = 114,
+  number       = 24,
+  pages        = 244101,
+  year         = 2019,
+  publisher    = {AIP Publishing LLC},
+  doi          = {10.1063/1.5098061},
+}
+
+@article{Zhang_PhysRevMater_2019_v3_p23804,
+  annote       = {model deviation},
+  title        = {
+    {Active learning of uniformly accurate interatomic potentials for materials
+    simulation}
+  },
+  author       = {Linfeng Zhang and De-Ye Lin and Han Wang and Roberto Car and Weinan E},
+  journal      = {Phys. Rev. Mater.},
+  volume       = 3,
+  issue        = 2,
+  pages        = 23804,
+  year         = 2019,
+  publisher    = {American Physical Society},
+  doi          = {10.1103/PhysRevMaterials.3.023804},
+}
+
+@article{Lu_JChemTheoryComput_2022_v18_p5555,
+  annote       = {DP Compress},
+  author       = {
+    Denghui Lu and Wanrun Jiang and Yixiao Chen and Linfeng Zhang and Weile Jia
+    and Han Wang and Mohan Chen
+  },
+  title        = {
+    {DP Compress: A Model Compression Scheme for Generating Efficient Deep
+    Potential Models}
+  },
+  journal      = {J. Chem. Theory Comput.},
+  year         = 2022,
+  volume       = 18,
+  issue        = 9,
+  pages        = {5555--5567},
+  doi          = {10.1021/acs.jctc.2c00102},
+}
+
+@article{Mo_npjComputMater_2022_v8_p107,
+  annote       = {NVNMD},
+  author       = {
+    Pinghui Mo and Chang Li and Dan Zhao and Yujia Zhang and Mengchao Shi and
+    Junhua Li and Jie Liu
+  },
+  title        = {
+    {Accurate and efficient molecular dynamics based on machine learning and
+    non von Neumann architecture}
+  },
+  journal      = {npj Comput. Mater.},
+  year         = 2022,
+  volume       = 8,
+  issue        = 1,
+  pages        = 107,
+  doi          = {10.1038/s41524-022-00773-z},
+}
+
+@article{Zeng_EnergyFuels_2021_v35_p762,
+  annote       = {relative or atomic model deviation},
+  author       = {Jinzhe Zeng and Linfeng Zhang and Han Wang and Tong Zhu},
+  title        = {
+    {Exploring the Chemical Space of Linear Alkane Pyrolysis via Deep Potential
+    GENerator}
+  },
+  journal      = {Energy \& Fuels},
+  volume       = 35,
+  number       = 1,
+  pages        = {762--769},
+  year         = 2021,
+  doi          = {10.1021/acs.energyfuels.0c03211},
+}

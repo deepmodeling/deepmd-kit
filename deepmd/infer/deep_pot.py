@@ -21,9 +21,6 @@ from .deep_eval import (
 
 
 class DeepPot(DeepEval):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     """Potential energy model.
 
     Parameters
