@@ -44,7 +44,7 @@ autoapi_add_toctree_entry = False
 # ones.
 # extensions = [
 #     'recommonmark',
-#     "sphinx_rtd_theme",
+#     "sphinx_book_theme",
 #     'myst_parser',
 #     'sphinx_markdown_tables',
 #     'sphinx.ext.autosummary'
@@ -53,7 +53,7 @@ autoapi_add_toctree_entry = False
 extensions = [
     "deepmodeling_sphinx",
     "dargs.sphinx",
-    "sphinx_rtd_theme",
+    "sphinx_book_theme",
     "myst_nb",
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
@@ -70,6 +70,7 @@ extensions = [
     "autoapi.extension",
     "sphinxcontrib.programoutput",
     "sphinxcontrib.moderncmakedomain",
+    "sphinx_remove_toctrees",
 ]
 
 # breathe_domain_by_extension = {
@@ -175,9 +176,15 @@ myst_substitutions = {
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "sphinx_rtd_theme"
+html_theme = "sphinx_book_theme"
 html_logo = "_static/logo.svg"
 
+html_theme_options = {
+    "logo": {
+        "image_light": "_static/logo.svg",
+        "image_dark": "_static/logo-dark.svg",
+    }
+}
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
@@ -215,3 +222,5 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 bibtex_bibfiles = ["../CITATIONS.bib"]
+
+remove_from_toctrees = ["autoapi/**/*", "API_CC/*", "api_c/*", "api_core/*"]
