@@ -34,8 +34,9 @@ if(ENABLE_PADDLE)
     )
     set(TGZ_FILE "${CMAKE_BINARY_DIR}/paddle_inference.tgz")
     set(EXTRACTED_DIR "${CMAKE_BINARY_DIR}/paddle_inference_install_dir")
-    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE} SHOW_PROGRESS)
-    execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE})
+    file(DOWNLOAD ${DOWNLOAD_URL} ${TGZ_FILE})
+    execute_process(COMMAND ${CMAKE_COMMAND} -E tar -xzvf ${TGZ_FILE}
+                    OUTPUT_QUIET)
     file(REMOVE ${TGZ_FILE})
     set(PADDLE_INFERENCE_DIR
         ${EXTRACTED_DIR}
