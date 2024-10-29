@@ -7,6 +7,7 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import paddle
 from paddle.io import (
     DataLoader,
@@ -135,10 +136,8 @@ class TestSaveLoadDPA1(unittest.TestCase):
     def test_saveload(self):
         result1 = self.get_model_result()
         result2 = self.get_model_result(read=True)
-        final_result = all(
-            paddle.allclose(result1[item], result2[item]) for item in result1
-        )
-        self.assertTrue(final_result)
+        for item in result1:
+            np.testing.assert_allclose(result1[item].numpy(), result2[item].numpy())
 
 
 if __name__ == "__main__":
