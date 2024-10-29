@@ -28,6 +28,8 @@ def _make_env_mat(
     coord_r = torch.gather(coord_pad, 1, index)
     coord_r = coord_r.view(bsz, natoms, nnei, 3)
     diff = coord_r - coord_l
+    # avoid the possibility that coord[:, -1:, :] + rcut is the same as the coordinate of a real atom
+    diff = xp.where(xp.abs(diff) < 1e-30, xp.full_like(diff, 1e-30), diff)
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
     # for index 0 nloc atom
     length = length + ~mask.unsqueeze(-1)
