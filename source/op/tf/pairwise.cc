@@ -78,7 +78,7 @@ class PairwiseIdxOp : public OpKernel {
       backward_qm_maps.push_back(backward_qm_map);
       forward_qmmm_maps.push_back(forward_qmmm_map);
       backward_qmmm_maps.push_back(backward_qmmm_map);
-      // get the maximun
+      // get the maximum
       int nghost_qm_ii = nall_qm_ii - nloc_qm_ii,
           nghost_qmmm_ii = nall_qmmm_ii - nloc_qmmm_ii;
       nloc_qm.push_back(nloc_qm_ii);

@@ -59,7 +59,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     rcond : float, optional
         The condition number for the regression of atomic energy.
     atom_ener
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
 
     """
 
@@ -104,7 +104,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         )
 
         # self.model_type = "ener"
-        # self.model_version = MODEL_VERSION ## this shoud be in the parent class
+        # self.model_version = MODEL_VERSION ## this should be in the parent class
 
         if isinstance(sel, int):
             self.sel = sel

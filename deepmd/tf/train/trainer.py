@@ -409,7 +409,7 @@ class DPTrainer:
         stop_batch = self.stop_batch
         self._init_session()
 
-        # Before data shard is enabled, only cheif do evaluation and record it
+        # Before data shard is enabled, only chief do evaluation and record it
         # self.print_head()
         fp = None
         if self.run_opt.is_chief:
@@ -846,7 +846,7 @@ class DPTrainer:
         bias_adjust_mode : str
             The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
             'change-by-statistic' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
+                    and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic energy bias in the target dataset.
         """
         try:
@@ -940,7 +940,7 @@ class DatasetLoader:
 
         def get_train_batch() -> list[np.ndarray]:
             batch_data = train_data.get_batch()
-            # convert dict to list of arryas
+            # convert dict to list of arrays
             batch_data = tuple([batch_data[kk] for kk in self.data_keys])
             return batch_data
 

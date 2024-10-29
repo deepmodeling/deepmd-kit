@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 class DeepmdData:
     """Class for a data system.
 
-    It loads data from hard disk, and mantains the data as a `data_dict`
+    It loads data from hard disk, and maintains the data as a `data_dict`
 
     Parameters
     ----------
@@ -43,7 +43,7 @@ class DeepmdData:
     trn_all_set
             [DEPRECATED] Deprecated. Now all sets are trained and tested.
     sort_atoms : bool
-            Sort atoms by atom types. Required to enable when the data is directly feeded to
+            Sort atoms by atom types. Required to enable when the data is directly fed to
             descriptors except mixed types.
     """
 
@@ -196,7 +196,7 @@ class DeepmdData:
         assert key_out not in self.data_dict, "output key should not have been added"
         assert (
             self.data_dict[key_in]["repeat"] == 1
-        ), "reduced proerties should not have been repeated"
+        ), "reduced properties should not have been repeated"
 
         self.data_dict[key_out] = {
             "ndof": self.data_dict[key_in]["ndof"],

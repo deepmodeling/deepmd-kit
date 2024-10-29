@@ -190,7 +190,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x (nall x 3).
+                coordinates in extended region. nf x (nall x 3).
             extended_atype
                 atomic type in extended region. nf x nall.
             nlist
@@ -319,7 +319,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             the `nlist` is pad with -1.
 
             3. If the number of neighbors in the `nlist` is larger than sum(self.sel),
-            the nearest sum(sel) neighbors will be preseved.
+            the nearest sum(sel) neighbors will be preserved.
 
             Known limitations:
 
@@ -329,7 +329,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x nall x 3
+                coordinates in extended region. nf x nall x 3
             extended_atype
                 atomic type in extended region. nf x nall
             nlist
@@ -340,7 +340,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Returns
             -------
             formated_nlist
-                the formated nlist.
+                the formatted nlist.
 
             """
             n_nf, n_nloc, n_nnei = nlist.shape

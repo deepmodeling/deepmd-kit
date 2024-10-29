@@ -92,7 +92,7 @@ def normalize_coord(
     Parameters
     ----------
     coord : torch.Tensor
-        orignal coordinates of shape [*, na, 3].
+        original coordinates of shape [*, na, 3].
 
     Returns
     -------

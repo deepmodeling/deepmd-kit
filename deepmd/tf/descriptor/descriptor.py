@@ -222,7 +222,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters
@@ -253,7 +253,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------
@@ -473,7 +473,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

@@ -32,7 +32,7 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
-            # cast to energy prec brefore reduction
+            # cast to energy prec before reduction
             model_ret[kk_redu] = xp.sum(
                 vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
             )

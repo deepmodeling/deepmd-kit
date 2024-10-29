@@ -1,0 +1,17 @@
+{
+  "name": "DeePMD-kit",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": ".devcontainer/build_py.sh && .devcontainer/download_libtorch.sh && .devcontainer/build_cxx.sh && pre-commit install-hooks",
+  "remoteEnv": {
+    "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/.venv/bin",
+    "DP_ENABLE_PYTORCH": "1",
+    "DP_VARIANT": "cpu",
+    "LMP_CXX11_ABI_0": "1",
+    "UV_EXTRA_INDEX_URL": "https://download.pytorch.org/whl/cpu"
+  }
+}

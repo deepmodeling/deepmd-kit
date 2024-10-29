@@ -160,7 +160,7 @@ class AutoBatchSize(ABC):
         Parameters
         ----------
         callable : Callable
-            The method should accept *args and **kwargs as input and return the similiar array.
+            The method should accept *args and **kwargs as input and return the similar array.
         total_size : int
             Total size
         natoms : int
