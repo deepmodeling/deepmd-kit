@@ -89,7 +89,7 @@ test = [
 ]
 docs = [
     "sphinx>=3.1.1",
-    "sphinx_rtd_theme>=1.0.0rc1",
+    "sphinx-book-theme",
     "myst-nb>=1.0.0rc0",
     "myst-parser>=0.19.2",
     "sphinx-design",
@@ -97,7 +97,7 @@ docs = [
     "exhale>=0.3.7",
     "numpydoc",
     "ase",
-    "deepmodeling-sphinx>=0.1.0",
+    "deepmodeling-sphinx>=0.3.0",
     "dargs>=0.3.4",
     "sphinx-argparse<0.5.0",
     "pygments-lammps",
@@ -105,6 +105,7 @@ docs = [
     "sphinx-autoapi>=3.0.0",
     "sphinxcontrib-programoutput",
     "sphinxcontrib-moderncmakedomain",
+    "sphinx-remove-toctrees",
 ]
 lmp = [
     "lammps~=2024.8.29.1.0",

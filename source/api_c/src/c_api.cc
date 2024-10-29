@@ -42,6 +42,7 @@ DP_Nlist* DP_NewNlist_comm(int inum_,
   DP_Nlist* new_nl = new DP_Nlist(nl);
   return new_nl;
 }
+void DP_NlistSetMask(DP_Nlist* nl, int mask) { nl->nl.set_mask(mask); }
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 DP_DeepPot::DP_DeepPot() {}
