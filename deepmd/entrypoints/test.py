@@ -557,7 +557,7 @@ def test_ener(
             save_txt_file(
                 detail_path.with_suffix(".h.out"),
                 h,
-                header=f"{system}: data_h pred_h (3N×3N matrix in row-major order)",
+                header=f"{system}: data_h pred_h (3Na*3Na matrix in row-major order)",
                 append=append_detail,
             )
     if not out_put_spin:
