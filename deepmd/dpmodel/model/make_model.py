@@ -222,22 +222,42 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
-            atomic_ret = self.atomic_model.forward_common_atomic(
+            model_predict = self.forward_common_atomic(
                 cc_ext,
                 extended_atype,
                 nlist,
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
-            )
-            model_predict = fit_output_to_model_output(
-                atomic_ret,
-                self.atomic_output_def(),
-                cc_ext,
                 do_atomic_virial=do_atomic_virial,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
+
+        def forward_common_atomic(
+            self,
+            extended_coord: np.ndarray,
+            extended_atype: np.ndarray,
+            nlist: np.ndarray,
+            mapping: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
+            do_atomic_virial: bool = False,
+        ):
+            atomic_ret = self.atomic_model.forward_common_atomic(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            return fit_output_to_model_output(
+                atomic_ret,
+                self.atomic_output_def(),
+                extended_coord,
+                do_atomic_virial=do_atomic_virial,
+            )
 
         forward_lower = call_lower
 
