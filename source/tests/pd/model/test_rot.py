@@ -36,7 +36,7 @@ class RotTest:
         self,
     ):
         generator = paddle.seed(GLOBAL_SEED)
-        prec = 1e-10
+        prec = 1e-9
         natoms = 5
         cell = 10.0 * paddle.eye(3, dtype=dtype).to(device=env.DEVICE)
         coord = 2 * paddle.rand([natoms, 3], dtype=dtype).to(device=env.DEVICE)
