@@ -555,7 +555,7 @@ class DescrptSeAArrayAPI(DescrptSeA):
             coord_ext, atype_ext, nlist, self.davg, self.dstd
         )
         nf, nloc, nnei, _ = rr.shape
-        sec = xp.asarray(self.sel_cumsum)
+        sec = self.sel_cumsum
 
         ng = self.neuron[-1]
         gr = xp.zeros([nf * nloc, ng, 4], dtype=self.dstd.dtype)

@@ -78,6 +78,21 @@ One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to instal
 
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+To install [JAX AI Stack](https://github.com/jax-ml/jax-ai-stack), run
+
+```sh
+pip install jax-ai-stack
+```
+
+One can also install packages in JAX AI Stack manually.
+Follow [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX built against different CUDA versions or without CUDA.
+
+One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
+
+:::
+
 :::{tab-item} Paddle {{ paddle_icon }}
 
 To install Paddle, run
@@ -90,8 +105,6 @@ python -m pip install --pre paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/
 # cpu
 python -m pip install --pre paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
 ```
-
-Follow [Paddle documentation](https://www.paddlepaddle.org.cn/install/quick?docurl=/documentation/docs/zh/install/pip/linux-pip.html) to install Paddle built against different CUDA versions or without CUDA.
 
 :::
 

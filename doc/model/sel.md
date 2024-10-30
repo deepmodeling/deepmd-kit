@@ -24,6 +24,14 @@ dp --pt neighbor-stat -s data -r 6.0 -t O H
 
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```sh
+dp --jax neighbor-stat -s data -r 6.0 -t O H
+```
+
+:::
+
 :::{tab-item} Paddle {{ paddle_icon }}
 
 ```sh
