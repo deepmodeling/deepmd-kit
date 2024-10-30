@@ -301,7 +301,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
@@ -338,7 +337,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
         """
         return self.sea.forward(
-            nlist, coord_ext, atype_ext, extended_atype_embd, mapping
+            nlist, coord_ext, atype_ext, None, mapping
         )
 
     def set_stat_mean_and_stddev(
