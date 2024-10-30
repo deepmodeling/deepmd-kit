@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import logging
+
 from packaging.version import (
     Version,
 )
@@ -13,7 +13,9 @@ from deepmd.tf.utils.errors import (
     OutOfMemoryError,
 )
 from deepmd.utils.batch_size import AutoBatchSize as AutoBatchSizeBase
-from deepmd.utils.batch_size import log
+from deepmd.utils.batch_size import (
+    log,
+)
 
 
 class AutoBatchSize(AutoBatchSizeBase):
