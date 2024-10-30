@@ -2375,8 +2375,6 @@ def loss_ener_spin():
     doc_limit_pref_fm = limit_pref("force_magnetic")
     doc_start_pref_v = start_pref("virial")
     doc_limit_pref_v = limit_pref("virial")
-    # doc_start_pref_h = start_pref("hessian")
-    # doc_limit_pref_h = limit_pref("hessian")
     doc_start_pref_ae = start_pref("atom_ener")
     doc_limit_pref_ae = limit_pref("atom_ener")
     doc_start_pref_pf = start_pref("atom_pref")
@@ -2440,20 +2438,6 @@ def loss_ener_spin():
             default=0.00,
             doc=doc_limit_pref_v,
         ),
-        # Argument(
-        #     "start_pref_h",
-        #     [float, int],
-        #     optional=True,
-        #     default=0.00,
-        #     doc=doc_start_pref_h,
-        # ),
-        # Argument(
-        #     "limit_pref_h",
-        #     [float, int],
-        #     optional=True,
-        #     default=0.00,
-        #     doc=doc_limit_pref_h,
-        # ),
         Argument(
             "start_pref_ae",
             [float, int],
