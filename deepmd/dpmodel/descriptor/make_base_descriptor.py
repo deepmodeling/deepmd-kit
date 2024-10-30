@@ -146,7 +146,7 @@ def make_base_descriptor(
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
-        
+
         def enable_compression(
             self,
             min_nbor_dist: float,
@@ -170,9 +170,7 @@ def make_base_descriptor(
             check_frequency
                 The overflow check frequency
             """
-            raise NotImplementedError(
-                f"This descriptor doesn't support compression!"
-            )
+            raise NotImplementedError("This descriptor doesn't support compression!")
 
         @abstractmethod
         def fwd(
