@@ -5,6 +5,9 @@ from typing import (
 
 from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
+from deepmd.dpmodel.fitting.property_fitting import (
+    PropertyFittingNet as PropertyFittingNetDP,
+)
 from deepmd.jax.common import (
     ArrayAPIVariable,
     flax_module,
@@ -42,6 +45,14 @@ def setattr_for_general_fitting(name: str, value: Any) -> Any:
 @BaseFitting.register("ener")
 @flax_module
 class EnergyFittingNet(EnergyFittingNetDP):
+    def __setattr__(self, name: str, value: Any) -> None:
+        value = setattr_for_general_fitting(name, value)
+        return super().__setattr__(name, value)
+
+
+@BaseFitting.register("property")
+@flax_module
+class PropertyFittingNet(PropertyFittingNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
         value = setattr_for_general_fitting(name, value)
         return super().__setattr__(name, value)
