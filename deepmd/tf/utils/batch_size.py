@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
+import logging
 from packaging.version import (
     Version,
 )
@@ -11,9 +13,20 @@ from deepmd.tf.utils.errors import (
     OutOfMemoryError,
 )
 from deepmd.utils.batch_size import AutoBatchSize as AutoBatchSizeBase
+from deepmd.utils.batch_size import log
 
 
 class AutoBatchSize(AutoBatchSizeBase):
+    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
+        super().__init__(initial_batch_size, factor)
+        DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
+        if not DP_INFER_BATCH_SIZE > 0:
+            log.info(
+                "If you encounter the error 'an illegal memory access was encountered', this may be due to a TensorFlow issue. "
+                "To avoid this, set the environment variable DP_INFER_BATCH_SIZE to a smaller value than the last adjusted batch size. "
+                "The environment variable DP_INFER_BATCH_SIZE controls the inference batch size (nframes * natoms). "
+            )
+
     def is_gpu_available(self) -> bool:
         """Check if GPU is available.
 
