@@ -29,8 +29,8 @@ def _make_env_mat(
     coord_r = coord_r.view(bsz, natoms, nnei, 3)
     diff = coord_r - coord_l
     # avoid the possibility that coord[:, -1:, :] + rcut is the same as the coordinate of a real atom
-    diff = torch.where(torch.abs(diff) < 1e-30, torch.full_like(diff, 1e-30), diff)
-    length = torch.linalg.norm(diff, dim=-1, keepdim=True)
+    diff_ = torch.where(torch.abs(diff) < 1e-30, torch.full_like(diff, 1e-30), diff)
+    length = torch.linalg.norm(diff_, dim=-1, keepdim=True)
     # for index 0 nloc atom
     length = length + ~mask.unsqueeze(-1)
     t0 = 1 / (length + protection)
