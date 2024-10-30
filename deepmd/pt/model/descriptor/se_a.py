@@ -336,9 +336,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.sea.forward(
-            nlist, coord_ext, atype_ext, None, mapping
-        )
+        return self.sea.forward(nlist, coord_ext, atype_ext, None, mapping)
 
     def set_stat_mean_and_stddev(
         self,
