@@ -51,13 +51,13 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     def data(self) -> dict:
         pair_exclude_types, atom_exclude_types = self.param
         return {
-            "type_map": ["O", "H"],
+            "type_map": ["O", "H", "B"],
             "use_srtab": f"{TESTS_DIR}/pt/water/data/zbl_tab_potential/H2O_tab_potential.txt",
             "pair_exclude_types": pair_exclude_types,
             "atom_exclude_types": atom_exclude_types,
             "descriptor": {
-                "type": "se_e2_a",
-                "sel": [20, 20],
+                "type": "se_atten",
+                "sel": 40,
                 "rcut_smth": 0.50,
                 "rcut": 6.00,
                 "neuron": [
