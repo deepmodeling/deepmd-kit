@@ -77,7 +77,7 @@ def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarr
     Parameters
     ----------
     atom_types : np.ndarray
-        array specifing type for each atoms as integer
+        array specifying type for each atoms as integer
     select_types : np.ndarray
         types of atoms you want to find indices for
 
@@ -126,7 +126,7 @@ def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
 def j_deprecated(
     jdata: dict[str, "_DICT_VAL"], key: str, deprecated_key: list[str] = []
 ) -> "_DICT_VAL":
-    """Assert that supplied dictionary conaines specified key.
+    """Assert that supplied dictionary contains specified key.
 
     Parameters
     ----------
@@ -218,7 +218,7 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
     Returns
     -------
     np.dtype
-        numpy presicion constant
+        numpy precision constant
 
     Raises
     ------

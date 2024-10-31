@@ -80,6 +80,9 @@ void DeepPotPT::init(const std::string& model,
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+    DPErrcheck(DPSetDevice(gpu_id));
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }

@@ -477,7 +477,7 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         trainer.run()
         state_dict_trained = trainer.wrapper.model.state_dict()
 
-        # test fine-tuning using diffferent fitting_net, here using property fitting
+        # test fine-tuning using different fitting_net, here using property fitting
         finetune_model = self.config["training"].get("save_ckpt", "model.ckpt") + ".pt"
         self.config_property["model"], finetune_links = get_finetune_rules(
             finetune_model,

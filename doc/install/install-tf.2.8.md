@@ -1,6 +1,6 @@
 # Install TensorFlow's C++ interface
 
-TensorFlow's C++ interface will be compiled from the source code. Firstly one installs Bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be lanuched to use [bazel](https://github.com/bazelbuild/bazel).
+TensorFlow's C++ interface will be compiled from the source code. Firstly one installs Bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be launched to use [bazel](https://github.com/bazelbuild/bazel).
 
 ```bash
 wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /some/workspace/bazel/bin/bazel

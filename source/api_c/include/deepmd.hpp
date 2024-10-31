@@ -803,6 +803,10 @@ struct InputNlist {
   int *numneigh;
   /// @brief Array stores the core region atom's neighbor index
   int **firstneigh;
+  /**
+   * @brief Set mask for this neighbor list.
+   */
+  void set_mask(int mask) { DP_NlistSetMask(nl, mask); };
 };
 
 /**
@@ -1721,7 +1725,8 @@ class DeepPotModelDevi {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
 
-    // memory will be continous for std::vector but not std::vector<std::vector>
+    // memory will be continuous for std::vector but not
+    // std::vector<std::vector>
     std::vector<double> energy_flat(numb_models);
     std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
                                       natoms * 3);
@@ -1899,7 +1904,8 @@ class DeepPotModelDevi {
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
 
-    // memory will be continous for std::vector but not std::vector<std::vector>
+    // memory will be continuous for std::vector but not
+    // std::vector<std::vector>
     std::vector<double> energy_flat(numb_models);
     std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
                                       natoms * 3);
@@ -2922,7 +2928,7 @@ void inline read_file_to_string(std::string model, std::string &file_content) {
   int size;
   const char *c_file_content = DP_ReadFileToChar2(model.c_str(), &size);
   if (size < 0) {
-    // negtive size indicates error
+    // negative size indicates error
     std::string error_message = std::string(c_file_content, -size);
     DP_DeleteChar(c_file_content);
     throw deepmd::hpp::deepmd_exception(error_message);

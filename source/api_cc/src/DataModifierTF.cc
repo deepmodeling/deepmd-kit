@@ -306,7 +306,7 @@ void DipoleChargeModifierTF::compute(
       dfcorr_2[pairs[ii].first * 3 + dd] += delef_[pairs[ii].second * 3 + dd];
     }
   }
-  // add ele contrinution
+  // add ele contribution
   dfcorr_ = dfcorr_2;
   for (int ii = 0; ii < nloc_real; ++ii) {
     int oii = real_bkw_map[ii];

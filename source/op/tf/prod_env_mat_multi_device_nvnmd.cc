@@ -45,7 +45,7 @@ REGISTER_OP("ProdEnvMatANvnmdQuantize")
     .Output("descrpt_deriv: T")
     .Output("rij: T")
     .Output("nlist: int32");
-// only sel_a and rcut_r uesd.
+// only sel_a and rcut_r used.
 
 // ProdEnvMatAMixNvnmd
 REGISTER_OP("ProdEnvMatAMixNvnmdQuantize")
@@ -68,7 +68,7 @@ REGISTER_OP("ProdEnvMatAMixNvnmdQuantize")
     .Output("nlist: int32")
     .Output("ntype: int32")
     .Output("nmask: bool");
-// only sel_a and rcut_r uesd.
+// only sel_a and rcut_r used.
 
 template <typename FPTYPE>
 static int _norm_copy_coord_cpu(std::vector<FPTYPE>& coord_cpy,
@@ -463,7 +463,7 @@ class ProdEnvMatANvnmdQuantizeOp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
-    // must declar out of if, otherwise the memory will be destroyed!
+    // must declare out of if, otherwise the memory will be destroyed!
     Tensor int_temp;
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);
@@ -734,7 +734,7 @@ class ProdEnvMatAMixNvnmdQuantizeOp : public OpKernel {
       }
     }
 
-    // must declar out of if, otherwise the memory will be destroyed!
+    // must declare out of if, otherwise the memory will be destroyed!
     Tensor int_temp;
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);

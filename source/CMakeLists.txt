@@ -4,7 +4,7 @@ project(DeePMD)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
-option(BUILD_TESTING "Build test and enable converage" OFF)
+option(BUILD_TESTING "Build test and enable coverage" OFF)
 set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
@@ -272,7 +272,7 @@ endif()
 
 # set op prec
 set(HIGH_PREC_DEF "HIGH_PREC")
-# this defination doesn't work, but leaving it empty will cause error
+# this definition doesn't work, but leaving it empty will cause error
 set(LOW_PREC_DEF "LOW_PREC")
 set(HIGH_PREC_VARIANT "")
 set(LOW_PREC_VARIANT "_low")

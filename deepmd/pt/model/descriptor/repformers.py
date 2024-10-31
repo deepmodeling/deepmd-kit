@@ -63,7 +63,7 @@ if not hasattr(torch.ops.deepmd, "border_op"):
             "See documentation for DPA-2 for details."
         )
 
-    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
     torch.ops.deepmd.border_op = border_op
 
 
@@ -345,11 +345,11 @@ class DescrptBlockRepformers(DescriptorBlock):
             raise KeyError(key)
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 

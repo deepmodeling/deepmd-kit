@@ -20,7 +20,7 @@ from deepmd.utils.version import (
 
 @InvarFitting.register("property")
 class PropertyFittingNet(InvarFitting):
-    r"""Fitting the rotationally invariant porperties of `task_dim` of the system.
+    r"""Fitting the rotationally invariant properties of `task_dim` of the system.
 
     Parameters
     ----------

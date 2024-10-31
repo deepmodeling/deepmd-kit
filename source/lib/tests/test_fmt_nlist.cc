@@ -134,7 +134,7 @@ class TestEncodingDecodingNborInfo : public ::testing::Test {
   void TearDown() override {}
 };
 
-// orginal implementation. copy ghost
+// original implementation. copy ghost
 TEST_F(TestFormatNlist, orig_cpy) {
   std::vector<std::vector<int>> nlist_a, nlist_r;
   std::vector<int> fmt_nlist_a, fmt_nlist_r;
@@ -155,7 +155,7 @@ TEST_F(TestFormatNlist, orig_cpy) {
   }
 }
 
-// orginal implementation. copy ghost should be equal to pbc
+// original implementation. copy ghost should be equal to pbc
 TEST_F(TestFormatNlist, orig_pbc) {
   std::vector<std::vector<int>> nlist_a_1, nlist_r_1;
   build_nlist(nlist_a_1, nlist_r_1, posi, rc, rc, ncell, region);
@@ -174,7 +174,7 @@ TEST_F(TestFormatNlist, orig_pbc) {
   }
 }
 
-// orginal implementation. copy ghost should be equal to pbc
+// original implementation. copy ghost should be equal to pbc
 TEST_F(TestFormatNlist, orig_cpy_equal_pbc) {
   std::vector<std::vector<int>> nlist_a_0, nlist_r_0;
   build_nlist(nlist_a_0, nlist_r_0, posi_cpy, nloc, rc, rc, nat_stt, ncell,
@@ -251,7 +251,7 @@ TEST_F(TestFormatNlist, cpu) {
   }
 }
 
-// orginal implementation. copy ghost
+// original implementation. copy ghost
 TEST_F(TestFormatNlistShortSel, orig_cpy) {
   std::vector<std::vector<int>> nlist_a, nlist_r;
   std::vector<int> fmt_nlist_a, fmt_nlist_r;

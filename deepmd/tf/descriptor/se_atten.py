@@ -423,8 +423,9 @@ class DescrptSeAtten(DescrptSeA):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
         suffix: str = "",
+        tebd_suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -444,6 +445,8 @@ class DescrptSeAtten(DescrptSeA):
             The overflow check frequency
         suffix : str, optional
             The suffix of the scope
+        tebd_suffix : str, optional
+            The suffix of the type embedding scope, only for DescrptDPA1Compat
         """
         # do some checks before the mocel compression process
         assert (
@@ -496,7 +499,9 @@ class DescrptSeAtten(DescrptSeA):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.final_type_embedding = get_two_side_type_embedding(self, graph)
+        self.final_type_embedding = get_two_side_type_embedding(
+            self, graph, suffix=tebd_suffix
+        )
         type_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
         self.matrix = get_extra_side_embedding_net_variable(
             self, graph_def, type_side_suffix, "matrix", suffix
@@ -702,7 +707,7 @@ class DescrptSeAtten(DescrptSeA):
         assert (
             input_dict is not None
             and input_dict.get("type_embedding", None) is not None
-        ), "se_atten desctiptor must use type_embedding"
+        ), "se_atten descriptor must use type_embedding"
         type_embedding = input_dict.get("type_embedding", None)
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
@@ -1429,9 +1434,9 @@ class DescrptSeAtten(DescrptSeA):
 
         Notes
         -----
-        This method has the similiar way to build the type exclude mask as
+        This method has the similar way to build the type exclude mask as
         :meth:`deepmd.tf.descriptor.descriptor.Descriptor.build_type_exclude_mask`.
-        The mathmatical expression has been explained in that method.
+        The mathematical expression has been explained in that method.
         The difference is that the attention descriptor has provided the type of
         the neighbors (idx_j) that is not in order, so we use it from an extra
         input.
@@ -1516,7 +1521,7 @@ class DescrptSeAtten(DescrptSeA):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -2247,6 +2252,56 @@ class DescrptDPA1Compat(DescrptSeAtten):
             # nf x nloc x (out_dim + tebd_dim)
             self.dout = tf.concat([self.dout, atom_embed], axis=-1)
         return self.dout
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+        suffix: str = "",
+        tebd_suffix: str = "",
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        graph : tf.Graph
+            The graph of the model
+        graph_def : tf.GraphDef
+            The graph_def of the model
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        suffix : str, optional
+            The suffix of the scope
+        tebd_suffix : str, optional
+            Same as suffix.
+        """
+        assert (
+            tebd_suffix == ""
+        ), "DescrptDPA1Compat must use the same tebd_suffix as suffix!"
+        super().enable_compression(
+            min_nbor_dist,
+            graph,
+            graph_def,
+            table_extrapolate=table_extrapolate,
+            table_stride_1=table_stride_1,
+            table_stride_2=table_stride_2,
+            check_frequency=check_frequency,
+            suffix=suffix,
+            tebd_suffix=suffix,
+        )
 
     def init_variables(
         self,

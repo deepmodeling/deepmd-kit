@@ -237,7 +237,7 @@ class DescrptSeA(DescrptSe):
         self.ntypes = len(self.sel_a)
         assert self.ntypes == len(self.sel_r)
         self.rcut_a = -1
-        # numb of neighbors and numb of descrptors
+        # numb of neighbors and numb of descriptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
         self.nnei = self.nnei_a + self.nnei_r
@@ -448,7 +448,7 @@ class DescrptSeA(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -502,7 +502,7 @@ class DescrptSeA(DescrptSe):
                 )
             elif len(ret_one_side) != 0 and len(ret_two_side) != 0:
                 raise RuntimeError(
-                    "both one side and two side embedding net varaibles are detected, it is a wrong model."
+                    "both one side and two side embedding net variables are detected, it is a wrong model."
                 )
             elif len(ret_two_side) != 0:
                 self.final_type_embedding = get_two_side_type_embedding(self, graph)
@@ -548,7 +548,7 @@ class DescrptSeA(DescrptSe):
         self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------

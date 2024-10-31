@@ -21,6 +21,11 @@ from deepmd.infer.deep_eval import (
     DeepEval,
 )
 
+from ...utils import (
+    CI,
+    TEST_DEVICE,
+)
+
 infer_path = Path(__file__).parent.parent.parent / "infer"
 
 
@@ -66,16 +71,24 @@ class IOTest:
             elif Path(ii).is_dir():
                 shutil.rmtree(ii)
 
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
-        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
+        for backend_name, suffix_idx in (
+            ("tensorflow", 0),
+            ("pytorch", 0),
+            ("dpmodel", 0),
+            ("jax", 0),
+        ):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
                 if not backend.is_available():
                     continue
                 reference_data = copy.deepcopy(self.data)
-                self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
-                data = self.get_data_from_model(prefix + backend.suffixes[0])
+                self.save_data_to_model(
+                    prefix + backend.suffixes[suffix_idx], reference_data
+                )
+                data = self.get_data_from_model(prefix + backend.suffixes[suffix_idx])
                 data = copy.deepcopy(data)
                 reference_data = copy.deepcopy(self.data)
                 # some keys are not expected to be not the same
@@ -125,7 +138,7 @@ class IOTest:
         ).reshape(1, 9)
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
-        for backend_name in ("tensorflow", "pytorch", "dpmodel"):
+        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue

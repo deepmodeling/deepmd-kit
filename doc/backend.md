@@ -23,6 +23,15 @@ DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`t
 [PyTorch](https://pytorch.org/) 2.0 or above is required.
 While `.pth` and `.pt` are the same in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
 
+### JAX {{ jax_icon }}
+
+- Model filename extension: `.xlo`
+- Checkpoint filename extension: `.jax`
+
+[JAX](https://jax.readthedocs.io/) 0.4.33 (which requires Python 3.10 or above) or above is required.
+Both `.xlo` and `.jax` are customized format extensions defined in DeePMD-kit, since JAX has no convention for file extensions.
+Currently, this backend is developed actively, and has no support for training and the C++ interface.
+
 ### DP {{ dpmodel_icon }}
 
 :::{note}
