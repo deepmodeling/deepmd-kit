@@ -183,7 +183,6 @@ class MultiTaskTrainTest:
                 shutil.rmtree(f)
 
 
-@unittest.skip("Paddle do not support MultiTaskSeA.")
 class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
     def setUp(self):
         multitask_se_e2_a = deepcopy(multitask_template)

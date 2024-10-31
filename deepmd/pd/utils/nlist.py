@@ -385,7 +385,11 @@ def build_multiple_neighbor_list(
         ).to(device=nlist.place)
         # nb x nloc x nsel
         nlist = paddle.concat([nlist, pad], axis=-1)
-        nsel = nsels[-1]
+        if paddle.is_tensor(nsel):
+            nsel = paddle.to_tensor(nsels[-1], dtype=nsel.dtype)
+        else:
+            nsel = nsels[-1]
+
     # nb x nall x 3
     coord1 = coord.reshape([nb, -1, 3])
     nall = coord1.shape[1]

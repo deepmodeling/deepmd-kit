@@ -115,7 +115,6 @@ class TestEnergyModelDPA1(unittest.TestCase, JITTest):
         JITTest.tearDown(self)
 
 
-@unittest.skip("var dtype int32/int64 confused in if block")
 class TestEnergyModelDPA2(unittest.TestCase, JITTest):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
