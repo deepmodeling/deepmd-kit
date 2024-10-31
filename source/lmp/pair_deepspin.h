@@ -12,12 +12,12 @@ PairStyle(deepspin, PairDeepSpin)
 #ifndef LMP_PAIR_NNP_SPIN_H
 #define LMP_PAIR_NNP_SPIN_H
 
-#include "pair_base.h"
 #include <fstream>
 #include <iostream>
 #include <map>
 
 #include "comm_brick.h"
+#include "pair_base.h"
 #define FLOAT_PREC double
 
 namespace LAMMPS_NS {
@@ -31,7 +31,7 @@ class PairDeepSpin : public PairDeepMDBase {
   void compute(int, int) override;
   int pack_reverse_comm(int, int, double *) override;
   void unpack_reverse_comm(int, int *, double *) override;
-  
+
  private:
   CommBrickDeepSpin *commdata_;
 };

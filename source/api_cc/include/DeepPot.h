@@ -459,27 +459,29 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute_spin(ENERGYTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      ENERGYTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute_spin(std::vector<ENERGYTYPE>& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      std::vector<ENERGYTYPE>& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
 
   /**
@@ -558,33 +560,35 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute_spin(ENERGYTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& inlist,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      ENERGYTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& inlist,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute_spin(std::vector<ENERGYTYPE>& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& inlist,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      std::vector<ENERGYTYPE>& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& inlist,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -660,31 +664,33 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute_spin(ENERGYTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      ENERGYTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute_spin(std::vector<ENERGYTYPE>& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      std::vector<ENERGYTYPE>& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
 
   /**
@@ -773,37 +779,39 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute_spin(ENERGYTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      ENERGYTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute_spin(std::vector<ENERGYTYPE>& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      std::vector<ENERGYTYPE>& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& force_mag,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
@@ -1105,19 +1113,20 @@ class DeepPotModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute_spin(std::vector<ENERGYTYPE>& all_ener,
-               std::vector<std::vector<VALUETYPE> >& all_force,
-               std::vector<std::vector<VALUETYPE> >& all_force_mag,
-               std::vector<std::vector<VALUETYPE> >& all_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      std::vector<ENERGYTYPE>& all_ener,
+      std::vector<std::vector<VALUETYPE> >& all_force,
+      std::vector<std::vector<VALUETYPE> >& all_force_mag,
+      std::vector<std::vector<VALUETYPE> >& all_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using these DP models.
@@ -1189,21 +1198,22 @@ class DeepPotModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute_spin(std::vector<ENERGYTYPE>& all_ener,
-               std::vector<std::vector<VALUETYPE> >& all_force,
-               std::vector<std::vector<VALUETYPE> >& all_force_mag,
-               std::vector<std::vector<VALUETYPE> >& all_virial,
-               std::vector<std::vector<VALUETYPE> >& all_atom_energy,
-               std::vector<std::vector<VALUETYPE> >& all_atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  void compute_spin(
+      std::vector<ENERGYTYPE>& all_ener,
+      std::vector<std::vector<VALUETYPE> >& all_force,
+      std::vector<std::vector<VALUETYPE> >& all_force_mag,
+      std::vector<std::vector<VALUETYPE> >& all_virial,
+      std::vector<std::vector<VALUETYPE> >& all_atom_energy,
+      std::vector<std::vector<VALUETYPE> >& all_atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<VALUETYPE>& spin,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.

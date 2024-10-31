@@ -85,14 +85,12 @@ static const char cite_user_deepmd_package[] =
     "}\n\n";
 
 PairDeepSpin::PairDeepSpin(LAMMPS *lmp)
-    : PairDeepMDBase(lmp, cite_user_deepmd_package)
-{
+    : PairDeepMDBase(lmp, cite_user_deepmd_package) {
   // Constructor body can be empty
 }
 
-
 PairDeepSpin::~PairDeepSpin() {
-  // Ensure base class destructor is called 
+  // Ensure base class destructor is called
 }
 
 void PairDeepSpin::compute(int eflag, int vflag) {
@@ -134,7 +132,9 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       }
     }
   } else {
-    std::cout << "Pair style 'deepspin' only supports spin atoms, please use pair style 'deepmd' instead." << std::endl;
+    std::cout << "Pair style 'deepspin' only supports spin atoms, please use "
+                 "pair style 'deepmd' instead."
+              << std::endl;
   }
 
   vector<int> dtype(nall);
@@ -214,8 +214,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       if (!(eflag_atom || cvflag_atom)) {
         try {
           deep_pot.compute_spin(dener, dforce, dforce_mag, dvirial, dcoord,
-                            dspin, dtype, dbox, nghost, lmp_list, ago,
-                            fparam, daparam);
+                                dspin, dtype, dbox, nghost, lmp_list, ago,
+                                fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -225,9 +225,9 @@ void PairDeepSpin::compute(int eflag, int vflag) {
         vector<double> deatom(nall * 1, 0);
         vector<double> dvatom(nall * 9, 0);
         try {
-          deep_pot.compute_spin(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
-                            dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
-                            fparam, daparam);
+          deep_pot.compute_spin(dener, dforce, dforce_mag, dvirial, deatom,
+                                dvatom, dcoord, dspin, dtype, dbox, nghost,
+                                lmp_list, ago, fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -277,18 +277,18 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       vector<vector<double>> all_atom_virial;
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_pot_model_devi.compute_spin(all_energy, all_force, all_force_mag,
-                                      all_virial, dcoord, dspin, dtype, dbox,
-                                      nghost, lmp_list, ago, fparam, daparam);
+          deep_pot_model_devi.compute_spin(
+              all_energy, all_force, all_force_mag, all_virial, dcoord, dspin,
+              dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
       } else {
         try {
           deep_pot_model_devi.compute_spin(
-              all_energy, all_force, all_force_mag, all_virial,
-              all_atom_energy, all_atom_virial, dcoord, dspin, dtype, dbox,
-              nghost, lmp_list, ago, fparam, daparam);
+              all_energy, all_force, all_force_mag, all_virial, all_atom_energy,
+              all_atom_virial, dcoord, dspin, dtype, dbox, nghost, lmp_list,
+              ago, fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -429,11 +429,10 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           all_fm_min *= force_unit_cvt_factor;
           all_fm_avg *= force_unit_cvt_factor;
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
-              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
-              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
-              << " " << setw(18) << all_f_avg << " " << setw(18) << all_fm_max
-              << " " << setw(18) << all_fm_min << " " << setw(18)
-              << all_fm_avg;
+             << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
+             << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
+             << " " << setw(18) << all_f_avg << " " << setw(18) << all_fm_max
+             << " " << setw(18) << all_fm_min << " " << setw(18) << all_fm_avg;
         }
         if (out_each == 1) {
           // need support for spin atomic force.
@@ -485,8 +484,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
   } else {
     if (numb_models == 1) {
       try {
-        deep_pot.compute_spin(dener, dforce, dforce_mag, dvirial, dcoord,
-                          dspin, dtype, dbox);
+        deep_pot.compute_spin(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
+                              dtype, dbox);
       } catch (deepmd_compat::deepmd_exception &e) {
         error->one(FLERR, e.what());
       }
@@ -501,8 +500,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
       f[ii][dd] += scale[1][1] * dforce[3 * ii + dd] * force_unit_cvt_factor;
-      fm[ii][dd] += scale[1][1] * dforce_mag[3 * ii + dd] /
-                    (hbar / sp[ii][3]) * force_unit_cvt_factor;
+      fm[ii][dd] += scale[1][1] * dforce_mag[3 * ii + dd] / (hbar / sp[ii][3]) *
+                    force_unit_cvt_factor;
     }
   }
 
@@ -532,7 +531,9 @@ int PairDeepSpin::pack_reverse_comm(int n, int first, double *buf) {
   m = 0;
   last = first + n;
   if (!atom->sp_flag) {
-    std::cout << "Pair style 'deepspin' only supports spin atoms, please use pair style 'deepmd' instead." << std::endl;
+    std::cout << "Pair style 'deepspin' only supports spin atoms, please use "
+                 "pair style 'deepmd' instead."
+              << std::endl;
   } else {
     for (i = first; i < last; i++) {
       for (int dd = 0; dd < numb_models; ++dd) {
@@ -555,7 +556,9 @@ void PairDeepSpin::unpack_reverse_comm(int n, int *list, double *buf) {
 
   m = 0;
   if (!atom->sp_flag) {
-    std::cout << "Pair style 'deepspin' only supports spin atoms, please use pair style 'deepmd' instead." << std::endl;
+    std::cout << "Pair style 'deepspin' only supports spin atoms, please use "
+                 "pair style 'deepmd' instead."
+              << std::endl;
   } else {
     for (i = 0; i < n; i++) {
       j = list[i];

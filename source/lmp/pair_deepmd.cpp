@@ -85,13 +85,12 @@ static const char cite_user_deepmd_package[] =
     "}\n\n";
 
 PairDeepMD::PairDeepMD(LAMMPS *lmp)
-    : PairDeepMDBase(lmp, cite_user_deepmd_package)
-{
+    : PairDeepMDBase(lmp, cite_user_deepmd_package) {
   // Constructor body can be empty
 }
 
 PairDeepMD::~PairDeepMD() {
-  // Ensure base class destructor is called 
+  // Ensure base class destructor is called
 }
 
 void PairDeepMD::compute(int eflag, int vflag) {
@@ -125,7 +124,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
   double **sp = atom->sp;
   double **fm = atom->fm;
   if (atom->sp_flag) {
-      std::cout << "Pair style 'deepmd' does not support spin atoms, please use pair style 'deepspin' instead." << std::endl;
+    std::cout << "Pair style 'deepmd' does not support spin atoms, please use "
+                 "pair style 'deepspin' instead."
+              << std::endl;
   }
 
   vector<int> dtype(nall);
@@ -203,12 +204,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
-          try {
-            deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
-                             nghost, lmp_list, ago, fparam, daparam);
-          } catch (deepmd_compat::deepmd_exception &e) {
-            error->one(FLERR, e.what());
-          }
+        try {
+          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
+                           lmp_list, ago, fparam, daparam);
+        } catch (deepmd_compat::deepmd_exception &e) {
+          error->one(FLERR, e.what());
+        }
       }
       // do atomic energy and virial
       else {
@@ -216,8 +217,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         vector<double> dvatom(nall * 9, 0);
         try {
           deep_pot.compute(dener, dforce, dvirial, deatom, dvatom, dcoord,
-                            dtype, dbox, nghost, lmp_list, ago, fparam,
-                            daparam);
+                           dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -267,18 +267,18 @@ void PairDeepMD::compute(int eflag, int vflag) {
       vector<vector<double>> all_atom_virial;
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_pot_model_devi.compute(all_energy, all_force, all_virial,
-                                      dcoord, dtype, dbox, nghost, lmp_list,
-                                      ago, fparam, daparam);
+          deep_pot_model_devi.compute(all_energy, all_force, all_virial, dcoord,
+                                      dtype, dbox, nghost, lmp_list, ago,
+                                      fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
       } else {
         try {
           deep_pot_model_devi.compute(all_energy, all_force, all_virial,
-                                      all_atom_energy, all_atom_virial,
-                                      dcoord, dtype, dbox, nghost, lmp_list,
-                                      ago, fparam, daparam);
+                                      all_atom_energy, all_atom_virial, dcoord,
+                                      dtype, dbox, nghost, lmp_list, ago,
+                                      fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -404,9 +404,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
           all_f_min *= force_unit_cvt_factor;
           all_f_avg *= force_unit_cvt_factor;
           fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
-              << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
-              << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
-              << " " << setw(18) << all_f_avg;
+             << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
+             << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
+             << " " << setw(18) << all_f_avg;
         }
         if (out_each == 1) {
           // need support for spin atomic force.
@@ -474,7 +474,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   }
 
-
   // accumulate energy and virial
   if (eflag) {
     eng_vdwl += scale[1][1] * dener * ener_unit_cvt_factor;
@@ -497,7 +496,9 @@ int PairDeepMD::pack_reverse_comm(int n, int first, double *buf) {
   m = 0;
   last = first + n;
   if (atom->sp_flag) {
-    std::cout << "Pair style 'deepmd' does not support spin atoms, please use pair style 'deepspin' instead." << std::endl;
+    std::cout << "Pair style 'deepmd' does not support spin atoms, please use "
+                 "pair style 'deepspin' instead."
+              << std::endl;
   } else {
     for (i = first; i < last; i++) {
       for (int dd = 0; dd < numb_models; ++dd) {
@@ -517,7 +518,9 @@ void PairDeepMD::unpack_reverse_comm(int n, int *list, double *buf) {
 
   m = 0;
   if (atom->sp_flag) {
-     std::cout << "Pair style 'deepmd' does not support spin atoms, please use pair style 'deepspin' instead." << std::endl;
+    std::cout << "Pair style 'deepmd' does not support spin atoms, please use "
+                 "pair style 'deepspin' instead."
+              << std::endl;
   } else {
     for (i = 0; i < n; i++) {
       j = list[i];

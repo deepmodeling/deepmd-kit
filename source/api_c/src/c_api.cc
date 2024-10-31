@@ -289,8 +289,8 @@ inline void DP_DeepPotCompute_variant_sp(DP_DeepPot* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, fm, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_, atype_,
-                                    cell_, fparam_, aparam_));
+  DP_REQUIRES_OK(dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_,
+                                         atype_, cell_, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -487,7 +487,7 @@ inline void DP_DeepPotComputeNList_variant_sp(DP_DeepPot* dp,
   std::vector<VALUETYPE> f, fm, v, ae, av;
   DP_REQUIRES_OK(
       dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_,
-                         nghost, nlist->nl, ago, fparam_, aparam_));
+                              nghost, nlist->nl, ago, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -893,13 +893,13 @@ void DP_DeepPotModelDeviComputeNList_variant_sp(DP_DeepPotModelDevi* dp,
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, fm, v, ae, av;
   if (atomic_energy || atomic_virial) {
-    DP_REQUIRES_OK(
-        dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_,
-                           nghost, nlist->nl, ago, fparam_, aparam_));
+    DP_REQUIRES_OK(dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_,
+                                           atype_, cell_, nghost, nlist->nl,
+                                           ago, fparam_, aparam_));
   } else {
     DP_REQUIRES_OK(
-        dp, dp->dp.compute_spin(e, f, fm, v, coord_, spin_, atype_, cell_, nghost,
-                           nlist->nl, ago, fparam_, aparam_));
+        dp, dp->dp.compute_spin(e, f, fm, v, coord_, spin_, atype_, cell_,
+                                nghost, nlist->nl, ago, fparam_, aparam_));
   }
   // 2D vector to 2D array, flatten first
   if (energy) {

@@ -103,14 +103,13 @@ class PairDeepMDBase : public Pair {
 
 }  // namespace LAMMPS_NS
 
-
 void make_uniform_aparam(std::vector<double> &daparam,
-                              const std::vector<double> &aparam,
-                              const int &nlocal);
+                         const std::vector<double> &aparam,
+                         const int &nlocal);
 void ana_st(double &max,
-                  double &min,
-                  double &sum,
-                  const std::vector<double> &vec,
-                  const int &nloc);
+            double &min,
+            double &sum,
+            const std::vector<double> &vec,
+            const int &nloc);
 
 #endif

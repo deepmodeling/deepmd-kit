@@ -282,7 +282,7 @@ void PairDeepMDBase::cum_sum(std::map<int, int> &sum, std::map<int, int> &vec) {
   }
 }
 
-PairDeepMDBase::PairDeepMDBase(LAMMPS *lmp, const char* cite_user_package)
+PairDeepMDBase::PairDeepMDBase(LAMMPS *lmp, const char *cite_user_package)
     : Pair(lmp)
 
 {
@@ -838,10 +838,10 @@ void *PairDeepMDBase::extract(const char *str, int &dim) {
 }
 
 void ana_st(double &max,
-                   double &min,
-                   double &sum,
-                   const vector<double> &vec,
-                   const int &nloc) {
+            double &min,
+            double &sum,
+            const vector<double> &vec,
+            const int &nloc) {
   if (nloc == 0) {
     return;
   }
@@ -860,8 +860,8 @@ void ana_st(double &max,
 }
 
 void make_uniform_aparam(vector<double> &daparam,
-                                const vector<double> &aparam,
-                                const int &nlocal) {
+                         const vector<double> &aparam,
+                         const int &nlocal) {
   unsigned dim_aparam = aparam.size();
   daparam.resize(static_cast<size_t>(dim_aparam) * nlocal);
   for (int ii = 0; ii < nlocal; ++ii) {
