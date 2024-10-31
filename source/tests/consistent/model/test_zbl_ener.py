@@ -26,12 +26,14 @@ if INSTALLED_PT:
     from deepmd.pt.model.model.dp_zbl_model import DPZBLModel as DPZBLModelPT
 else:
     DPZBLModelPT = None
+import os
+
 from deepmd.utils.argcheck import (
     model_args,
 )
-import os
 
 TESTS_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
 
 @parameterized(
     (
