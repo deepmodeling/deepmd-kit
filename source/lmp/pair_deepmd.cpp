@@ -199,18 +199,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
         commdata_->recvproc, &world);
-    lmp_list.set_mask(NEIGHMASK);
     deepmd_compat::InputNlist extend_lmp_list;
-    if (atom->sp_flag) {
-      extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
-             extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
-             new_idx_map, old_idx_map, lmp_list, dcoord, dtype, nghost, dspin,
-             numb_types, numb_types_spin, virtual_len);
-      extend_lmp_list =
-          deepmd_compat::InputNlist(extend_inum, &extend_ilist[0],
-                                    &extend_numneigh[0], &extend_firstneigh[0]);
-      extend_lmp_list.set_mask(NEIGHMASK);
-    }
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
