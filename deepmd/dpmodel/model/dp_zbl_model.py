@@ -20,17 +20,17 @@ from .make_model import (
     make_model,
 )
 
-DPEnergyModel_ = make_model(DPZBLLinearEnergyAtomicModel)
+DPZBLEnergyModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 
 @BaseModel.register("zbl")
-class DPZBLModel(DPEnergyModel_):
+class DPZBLModel(DPZBLEnergyModel_):
     def __init__(
         self,
         *args,
         **kwargs,
     ):
-        DPEnergyModel_.__init__(self, *args, **kwargs)
+        DPZBLEnergyModel_.__init__(self, *args, **kwargs)
 
 
 @classmethod

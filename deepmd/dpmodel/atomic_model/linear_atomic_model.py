@@ -323,7 +323,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return False
 
-
+@BaseAtomicModel.register("zbl")
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
