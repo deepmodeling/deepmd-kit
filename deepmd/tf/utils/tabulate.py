@@ -13,9 +13,6 @@ from scipy.special import (
 )
 
 import deepmd
-from deepmd.utils.tabulate import (
-    BaseTabulate,
-)
 from deepmd.tf.common import (
     ACTIVATION_FN_DICT,
 )
@@ -29,6 +26,9 @@ from deepmd.tf.env import (
 from deepmd.tf.utils.graph import (
     get_embedding_net_nodes_from_graph_def,
     get_tensor_by_name_from_graph,
+)
+from deepmd.utils.tabulate import (
+    BaseTabulate,
 )
 
 log = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class DPTabulate(BaseTabulate):
         with tf.Graph().as_default() as sub_graph:
             tf.import_graph_def(sub_graph_def, name="")
         return sub_graph, sub_graph_def
-    
+
     def _get_descrpt_type(self):
         if isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeAtten):
             return "Atten"

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from abc import (
     ABC,
@@ -13,6 +14,7 @@ from scipy.special import (
 )
 
 log = logging.getLogger(__name__)
+
 
 class BaseTabulate(ABC):
     """A base class for pt and tf tabulation."""
@@ -59,7 +61,7 @@ class BaseTabulate(ABC):
 
         self.upper = {}
         self.lower = {}
-    
+
     def build(
         self, min_nbor_dist: float, extrapolate: float, stride0: float, stride1: float
     ) -> tuple[dict[str, int], dict[str, int]]:
@@ -227,7 +229,7 @@ class BaseTabulate(ABC):
         if self.is_pt:
             self._convert_numpy_float_to_int()
         return self.lower, self.upper
-    
+
     def _build_lower(
         self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline
     ):
@@ -254,7 +256,7 @@ class BaseTabulate(ABC):
             tt[: int((upper - lower) / stride0), :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
-        
+
         # hh.shape: [nspline, self.last_layer_size]
         hh = (
             vv[1 : nspline + 1, : self.last_layer_size]
@@ -322,7 +324,7 @@ class BaseTabulate(ABC):
 
         self.upper[net] = upper
         self.lower[net] = lower
-    
+
     @abstractmethod
     def _make_data(self, xx, idx) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generate tabulation data for the given input.
@@ -361,7 +363,7 @@ class BaseTabulate(ABC):
     def _get_descrpt_type(self):
         """Get the descrpt type."""
         pass
-    
+
     @abstractmethod
     def _get_layer_size(self):
         """Get the number of embedding layer."""
@@ -396,7 +398,7 @@ class BaseTabulate(ABC):
             if len(item) != 0:
                 return item.shape[1]
         return 0
-    
+
     @abstractmethod
     def _get_bias(self):
         """Get bias of embedding net."""
@@ -416,7 +418,7 @@ class BaseTabulate(ABC):
         """Convert self.lower and self.upper from np.float32 or np.float64 to int."""
         self.lower = {k: int(v) for k, v in self.lower.items()}
         self.upper = {k: int(v) for k, v in self.upper.items()}
-    
+
     def _get_env_mat_range(self, min_nbor_dist):
         """Change the embedding net range to sw / min_nbor_dist."""
         sw = self._spline5_switch(min_nbor_dist, self.rcut_smth, self.rcut)
@@ -436,7 +438,7 @@ class BaseTabulate(ABC):
         log.info("training data with upper boundary: " + str(upper))
         # returns element-wise lower and upper
         return np.floor(lower), np.ceil(upper)
-    
+
     def _spline5_switch(self, xx, rmin, rmax):
         if xx < rmin:
             vv = 1
@@ -446,4 +448,3 @@ class BaseTabulate(ABC):
         else:
             vv = 0
         return vv
-        

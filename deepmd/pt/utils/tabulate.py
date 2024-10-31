@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from functools import (
     cached_property,
@@ -44,6 +45,7 @@ class DPTabulate(BaseTabulate):
     activation_function
             The activation function in the embedding net. Supported options are {"tanh","gelu"} in common.ActivationFn.
     """
+
     def __init__(
         self,
         descrpt,
@@ -107,7 +109,7 @@ class DPTabulate(BaseTabulate):
 
         self.data_type = self._get_data_type()
         self.last_layer_size = self._get_last_layer_size()
-    
+
     def _make_data(self, xx, idx):
         """Generate tabulation data for the given input.
 
@@ -297,7 +299,7 @@ class DPTabulate(BaseTabulate):
             return "R"
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
             return "T"
-    
+
     def _get_layer_size(self):
         # get the number of layers in EmbeddingNet
         layer_size = 0
@@ -328,7 +330,7 @@ class DPTabulate(BaseTabulate):
         else:
             raise RuntimeError("Unsupported descriptor")
         return layer_size
-    
+
     def _get_bias(self):
         bias = {}
         for layer in range(1, self.layer_size + 1):
@@ -462,11 +464,12 @@ class DPTabulate(BaseTabulate):
         """Convert self.data from np.ndarray to torch.Tensor."""
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii], device=env.DEVICE)  # pylint: disable=no-explicit-dtype
-    
+
     @cached_property
     def _n_all_excluded(self) -> int:
         """Then number of types excluding all types."""
         return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
+
 
 # customized op
 def grad(xbar, y, functype):  # functype=tanh, gelu, ..
