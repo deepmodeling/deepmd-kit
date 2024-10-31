@@ -30,7 +30,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
-    model_type = "ener"
+    model_type = "zbl"
 
     def __init__(
         self,
