@@ -27,6 +27,9 @@ from ..utils.network import (
 from ..utils.type_embed import (
     TypeEmbedNet,
 )
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
 
 class GatedAttentionLayer(GatedAttentionLayerDP):
@@ -72,6 +75,8 @@ class DescrptBlockSeAtten(DescrptBlockSeAttenDP):
         return super().__setattr__(name, value)
 
 
+@BaseDescriptor.register("dpa1")
+@BaseDescriptor.register("se_atten")
 class DescrptDPA1(DescrptDPA1DP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name == "se_atten":

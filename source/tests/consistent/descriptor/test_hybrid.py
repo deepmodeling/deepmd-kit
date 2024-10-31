@@ -12,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -28,6 +30,16 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.hybrid import DescrptHybrid as DescrptHybridTF
 else:
     DescrptHybridTF = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.hybrid import DescrptHybrid as DescrptHybridJAX
+else:
+    DescrptHybridJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.hybrid import (
+        DescrptHybrid as DescrptHybridStrict,
+    )
+else:
+    DescrptHybridStrict = None
 from deepmd.utils.argcheck import (
     descrpt_hybrid_args,
 )
@@ -68,7 +80,12 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptHybridTF
     dp_class = DescrptHybridDP
     pt_class = DescrptHybridPT
+    jax_class = DescrptHybridJAX
+    array_api_strict_class = DescrptHybridStrict
     args = descrpt_hybrid_args()
+
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     def setUp(self):
         CommonTest.setUp(self)
@@ -126,6 +143,24 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
             self.natoms,
             self.coords,
             self.atype,
