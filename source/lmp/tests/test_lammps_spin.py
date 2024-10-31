@@ -139,7 +139,7 @@ def lammps():
 
 
 def test_pair_deepmd(lammps):
-    lammps.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps.pair_style(f"deepspin {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
@@ -152,7 +152,7 @@ def test_pair_deepmd(lammps):
 
 def test_pair_deepmd_model_devi(lammps):
     lammps.pair_style(
-        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
+        f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -176,7 +176,7 @@ def test_pair_deepmd_model_devi(lammps):
 def test_pair_deepmd_model_devi_atomic_relative(lammps):
     relative = 1.0
     lammps.pair_style(
-        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative {relative}"
+        f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative {relative}"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
