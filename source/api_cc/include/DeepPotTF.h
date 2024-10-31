@@ -399,8 +399,8 @@ class DeepPotTF : public DeepPotBase {
 
   template <typename VALUETYPE>
   void extend_nlist(std::vector<VALUETYPE>& extend_dcoord,
-		    std::vector<int>& extend_atype,
-		    const std::vector<VALUETYPE>& dcoord_,
+                    std::vector<int>& extend_atype,
+                    const std::vector<VALUETYPE>& dcoord_,
                     const std::vector<VALUETYPE>& dspin_,
                     const std::vector<int>& datype_);
 

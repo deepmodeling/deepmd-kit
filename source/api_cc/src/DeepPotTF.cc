@@ -714,26 +714,27 @@ void DeepPotTF::compute(ENERGYVTYPE& dener,
   std::vector<VALUETYPE> dforce_tmp;
 
   if (dtype == tensorflow::DT_DOUBLE) {
-    int ret = session_input_tensors<double>(input_tensors, extend_dcoord, ntypes,
-                                            extend_atype, dbox, cell_size, fparam,
-                                            aparam, atommap, "", aparam_nall);
+    int ret = session_input_tensors<double>(
+        input_tensors, extend_dcoord, ntypes, extend_atype, dbox, cell_size,
+        fparam, aparam, atommap, "", aparam_nall);
     if (atomic) {
-      run_model<double>(dener, dforce_tmp, dvirial, datom_energy_, datom_virial_,
-                        session, input_tensors, atommap, nframes);
+      run_model<double>(dener, dforce_tmp, dvirial, datom_energy_,
+                        datom_virial_, session, input_tensors, atommap,
+                        nframes);
     } else {
       run_model<double>(dener, dforce_tmp, dvirial, session, input_tensors,
                         atommap, nframes);
     }
   } else {
-    int ret = session_input_tensors<float>(input_tensors, extend_dcoord, ntypes,
-                                           extend_atype, dbox, cell_size, fparam,
-                                           aparam, atommap, "", aparam_nall);
+    int ret = session_input_tensors<float>(
+        input_tensors, extend_dcoord, ntypes, extend_atype, dbox, cell_size,
+        fparam, aparam, atommap, "", aparam_nall);
     if (atomic) {
       run_model<float>(dener, dforce_tmp, dvirial, datom_energy_, datom_virial_,
                        session, input_tensors, atommap, nframes);
     } else {
-      run_model<float>(dener, dforce_tmp, dvirial, session, input_tensors, atommap,
-                       nframes);
+      run_model<float>(dener, dforce_tmp, dvirial, session, input_tensors,
+                       atommap, nframes);
     }
   }
   // backward force and mag.
@@ -1650,10 +1651,10 @@ template void DeepPotTF::extend<float>(
 
 template <typename VALUETYPE>
 void DeepPotTF::extend_nlist(std::vector<VALUETYPE>& extend_dcoord,
-                        std::vector<int>& extend_atype,
-                        const std::vector<VALUETYPE>& dcoord_,
-                        const std::vector<VALUETYPE>& dspin_,
-                        const std::vector<int>& datype_) {
+                             std::vector<int>& extend_atype,
+                             const std::vector<VALUETYPE>& dcoord_,
+                             const std::vector<VALUETYPE>& dspin_,
+                             const std::vector<int>& datype_) {
   if (dtype == tensorflow::DT_DOUBLE) {
     get_vector<double>(virtual_len, "spin_attr/virtual_len");
     get_vector<double>(spin_norm, "spin_attr/spin_norm");
@@ -1667,19 +1668,26 @@ void DeepPotTF::extend_nlist(std::vector<VALUETYPE>& extend_dcoord,
   int nloc = datype_.size();
   int nloc_spin = 0;
   for (int ii = 0; ii < nloc; ii++) {
-    if (datype_[ii] < ntypes_spin) nloc_spin += 1;
+    if (datype_[ii] < ntypes_spin) {
+      nloc_spin += 1;
+    }
   }
   int extend_nall = nloc + nloc_spin;
   extend_dcoord.resize(static_cast<size_t>(extend_nall) * 3);
   extend_atype.resize(extend_nall);
   for (int ii = 0; ii < nloc; ii++) {
     extend_atype[ii] = datype_[ii];
-    if (datype_[ii] < ntypes_spin)
+    if (datype_[ii] < ntypes_spin) {
       extend_atype[ii + nloc] = datype_[ii] + ntypes - ntypes_spin;
+    }
     for (int jj = 0; jj < 3; jj++) {
       extend_dcoord[ii * 3 + jj] = dcoord_[ii * 3 + jj];
-      if (datype_[ii] < ntypes_spin)
-        extend_dcoord[(ii + nloc) * 3 + jj] = dcoord_[ii * 3 + jj] + dspin_[ii * 3 + jj] / spin_norm[datype_[ii]] * virtual_len[datype_[ii]];
+      if (datype_[ii] < ntypes_spin) {
+        extend_dcoord[(ii + nloc) * 3 + jj] =
+            dcoord_[ii * 3 + jj] + dspin_[ii * 3 + jj] /
+                                       spin_norm[datype_[ii]] *
+                                       virtual_len[datype_[ii]];
+      }
     }
   }
 }
@@ -1691,10 +1699,9 @@ template void DeepPotTF::extend_nlist<double>(
     const std::vector<double>& dspin_,
     const std::vector<int>& datype_);
 
-template void DeepPotTF::extend_nlist<float>(
-    std::vector<float>& extend_dcoord,
-    std::vector<int>& extend_atype,
-    const std::vector<float>& dcoord_,
-    const std::vector<float>& dspin_,
-    const std::vector<int>& datype_);
+template void DeepPotTF::extend_nlist<float>(std::vector<float>& extend_dcoord,
+                                             std::vector<int>& extend_atype,
+                                             const std::vector<float>& dcoord_,
+                                             const std::vector<float>& dspin_,
+                                             const std::vector<int>& datype_);
 #endif
