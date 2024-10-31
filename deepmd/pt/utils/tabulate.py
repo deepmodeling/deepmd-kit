@@ -59,9 +59,9 @@ class DPTabulate(BaseTabulate):
             neuron,
             type_one_side,
             exclude_types,
+            True,
         )
         self.descrpt_type = self._get_descrpt_type()
-        self.is_pt = True
 
         supported_descrpt_type = (
             "Atten",

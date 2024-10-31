@@ -78,10 +78,10 @@ class DPTabulate(BaseTabulate):
             neuron,
             type_one_side,
             exclude_types,
+            False,
         )
 
         self.descrpt_type = self._get_descrpt_type()
-        self.is_pt = False
         """Constructor."""
         self.graph = graph
         self.graph_def = graph_def

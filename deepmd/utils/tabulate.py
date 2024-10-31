@@ -25,6 +25,7 @@ class BaseTabulate(ABC):
         neuron,
         type_one_side,
         exclude_types,
+        is_pt,
     ) -> None:
         """Constructor."""
         super().__init__()
@@ -34,10 +35,10 @@ class BaseTabulate(ABC):
         self.neuron = neuron
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
+        self.is_pt = is_pt
 
         """Need to be initialized in the subclass."""
         self.descrpt_type = "Base"
-        self.is_pt = True
 
         self.sel_a = []
         self.rcut = 0.0
