@@ -216,6 +216,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 ret["energy"].ravel(),
                 SKIP_FLAG,
                 SKIP_FLAG,
+                SKIP_FLAG,
             )
         elif backend is self.RefBackend.PT:
             return (
@@ -223,14 +224,22 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 ret["atom_energy"].ravel(),
                 ret["force"].ravel(),
                 ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
             )
         elif backend is self.RefBackend.TF:
-            return (ret[0].ravel(), ret[1].ravel(), ret[2].ravel(), ret[3].ravel())
+            return (
+                ret[0].ravel(),
+                ret[1].ravel(),
+                ret[2].ravel(),
+                ret[3].ravel(),
+                ret[4].ravel(),
+            )
         elif backend is self.RefBackend.JAX:
             return (
                 ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
                 ret["energy_derv_r"].ravel(),
                 ret["energy_derv_c_redu"].ravel(),
+                ret["energy_derv_c"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")

@@ -51,26 +51,47 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         model_def_script = data["model_def_script"]
         call_lower = model.call_lower
 
-        nf, nloc, nghost, nfp, nap = jax_export.symbolic_shape(
-            "nf, nloc, nghost, nfp, nap"
-        )
-        exported = jax_export.export(jax.jit(call_lower))(
-            jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),  # extended_coord
-            jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),  # extended_atype
-            jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
-            jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),  # mapping
-            jax.ShapeDtypeStruct((nf, nfp), jnp.float64)
-            if model.get_dim_fparam()
-            else None,  # fparam
-            jax.ShapeDtypeStruct((nf, nap), jnp.float64)
-            if model.get_dim_aparam()
-            else None,  # aparam
-            False,  # do_atomic_virial
+        nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
+
+        def exported_whether_do_atomic_virial(do_atomic_virial):
+            def call_lower_with_fixed_do_atmic_virial(
+                coord, atype, nlist, nlist_start, fparam, aparam
+            ):
+                return call_lower(
+                    coord,
+                    atype,
+                    nlist,
+                    nlist_start,
+                    fparam,
+                    aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+
+            return jax_export.export(jax.jit(call_lower_with_fixed_do_atmic_virial))(
+                jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),
+                jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),
+                jax.ShapeDtypeStruct((nf, model.get_numb_fparam()), jnp.float64)
+                if model.get_dim_fparam()
+                else None,
+                jax.ShapeDtypeStruct((nf, nloc, model.get_numb_aparam()), jnp.float64)
+                if model.get_dim_aparam()
+                else None,
+            )
+
+        exported = exported_whether_do_atomic_virial(do_atomic_virial=False)
+        exported_atomic_virial = exported_whether_do_atomic_virial(
+            do_atomic_virial=True
         )
         serialized: bytearray = exported.serialize()
+        serialized_atomic_virial = exported_atomic_virial.serialize()
         data = data.copy()
         data.setdefault("@variables", {})
         data["@variables"]["stablehlo"] = np.void(serialized)
+        data["@variables"]["stablehlo_atomic_virial"] = np.void(
+            serialized_atomic_virial
+        )
         data["constants"] = {
             "type_map": model.get_type_map(),
             "rcut": model.get_rcut(),

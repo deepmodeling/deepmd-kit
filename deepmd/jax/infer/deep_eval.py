@@ -93,6 +93,9 @@ class DeepEval(DeepEvalBackend):
         model_data = load_dp_model(model_file)
         self.dp = HLO(
             stablehlo=model_data["@variables"]["stablehlo"].tobytes(),
+            stablehlo_atomic_virial=model_data["@variables"][
+                "stablehlo_atomic_virial"
+            ].tobytes(),
             model_def_script=model_data["model_def_script"],
             **model_data["constants"],
         )
