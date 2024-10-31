@@ -180,6 +180,7 @@ class DPTabulate(BaseTabulate):
             return "T"
         elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeR):
             return "R"
+        raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
     def _get_bias(self):
         bias = {}

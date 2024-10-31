@@ -299,6 +299,7 @@ class DPTabulate(BaseTabulate):
             return "R"
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeT):
             return "T"
+        raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
 
     def _get_layer_size(self):
         # get the number of layers in EmbeddingNet

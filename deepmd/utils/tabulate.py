@@ -172,6 +172,12 @@ class BaseTabulate(ABC):
             ).astype(int)
             idx = 0
             for ii in range(self.ntypes):
+                if self.is_pt:
+                    uu = np.max(upper[ii])
+                    ll = np.min(lower[ii])
+                else:
+                    ll = lower[ii]
+                    uu = upper[ii]
                 for jj in range(ii, self.ntypes):
                     net = "filter_" + str(ii) + "_net_" + str(jj)
                     self._build_lower(
