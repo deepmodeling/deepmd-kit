@@ -75,7 +75,7 @@ SKIP_FLAG = object()
 class CommonTest(ABC):
     data: ClassVar[dict]
     """Arguments data."""
-    addtional_data: ClassVar[dict] = {}
+    additional_data: ClassVar[dict] = {}
     """Additional data that will not be checked."""
     tf_class: ClassVar[Optional[type]]
     """TensorFlow model class."""
@@ -128,7 +128,7 @@ class CommonTest(ABC):
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
-        return cls(**data, **self.addtional_data)
+        return cls(**data, **self.additional_data)
 
     @abstractmethod
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:

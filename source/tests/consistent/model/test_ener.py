@@ -130,7 +130,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_pt(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
-        return cls(**data, **self.addtional_data)
+        return cls(**data, **self.additional_data)
 
     def setUp(self):
         CommonTest.setUp(self)

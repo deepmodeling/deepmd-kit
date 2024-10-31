@@ -6,14 +6,13 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.model.ener_model import EnergyModel as EnergyModelDP
+from deepmd.dpmodel.model.dp_zbl_model import DPZBLModel as DPZBLModelDP
 from deepmd.dpmodel.model.model import get_model as get_model_dp
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 
 from ..common import (
-    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     SKIP_FLAG,
@@ -26,23 +25,16 @@ from .common import (
 
 if INSTALLED_PT:
     from deepmd.pt.model.model import get_model as get_model_pt
-    from deepmd.pt.model.model.ener_model import EnergyModel as EnergyModelPT
-
+    from deepmd.pt.model.model.dp_zbl_model import DPZBLModel as DPZBLModelPT
 else:
-    EnergyModelPT = None
+    DPZBLModelPT = None
 if INSTALLED_TF:
-    from deepmd.tf.model.ener import EnerModel as EnergyModelTF
+    from deepmd.tf.model.linear import EnerModel as DPZBLModelTF
 else:
-    EnergyModelTF = None
+    DPZBLModelTF = None
 from deepmd.utils.argcheck import (
     model_args,
 )
-
-if INSTALLED_JAX:
-    from deepmd.jax.model.ener_model import EnergyModel as EnergyModelJAX
-    from deepmd.jax.model.model import get_model as get_model_jax
-else:
-    EnergyModelJAX = None
 
 
 @parameterized(
@@ -92,7 +84,6 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     tf_class = EnergyModelTF
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
-    jax_class = EnergyModelJAX
     args = model_args()
 
     def get_reference_backend(self):
@@ -119,7 +110,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_jax(self):
-        return not INSTALLED_JAX
+        return True
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
@@ -128,9 +119,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
-        elif cls is EnergyModelJAX:
-            return get_model_jax(data)
-        return cls(**data, **self.addtional_data)
+        return cls(**data, **self.additional_data)
 
     def setUp(self):
         CommonTest.setUp(self)
