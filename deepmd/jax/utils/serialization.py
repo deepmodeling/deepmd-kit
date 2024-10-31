@@ -54,7 +54,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
 
         def exported_whether_do_atomic_virial(do_atomic_virial):
-            def call_lower_with_fixed_do_atmic_virial(
+            def call_lower_with_fixed_do_atomic_virial(
                 coord, atype, nlist, nlist_start, fparam, aparam
             ):
                 return call_lower(
@@ -67,7 +67,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     do_atomic_virial=do_atomic_virial,
                 )
 
-            return jax_export.export(jax.jit(call_lower_with_fixed_do_atmic_virial))(
+            return jax_export.export(jax.jit(call_lower_with_fixed_do_atomic_virial))(
                 jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),
                 jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),
                 jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),
