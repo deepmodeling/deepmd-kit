@@ -68,16 +68,16 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 )
 
             return jax_export.export(jax.jit(call_lower_with_fixed_do_atomic_virial))(
-                jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),
-                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),
-                jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),
-                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),
-                jax.ShapeDtypeStruct((nf, model.get_numb_fparam()), jnp.float64)
+                jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),  # extended_coord
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),  # extended_atype
+                jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),  # mapping
+                jax.ShapeDtypeStruct((nf, model.get_dim_fparam()), jnp.float64)
                 if model.get_dim_fparam()
-                else None,
-                jax.ShapeDtypeStruct((nf, nloc, model.get_numb_aparam()), jnp.float64)
+                else None,  # fparam
+                jax.ShapeDtypeStruct((nf, nloc, model.get_dim_aparam()), jnp.float64)
                 if model.get_dim_aparam()
-                else None,
+                else None,  # aparam
             )
 
         exported = exported_whether_do_atomic_virial(do_atomic_virial=False)
