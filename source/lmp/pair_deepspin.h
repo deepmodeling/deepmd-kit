@@ -5,12 +5,12 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(deepmd, PairDeepMD)
+PairStyle(deepspin, PairDeepSpin)
 
 #else
 
-#ifndef LMP_PAIR_NNP_H
-#define LMP_PAIR_NNP_H
+#ifndef LMP_PAIR_NNP_SPIN_H
+#define LMP_PAIR_NNP_SPIN_H
 
 #include "pair_base.h"
 #include <fstream>
@@ -21,19 +21,19 @@ PairStyle(deepmd, PairDeepMD)
 #define FLOAT_PREC double
 
 namespace LAMMPS_NS {
-class CommBrickDeepMD : public CommBrick {
-  friend class PairDeepMD;
+class CommBrickDeepSpin : public CommBrick {
+  friend class PairDeepSpin;
 };
-class PairDeepMD : public PairDeepMDBase {
+class PairDeepSpin : public PairDeepMDBase {
  public:
-  PairDeepMD(class LAMMPS *);
-  ~PairDeepMD() override;
+  PairDeepSpin(class LAMMPS *);
+  ~PairDeepSpin() override;
   void compute(int, int) override;
   int pack_reverse_comm(int, int, double *) override;
   void unpack_reverse_comm(int, int *, double *) override;
-
+  
  private:
-  CommBrickDeepMD *commdata_;
+  CommBrickDeepSpin *commdata_;
 };
 
 }  // namespace LAMMPS_NS

@@ -459,7 +459,7 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  void compute_spin(ENERGYTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -470,7 +470,7 @@ class DeepPot {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute(std::vector<ENERGYTYPE>& ener,
+  void compute_spin(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -558,7 +558,7 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  void compute_spin(ENERGYTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -572,7 +572,7 @@ class DeepPot {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute(std::vector<ENERGYTYPE>& ener,
+  void compute_spin(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -660,7 +660,7 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  void compute_spin(ENERGYTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -673,7 +673,7 @@ class DeepPot {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute(std::vector<ENERGYTYPE>& ener,
+  void compute_spin(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -773,7 +773,7 @@ class DeepPot {
    * @{
    **/
   template <typename VALUETYPE>
-  void compute(ENERGYTYPE& ener,
+  void compute_spin(ENERGYTYPE& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -789,7 +789,7 @@ class DeepPot {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   template <typename VALUETYPE>
-  void compute(std::vector<ENERGYTYPE>& ener,
+  void compute_spin(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& force_mag,
                std::vector<VALUETYPE>& virial,
@@ -1105,7 +1105,7 @@ class DeepPotModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<ENERGYTYPE>& all_ener,
+  void compute_spin(std::vector<ENERGYTYPE>& all_ener,
                std::vector<std::vector<VALUETYPE> >& all_force,
                std::vector<std::vector<VALUETYPE> >& all_force_mag,
                std::vector<std::vector<VALUETYPE> >& all_virial,
@@ -1189,7 +1189,7 @@ class DeepPotModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<ENERGYTYPE>& all_ener,
+  void compute_spin(std::vector<ENERGYTYPE>& all_ener,
                std::vector<std::vector<VALUETYPE> >& all_force,
                std::vector<std::vector<VALUETYPE> >& all_force_mag,
                std::vector<std::vector<VALUETYPE> >& all_virial,

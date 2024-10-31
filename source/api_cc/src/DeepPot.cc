@@ -136,7 +136,7 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
 
 // support spin
 template <typename VALUETYPE>
-void DeepPot::compute(ENERGYTYPE& dener,
+void DeepPot::compute_spin(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -155,7 +155,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
 }
 
 template <typename VALUETYPE>
-void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
+void DeepPot::compute_spin(std::vector<ENERGYTYPE>& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -171,7 +171,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                false);
 }
 
-template void DeepPot::compute<double>(ENERGYTYPE& dener,
+template void DeepPot::compute_spin<double>(ENERGYTYPE& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -182,7 +182,7 @@ template void DeepPot::compute<double>(ENERGYTYPE& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam);
 
-template void DeepPot::compute<float>(ENERGYTYPE& dener,
+template void DeepPot::compute_spin<float>(ENERGYTYPE& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -193,7 +193,7 @@ template void DeepPot::compute<float>(ENERGYTYPE& dener,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam);
 
-template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<double>(std::vector<ENERGYTYPE>& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -204,7 +204,7 @@ template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam);
 
-template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<float>(std::vector<ENERGYTYPE>& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -301,7 +301,7 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
 
 // support spin
 template <typename VALUETYPE>
-void DeepPot::compute(ENERGYTYPE& dener,
+void DeepPot::compute_spin(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -323,7 +323,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
 }
 
 template <typename VALUETYPE>
-void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
+void DeepPot::compute_spin(std::vector<ENERGYTYPE>& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -342,7 +342,8 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                ago, fparam_, aparam__, false);
 }
 
-template void DeepPot::compute<double>(ENERGYTYPE& dener,
+// nlist, no atomic : nframe * precision
+template void DeepPot::compute_spin<double>(ENERGYTYPE& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -356,7 +357,7 @@ template void DeepPot::compute<double>(ENERGYTYPE& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam_);
 
-template void DeepPot::compute<float>(ENERGYTYPE& dener,
+template void DeepPot::compute_spin<float>(ENERGYTYPE& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -370,7 +371,7 @@ template void DeepPot::compute<float>(ENERGYTYPE& dener,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam_);
 
-template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<double>(std::vector<ENERGYTYPE>& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -384,7 +385,7 @@ template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam_);
 
-template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<float>(std::vector<ENERGYTYPE>& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -475,7 +476,7 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
 
 // support spin
 template <typename VALUETYPE>
-void DeepPot::compute(ENERGYTYPE& dener,
+void DeepPot::compute_spin(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -494,7 +495,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
   dener = dener_[0];
 }
 template <typename VALUETYPE>
-void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
+void DeepPot::compute_spin(std::vector<ENERGYTYPE>& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -510,7 +511,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                datom_virial_, dcoord_, dspin_, datype_, dbox, fparam_, aparam_,
                true);
 }
-template void DeepPot::compute<double>(ENERGYTYPE& dener,
+template void DeepPot::compute_spin<double>(ENERGYTYPE& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -523,7 +524,7 @@ template void DeepPot::compute<double>(ENERGYTYPE& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam);
 
-template void DeepPot::compute<float>(ENERGYTYPE& dener,
+template void DeepPot::compute_spin<float>(ENERGYTYPE& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -536,7 +537,7 @@ template void DeepPot::compute<float>(ENERGYTYPE& dener,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam);
 
-template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<double>(std::vector<ENERGYTYPE>& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -549,7 +550,7 @@ template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam);
 
-template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<float>(std::vector<ENERGYTYPE>& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -658,7 +659,7 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
 // support spin
 
 template <typename VALUETYPE>
-void DeepPot::compute(ENERGYTYPE& dener,
+void DeepPot::compute_spin(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -680,7 +681,7 @@ void DeepPot::compute(ENERGYTYPE& dener,
   dener = dener_[0];
 }
 template <typename VALUETYPE>
-void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
+void DeepPot::compute_spin(std::vector<ENERGYTYPE>& dener,
                       std::vector<VALUETYPE>& dforce_,
                       std::vector<VALUETYPE>& dforce_mag_,
                       std::vector<VALUETYPE>& dvirial,
@@ -699,8 +700,8 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                datom_virial_, dcoord_, dspin_, datype_, dbox, nghost, lmp_list,
                ago, fparam_, aparam__, true);
 }
-
-template void DeepPot::compute<double>(ENERGYTYPE& dener,
+// nlist, atomic : nframe * precision
+template void DeepPot::compute_spin<double>(ENERGYTYPE& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -716,7 +717,7 @@ template void DeepPot::compute<double>(ENERGYTYPE& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam_);
 
-template void DeepPot::compute<float>(ENERGYTYPE& dener,
+template void DeepPot::compute_spin<float>(ENERGYTYPE& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -732,7 +733,7 @@ template void DeepPot::compute<float>(ENERGYTYPE& dener,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam_);
 
-template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<double>(std::vector<ENERGYTYPE>& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dforce_mag_,
                                        std::vector<double>& dvirial,
@@ -748,7 +749,7 @@ template void DeepPot::compute<double>(std::vector<ENERGYTYPE>& dener,
                                        const std::vector<double>& fparam,
                                        const std::vector<double>& aparam_);
 
-template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
+template void DeepPot::compute_spin<float>(std::vector<ENERGYTYPE>& dener,
                                       std::vector<float>& dforce_,
                                       std::vector<float>& dforce_mag_,
                                       std::vector<float>& dvirial,
@@ -1121,8 +1122,9 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
+// support spin
 template <typename VALUETYPE>
-void DeepPotModelDevi::compute(
+void DeepPotModelDevi::compute_spin(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<VALUETYPE>>& all_force,
     std::vector<std::vector<VALUETYPE>>& all_force_mag,
@@ -1144,13 +1146,14 @@ void DeepPotModelDevi::compute(
   all_force_mag.resize(numb_models);
   all_virial.resize(numb_models);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
-    dps[ii].compute(all_energy[ii], all_force[ii], all_force_mag[ii],
+    dps[ii].compute_spin(all_energy[ii], all_force[ii], all_force_mag[ii],
                     all_virial[ii], dcoord_, dspin_, datype_, dbox, nghost,
                     lmp_list, ago, fparam, aparam_);
   }
 }
 
-template void DeepPotModelDevi::compute<double>(
+// nlist, no atomic: precision
+template void DeepPotModelDevi::compute_spin<double>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<double>>& all_force,
     std::vector<std::vector<double>>& all_force_mag,
@@ -1165,7 +1168,7 @@ template void DeepPotModelDevi::compute<double>(
     const std::vector<double>& fparam,
     const std::vector<double>& aparam);
 
-template void DeepPotModelDevi::compute<float>(
+template void DeepPotModelDevi::compute_spin<float>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<float>>& all_force,
     std::vector<std::vector<float>>& all_force_mag,
@@ -1240,8 +1243,9 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
+// support spin
 template <typename VALUETYPE>
-void DeepPotModelDevi::compute(
+void DeepPotModelDevi::compute_spin(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<VALUETYPE>>& all_force,
     std::vector<std::vector<VALUETYPE>>& all_force_mag,
@@ -1267,14 +1271,15 @@ void DeepPotModelDevi::compute(
   all_atom_energy.resize(numb_models);
   all_atom_virial.resize(numb_models);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
-    dps[ii].compute(all_energy[ii], all_force[ii], all_force_mag[ii],
+    dps[ii].compute_spin(all_energy[ii], all_force[ii], all_force_mag[ii],
                     all_virial[ii], all_atom_energy[ii], all_atom_virial[ii],
                     dcoord_, dspin_, datype_, dbox, nghost, lmp_list, ago,
                     fparam, aparam_);
   }
 }
 
-template void DeepPotModelDevi::compute<double>(
+// nlist, atomic : precision
+template void DeepPotModelDevi::compute_spin<double>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<double>>& all_force,
     std::vector<std::vector<double>>& all_force_mag,
@@ -1291,7 +1296,7 @@ template void DeepPotModelDevi::compute<double>(
     const std::vector<double>& fparam,
     const std::vector<double>& aparam);
 
-template void DeepPotModelDevi::compute<float>(
+template void DeepPotModelDevi::compute_spin<float>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<float>>& all_force,
     std::vector<std::vector<float>>& all_force_mag,
