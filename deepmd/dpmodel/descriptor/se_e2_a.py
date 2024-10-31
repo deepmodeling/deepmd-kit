@@ -281,7 +281,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         raise NotImplementedError
 
@@ -359,7 +359,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         nlist
             The neighbor list. shape: nf x nloc x nnei
         mapping
-            The index mapping from extended to lcoal region. not used by this descriptor.
+            The index mapping from extended to local region. not used by this descriptor.
 
         Returns
         -------
@@ -486,7 +486,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -525,7 +525,7 @@ class DescrptSeAArrayAPI(DescrptSeA):
         nlist
             The neighbor list. shape: nf x nloc x nnei
         mapping
-            The index mapping from extended to lcoal region. not used by this descriptor.
+            The index mapping from extended to local region. not used by this descriptor.
 
         Returns
         -------
@@ -555,7 +555,7 @@ class DescrptSeAArrayAPI(DescrptSeA):
             coord_ext, atype_ext, nlist, self.davg, self.dstd
         )
         nf, nloc, nnei, _ = rr.shape
-        sec = xp.asarray(self.sel_cumsum)
+        sec = self.sel_cumsum
 
         ng = self.neuron[-1]
         gr = xp.zeros([nf * nloc, ng, 4], dtype=self.dstd.dtype)

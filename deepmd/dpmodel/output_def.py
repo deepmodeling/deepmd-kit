@@ -166,7 +166,7 @@ class OutputVariableDef:
     r_differentiable
           If the variable is differentiated with respect to coordinates
           of atoms. Only reducible variable are differentiable.
-          Negative derivative w.r.t. coordinates will be calcualted. (e.g. force)
+          Negative derivative w.r.t. coordinates will be calculated. (e.g. force)
     c_differentiable
           If the variable is differentiated with respect to the
           cell tensor (pbc case). Only reducible variable
@@ -178,7 +178,7 @@ class OutputVariableDef:
     category : int
           The category of the output variable.
     r_hessian : bool
-          If hessian is requred
+          If hessian is required
     magnetic : bool
           If the derivatives of variable have magnetic parts.
     intensive : bool

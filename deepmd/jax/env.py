@@ -8,11 +8,14 @@ import jax.numpy as jnp
 from flax import (
     nnx,
 )
+from jax import export as jax_export
 
 jax.config.update("jax_enable_x64", True)
+# jax.config.update("jax_debug_nans", True)
 
 __all__ = [
     "jax",
     "jnp",
     "nnx",
+    "jax_export",
 ]

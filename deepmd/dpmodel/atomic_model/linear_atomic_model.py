@@ -12,6 +12,9 @@ from deepmd.dpmodel.utils.nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -159,7 +162,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         Parameters
         ----------
         extended_coord
-            coodinates in extended region, (nframes, nall * 3)
+            coordinates in extended region, (nframes, nall * 3)
         extended_atype
             atomic type in extended region, (nframes, nall)
         nlist
@@ -286,7 +289,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
-        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]  # pylint: disable=no-explicit-dtype
+        # the dtype of weights is the interface data type.
+        return [
+            np.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION) / nmodels
+            for _ in range(nmodels)
+        ]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -334,7 +341,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     smin_alpha
-        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor.
+        The short-range tabulated interaction will be switched according to the distance of the nearest neighbor.
         This distance is calculated by softmin.
     """
 

@@ -56,7 +56,7 @@ def build_neighbor_list(
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
-    """Build neightbor list for a single frame. keeps nsel neighbors.
+    """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
@@ -148,7 +148,13 @@ def _trim_mask_distinguish_nlist(
         nlist = nlist[:, :, :nsel]
     else:
         rr = torch.cat(
-            [rr, torch.ones([batch_size, nloc, nsel - nnei], device=rr.device) + rcut],  # pylint: disable=no-explicit-dtype
+            [
+                rr,
+                torch.ones(
+                    [batch_size, nloc, nsel - nnei], device=rr.device, dtype=rr.dtype
+                )
+                + rcut,
+            ],
             dim=-1,
         )
         nlist = torch.cat(
@@ -258,7 +264,7 @@ def build_directional_neighbor_list(
     rr = torch.linalg.norm(diff, dim=-1)
     rr, nlist = torch.sort(rr, dim=-1)
 
-    # We assume that the central and neighbor atoms are diffferent,
+    # We assume that the central and neighbor atoms are different,
     # thus we do not need to exclude self-neighbors.
     # # if central atom has two zero distances, sorting sometimes can not exclude itself
     # rr -= torch.eye(nloc_cntl, nall_neig, dtype=rr.dtype, device=rr.device).unsqueeze(0)
@@ -423,12 +429,15 @@ def extend_coord_with_ghosts(
     extended_atype: torch.Tensor
         extended atom type of shape [-1, nall].
     index_mapping: torch.Tensor
-        maping extended index to the local index
+        mapping extended index to the local index
 
     """
     device = coord.device
     nf, nloc = atype.shape
-    aidx = torch.tile(torch.arange(nloc, device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
+    # int64 for index
+    aidx = torch.tile(
+        torch.arange(nloc, device=device, dtype=torch.int64).unsqueeze(0), [nf, 1]
+    )
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()
@@ -443,13 +452,19 @@ def extend_coord_with_ghosts(
         # nf x 3
         # *2: ghost copies on + and - directions
         # +1: central cell
-        nbuff = torch.ceil(rcut / to_face).to(torch.long)
+        nbuff = torch.ceil(rcut / to_face).to(torch.int64)
         # 3
         nbuff = torch.amax(nbuff, dim=0)  # faster than torch.max
         nbuff_cpu = nbuff.cpu()
-        xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
-        yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
-        zi = torch.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
+        xi = torch.arange(
+            -nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu", dtype=torch.int64
+        )
+        yi = torch.arange(
+            -nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu", dtype=torch.int64
+        )
+        zi = torch.arange(
+            -nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu", dtype=torch.int64
+        )
         eye_3 = torch.eye(3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device="cpu")
         xyz = xi.view(-1, 1, 1, 1) * eye_3[0]
         xyz = xyz + yi.view(1, -1, 1, 1) * eye_3[1]

@@ -65,10 +65,10 @@ void DeepTensorTF::init(const std::string &model,
   }
   if (!model_compatable(model_version)) {
     throw deepmd::deepmd_exception(
-        "incompatable model: version " + model_version +
+        "incompatible model: version " + model_version +
         " in graph, but version " + global_model_version +
         " supported "
-        "See https://deepmd.rtfd.io/compatability/ for details.");
+        "See https://deepmd.rtfd.io/compatibility/ for details.");
   }
   dtype = session_get_dtype(session, "descrpt_attr/rcut");
   if (dtype == tensorflow::DT_DOUBLE) {

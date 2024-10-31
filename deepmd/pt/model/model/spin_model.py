@@ -105,9 +105,9 @@ class SpinModel(torch.nn.Module):
         """
         Split the output both real and virtual atoms, and scale the latter.
         add_mag: whether to add magnetic tensor onto the real tensor.
-            Default: True. e.g. Ture for forces and False for atomic virials on real atoms.
+            Default: True. e.g. True for forces and False for atomic virials on real atoms.
         virtual_scale: whether to scale the magnetic tensor with virtual scale factor.
-            Default: True. e.g. Ture for forces and False for atomic virials on virtual atoms.
+            Default: True. e.g. True for forces and False for atomic virials on virtual atoms.
         """
         nframes, nloc_double = out_tensor.shape[:2]
         nloc = nloc_double // 2
@@ -138,9 +138,9 @@ class SpinModel(torch.nn.Module):
         """
         Split the extended output of both real and virtual atoms with switch, and scale the latter.
         add_mag: whether to add magnetic tensor onto the real tensor.
-            Default: True. e.g. Ture for forces and False for atomic virials on real atoms.
+            Default: True. e.g. True for forces and False for atomic virials on real atoms.
         virtual_scale: whether to scale the magnetic tensor with virtual scale factor.
-            Default: True. e.g. Ture for forces and False for atomic virials on virtual atoms.
+            Default: True. e.g. True for forces and False for atomic virials on virtual atoms.
         """
         nframes, nall_double = extended_out_tensor.shape[:2]
         nall = nall_double // 2

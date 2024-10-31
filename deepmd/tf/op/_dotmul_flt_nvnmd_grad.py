@@ -15,7 +15,7 @@ from deepmd.tf.env import (
 def _DotmulFltNvnmdGrad(op, grad):
     x = op.inputs[0]
     w = op.inputs[1]
-    # calcualte
+    # calculate
     dx = op_module.mul_flt_nvnmd(grad, w)
     dw = op_module.mul_flt_nvnmd(grad, x)
     # add shape for output of matmul_nvnmd

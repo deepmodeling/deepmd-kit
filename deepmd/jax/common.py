@@ -81,3 +81,27 @@ def flax_module(
             return super().__setattr__(name, value)
 
     return FlaxModule
+
+
+class ArrayAPIVariable(nnx.Variable):
+    def __array__(self, *args, **kwargs):
+        return self.value.__array__(*args, **kwargs)
+
+    def __array_namespace__(self, *args, **kwargs):
+        return self.value.__array_namespace__(*args, **kwargs)
+
+    def __dlpack__(self, *args, **kwargs):
+        return self.value.__dlpack__(*args, **kwargs)
+
+    def __dlpack_device__(self, *args, **kwargs):
+        return self.value.__dlpack_device__(*args, **kwargs)
+
+
+def scatter_sum(input, dim, index: jnp.ndarray, src: jnp.ndarray) -> jnp.ndarray:
+    """Reduces all values from the src tensor to the indices specified in the index tensor."""
+    idx = jnp.arange(input.size, dtype=jnp.int64).reshape(input.shape)
+    new_idx = jnp.take_along_axis(idx, index, axis=dim).ravel()
+    shape = input.shape
+    input = input.ravel()
+    input = input.at[new_idx].add(src.ravel())
+    return input.reshape(shape)

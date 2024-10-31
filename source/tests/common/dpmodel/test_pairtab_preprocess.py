@@ -72,7 +72,7 @@ class TestPairTabPreprocessExtrapolate(unittest.TestCase):
         )
 
         # for this test case, the table does not decay to zero at rcut = 0.22,
-        # in the cubic spline code, we use a fixed size grid, if will be a problem if we introduce variable gird size.
+        # in the cubic spline code, we use a fixed size grid, if will be a problem if we introduce variable grid size.
         # we will do post process to overwrite spline coefficient `a3`,`a2`,`a1`,`a0`, to ensure energy decays to `0`.
         np.testing.assert_allclose(
             self.tab3.vdata,

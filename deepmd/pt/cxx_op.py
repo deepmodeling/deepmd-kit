@@ -76,7 +76,7 @@ def load_library(module_name: str) -> bool:
                     "instead."
                 ) from e
             error_message = (
-                "This deepmd-kit package is inconsitent with PyTorch "
+                "This deepmd-kit package is inconsistent with PyTorch "
                 f"Runtime, thus an error is raised when loading {module_name}. "
                 "You need to rebuild deepmd-kit against this PyTorch "
                 "runtime."

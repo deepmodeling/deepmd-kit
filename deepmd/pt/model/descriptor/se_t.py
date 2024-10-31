@@ -222,7 +222,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -444,7 +444,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -522,8 +522,8 @@ class DescrptBlockSeT(DescriptorBlock):
             Random seed for initializing the network parameters.
         """
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.set_davg_zero = set_davg_zero
@@ -611,11 +611,11 @@ class DescrptBlockSeT(DescriptorBlock):
         return self.dim_in
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -688,8 +688,12 @@ class DescrptBlockSeT(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+            self.mean.copy_(
+                torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
+            )
+        self.stddev.copy_(
+            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""

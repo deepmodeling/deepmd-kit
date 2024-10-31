@@ -63,7 +63,7 @@ int session_get_dtype(tensorflow::Session* session,
  * @param[in] aparam_ Atom parameters.
  * @param[in] atommap Atom map.
  * @param[in] scope The scope of the tensors.
- * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * @param[in] aparam_nall Whether the atomic dimension of atomic parameters is
  * nall.
  */
 template <typename MODELTYPE, typename VALUETYPE>
@@ -93,7 +93,7 @@ int session_input_tensors(
  * @param[in] nghost Number of ghost atoms.
  * @param[in] ago Update the internal neighbour list if ago is 0.
  * @param[in] scope The scope of the tensors.
- * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * @param[in] aparam_nall Whether the atomic dimension of atomic parameters is
  * nall.
  */
 template <typename MODELTYPE, typename VALUETYPE>
@@ -126,7 +126,7 @@ int session_input_tensors(
  * @param[in] nghost Number of ghost atoms.
  * @param[in] ago Update the internal neighbour list if ago is 0.
  * @param[in] scope The scope of the tensors.
- * @param[in] aparam_nall Whether the atomic dimesion of atomic parameters is
+ * @param[in] aparam_nall Whether the atomic dimension of atomic parameters is
  * nall.
  */
 template <typename MODELTYPE, typename VALUETYPE>

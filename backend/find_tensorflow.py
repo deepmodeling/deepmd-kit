@@ -85,14 +85,14 @@ def find_tensorflow() -> tuple[Optional[str], list[str]]:
         if os.environ.get("CIBUILDWHEEL", "0") == "1":
             cuda_version = os.environ.get("CUDA_VERSION", "12.2")
             if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
-                # CUDA 12.2
+                # CUDA 12.2, cudnn 9
                 requires.extend(
                     [
-                        "tensorflow-cpu>=2.15.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
+                        "tensorflow-cpu>=2.18.0rc0; platform_machine=='x86_64' and platform_system == 'Linux'",
                     ]
                 )
             elif cuda_version in SpecifierSet(">=11,<12"):
-                # CUDA 11.8
+                # CUDA 11.8, cudnn 8
                 requires.extend(
                     [
                         "tensorflow-cpu>=2.5.0rc0,<2.15; platform_machine=='x86_64' and platform_system == 'Linux'",

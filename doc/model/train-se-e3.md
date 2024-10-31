@@ -48,7 +48,7 @@ A complete training input script of this example can be found in the directory
 $deepmd_source_dir/examples/water/se_e3/input.json
 ```
 
-The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md). The only difference lies in the `descriptor <model/descriptor>` section
+The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.md). The only difference lies in the `descriptor <model[standard]/descriptor>` section
 
 ```json
 	"descriptor": {
@@ -63,4 +63,4 @@ The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.m
 	},
 ```
 
-The type of the descriptor is set by the key {ref}`type <model/descriptor/type>`.
+The type of the descriptor is set by the key {ref}`type <model[standard]/descriptor/type>`.

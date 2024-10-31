@@ -14,9 +14,11 @@ import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+    PRECISION_DICT,
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -26,6 +28,9 @@ from deepmd.dpmodel.utils import (
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
@@ -51,7 +56,7 @@ class GeneralFitting(NativeOP, BaseFitting):
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     bias_atom_e
-            Average enery per atom for each element.
+            Average energy per atom for each element.
     resnet_dt
             Time-step `dt` in the resnet construction:
             :math:`y = x + dt * \phi (Wx + b)`
@@ -83,9 +88,9 @@ class GeneralFitting(NativeOP, BaseFitting):
     exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
     remove_vaccum_contribution: list[bool], optional
-        Remove vaccum contribution before the bias is added. The list assigned each
+        Remove vacuum contribution before the bias is added. The list assigned each
         type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
-        length as `ntypes` signaling if or not removing the vaccum contribution for the atom types in the list.
+        length as `ntypes` signaling if or not removing the vacuum contribution for the atom types in the list.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     seed: Optional[Union[int, list[int]]]
@@ -133,6 +138,11 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.trainable = [self.trainable] * (len(self.neuron) + 1)
         self.activation_function = activation_function
         self.precision = precision
+        if self.precision.lower() not in PRECISION_DICT:
+            raise ValueError(
+                f"Unsupported precision '{self.precision}'. Supported options are: {list(PRECISION_DICT.keys())}"
+            )
+        self.prec = PRECISION_DICT[self.precision.lower()]
         self.layer_name = layer_name
         self.use_aparam_as_mask = use_aparam_as_mask
         self.spin = spin
@@ -146,22 +156,28 @@ class GeneralFitting(NativeOP, BaseFitting):
         net_dim_out = self._net_out_dim()
         # init constants
         if bias_atom_e is None:
-            self.bias_atom_e = np.zeros([self.ntypes, net_dim_out])  # pylint: disable=no-explicit-dtype
+            self.bias_atom_e = np.zeros(
+                [self.ntypes, net_dim_out], dtype=GLOBAL_NP_FLOAT_PRECISION
+            )
         else:
             assert bias_atom_e.shape == (self.ntypes, net_dim_out)
-            self.bias_atom_e = bias_atom_e
+            self.bias_atom_e = bias_atom_e.astype(GLOBAL_NP_FLOAT_PRECISION)
         if self.numb_fparam > 0:
-            self.fparam_avg = np.zeros(self.numb_fparam)  # pylint: disable=no-explicit-dtype
-            self.fparam_inv_std = np.ones(self.numb_fparam)  # pylint: disable=no-explicit-dtype
+            self.fparam_avg = np.zeros(self.numb_fparam, dtype=self.prec)
+            self.fparam_inv_std = np.ones(self.numb_fparam, dtype=self.prec)
         else:
             self.fparam_avg, self.fparam_inv_std = None, None
         if self.numb_aparam > 0:
-            self.aparam_avg = np.zeros(self.numb_aparam)  # pylint: disable=no-explicit-dtype
-            self.aparam_inv_std = np.ones(self.numb_aparam)  # pylint: disable=no-explicit-dtype
+            self.aparam_avg = np.zeros(self.numb_aparam, dtype=self.prec)
+            self.aparam_inv_std = np.ones(self.numb_aparam, dtype=self.prec)
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
         # init networks
-        in_dim = self.dim_descrpt + self.numb_fparam + self.numb_aparam
+        in_dim = (
+            self.dim_descrpt
+            + self.numb_fparam
+            + (0 if self.use_aparam_as_mask else self.numb_aparam)
+        )
         self.nets = NetworkCollection(
             1 if not self.mixed_types else 0,
             self.ntypes,
@@ -359,10 +375,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         xx = descriptor
         if self.remove_vaccum_contribution is not None:
-            # TODO: comput the input for vaccum when setting remove_vaccum_contribution
-            # Idealy, the input for vaccum should be computed;
+            # TODO: comput the input for vacuum when setting remove_vaccum_contribution
+            # Ideally, the input for vacuum should be computed;
             # we consider it as always zero for convenience.
-            # Needs a compute_input_stats for vaccum passed from the
+            # Needs a compute_input_stats for vacuum passed from the
             # descriptor.
             xx_zeros = xp.zeros_like(xx)
         else:
@@ -389,7 +405,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     axis=-1,
                 )
         # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0:
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
             if aparam.shape[-1] != self.numb_aparam:
                 raise ValueError(
@@ -408,9 +424,11 @@ class GeneralFitting(NativeOP, BaseFitting):
                     axis=-1,
                 )
 
-        # calcualte the prediction
+        # calculate the prediction
         if not self.mixed_types:
-            outs = xp.zeros([nf, nloc, net_dim_out])  # pylint: disable=no-explicit-dtype
+            outs = xp.zeros(
+                [nf, nloc, net_dim_out], dtype=get_xp_precision(xp, self.precision)
+            )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
                     xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
@@ -436,4 +454,4 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
         outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
-        return {self.var_name: outs}
+        return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}

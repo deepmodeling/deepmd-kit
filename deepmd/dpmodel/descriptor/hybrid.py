@@ -63,7 +63,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         for ii in range(1, self.numb_descrpt):
             assert (
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
-            ), f"number of atom types in {ii}th descrptor {self.descrpt_list[0].__class__.__name__} does not match others"
+            ), f"number of atom types in {ii}th descriptor {self.descrpt_list[0].__class__.__name__} does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         hybrid_sel = self.get_sel()
         self.nlist_cut_idx: list[np.ndarray] = []
@@ -161,7 +161,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         raise NotImplementedError
 
@@ -284,7 +284,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

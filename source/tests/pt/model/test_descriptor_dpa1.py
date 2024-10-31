@@ -245,13 +245,15 @@ class TestDPA1(unittest.TestCase):
         des = DescrptBlockSeAtten(
             **dparams,
         ).to(env.DEVICE)
-        des.load_state_dict(torch.load(self.file_model_param))
+        des.load_state_dict(torch.load(self.file_model_param, weights_only=True))
         coord = self.coord
         atype = self.atype
         box = self.cell
-        # handel type_embedding
+        # handle type_embedding
         type_embedding = TypeEmbedNet(ntypes, 8, use_tebd_bias=True).to(env.DEVICE)
-        type_embedding.load_state_dict(torch.load(self.file_type_embed))
+        type_embedding.load_state_dict(
+            torch.load(self.file_type_embed, weights_only=True)
+        )
 
         ## to save model parameters
         # torch.save(des.state_dict(), 'model_weights.pth')
@@ -299,8 +301,8 @@ class TestDPA1(unittest.TestCase):
             **dparams,
         ).to(env.DEVICE)
         target_dict = des.state_dict()
-        source_dict = torch.load(self.file_model_param)
-        type_embd_dict = torch.load(self.file_type_embed)
+        source_dict = torch.load(self.file_model_param, weights_only=True)
+        type_embd_dict = torch.load(self.file_type_embed, weights_only=True)
         target_dict = translate_se_atten_and_type_embd_dicts_to_dpa1(
             target_dict,
             source_dict,

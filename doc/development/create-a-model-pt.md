@@ -6,7 +6,7 @@
 In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
 :::
 
-If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
+If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainer, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
 
@@ -136,6 +136,15 @@ class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
     def forward_atomic(self):
         pass
 ```
+
+### Floating-point precision
+
+When creating a new component, the floating-point precision should obey the [Floating-point precision of the model](../model/precision.md) section.
+In implementation, the component should
+
+- store parameters in the component precision, except those for output normalization;
+- store output normalization parameters in {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`;
+- before input normalization, cast the input tensor to the component precision; before output normalization, cast the output tensor to the {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`.
 
 ## Register new arguments
 

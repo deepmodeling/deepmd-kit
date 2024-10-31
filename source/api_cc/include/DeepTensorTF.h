@@ -39,7 +39,8 @@ class DeepTensorTF : public DeepTensorBase {
  private:
   /**
    * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
+   * @param[out] value The value to evaluate, usually would be the atomic
+   *tensor.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
@@ -52,7 +53,8 @@ class DeepTensorTF : public DeepTensorBase {
                const std::vector<VALUETYPE>& box);
   /**
    * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
+   * @param[out] value The value to evaluate, usually would be the atomic
+   *tensor.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
@@ -69,7 +71,7 @@ class DeepTensorTF : public DeepTensorBase {
                const InputNlist& inlist);
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -94,7 +96,7 @@ class DeepTensorTF : public DeepTensorBase {
                const std::vector<VALUETYPE>& box);
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -163,7 +165,7 @@ class DeepTensorTF : public DeepTensorBase {
 
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -201,7 +203,7 @@ class DeepTensorTF : public DeepTensorBase {
   /** @} */
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size

@@ -90,7 +90,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.rcuts = torch.tensor(
             self.get_model_rcuts(), dtype=torch.float64, device=env.DEVICE
         )
-        self.nsels = torch.tensor(self.get_model_nsels(), device=env.DEVICE)  # pylint: disable=no-explicit-dtype
+        self.nsels = torch.tensor(
+            self.get_model_nsels(), device=env.DEVICE, dtype=torch.int32
+        )
 
         if isinstance(weights, str):
             assert weights in ["sum", "mean"]
@@ -197,7 +199,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         Parameters
         ----------
         extended_coord
-            coodinates in extended region, (nframes, nall * 3)
+            coordinates in extended region, (nframes, nall * 3)
         extended_atype
             atomic type in extended region, (nframes, nall)
         nlist
@@ -299,8 +301,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         type_2_idx = {atp: idx for idx, atp in enumerate(ori_map)}
         # this maps the atype in the new map to the original map
-        mapping = torch.tensor(  # pylint: disable=no-explicit-dtype
-            [type_2_idx[new_map[idx]] for idx in range(len(new_map))], device=env.DEVICE
+        # int32 should be enough for number of atom types.
+        mapping = torch.tensor(
+            [type_2_idx[new_map[idx]] for idx in range(len(new_map))],
+            device=env.DEVICE,
+            dtype=torch.int32,
         )
         return mapping
 
@@ -484,7 +489,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     smin_alpha
-        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor.
+        The short-range tabulated interaction will be switched according to the distance of the nearest neighbor.
         This distance is calculated by softmin.
     """
 

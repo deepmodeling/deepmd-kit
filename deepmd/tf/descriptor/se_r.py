@@ -149,7 +149,7 @@ class DescrptSeR(DescrptSe):
         # descrpt config
         self.sel_a = [0 for ii in range(len(self.sel_r))]
         self.ntypes = len(self.sel_r)
-        # numb of neighbors and numb of descrptors
+        # numb of neighbors and numb of descriptors
         self.nnei_a = np.cumsum(self.sel_a)[-1]
         self.nnei_r = np.cumsum(self.sel_r)[-1]
         self.nnei = self.nnei_a + self.nnei_r
@@ -325,7 +325,7 @@ class DescrptSeR(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------

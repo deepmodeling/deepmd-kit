@@ -19,7 +19,7 @@ import sys
 if sys.version_info[0] < 3:  # noqa: UP036
     raise Exception("Python 3 or a more recent version is required.")
 
-# The script should only rely on the stardard Python libraries.
+# The script should only rely on the standard Python libraries.
 
 import argparse
 import hashlib
@@ -333,7 +333,7 @@ def copytree2(src: Path, dst: Path, *args, **kwargs):
         call(
             [
                 "/bin/cp",
-                # archieve, recursive, force, do not create one inside
+                # achieve, recursive, force, do not create one inside
                 # https://stackoverflow.com/a/24486142/9567349
                 "-arfT",
                 str(tmpdst),
@@ -386,7 +386,7 @@ def call(commands: list[str], env={}, **kwargs):
 
 # online resources to download
 RESOURCES = {
-    # bazelisk is used to warpper bazel
+    # bazelisk is used to wrapper bazel
     "bazelisk-1.11.0": OnlineResource(
         "bazel-linux-amd64-1.11.0",
         "https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64",

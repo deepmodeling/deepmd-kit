@@ -29,7 +29,7 @@ void prod_force_a_cpu(FPTYPE* force,
 /**
  * @brief Produce force from net_deriv and in_deriv.
  * @details This function is used for multi-threading. Only part of atoms
- *         are computed in this thread. They will be comptued in parallel.
+ *         are computed in this thread. They will be computed in parallel.
  *
  * @tparam FPTYPE float or double
  * @param[out] force Atomic forces.

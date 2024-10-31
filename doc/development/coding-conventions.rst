@@ -72,7 +72,7 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 
      f"something {'this' if x else 'that'}"
 
-* Use f-strings ``s = f"{x:.2f}"`` instead of old style formating with ``"%f" % x``.
+* Use f-strings ``s = f"{x:.2f}"`` instead of old style formatting with ``"%f" % x``.
   string format method ``"{x:.2f}".format()`` may be used sparsely where it is more
   convenient than f-strings.
 
