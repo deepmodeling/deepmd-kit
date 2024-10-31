@@ -63,7 +63,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 "sel": 40,
                 "rcut_smth": 0.5,
                 "rcut": 4.0,
-                "neuron": [3,6],
+                "neuron": [3, 6],
                 "axis_neuron": 2,
                 "attn": 8,
                 "attn_layer": 2,
@@ -78,7 +78,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 "seed": 1,
             },
             "fitting_net": {
-                "neuron": [5,5],
+                "neuron": [5, 5],
                 "resnet_dt": True,
                 "seed": 1,
             },
