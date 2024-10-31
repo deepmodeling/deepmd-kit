@@ -1,20 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import Optional
+from typing import (
+    Optional,
+)
+
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
-from deepmd.dpmodel.model.dp_model import DPModelCommon
-
-from .make_model import (
-    make_model,
+from deepmd.dpmodel.model.dp_model import (
+    DPModelCommon,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from .make_model import (
+    make_model,
+)
 
 DPEnergyModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
@@ -27,6 +31,7 @@ class DPZBLModel(DPEnergyModel_):
         **kwargs,
     ):
         DPEnergyModel_.__init__(self, *args, **kwargs)
+
 
 @classmethod
 def update_sel(

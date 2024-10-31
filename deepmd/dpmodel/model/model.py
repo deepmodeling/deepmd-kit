@@ -1,4 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+    PairTabAtomicModel,
+)
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -7,6 +13,9 @@ from deepmd.dpmodel.fitting.ener_fitting import (
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
+)
+from deepmd.dpmodel.model.dp_zbl_model import (
+    DPZBLModel,
 )
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
@@ -17,9 +26,6 @@ from deepmd.dpmodel.model.spin_model import (
 from deepmd.utils.spin import (
     Spin,
 )
-from deepmd.dpmodel.atomic_model.pairtab_atomic_model import PairTabAtomicModel
-from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel
-from deepmd.dpmodel.model.dp_zbl_model import DPZBLModel
 
 
 def get_standard_model(data: dict) -> EnergyModel:
@@ -57,6 +63,7 @@ def get_standard_model(data: dict) -> EnergyModel:
         pair_exclude_types=data.get("pair_exclude_types", []),
     )
 
+
 def get_zbl_model(data: dict):
     descriptor = DescrptSeA(**data["descriptor"])
     fitting_type = data["fitting_net"].pop("type")
@@ -69,7 +76,7 @@ def get_zbl_model(data: dict):
         )
     else:
         raise ValueError(f"Unknown fitting type {fitting_type}")
-    
+
     dp_model = DPAtomicModel(descriptor, fitting, type_map=data["type_map"])
     # pairtab
     filepath = data["use_srtab"]
@@ -93,6 +100,7 @@ def get_zbl_model(data: dict):
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+
 
 def get_spin_model(data: dict) -> SpinModel:
     """Get a spin model from a dictionary.
