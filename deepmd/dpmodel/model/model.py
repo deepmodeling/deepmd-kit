@@ -5,14 +5,14 @@ from deepmd.dpmodel.atomic_model.dp_atomic_model import (
 from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
     PairTabAtomicModel,
 )
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
 )
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
-)
-from deepmd.dpmodel.descriptor.base_descriptor import (
-    BaseDescriptor,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
