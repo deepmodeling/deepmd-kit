@@ -11,6 +11,9 @@ from deepmd.dpmodel.descriptor.se_e2_a import (
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
 )
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -65,7 +68,7 @@ def get_standard_model(data: dict) -> EnergyModel:
 
 
 def get_zbl_model(data: dict):
-    descriptor = DescrptSeA(**data["descriptor"])
+    descriptor = BaseDescriptor(**data["descriptor"])
     fitting_type = data["fitting_net"].pop("type")
     if fitting_type == "ener":
         fitting = EnergyFittingNet(
