@@ -13,7 +13,6 @@ from deepmd.env import (
 
 from ..common import (
     INSTALLED_PT,
-    INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
     parameterized,
@@ -27,14 +26,12 @@ if INSTALLED_PT:
     from deepmd.pt.model.model.dp_zbl_model import DPZBLModel as DPZBLModelPT
 else:
     DPZBLModelPT = None
-if INSTALLED_TF:
-    from deepmd.tf.model.linear import EnerModel as DPZBLModelTF
-else:
-    DPZBLModelTF = None
 from deepmd.utils.argcheck import (
     model_args,
 )
+import os
 
+TESTS_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 @parameterized(
     (
@@ -52,6 +49,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         pair_exclude_types, atom_exclude_types = self.param
         return {
             "type_map": ["O", "H"],
+            "use_srtab": f"{TESTS_DIR}/pt/water/data/zbl_tab_potential/H2O_tab_potential.txt",
             "pair_exclude_types": pair_exclude_types,
             "atom_exclude_types": atom_exclude_types,
             "descriptor": {
@@ -80,9 +78,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             },
         }
 
-    tf_class = EnergyModelTF
-    dp_class = EnergyModelDP
-    pt_class = EnergyModelPT
+    dp_class = DPZBLModelDP
+    pt_class = DPZBLModelPT
     args = model_args()
 
     def get_reference_backend(self):
@@ -102,10 +99,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return (
-            self.data["pair_exclude_types"] != []
-            or self.data["atom_exclude_types"] != []
-        )
+        return True
 
     @property
     def skip_jax(self):
@@ -114,9 +108,9 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
         data = data.copy()
-        if cls is EnergyModelDP:
+        if cls is DPZBLModelDP:
             return get_model_dp(data)
-        elif cls is EnergyModelPT:
+        elif cls is DPZBLModelPT:
             return get_model_pt(data)
         return cls(**data, **self.additional_data)
 
