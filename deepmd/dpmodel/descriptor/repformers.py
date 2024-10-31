@@ -5,11 +5,15 @@ from typing import (
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     EnvMat,
@@ -360,8 +364,9 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         atype_embd_ext: Optional[np.ndarray] = None,
         mapping: Optional[np.ndarray] = None,
     ):
+        xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
-        nlist = np.where(exclude_mask, nlist, -1)
+        nlist = xp.where(exclude_mask, nlist, -1)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
             coord_ext, atype_ext, nlist, self.mean, self.stddev
@@ -371,7 +376,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         nlist_mask = nlist != -1
         # nf x nloc x nnei
         sw = sw.reshape(nf, nloc, nnei)
-        sw = np.where(nlist_mask, sw, 0.0)
+        sw = xp.where(nlist_mask, sw, 0.0)
         # nf x nloc x tebd_dim
         atype_embd = atype_embd_ext[:, :nloc, :]
         assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
@@ -379,22 +384,22 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1 = self.act(atype_embd)
         # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
         if not self.direct_dist:
-            g2, h2 = np.split(dmatrix, [1], axis=-1)
+            g2, h2 = xp.split(dmatrix, [1], axis=-1)
         else:
-            g2, h2 = np.linalg.norm(diff, axis=-1, keepdims=True), diff
+            g2, h2 = xp.linalg.norm(diff, axis=-1, keepdims=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nf x nloc x nnei x ng2
         g2 = self.act(self.g2_embd(g2))
         # set all padding positions to index of 0
         # if a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
+        nlist = xp.where(nlist == -1, xp.zeros_like(nlist), nlist)
         # nf x nall x ng1
-        mapping = np.tile(mapping.reshape(nf, -1, 1), (1, 1, self.g1_dim))
+        mapping = xp.tile(mapping.reshape(nf, -1, 1), (1, 1, self.g1_dim))
         for idx, ll in enumerate(self.layers):
             # g1:     nf x nloc x ng1
             # g1_ext: nf x nall x ng1
-            g1_ext = np.take_along_axis(g1, mapping, axis=1)
+            g1_ext = xp.take_along_axis(g1, mapping, axis=1)
             g1, g2, h2 = ll.call(
                 g1_ext,
                 g2,
@@ -415,7 +420,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             use_sqrt_nnei=self.use_sqrt_nnei,
         )
         # (nf x nloc) x ng2 x 3
-        rot_mat = np.transpose(h2g2, (0, 1, 3, 2))
+        rot_mat = xp.transpose(h2g2, (0, 1, 3, 2))
         return g1, g2, h2, rot_mat.reshape(nf, nloc, self.dim_emb, 3), sw
 
     def has_message_passing(self) -> bool:
@@ -425,6 +430,72 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return False
+
+    @classmethod
+    def deserialize(cls, data):
+        """Deserialize the descriptor block."""
+        data = data.copy()
+        g2_embd = NativeLayer.deserialize(data.pop("g2_embd"))
+        layers = [RepformerLayer.deserialize(dd) for dd in data.pop("repformer_layers")]
+        env_mat = EnvMat.deserialize(data.pop("env_mat"))
+        variables = data.pop("@variables")
+        davg = variables["davg"]
+        dstd = variables["dstd"]
+        obj = cls(**data)
+        obj.g2_embd = g2_embd
+        obj.layers = layers
+        obj.env_mat = env_mat
+        obj.mean = davg
+        obj.stddev = dstd
+        return obj
+
+    def serialize(self):
+        """Serialize the descriptor block."""
+        return {
+            "rcut": self.rcut,
+            "rcut_smth": self.rcut_smth,
+            "sel": self.sel,
+            "ntypes": self.ntypes,
+            "nlayers": self.nlayers,
+            "g1_dim": self.g1_dim,
+            "g2_dim": self.g2_dim,
+            "axis_neuron": self.axis_neuron,
+            "direct_dist": self.direct_dist,
+            "update_g1_has_conv": self.update_g1_has_conv,
+            "update_g1_has_drrd": self.update_g1_has_drrd,
+            "update_g1_has_grrg": self.update_g1_has_grrg,
+            "update_g1_has_attn": self.update_g1_has_attn,
+            "update_g2_has_g1g1": self.update_g2_has_g1g1,
+            "update_g2_has_attn": self.update_g2_has_attn,
+            "update_h2": self.update_h2,
+            "attn1_hidden": self.attn1_hidden,
+            "attn1_nhead": self.attn1_nhead,
+            "attn2_hidden": self.attn2_hidden,
+            "attn2_nhead": self.attn2_nhead,
+            "attn2_has_gate": self.attn2_has_gate,
+            "activation_function": self.activation_function,
+            "update_style": self.update_style,
+            "update_residual": self.update_residual,
+            "update_residual_init": self.update_residual_init,
+            "set_davg_zero": self.set_davg_zero,
+            "smooth": self.smooth,
+            "exclude_types": self.exclude_types,
+            "env_protection": self.env_protection,
+            "precision": self.precision,
+            "trainable_ln": self.trainable_ln,
+            "use_sqrt_nnei": self.use_sqrt_nnei,
+            "g1_out_conv": self.g1_out_conv,
+            "g1_out_mlp": self.g1_out_mlp,
+            "ln_eps": self.ln_eps,
+            # variables
+            "g2_embd": self.g2_embd.serialize(),
+            "repformer_layers": [layer.serialize() for layer in self.layers],
+            "env_mat": EnvMat(self.rcut, self.rcut_smth).serialize(),
+            "@variables": {
+                "davg": to_numpy_array(self["davg"]),
+                "dstd": to_numpy_array(self["dstd"]),
+            },
+        }
 
 
 # translated by GPT and modified
@@ -487,14 +558,15 @@ def _make_nei_g1(
     gg1: np.ndarray
         Neighbor-wise atomic invariant rep, with shape [nf, nloc, nnei, ng1].
     """
+    xp = array_api_compat.array_namespace(g1_ext, nlist)
     # nlist: nf x nloc x nnei
     nf, nloc, nnei = nlist.shape
     # g1_ext: nf x nall x ng1
     ng1 = g1_ext.shape[-1]
     # index: nf x (nloc x nnei) x ng1
-    index = np.tile(nlist.reshape(nf, nloc * nnei, 1), (1, 1, ng1))
+    index = xp.tile(nlist.reshape(nf, nloc * nnei, 1), (1, 1, ng1))
     # gg1  : nf x (nloc x nnei) x ng1
-    gg1 = np.take_along_axis(g1_ext, index, axis=1)
+    gg1 = xp.take_along_axis(g1_ext, index, axis=1)
     # gg1  : nf x nloc x nnei x ng1
     gg1 = gg1.reshape(nf, nloc, nnei, ng1)
     return gg1
@@ -514,7 +586,8 @@ def _apply_nlist_mask(
     nlist_mask
         Neighbor list mask, where zero means no neighbor, with shape [nf, nloc, nnei].
     """
-    masked_gg = np.where(nlist_mask[:, :, :, None], gg, 0.0)
+    xp = array_api_compat.array_namespace(gg, nlist_mask)
+    masked_gg = xp.where(nlist_mask[:, :, :, None], gg, 0.0)
     return masked_gg
 
 
@@ -570,6 +643,7 @@ def _cal_hg(
     hg
         The transposed rotation matrix, with shape [nf, nloc, 3, ng].
     """
+    xp = array_api_compat.array_namespace(g, h, nlist_mask, sw)
     # g: nf x nloc x nnei x ng
     # h: nf x nloc x nnei x 3
     # msk: nf x nloc x nnei
@@ -580,21 +654,21 @@ def _cal_hg(
     if not smooth:
         # nf x nloc
         if not use_sqrt_nnei:
-            invnnei = 1.0 / (epsilon + np.sum(nlist_mask, axis=-1))
+            invnnei = 1.0 / (epsilon + xp.sum(nlist_mask, axis=-1))
         else:
-            invnnei = 1.0 / (epsilon + np.sqrt(np.sum(nlist_mask, axis=-1)))
+            invnnei = 1.0 / (epsilon + xp.sqrt(xp.sum(nlist_mask, axis=-1)))
         # nf x nloc x 1 x 1
-        invnnei = invnnei[:, :, np.newaxis, np.newaxis]
+        invnnei = invnnei[:, :, xp.newaxis, xp.newaxis]
     else:
         g = _apply_switch(g, sw)
         if not use_sqrt_nnei:
-            invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1, 1), dtype=g.dtype)
+            invnnei = (1.0 / float(nnei)) * xp.ones((nf, nloc, 1, 1), dtype=g.dtype)
         else:
-            invnnei = (1.0 / (float(nnei) ** 0.5)) * np.ones(
+            invnnei = (1.0 / (float(nnei) ** 0.5)) * xp.ones(
                 (nf, nloc, 1, 1), dtype=g.dtype
             )
     # nf x nloc x 3 x ng
-    hg = np.matmul(np.transpose(h, axes=(0, 1, 3, 2)), g) * invnnei
+    hg = xp.matmul(xp.transpose(h, axes=(0, 1, 3, 2)), g) * invnnei
     return hg
 
 
@@ -614,12 +688,13 @@ def _cal_grrg(hg: np.ndarray, axis_neuron: int) -> np.ndarray:
     grrg
         Atomic invariant rep, with shape [nf, nloc, (axis_neuron * ng)].
     """
+    xp = array_api_compat.array_namespace(hg)
     # nf x nloc x 3 x ng
     nf, nloc, _, ng = hg.shape
     # nf x nloc x 3 x axis
-    hgm = np.split(hg, [axis_neuron], axis=-1)[0]
+    hgm = xp.split(hg, [axis_neuron], axis=-1)[0]
     # nf x nloc x axis_neuron x ng
-    grrg = np.matmul(np.transpose(hgm, axes=(0, 1, 3, 2)), hg) / (3.0**1)
+    grrg = xp.matmul(xp.transpose(hgm, axes=(0, 1, 3, 2)), hg) / (3.0**1)
     # nf x nloc x (axis_neuron * ng)
     grrg = grrg.reshape(nf, nloc, axis_neuron * ng)
     return grrg
@@ -718,6 +793,7 @@ class Atten2Map(NativeOP):
         nlist_mask: np.ndarray,  # nf x nloc x nnei
         sw: np.ndarray,  # nf x nloc x nnei
     ) -> np.ndarray:
+        xp = array_api_compat.array_namespace(g2, h2, nlist_mask, sw)
         (
             nf,
             nloc,
@@ -728,41 +804,41 @@ class Atten2Map(NativeOP):
         # nf x nloc x nnei x nd x (nh x 2)
         g2qk = self.mapqk(g2).reshape(nf, nloc, nnei, nd, nh * 2)
         # nf x nloc x (nh x 2) x nnei x nd
-        g2qk = np.transpose(g2qk, (0, 1, 4, 2, 3))
+        g2qk = xp.transpose(g2qk, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x nd
-        g2q, g2k = np.split(g2qk, [nh], axis=2)
+        g2q, g2k = xp.split(g2qk, [nh], axis=2)
         # g2q = np.linalg.norm(g2q, axis=-1)
         # g2k = np.linalg.norm(g2k, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        attnw = np.matmul(g2q, np.transpose(g2k, axes=(0, 1, 2, 4, 3))) / nd**0.5
+        attnw = xp.matmul(g2q, xp.transpose(g2k, axes=(0, 1, 2, 4, 3))) / nd**0.5
         if self.has_gate:
-            gate = np.matmul(h2, np.transpose(h2, axes=(0, 1, 3, 2))).reshape(
+            gate = xp.matmul(h2, xp.transpose(h2, axes=(0, 1, 3, 2))).reshape(
                 nf, nloc, 1, nnei, nnei
             )
             attnw = attnw * gate
         # mask the attenmap, nf x nloc x 1 x 1 x nnei
-        attnw_mask = ~np.expand_dims(np.expand_dims(nlist_mask, axis=2), axis=2)
+        attnw_mask = ~xp.expand_dims(xp.expand_dims(nlist_mask, axis=2), axis=2)
         # mask the attenmap, nf x nloc x 1 x nnei x 1
-        attnw_mask_c = ~np.expand_dims(np.expand_dims(nlist_mask, axis=2), axis=-1)
+        attnw_mask_c = ~xp.expand_dims(xp.expand_dims(nlist_mask, axis=2), axis=-1)
         if self.smooth:
             attnw = (attnw + self.attnw_shift) * sw[:, :, None, :, None] * sw[
                 :, :, None, None, :
             ] - self.attnw_shift
         else:
-            attnw = np.where(attnw_mask, -np.inf, attnw)
+            attnw = xp.where(attnw_mask, -xp.inf, attnw)
         attnw = np_softmax(attnw, axis=-1)
-        attnw = np.where(attnw_mask, 0.0, attnw)
+        attnw = xp.where(attnw_mask, 0.0, attnw)
         # nf x nloc x nh x nnei x nnei
-        attnw = np.where(attnw_mask_c, 0.0, attnw)
+        attnw = xp.where(attnw_mask_c, 0.0, attnw)
         if self.smooth:
             attnw = attnw * sw[:, :, None, :, None] * sw[:, :, None, None, :]
         # nf x nloc x nnei x nnei
-        h2h2t = np.matmul(h2, np.transpose(h2, axes=(0, 1, 3, 2))) / 3.0**0.5
+        h2h2t = xp.matmul(h2, xp.transpose(h2, axes=(0, 1, 3, 2))) / 3.0**0.5
         # nf x nloc x nh x nnei x nnei
         ret = attnw * h2h2t[:, :, None, :, :]
         # ret = np.exp(g2qk - np.max(g2qk, axis=-1, keepdims=True))
         # nf x nloc x nnei x nnei x nh
-        ret = np.transpose(ret, (0, 1, 3, 4, 2))
+        ret = xp.transpose(ret, (0, 1, 3, 4, 2))
         return ret
 
     def serialize(self) -> dict:
@@ -835,19 +911,20 @@ class Atten2MultiHeadApply(NativeOP):
         AA: np.ndarray,  # nf x nloc x nnei x nnei x nh
         g2: np.ndarray,  # nf x nloc x nnei x ng2
     ) -> np.ndarray:
+        xp = array_api_compat.array_namespace(AA, g2)
         nf, nloc, nnei, ng2 = g2.shape
         nh = self.head_num
         # nf x nloc x nnei x ng2 x nh
         g2v = self.mapv(g2).reshape(nf, nloc, nnei, ng2, nh)
         # nf x nloc x nh x nnei x ng2
-        g2v = np.transpose(g2v, (0, 1, 4, 2, 3))
+        g2v = xp.transpose(g2v, (0, 1, 4, 2, 3))
         # g2v = np.linalg.norm(g2v, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        AA = np.transpose(AA, (0, 1, 4, 2, 3))
+        AA = xp.transpose(AA, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x ng2
-        ret = np.matmul(AA, g2v)
+        ret = xp.matmul(AA, g2v)
         # nf x nloc x nnei x ng2 x nh
-        ret = np.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, (ng2 * nh))
+        ret = xp.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, (ng2 * nh))
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
@@ -910,19 +987,20 @@ class Atten2EquiVarApply(NativeOP):
         AA: np.ndarray,  # nf x nloc x nnei x nnei x nh
         h2: np.ndarray,  # nf x nloc x nnei x 3
     ) -> np.ndarray:
+        xp = array_api_compat.array_namespace(AA, h2)
         nf, nloc, nnei, _ = h2.shape
         nh = self.head_num
         # nf x nloc x nh x nnei x nnei
-        AA = np.transpose(AA, (0, 1, 4, 2, 3))
-        h2m = np.expand_dims(h2, axis=2)
+        AA = xp.transpose(AA, (0, 1, 4, 2, 3))
+        h2m = xp.expand_dims(h2, axis=2)
         # nf x nloc x nh x nnei x 3
-        h2m = np.tile(h2m, (1, 1, nh, 1, 1))
+        h2m = xp.tile(h2m, (1, 1, nh, 1, 1))
         # nf x nloc x nh x nnei x 3
-        ret = np.matmul(AA, h2m)
+        ret = xp.matmul(AA, h2m)
         # nf x nloc x nnei x 3 x nh
-        ret = np.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, 3, nh)
+        ret = xp.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, 3, nh)
         # nf x nloc x nnei x 3
-        return np.squeeze(self.head_map(ret), axis=-1)
+        return xp.squeeze(self.head_map(ret), axis=-1)
 
     def serialize(self) -> dict:
         """Serialize the networks to a dict.
@@ -1005,6 +1083,7 @@ class LocalAtten(NativeOP):
         nlist_mask: np.ndarray,  # nf x nloc x nnei
         sw: np.ndarray,  # nf x nloc x nnei
     ) -> np.ndarray:
+        xp = array_api_compat.array_namespace(g1, gg1, nlist_mask, sw)
         nf, nloc, nnei = nlist_mask.shape
         ni, nd, nh = self.input_dim, self.hidden_dim, self.head_num
         assert ni == g1.shape[-1]
@@ -1012,39 +1091,39 @@ class LocalAtten(NativeOP):
         # nf x nloc x nd x nh
         g1q = self.mapq(g1).reshape(nf, nloc, nd, nh)
         # nf x nloc x nh x nd
-        g1q = np.transpose(g1q, (0, 1, 3, 2))
+        g1q = xp.transpose(g1q, (0, 1, 3, 2))
         # nf x nloc x nnei x (nd+ni) x nh
         gg1kv = self.mapkv(gg1).reshape(nf, nloc, nnei, nd + ni, nh)
-        gg1kv = np.transpose(gg1kv, (0, 1, 4, 2, 3))
+        gg1kv = xp.transpose(gg1kv, (0, 1, 4, 2, 3))
         # nf x nloc x nh x nnei x nd, nf x nloc x nh x nnei x ng1
-        gg1k, gg1v = np.split(gg1kv, [nd], axis=-1)
+        gg1k, gg1v = xp.split(gg1kv, [nd], axis=-1)
 
         # nf x nloc x nh x 1 x nnei
         attnw = (
-            np.matmul(
-                np.expand_dims(g1q, axis=-2), np.transpose(gg1k, axes=(0, 1, 2, 4, 3))
+            xp.matmul(
+                xp.expand_dims(g1q, axis=-2), xp.transpose(gg1k, axes=(0, 1, 2, 4, 3))
             )
             / nd**0.5
         )
         # nf x nloc x nh x nnei
-        attnw = np.squeeze(attnw, axis=-2)
+        attnw = xp.squeeze(attnw, axis=-2)
         # mask the attenmap, nf x nloc x 1 x nnei
-        attnw_mask = ~np.expand_dims(nlist_mask, axis=-2)
+        attnw_mask = ~xp.expand_dims(nlist_mask, axis=-2)
         # nf x nloc x nh x nnei
         if self.smooth:
-            attnw = (attnw + self.attnw_shift) * np.expand_dims(
+            attnw = (attnw + self.attnw_shift) * xp.expand_dims(
                 sw, axis=-2
             ) - self.attnw_shift
         else:
-            attnw = np.where(attnw_mask, -np.inf, attnw)
+            attnw = xp.where(attnw_mask, -xp.inf, attnw)
         attnw = np_softmax(attnw, axis=-1)
-        attnw = np.where(attnw_mask, 0.0, attnw)
+        attnw = xp.where(attnw_mask, 0.0, attnw)
         if self.smooth:
-            attnw = attnw * np.expand_dims(sw, axis=-2)
+            attnw = attnw * xp.expand_dims(sw, axis=-2)
 
         # nf x nloc x nh x ng1
         ret = (
-            np.matmul(np.expand_dims(attnw, axis=-2), gg1v)
+            xp.matmul(xp.expand_dims(attnw, axis=-2), gg1v)
             .squeeze(-2)
             .reshape(nf, nloc, nh * ni)
         )
@@ -1178,12 +1257,12 @@ class RepformerLayer(NativeOP):
         ], "'update_residual_init' only support 'norm' or 'const'!"
         self.update_residual = update_residual
         self.update_residual_init = update_residual_init
-        self.g1_residual = []
-        self.g2_residual = []
-        self.h2_residual = []
+        g1_residual = []
+        g2_residual = []
+        h2_residual = []
 
         if self.update_style == "res_residual":
-            self.g1_residual.append(
+            g1_residual.append(
                 get_residual(
                     g1_dim,
                     self.update_residual,
@@ -1217,7 +1296,7 @@ class RepformerLayer(NativeOP):
                 seed=child_seed(seed, 2),
             )
             if self.update_style == "res_residual":
-                self.g2_residual.append(
+                g2_residual.append(
                     get_residual(
                         g2_dim,
                         self.update_residual,
@@ -1234,7 +1313,7 @@ class RepformerLayer(NativeOP):
                 seed=child_seed(seed, 15),
             )
             if self.update_style == "res_residual":
-                self.g1_residual.append(
+                g1_residual.append(
                     get_residual(
                         g1_dim,
                         self.update_residual,
@@ -1263,7 +1342,7 @@ class RepformerLayer(NativeOP):
                     seed=child_seed(seed, 4),
                 )
                 if self.update_style == "res_residual":
-                    self.g1_residual.append(
+                    g1_residual.append(
                         get_residual(
                             g1_dim,
                             self.update_residual,
@@ -1281,7 +1360,7 @@ class RepformerLayer(NativeOP):
                 seed=child_seed(seed, 5),
             )
             if self.update_style == "res_residual":
-                self.g2_residual.append(
+                g2_residual.append(
                     get_residual(
                         g2_dim,
                         self.update_residual,
@@ -1312,7 +1391,7 @@ class RepformerLayer(NativeOP):
                     seed=child_seed(seed, 9),
                 )
                 if self.update_style == "res_residual":
-                    self.g2_residual.append(
+                    g2_residual.append(
                         get_residual(
                             g2_dim,
                             self.update_residual,
@@ -1327,7 +1406,7 @@ class RepformerLayer(NativeOP):
                     g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 11)
                 )
                 if self.update_style == "res_residual":
-                    self.h2_residual.append(
+                    h2_residual.append(
                         get_residual(
                             1,
                             self.update_residual,
@@ -1346,7 +1425,7 @@ class RepformerLayer(NativeOP):
                 seed=child_seed(seed, 13),
             )
             if self.update_style == "res_residual":
-                self.g1_residual.append(
+                g1_residual.append(
                     get_residual(
                         g1_dim,
                         self.update_residual,
@@ -1355,6 +1434,10 @@ class RepformerLayer(NativeOP):
                         seed=child_seed(seed, 14),
                     )
                 )
+
+        self.g1_residual = g1_residual
+        self.g2_residual = g2_residual
+        self.h2_residual = h2_residual
 
     def cal_1_dim(self, g1d: int, g2d: int, ax: int) -> int:
         ret = g1d if not self.g1_out_mlp else 0
@@ -1408,6 +1491,7 @@ class RepformerLayer(NativeOP):
             The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
             and remains 0 beyond rcut, with shape nf x nloc x nnei.
         """
+        xp = array_api_compat.array_namespace(gg1, g2, nlist_mask, sw)
         assert self.proj_g1g2 is not None
         nf, nloc, nnei, _ = g2.shape
         ng1 = gg1.shape[-1]
@@ -1423,20 +1507,20 @@ class RepformerLayer(NativeOP):
         if not self.smooth:
             # normalized by number of neighbors, not smooth
             # nf x nloc
-            invnnei = 1.0 / (self.epsilon + np.sum(nlist_mask, axis=-1))
+            invnnei = 1.0 / (self.epsilon + xp.sum(nlist_mask, axis=-1))
             # nf x nloc x 1
-            invnnei = invnnei[:, :, np.newaxis]
+            invnnei = invnnei[:, :, xp.newaxis]
         else:
             gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * np.ones((nf, nloc, 1), dtype=gg1.dtype)
+            invnnei = (1.0 / float(nnei)) * xp.ones((nf, nloc, 1), dtype=gg1.dtype)
         if not self.g1_out_conv:
             # nf x nloc x ng2
-            g1_11 = np.sum(g2 * gg1, axis=2) * invnnei
+            g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         else:
             # nf x nloc x ng1
             g2 = self.proj_g1g2(g2).reshape(nf, nloc, nnei, ng1)
             # nb x nloc x ng1
-            g1_11 = np.sum(g2 * gg1, axis=2) * invnnei
+            g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
 
     def _update_g2_g1g1(
@@ -1461,7 +1545,8 @@ class RepformerLayer(NativeOP):
             The switch function, which equals 1 within the rcut_smth range, smoothly decays from 1 to 0 between rcut_smth and rcut,
             and remains 0 beyond rcut, with shape nf x nloc x nnei.
         """
-        ret = np.expand_dims(g1, axis=-2) * gg1
+        xp = array_api_compat.array_namespace(g1, gg1, nlist_mask, sw)
+        ret = xp.expand_dims(g1, axis=-2) * gg1
         # nf x nloc x nnei x ng1
         ret = _apply_nlist_mask(ret, nlist_mask)
         if self.smooth:
@@ -1493,6 +1578,7 @@ class RepformerLayer(NativeOP):
         g2:     nf x nloc x nnei x ng2  updated pair-atom channel, invariant
         h2:     nf x nloc x nnei x 3    updated pair-atom channel, equivariant
         """
+        xp = array_api_compat.array_namespace(g1_ext, g2, h2, nlist, nlist_mask, sw)
         cal_gg1 = (
             self.update_g1_has_drrd
             or self.update_g1_has_conv
@@ -1502,14 +1588,14 @@ class RepformerLayer(NativeOP):
 
         nf, nloc, nnei, _ = g2.shape
         nall = g1_ext.shape[1]
-        g1, _ = np.split(g1_ext, [nloc], axis=1)
+        g1, _ = xp.split(g1_ext, [nloc], axis=1)
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: list[np.ndarray] = [g2]
-        h2_update: list[np.ndarray] = [h2]
-        g1_update: list[np.ndarray] = [g1]
-        g1_mlp: list[np.ndarray] = [g1] if not self.g1_out_mlp else []
+        g2_update: list[xp.ndarray] = [g2]
+        h2_update: list[xp.ndarray] = [h2]
+        g1_update: list[xp.ndarray] = [g1]
+        g1_mlp: list[xp.ndarray] = [g1] if not self.g1_out_mlp else []
         if self.g1_out_mlp:
             assert self.g1_self_mlp is not None
             g1_self_mlp = self.act(self.g1_self_mlp(g1))
@@ -1592,7 +1678,7 @@ class RepformerLayer(NativeOP):
 
             # nf x nloc x [ng1+ng2+(axisxng2)+(axisxng1)]
             #                  conv   grrg      drrd
-        g1_1 = self.act(self.linear1(np.concatenate(g1_mlp, axis=-1)))
+        g1_1 = self.act(self.linear1(xp.concatenate(g1_mlp, axis=-1)))
         g1_update.append(g1_1)
 
         if self.update_g1_has_attn:
@@ -1752,9 +1838,9 @@ class RepformerLayer(NativeOP):
         if self.update_style == "res_residual":
             data.update(
                 {
-                    "g1_residual": self.g1_residual,
-                    "g2_residual": self.g2_residual,
-                    "h2_residual": self.h2_residual,
+                    "g1_residual": [to_numpy_array(aa) for aa in self.g1_residual],
+                    "g2_residual": [to_numpy_array(aa) for aa in self.g2_residual],
+                    "h2_residual": [to_numpy_array(aa) for aa in self.h2_residual],
                 }
             )
         return data

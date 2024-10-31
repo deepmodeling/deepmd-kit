@@ -4,10 +4,14 @@ from typing import (
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
     NativeOP,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     EnvMat,
@@ -787,6 +791,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape
         nall = coord_ext.reshape(nframes, -1).shape[1] // 3
@@ -823,7 +828,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
                 g1_ext,
                 mapping,
             )
-            g1 = np.concatenate([g1, g1_three_body], axis=-1)
+            g1 = xp.concatenate([g1, g1_three_body], axis=-1)
         # linear to change shape
         g1 = self.g1_shape_tranform(g1)
         if self.add_tebd_to_repinit_out:
@@ -831,8 +836,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
         assert mapping is not None
-        mapping_ext = np.tile(mapping.reshape(nframes, nall, 1), (1, 1, g1.shape[-1]))
-        g1_ext = np.take_along_axis(g1, mapping_ext, axis=1)
+        mapping_ext = xp.tile(mapping.reshape(nframes, nall, 1), (1, 1, g1.shape[-1]))
+        g1_ext = xp.take_along_axis(g1, mapping_ext, axis=1)
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
             nlist_dict[
@@ -846,7 +851,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             mapping,
         )
         if self.concat_output_tebd:
-            g1 = np.concatenate([g1, g1_inp], axis=-1)
+            g1 = xp.concatenate([g1, g1_inp], axis=-1)
         return g1, rot_mat, g2, h2, sw
 
     def serialize(self) -> dict:
@@ -883,8 +888,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             "embeddings": repinit.embeddings.serialize(),
             "env_mat": EnvMat(repinit.rcut, repinit.rcut_smth).serialize(),
             "@variables": {
-                "davg": repinit["davg"],
-                "dstd": repinit["dstd"],
+                "davg": to_numpy_array(repinit["davg"]),
+                "dstd": to_numpy_array(repinit["dstd"]),
             },
         }
         if repinit.tebd_input_mode in ["strip"]:
@@ -896,8 +901,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             "repformer_layers": [layer.serialize() for layer in repformers.layers],
             "env_mat": EnvMat(repformers.rcut, repformers.rcut_smth).serialize(),
             "@variables": {
-                "davg": repformers["davg"],
-                "dstd": repformers["dstd"],
+                "davg": to_numpy_array(repformers["davg"]),
+                "dstd": to_numpy_array(repformers["dstd"]),
             },
         }
         data.update(
@@ -913,8 +918,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
                     repinit_three_body.rcut, repinit_three_body.rcut_smth
                 ).serialize(),
                 "@variables": {
-                    "davg": repinit_three_body["davg"],
-                    "dstd": repinit_three_body["dstd"],
+                    "davg": to_numpy_array(repinit_three_body["davg"]),
+                    "dstd": to_numpy_array(repinit_three_body["dstd"]),
                 },
             }
             if repinit_three_body.tebd_input_mode in ["strip"]:
