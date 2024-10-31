@@ -42,8 +42,9 @@ from deepmd.pd.model.model import (
     get_model,
     get_zbl_model,
 )
-from deepmd.pd.optimizer import (  # LKFOptimizer,
+from deepmd.pd.optimizer import (
     KFOptimizerWrapper,
+    LKFOptimizer,
 )
 from deepmd.pd.train.wrapper import (
     ModelWrapper,
@@ -601,10 +602,12 @@ class Trainer:
             if optimizer_state_dict is not None and self.restart_training:
                 self.optimizer.set_state_dict(optimizer_state_dict)
         elif self.opt_type == "LKF":
-            raise NotImplementedError("LKF is not supported yet in Paddle backend.")
-            # self.optimizer = LKFOptimizer(
-            #     [{'params': self.wrapper.parameters()}], 0.98, 0.99870, self.opt_param["kf_blocksize"]
-            # )
+            self.optimizer = LKFOptimizer(
+                [{"params": self.wrapper.parameters()}],
+                0.98,
+                0.99870,
+                self.opt_param["kf_blocksize"],
+            )
         else:
             raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 

@@ -11,7 +11,6 @@ from deepmd.pd.entrypoints.main import (
 )
 
 
-@unittest.skip("Paddle do not support LKF now")
 class TestLKF(unittest.TestCase):
     def test_lkf(self):
         with open(str(Path(__file__).parent / "water/lkf.json")) as fin:

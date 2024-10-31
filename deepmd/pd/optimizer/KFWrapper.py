@@ -58,7 +58,8 @@ class KFOptimizerWrapper:
         mask = error < 0
 
         error = error * update_prefactor
-        error[mask] = -1 * error[mask]
+        # error[mask] = -1 * error[mask]
+        error = _mask_update(error, mask, -error[mask])
         error = error.mean()
 
         if self.is_distributed:
@@ -66,7 +67,8 @@ class KFOptimizerWrapper:
             error /= dist.get_world_size()
 
         Etot_predict = update_prefactor * Etot_predict
-        Etot_predict[mask] = -Etot_predict[mask]
+        # Etot_predict[mask] = -Etot_predict[mask]
+        Etot_predict = _mask_update(Etot_predict, mask, -Etot_predict[mask])
 
         Etot_predict.sum().backward()
         error = error * math.sqrt(bs)
@@ -91,7 +93,7 @@ class KFOptimizerWrapper:
             error_tmp = Force_label[:, index[i]] - force_predict[:, index[i]]
             error_tmp = update_prefactor * error_tmp
             mask = error_tmp < 0
-            error_tmp = _mask_update(error_tmp, mask, -1 * error_tmp[mask])
+            error_tmp = _mask_update(error_tmp, mask, -error_tmp[mask])
             # error_tmp[mask] = -1 * error_tmp[mask]
             error = error_tmp.mean() / natoms_sum
 

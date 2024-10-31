@@ -265,6 +265,7 @@ class LKFOptimizer(Optimizer):
     def set_grad_prefactor(self, grad_prefactor):
         self.grad_prefactor = grad_prefactor
 
+    @paddle.no_grad()
     def step(self, error):
         params_packed_index = self._state.get("params_packed_index")
 
