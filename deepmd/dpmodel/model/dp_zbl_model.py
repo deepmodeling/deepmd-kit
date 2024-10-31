@@ -26,6 +26,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
     model_type = "ener"
+
     def __init__(
         self,
         *args,
