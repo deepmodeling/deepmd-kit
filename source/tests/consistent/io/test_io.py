@@ -167,6 +167,8 @@ class IOTest:
                 self.coords,
                 self.box,
                 self.atype,
+                fparam=fparam,
+                aparam=aparam,
                 do_atomic_virial=True,
             )
             rets.append(ret)
