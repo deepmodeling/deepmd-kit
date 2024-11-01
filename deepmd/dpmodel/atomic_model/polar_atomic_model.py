@@ -14,7 +14,9 @@ from .dp_atomic_model import (
 class DPPolarAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
         if not isinstance(fitting, PolarFitting):
-            raise TypeError("fitting must be an instance of PolarFitting for DPPolarAtomicModel")
+            raise TypeError(
+                "fitting must be an instance of PolarFitting for DPPolarAtomicModel"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def apply_out_stat(

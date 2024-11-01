@@ -14,7 +14,9 @@ from .dp_atomic_model import (
 class DPPropertyAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
         if not isinstance(fitting, PropertyFittingNet):
-            raise TypeError("fitting must be an instance of PropertyFittingNet for DPPropertyAtomicModel")
+            raise TypeError(
+                "fitting must be an instance of PropertyFittingNet for DPPropertyAtomicModel"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def apply_out_stat(
