@@ -13,7 +13,8 @@ from .dp_atomic_model import (
 
 class DPPolarAtomicModel(DPAtomicModel):
     def __init__(self, descriptor, fitting, type_map, **kwargs):
-        assert isinstance(fitting, PolarFittingNet)
+        if not isinstance(fitting, PolarFittingNet):
+            raise TypeError("fitting must be an instance of PolarFittingNet for DPPolarAtomicModel")
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def apply_out_stat(
