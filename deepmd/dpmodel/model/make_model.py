@@ -194,7 +194,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             check_frequency: int = -1,
         ) -> None:
             """Call atomic_model enable_compression().
-            
+
             Parameters
             ----------
             table_extrapolate

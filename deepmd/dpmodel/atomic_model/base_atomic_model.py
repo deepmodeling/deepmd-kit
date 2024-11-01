@@ -150,7 +150,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         check_frequency: int = -1,
     ) -> None:
         """Call descriptor enable_compression().
-        
+
         Parameters
         ----------
         min_nbor_dist
