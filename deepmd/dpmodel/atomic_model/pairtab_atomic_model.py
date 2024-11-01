@@ -15,6 +15,9 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_sqrt,
+)
 from deepmd.utils.pair_tab import (
     PairTab,
 )
@@ -320,7 +323,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         neighbor_atoms = coords[batch_indices, nlist]
         loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
-        pairwise_rr = xp.sqrt(xp.sum(xp.power(pairwise_dr, 2), axis=-1))
+        pairwise_rr = safe_for_sqrt(xp.sum(xp.power(pairwise_dr, 2), axis=-1))
 
         return pairwise_rr
 
