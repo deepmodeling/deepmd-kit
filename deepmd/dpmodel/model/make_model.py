@@ -185,7 +185,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 if vv.category == OutputVariableCategory.OUT
             ]
             return vars
-        
+
         def enable_compression(
             self,
             table_extrapolate: float = 5,
@@ -196,17 +196,15 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Call atomic_model enable_compression().
             
             Parameters
-                ----------
-                min_nbor_dist
-                    The nearest distance between atoms
-                table_extrapolate
-                    The scale of model extrapolation
-                table_stride_1
-                    The uniform stride of the first table
-                table_stride_2
-                    The uniform stride of the second table
-                check_frequency
-                    The overflow check frequency
+            ----------
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
             """
             self.atomic_model.enable_compression(
                 self.get_min_nbor_dist(),
