@@ -5,7 +5,7 @@ from typing import (
     Optional,
 )
 
-import torch
+import paddle
 
 from deepmd.dpmodel import (
     FittingOutputDef,
@@ -47,7 +47,7 @@ class PropertyFittingNet(InvarFitting):
             The dimension of outputs of fitting net.
     neuron : list[int]
         Number of neurons in each hidden layers of the fitting net.
-    bias_atom_p : torch.Tensor, optional
+    bias_atom_p : paddle.Tensor, optional
         Average property per atom for each element.
     intensive : bool, optional
         Whether the fitting property is intensive.
@@ -78,7 +78,7 @@ class PropertyFittingNet(InvarFitting):
         dim_descrpt: int,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[torch.Tensor] = None,
+        bias_atom_p: Optional[paddle.Tensor] = None,
         intensive: bool = False,
         bias_method: str = "normal",
         resnet_dt: bool = True,
@@ -147,5 +147,4 @@ class PropertyFittingNet(InvarFitting):
 
         return dd
 
-    # make jit happy with torch 2.0.0
     exclude_types: list[int]

@@ -1,4 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+
+# Copyright (c) 2024 The PyTorch Authors. All rights reserved.
+#
+# This file includes source code from PyTorch of version v2.3.0, which is released under the BSD-3-Clause license.
+# For more information about PyTorch, visit https://pytorch.org/.
+
+
+# These no_grad_* functions are necessary as wrappers around the parts of these
+# functions that use `with paddle.no_grad()`. The JIT doesn't support context
+# managers, so these need to be implemented as builtins. Using these wrappers
+# lets us keep those builtins small and re-usable.
+
 from __future__ import (
     annotations,
 )
@@ -13,16 +25,7 @@ from paddle import (
 
 PaddleGenerator = paddle.base.libpaddle.Generator
 
-# Copyright (c) 2024 The PyTorch Authors. All rights reserved.
-#
-# This file includes source code from PyTorch of version v2.3.0, which is released under the BSD-3-Clause license.
-# For more information about PyTorch, visit https://pytorch.org/.
 
-
-# These no_grad_* functions are necessary as wrappers around the parts of these
-# functions that use `with paddle.no_grad()`. The JIT doesn't support context
-# managers, so these need to be implemented as builtins. Using these wrappers
-# lets us keep those builtins small and re-usable.
 def _no_grad_uniform_(tensor: paddle.Tensor, a, b, generator=None):
     with paddle.no_grad():
         return tensor.uniform_(a, b)
@@ -167,8 +170,6 @@ def _calculate_fan_in_and_fan_out(tensor, reverse=False):
 
     receptive_field_size = 1
     if tensor.ndim > 2:
-        # math.prod is not always available, accumulate the product manually
-        # we could use functools.reduce but that is not supported by TorchScript
         for s in tensor.shape[2:]:
             receptive_field_size *= s
     fan_in = num_input_fmaps * receptive_field_size
@@ -227,10 +228,6 @@ def constant_(tensor: Tensor, val: float) -> Tensor:
         >>> w = paddle.empty(3, 5)
         >>> nn.init.constant_(w, 0.3)
     """
-    # if paddle.overrides.has_torch_function_variadic(tensor):
-    #     return paddle.overrides.handle_torch_function(
-    #         constant_, (tensor,), tensor=tensor, val=val
-    #     )
     return _no_grad_fill_(tensor, val)
 
 
@@ -255,10 +252,6 @@ def normal_(
         >>> w = paddle.empty(3, 5)
         >>> nn.init.normal_(w)
     """
-    # if paddle.overrides.has_torch_function_variadic(tensor):
-    #     return paddle.overrides.handle_torch_function(
-    #         normal_, (tensor,), tensor=tensor, mean=mean, std=std
-    #     )
     return _no_grad_normal_(tensor, mean, std, generator)
 
 
@@ -333,17 +326,6 @@ def kaiming_uniform_(
         >>> w = paddle.empty(3, 5)
         >>> nn.init.kaiming_uniform_(w, mode="fan_in", nonlinearity="relu")
     """
-    # if paddle.overrides.has_torch_function_variadic(tensor):
-    #     return paddle.overrides.handle_torch_function(
-    #         kaiming_uniform_,
-    #         (tensor,),
-    #         tensor=tensor,
-    #         a=a,
-    #         mode=mode,
-    #         nonlinearity=nonlinearity,
-    #         generator=generator,
-    #     )
-
     if 0 in tensor.shape:
         warnings.warn("Initializing zero-element tensors is a no-op")
         return tensor
