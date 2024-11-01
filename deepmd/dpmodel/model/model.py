@@ -1,4 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+    PairTabAtomicModel,
+)
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.dpmodel.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -7,6 +16,9 @@ from deepmd.dpmodel.fitting.ener_fitting import (
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
+)
+from deepmd.dpmodel.model.dp_zbl_model import (
+    DPZBLModel,
 )
 from deepmd.dpmodel.model.ener_model import (
     EnergyModel,
@@ -55,6 +67,45 @@ def get_standard_model(data: dict) -> EnergyModel:
     )
 
 
+def get_zbl_model(data: dict) -> DPZBLModel:
+    data["descriptor"]["ntypes"] = len(data["type_map"])
+    descriptor = BaseDescriptor(**data["descriptor"])
+    fitting_type = data["fitting_net"].pop("type")
+    if fitting_type == "ener":
+        fitting = EnergyFittingNet(
+            ntypes=descriptor.get_ntypes(),
+            dim_descrpt=descriptor.get_dim_out(),
+            mixed_types=descriptor.mixed_types(),
+            **data["fitting_net"],
+        )
+    else:
+        raise ValueError(f"Unknown fitting type {fitting_type}")
+
+    dp_model = DPAtomicModel(descriptor, fitting, type_map=data["type_map"])
+    # pairtab
+    filepath = data["use_srtab"]
+    pt_model = PairTabAtomicModel(
+        filepath,
+        data["descriptor"]["rcut"],
+        data["descriptor"]["sel"],
+        type_map=data["type_map"],
+    )
+
+    rmin = data["sw_rmin"]
+    rmax = data["sw_rmax"]
+    atom_exclude_types = data.get("atom_exclude_types", [])
+    pair_exclude_types = data.get("pair_exclude_types", [])
+    return DPZBLModel(
+        dp_model,
+        pt_model,
+        rmin,
+        rmax,
+        type_map=data["type_map"],
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+    )
+
+
 def get_spin_model(data: dict) -> SpinModel:
     """Get a spin model from a dictionary.
 
@@ -100,6 +151,8 @@ def get_model(data: dict):
     if model_type == "standard":
         if "spin" in data:
             return get_spin_model(data)
+        elif "use_srtab" in data:
+            return get_zbl_model(data)
         else:
             return get_standard_model(data)
     else:

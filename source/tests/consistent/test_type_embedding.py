@@ -82,7 +82,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
