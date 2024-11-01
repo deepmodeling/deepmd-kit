@@ -50,7 +50,8 @@ class DescrptDPA2(DescrptDPA2DP):
             elif isinstance(value, NativeLayerDP):
                 value = NativeLayer.deserialize(value.serialize())
             elif isinstance(value, IdentityDP):
-                value = IdentityDP.deserialize(value.serialize())
+                # IdentityDP doesn't contain any value - it's good to go
+                pass
             else:
                 raise ValueError(f"Unknown layer type: {type(value)}")
         return super().__setattr__(name, value)
