@@ -147,6 +147,7 @@ class BaseTabulate(ABC):
         elif self.descrpt_type == "T":
             xx_all = []
             for ii in range(self.ntypes):
+                """Pt and tf is different here. Pt version is a two-dimensional array."""
                 if self.is_pt:
                     uu = np.max(upper[ii])
                     ll = np.min(lower[ii])
