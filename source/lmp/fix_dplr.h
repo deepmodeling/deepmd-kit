@@ -80,6 +80,9 @@ class FixDPLR : public Fix {
   void update_efield_variables();
   enum { NONE, CONSTANT, EQUAL };
   std::vector<int> type_idx_map;
+  /* The index of deepmd pair index, which starts from 1. By default 0, which
+   * works only when there is one deepmd pair. */
+  int pair_deepmd_index;
 };
 }  // namespace LAMMPS_NS
 
