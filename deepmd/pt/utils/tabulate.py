@@ -3,6 +3,7 @@ import logging
 from functools import (
     cached_property,
 )
+from unittest import result
 
 import numpy as np
 import torch
@@ -331,135 +332,86 @@ class DPTabulate(BaseTabulate):
         else:
             raise RuntimeError("Unsupported descriptor")
         return layer_size
+    
+    def _get_network_variable(self, var_name: str) -> dict:
+        """Get network variables (weights or biases) for all layers.
+        
+        Parameters
+        ----------
+        var_name : str
+            Name of the variable to get ('w' for weights, 'b' for biases)
+        
+        Returns
+        -------
+        dict
+            Dictionary mapping layer names to their variables
+        """
+        result = {}
+        for layer in range(1, self.layer_size + 1):
+            result["layer_" + str(layer)] = []
+            if self.descrpt_type == "Atten":
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][var_name]
+                result["layer_" + str(layer)].append(node)
+            elif self.descrpt_type == "A":
+                if self.type_one_side:
+                    for ii in range(0, self.ntypes):
+                        if not self._all_excluded(ii):
+                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
+                                "@variables"
+                            ][var_name]
+                            result["layer_" + str(layer)].append(node)
+                        else:
+                            result["layer_" + str(layer)].append(np.array([]))
+                else:
+                    for ii in range(0, self.ntypes * self.ntypes):
+                        if (
+                            ii // self.ntypes,
+                            ii % self.ntypes,
+                        ) not in self.exclude_types:
+                            node = self.embedding_net_nodes[
+                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
+                            ]["layers"][layer - 1]["@variables"][var_name]
+                            result["layer_" + str(layer)].append(node)
+                        else:
+                            result["layer_" + str(layer)].append(np.array([]))
+            elif self.descrpt_type == "T":
+                for ii in range(self.ntypes):
+                    for jj in range(ii, self.ntypes):
+                        node = self.embedding_net_nodes[jj * self.ntypes + ii][
+                            "layers"
+                        ][layer - 1]["@variables"][var_name]
+                        result["layer_" + str(layer)].append(node)
+            elif self.descrpt_type == "R":
+                if self.type_one_side:
+                    for ii in range(0, self.ntypes):
+                        if not self._all_excluded(ii):
+                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
+                                "@variables"
+                            ][var_name]
+                            result["layer_" + str(layer)].append(node)
+                        else:
+                            result["layer_" + str(layer)].append(np.array([]))
+                else:
+                    for ii in range(0, self.ntypes * self.ntypes):
+                        if (
+                            ii // self.ntypes,
+                            ii % self.ntypes,
+                        ) not in self.exclude_types:
+                            node = self.embedding_net_nodes[
+                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
+                            ]["layers"][layer - 1]["@variables"][var_name]
+                            result["layer_" + str(layer)].append(node)
+                        else:
+                            result["layer_" + str(layer)].append(np.array([]))
+            else:
+                raise RuntimeError("Unsupported descriptor")
+        return result
 
     def _get_bias(self):
-        bias = {}
-        for layer in range(1, self.layer_size + 1):
-            bias["layer_" + str(layer)] = []
-            if self.descrpt_type == "Atten":
-                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
-                    "b"
-                ]
-                bias["layer_" + str(layer)].append(node)
-            elif self.descrpt_type == "A":
-                if self.type_one_side:
-                    for ii in range(0, self.ntypes):
-                        if not self._all_excluded(ii):
-                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
-                                "@variables"
-                            ]["b"]
-                            bias["layer_" + str(layer)].append(node)
-                        else:
-                            bias["layer_" + str(layer)].append(np.array([]))
-                else:
-                    for ii in range(0, self.ntypes * self.ntypes):
-                        if (
-                            ii // self.ntypes,
-                            ii % self.ntypes,
-                        ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[
-                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
-                            ]["layers"][layer - 1]["@variables"]["b"]
-                            bias["layer_" + str(layer)].append(node)
-                        else:
-                            bias["layer_" + str(layer)].append(np.array([]))
-            elif self.descrpt_type == "T":
-                for ii in range(self.ntypes):
-                    for jj in range(ii, self.ntypes):
-                        node = self.embedding_net_nodes[jj * self.ntypes + ii][
-                            "layers"
-                        ][layer - 1]["@variables"]["b"]
-                        bias["layer_" + str(layer)].append(node)
-            elif self.descrpt_type == "R":
-                if self.type_one_side:
-                    for ii in range(0, self.ntypes):
-                        if not self._all_excluded(ii):
-                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
-                                "@variables"
-                            ]["b"]
-                            bias["layer_" + str(layer)].append(node)
-                        else:
-                            bias["layer_" + str(layer)].append(np.array([]))
-                else:
-                    for ii in range(0, self.ntypes * self.ntypes):
-                        if (
-                            ii // self.ntypes,
-                            ii % self.ntypes,
-                        ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[
-                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
-                            ]["layers"][layer - 1]["@variables"]["b"]
-                            bias["layer_" + str(layer)].append(node)
-                        else:
-                            bias["layer_" + str(layer)].append(np.array([]))
-            else:
-                raise RuntimeError("Unsupported descriptor")
-        return bias
+        return self._get_network_variable("b")
 
     def _get_matrix(self):
-        matrix = {}
-        for layer in range(1, self.layer_size + 1):
-            matrix["layer_" + str(layer)] = []
-            if self.descrpt_type == "Atten":
-                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
-                    "w"
-                ]
-                matrix["layer_" + str(layer)].append(node)
-            elif self.descrpt_type == "A":
-                if self.type_one_side:
-                    for ii in range(0, self.ntypes):
-                        if not self._all_excluded(ii):
-                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
-                                "@variables"
-                            ]["w"]
-                            matrix["layer_" + str(layer)].append(node)
-                        else:
-                            matrix["layer_" + str(layer)].append(np.array([]))
-                else:
-                    for ii in range(0, self.ntypes * self.ntypes):
-                        if (
-                            ii // self.ntypes,
-                            ii % self.ntypes,
-                        ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[
-                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
-                            ]["layers"][layer - 1]["@variables"]["w"]
-                            matrix["layer_" + str(layer)].append(node)
-                        else:
-                            matrix["layer_" + str(layer)].append(np.array([]))
-            elif self.descrpt_type == "T":
-                for ii in range(self.ntypes):
-                    for jj in range(ii, self.ntypes):
-                        node = self.embedding_net_nodes[jj * self.ntypes + ii][
-                            "layers"
-                        ][layer - 1]["@variables"]["w"]
-                        matrix["layer_" + str(layer)].append(node)
-            elif self.descrpt_type == "R":
-                if self.type_one_side:
-                    for ii in range(0, self.ntypes):
-                        if not self._all_excluded(ii):
-                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
-                                "@variables"
-                            ]["w"]
-                            matrix["layer_" + str(layer)].append(node)
-                        else:
-                            matrix["layer_" + str(layer)].append(np.array([]))
-                else:
-                    for ii in range(0, self.ntypes * self.ntypes):
-                        if (
-                            ii // self.ntypes,
-                            ii % self.ntypes,
-                        ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[
-                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
-                            ]["layers"][layer - 1]["@variables"]["w"]
-                            matrix["layer_" + str(layer)].append(node)
-                        else:
-                            matrix["layer_" + str(layer)].append(np.array([]))
-            else:
-                raise RuntimeError("Unsupported descriptor")
-
-        return matrix
+        return self._get_network_variable("w")
 
     def _convert_numpy_to_tensor(self):
         """Convert self.data from np.ndarray to torch.Tensor."""
