@@ -516,13 +516,12 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             # variables
             "g2_embd": self.g2_embd.serialize(),
             "repformer_layers": [layer.serialize() for layer in self.layers],
-            "env_mat": EnvMat(self.rcut, self.rcut_smth).serialize(),
+            "env_mat": self.env_mat.serialize(),
             "@variables": {
                 "davg": to_numpy_array(self["davg"]),
                 "dstd": to_numpy_array(self["dstd"]),
             },
         }
-
 
 # translated by GPT and modified
 def get_residual(
