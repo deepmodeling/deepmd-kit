@@ -14,8 +14,13 @@ from ..utils.exclude_mask import (
 from ..utils.network import (
     NetworkCollection,
 )
+from .base_descriptor import (
+    BaseDescriptor,
+)
 
 
+@BaseDescriptor.register("se_e2_a")
+@BaseDescriptor.register("se_a")
 class DescrptSeA(DescrptSeADP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"dstd", "davg"}:

@@ -3,10 +3,14 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingNetDP
 from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet as PropertyFittingNetDP,
+)
+from deepmd.dpmodel.fitting.polarizability_fitting import (
+    PolarFitting as PolarFittingNetDP,
 )
 
 from ..common import (
@@ -51,4 +55,21 @@ class PropertyFittingNet(PropertyFittingNetDP):
 class DOSFittingNet(DOSFittingNetDP):
     def __setattr__(self, name: str, value: Any) -> None:
         value = setattr_for_general_fitting(name, value)
+        return super().__setattr__(name, value)
+
+
+class DipoleFittingNet(DipoleFittingNetDP):
+    def __setattr__(self, name: str, value: Any) -> None:
+        value = setattr_for_general_fitting(name, value)
+        return super().__setattr__(name, value)
+
+
+class PolarFittingNet(PolarFittingNetDP):
+    def __setattr__(self, name: str, value: Any) -> None:
+        value = setattr_for_general_fitting(name, value)
+        if name in {
+            "scale",
+            "constant_matrix",
+        }:
+            value = to_array_api_strict_array(value)
         return super().__setattr__(name, value)
