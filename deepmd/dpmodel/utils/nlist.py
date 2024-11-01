@@ -215,30 +215,36 @@ def build_multiple_neighbor_list(
         value being the corresponding nlist.
 
     """
+    xp = array_api_compat.array_namespace(coord, nlist)
     assert len(rcuts) == len(nsels)
     if len(rcuts) == 0:
         return {}
     nb, nloc, nsel = nlist.shape
     if nsel < nsels[-1]:
-        pad = -1 * np.ones((nb, nloc, nsels[-1] - nsel), dtype=nlist.dtype)
-        nlist = np.concatenate([nlist, pad], axis=-1)
+        pad = -1 * xp.ones((nb, nloc, nsels[-1] - nsel), dtype=nlist.dtype)
+        nlist = xp.concat([nlist, pad], axis=-1)
         nsel = nsels[-1]
-    coord1 = coord.reshape(nb, -1, 3)
+    coord1 = xp.reshape(coord, (nb, -1, 3))
     nall = coord1.shape[1]
     coord0 = coord1[:, :nloc, :]
     nlist_mask = nlist == -1
-    tnlist_0 = nlist.copy()
-    tnlist_0[nlist_mask] = 0
-    index = np.tile(tnlist_0.reshape(nb, nloc * nsel, 1), [1, 1, 3])
-    coord2 = np.take_along_axis(coord1, index, axis=1).reshape(nb, nloc, nsel, 3)
+    tnlist_0 = xp.where(nlist_mask, xp.zeros_like(nlist), nlist)
+    index = xp.tile(xp.reshape(tnlist_0, (nb, nloc * nsel, 1)), (1, 1, 3))
+    coord2 = xp_take_along_axis(coord1, index, axis=1)
+    coord2 = xp.reshape(coord2, (nb, nloc, nsel, 3))
     diff = coord2 - coord0[:, :, None, :]
-    rr = np.linalg.norm(diff, axis=-1)
-    rr = np.where(nlist_mask, float("inf"), rr)
+    # jax raises NaN error using norm
+    # but note: we don't actually need to sqrt here; the squared value is enough
+    # rr = xp.linalg.vector_norm(diff, axis=-1)
+    rr2 = xp.sum(xp.square(diff), axis=-1)
+    rr2 = xp.where(nlist_mask, xp.full_like(rr2, float("inf")), rr2)
     nlist0 = nlist
     ret = {}
     for rc, ns in zip(rcuts[::-1], nsels[::-1]):
-        tnlist_1 = np.copy(nlist0[:, :, :ns])
-        tnlist_1[rr[:, :, :ns] > rc] = -1
+        tnlist_1 = nlist0[:, :, :ns]
+        tnlist_1 = xp.where(
+            rr2[:, :, :ns] > rc * rc, xp.full_like(tnlist_1, -1), tnlist_1
+        )
         ret[get_multiple_nlist_key(rc, ns)] = tnlist_1
     return ret
 
