@@ -501,6 +501,7 @@ def change_bias(
         )
     log.info(f"Saved model to {output_path}")
 
+
 def enable_compression(
     input_file: str,
     output: str,
@@ -524,7 +525,7 @@ def enable_compression(
         model = modelwrapper.model["Default"]
     else:
         raise ValueError("PyTorch backend only supports converting .pth or .pt file")
-    
+
     model.enable_compression(
         extraploate,
         stride,
@@ -534,6 +535,7 @@ def enable_compression(
 
     model = torch.jit.script(model)
     torch.jit.save(model, output)
+
 
 @record
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
