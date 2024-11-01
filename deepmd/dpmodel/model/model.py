@@ -67,7 +67,7 @@ def get_standard_model(data: dict) -> EnergyModel:
     )
 
 
-def get_zbl_model(data: dict):
+def get_zbl_model(data: dict) -> DPZBLModel:
     data["descriptor"]["ntypes"] = len(data["type_map"])
     descriptor = BaseDescriptor(**data["descriptor"])
     fitting_type = data["fitting_net"].pop("type")
