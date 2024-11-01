@@ -7,7 +7,7 @@ from typing import (
 import paddle
 
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 
@@ -28,13 +28,13 @@ class Region3D:
         # boxt = boxt.permute(1, 0)
         c_yz = paddle.cross(boxt[1], boxt[2])
         # self._h2yz = self.volume / paddle.linalg.norm(c_yz)
-        self._h2yz = self.volume / aux.norm(c_yz)
+        self._h2yz = self.volume / decomp.norm(c_yz)
         c_zx = paddle.cross(boxt[2], boxt[0])
         # self._h2zx = self.volume / paddle.linalg.norm(c_zx)
-        self._h2zx = self.volume / aux.norm(c_zx)
+        self._h2zx = self.volume / decomp.norm(c_zx)
         c_xy = paddle.cross(boxt[0], boxt[1])
         # self._h2xy = self.volume / paddle.linalg.norm(c_xy)
-        self._h2xy = self.volume / aux.norm(c_xy)
+        self._h2xy = self.volume / decomp.norm(c_xy)
 
     def phys2inter(self, coord):
         """Convert physical coordinates to internal ones."""
@@ -189,7 +189,7 @@ def build_neighbor_list(
     coord_r = coord.reshape([1, -1, 3])
     distance = coord_l - coord_r
     # distance = paddle.linalg.norm(distance, axis=-1)
-    distance = aux.norm(distance, axis=-1)
+    distance = decomp.norm(distance, axis=-1)
     DISTANCE_INF = distance.max().detach() + rcut
     distance[:nloc, :nloc] += paddle.eye(nloc, dtype=paddle.bool) * DISTANCE_INF  # pylint: disable=no-explicit-device
     if min_check:

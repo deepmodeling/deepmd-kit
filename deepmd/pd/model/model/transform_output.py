@@ -10,7 +10,7 @@ from deepmd.dpmodel import (
     get_reduce_name,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 
@@ -233,7 +233,7 @@ def communicate_extended_output(
                     device=vv.place
                 )
                 # nf x nloc x nvar x 3
-                new_ret[kk_derv_r] = aux.scatter_reduce(
+                new_ret[kk_derv_r] = decomp.scatter_reduce(
                     force,
                     1,
                     index=mapping,
@@ -252,7 +252,7 @@ def communicate_extended_output(
                     device=vv.place
                 )
                 # nf x nloc x nvar x 9
-                new_ret[kk_derv_c] = aux.scatter_reduce(
+                new_ret[kk_derv_c] = decomp.scatter_reduce(
                     virial,
                     1,
                     index=mapping,

@@ -29,7 +29,10 @@ from .common import (
 )
 
 
-@unittest.skip("froze model only used to inference in paddle backend")
+@unittest.skip(
+    "Paddle do not support finetune in frozen models(.json and .pdiparams file), "
+    "will be supported in the future."
+)
 class TestInitFrzModel(unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")

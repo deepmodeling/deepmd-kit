@@ -11,7 +11,7 @@ from deepmd.pd.model.model import (
     get_model,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.nlist import (
@@ -46,7 +46,7 @@ def reduce_tensor(extended_tensor, mapping, nloc: int):
         [-1] * len(mldims) + list(ext_dims)
     )
     # nf x nloc x (*ext_dims)
-    reduced_tensor = aux.scatter_reduce(
+    reduced_tensor = decomp.scatter_reduce(
         reduced_tensor,
         1,
         index=mapping,
@@ -168,7 +168,7 @@ class SpinTest:
         )
         nall = extended_coord.shape[1]
         nnei = nlist.shape[-1]
-        extended_spin = aux.take_along_axis(
+        extended_spin = decomp.take_along_axis(
             self.spin, indices=mapping.unsqueeze(-1).tile((1, 1, 3)), axis=1
         )
         (
@@ -247,16 +247,16 @@ class SpinTest:
         loc_atoms_mask = (nlist < nloc) & (nlist != -1)
         ghost_atoms_mask = nlist >= nloc
         real_neighbors = nlist.clone()
-        aux.masked_add_(real_neighbors, ghost_atoms_mask, nloc)
+        decomp.masked_add_(real_neighbors, ghost_atoms_mask, nloc)
         # real_neighbors[ghost_atoms_mask] += nloc
         assert np.allclose(
             nlist_updated[:, :nloc, 1 : 1 + nnei].numpy(), real_neighbors.numpy()
         )
         virtual_neighbors = nlist.clone()
         # virtual_neighbors[loc_atoms_mask] += nloc
-        aux.masked_add_(virtual_neighbors, loc_atoms_mask, nloc)
+        decomp.masked_add_(virtual_neighbors, loc_atoms_mask, nloc)
         # virtual_neighbors[ghost_atoms_mask] += nall
-        aux.masked_add_(virtual_neighbors, ghost_atoms_mask, nall)
+        decomp.masked_add_(virtual_neighbors, ghost_atoms_mask, nall)
         assert np.allclose(
             nlist_updated[:, :nloc, 1 + nnei :].numpy(), virtual_neighbors.numpy()
         )
@@ -365,7 +365,7 @@ class SpinTest:
             mixed_types=self.model.mixed_types(),
             box=self.cell,
         )
-        extended_spin = aux.take_along_axis(
+        extended_spin = decomp.take_along_axis(
             self.spin, indices=mapping.unsqueeze(-1).tile((1, 1, 3)), axis=1
         )
         dp_ret_lower = dp_model.call_lower(

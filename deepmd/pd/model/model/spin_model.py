@@ -16,7 +16,7 @@ from deepmd.pd.model.atomic_model import (
     DPAtomicModel,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
 )
 from deepmd.pd.utils.utils import (
     to_paddle_tensor,
@@ -204,9 +204,11 @@ class SpinModel(paddle.nn.Layer):
         first_part_index = (nloc <= extended_nlist) & (extended_nlist < nall)
         second_part_index = (nall <= extended_nlist) & (extended_nlist < (nall + nloc))
         # extended_nlist[first_part_index] += nloc
-        extended_nlist = aux.masked_add_(extended_nlist, first_part_index, nloc)
+        extended_nlist = decomp.masked_add_(extended_nlist, first_part_index, nloc)
         # extended_nlist[second_part_index] -= nall - nloc
-        entended_nlist = aux.masked_add_(extended_nlist, second_part_index, nloc - nall)
+        entended_nlist = decomp.masked_add_(
+            extended_nlist, second_part_index, nloc - nall
+        )
         return extended_nlist
 
     @staticmethod

@@ -15,7 +15,7 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNet,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.utils.path import (
@@ -244,7 +244,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
 
         # Atomic feature
         # [(nframes x nloc) x (1 + nnei2) x tebd_dim]
-        atom_feature = aux.take_along_axis(
+        atom_feature = decomp.take_along_axis(
             atype_tebd,
             axis=1,
             indices=nlist_loc2.reshape([nframes, -1])
@@ -256,7 +256,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
             if first_dim == nframes * nloc:
                 atom_feature += seq_input
             elif first_dim == nframes:
-                atom_feature_seq = aux.take_along_axis(
+                atom_feature_seq = decomp.take_along_axis(
                     seq_input,
                     axis=1,
                     indices=nlist_loc2.reshape([nframes, -1])
@@ -294,7 +294,7 @@ class DescrptGaussianLcc(paddle.nn.Layer, BaseDescriptor):
             axis=-1,
         )
         # [(nframes x nloc) x (1 + nnei2) x 3]
-        coord_selected = aux.take_along_axis(
+        coord_selected = decomp.take_along_axis(
             extended_coord.unsqueeze(1)
             .expand([-1, nloc, -1, -1])
             .reshape([nframes * nloc, nall, 3]),

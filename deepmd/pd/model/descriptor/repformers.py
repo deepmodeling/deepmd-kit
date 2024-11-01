@@ -20,7 +20,7 @@ from deepmd.pd.model.network.mlp import (
     MLPLayer,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.env_mat_stat import (
@@ -430,7 +430,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             g2, h2 = paddle.split(dmatrix, [1, 3], axis=-1)
         else:
             # g2, h2 = paddle.linalg.norm(diff, axis=-1, keepdim=True), diff
-            g2, h2 = aux.norm(diff, axis=-1, keepdim=True), diff
+            g2, h2 = decomp.norm(diff, axis=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nb x nloc x nnei x ng2
@@ -452,7 +452,7 @@ class DescrptBlockRepformers(DescriptorBlock):
             # g1_ext: nb x nall x ng1
             if comm_dict is None:
                 assert mapping is not None
-                g1_ext = aux.take_along_axis(g1, axis=1, indices=mapping)
+                g1_ext = decomp.take_along_axis(g1, axis=1, indices=mapping)
             else:
                 n_padding = nall - nloc
                 g1 = paddle.nn.functional.pad(

@@ -187,9 +187,9 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 def make_default_type_embedding(
     ntypes,
 ):
-    aux = {}
-    aux["tebd_dim"] = 8
-    return TypeEmbedNet(ntypes, aux["tebd_dim"]), aux
+    decomp = {}
+    decomp["tebd_dim"] = 8
+    return TypeEmbedNet(ntypes, decomp["tebd_dim"]), decomp
 
 
 def extend_descrpt_stat(des, type_map, des_with_stat=None):

@@ -361,7 +361,10 @@ class TestPolarModel(unittest.TestCase):
         self.model = PolarModel(self.dd0, self.ft0, self.type_mapping)
         self.file_path = "model_output.pd"
 
-    @unittest.skip("Paddle do not eval on frozen model yet.")
+    @unittest.skip(
+        "Paddle do not support finetune in frozen models(.json and .pdiparams file), "
+        "will be supported in the future."
+    )
     def test_deepdipole_infer(self):
         atype = self.atype.reshape([self.nf, self.natoms])
         coord = self.coord.reshape([1, 5, 3])

@@ -27,7 +27,7 @@ from deepmd.pd.model.network.mlp import (
     NetworkCollection,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -455,7 +455,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
         # nb x (nloc x nnei) x nt
         # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
-        atype_tebd_nlist = aux.take_along_axis(atype_tebd_ext, axis=1, indices=index)
+        atype_tebd_nlist = decomp.take_along_axis(atype_tebd_ext, axis=1, indices=index)
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
         # beyond the cutoff sw should be 0.0
@@ -502,7 +502,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         # input_r = paddle.nn.functional.normalize(
         #     rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1
         # )
-        input_r = aux.normalize(rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1)
+        input_r = decomp.normalize(rr.reshape([-1, self.nnei, 4])[:, :, 1:4], axis=-1)
         gg = self.dpa1_attention(
             gg, nlist_mask, input_r=input_r, sw=sw
         )  # shape is [nframes*nloc, self.neei, out_size]
@@ -882,9 +882,9 @@ class GatedAttentionLayer(nn.Layer):
             # q = paddle_func.normalize(q, axis=-1)
             # k = paddle_func.normalize(k, axis=-1)
             # v = paddle_func.normalize(v, axis=-1)
-            q = aux.normalize(q, axis=-1)
-            k = aux.normalize(k, axis=-1)
-            v = aux.normalize(v, axis=-1)
+            q = decomp.normalize(q, axis=-1)
+            k = decomp.normalize(k, axis=-1)
+            v = decomp.normalize(v, axis=-1)
 
         q = q * self.scaling
         # (nf x nloc) x num_heads x head_dim x nnei

@@ -17,7 +17,7 @@ from deepmd.pd.model.descriptor import (
     prod_env_mat,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     dp_random,
     env,
 )
@@ -179,7 +179,7 @@ class TestSeA(unittest.TestCase):
         my_nlist = nlist.reshape([bsz, -1]).cpu()
         mask = my_nlist == -1
         my_nlist = my_nlist * (~mask).astype(my_nlist.dtype)
-        my_nlist = aux.take_along_axis(mapping, axis=-1, indices=my_nlist)
+        my_nlist = decomp.take_along_axis(mapping, axis=-1, indices=my_nlist)
         my_nlist = my_nlist * (~mask).astype(my_nlist.dtype) - mask.astype(
             my_nlist.dtype
         )

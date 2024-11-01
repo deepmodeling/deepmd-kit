@@ -25,7 +25,7 @@ from deepmd.pd.model.network.network import (
     TypeEmbedNetConsistent,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.nlist import (
@@ -793,7 +793,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 .unsqueeze(-1)
                 .expand([-1, -1, g1.shape[-1]])
             )
-            g1_ext = aux.take_along_axis(g1, mapping_ext, 1)
+            g1_ext = decomp.take_along_axis(g1, mapping_ext, 1)
             g1 = g1_ext
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(

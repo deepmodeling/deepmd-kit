@@ -21,7 +21,7 @@ from deepmd.pd.model.network.mlp import (
     MLPLayer,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.env import (
@@ -110,7 +110,7 @@ def _make_nei_g1(
     # index: nb x (nloc x nnei) x ng1
     index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, ng1])
     # gg1  : nb x (nloc x nnei) x ng1
-    gg1 = aux.take_along_axis(g1_ext, axis=1, indices=index)
+    gg1 = decomp.take_along_axis(g1_ext, axis=1, indices=index)
     # gg1  : nb x nloc x nnei x ng1
     gg1 = gg1.reshape([nb, nloc, nnei, ng1])
     return gg1
@@ -200,7 +200,7 @@ class Atten2Map(paddle.nn.Layer):
         # nb x nloc x (nh x 2) x nnei x nd
         g2qk = paddle.transpose(g2qk, (0, 1, 4, 2, 3))
         # nb x nloc x nh x nnei x nd
-        g2q, g2k = paddle.split(g2qk, aux.sec(g2qk.shape[2], nh), axis=2)
+        g2q, g2k = paddle.split(g2qk, decomp.sec(g2qk.shape[2], nh), axis=2)
         # g2q = paddle.nn.functional.normalize(g2q, axis=-1)
         # g2k = paddle.nn.functional.normalize(g2k, axis=-1)
         # nb x nloc x nh x nnei x nnei
@@ -1013,7 +1013,7 @@ class RepformerLayer(paddle.nn.Layer):
         # nb x nloc x 3 x ng2
         nb, nloc, _, ng2 = h2g2.shape
         # nb x nloc x 3 x axis
-        h2g2m = paddle.split(h2g2, aux.sec(h2g2.shape[-1], axis_neuron), axis=-1)[0]
+        h2g2m = paddle.split(h2g2, decomp.sec(h2g2.shape[-1], axis_neuron), axis=-1)[0]
         # nb x nloc x axis x ng2
         g1_13 = paddle.matmul(paddle.transpose(h2g2m, [0, 1, 3, 2]), h2g2) / (3.0**1)
         # nb x nloc x (axisxng2)

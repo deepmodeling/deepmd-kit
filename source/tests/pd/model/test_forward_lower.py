@@ -9,7 +9,7 @@ from deepmd.pd.model.model import (
     get_model,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.nlist import (
@@ -45,7 +45,7 @@ def reduce_tensor(extended_tensor, mapping, nloc: int):
         [-1] * len(mldims) + list(ext_dims)
     )
     # nf x nloc x (*ext_dims)
-    reduced_tensor = aux.scatter_reduce(
+    reduced_tensor = decomp.scatter_reduce(
         reduced_tensor,
         1,
         index=mapping,
@@ -96,7 +96,7 @@ class ForwardLowerTest:
             mixed_types=self.model.mixed_types(),
             box=cell.unsqueeze(0),
         )
-        extended_spin = aux.take_along_axis(
+        extended_spin = decomp.take_along_axis(
             spin.unsqueeze(0), indices=mapping.unsqueeze(-1).tile((1, 1, 3)), axis=1
         )
         input_dict = {

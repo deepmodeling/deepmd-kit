@@ -25,7 +25,7 @@ from deepmd.pd.model.model.transform_output import (
     fit_output_to_model_output,
 )
 from deepmd.pd.utils import (
-    aux,
+    decomp,
 )
 from deepmd.pd.utils.env import (
     GLOBAL_PD_ENER_FLOAT_PRECISION,
@@ -432,18 +432,18 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 coord0 = extended_coord[:, :n_nloc, :]
                 # nf x (nloc x nnei) x 3
                 index = nlist.reshape([n_nf, n_nloc * n_nnei, 1]).expand([-1, -1, 3])
-                coord1 = aux.take_along_axis(extended_coord, axis=1, indices=index)
+                coord1 = decomp.take_along_axis(extended_coord, axis=1, indices=index)
                 # nf x nloc x nnei x 3
                 coord1 = coord1.reshape([n_nf, n_nloc, n_nnei, 3])
                 # nf x nloc x nnei
                 # rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = aux.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                rr = decomp.norm(coord0[:, :, None, :] - coord1, axis=-1)
                 rr = paddle.where(m_real_nei, rr, float("inf"))
                 rr, nlist_mapping = (
                     paddle.sort(rr, axis=-1),
                     paddle.argsort(rr, axis=-1),
                 )
-                nlist = aux.take_along_axis(nlist, axis=2, indices=nlist_mapping)
+                nlist = decomp.take_along_axis(nlist, axis=2, indices=nlist_mapping)
                 nlist = paddle.where(rr > rcut, paddle.full_like(nlist, -1), nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:

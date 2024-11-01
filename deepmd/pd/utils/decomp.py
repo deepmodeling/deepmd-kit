@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-# This file is used to implement some paddle functions with composite APi,
+# This file is used to implement some paddle functions with composite API,
 # so as to support high-order differentation when double-backward is needed.
-
+# For example: [norm] --decomposition--> [multiply, power, sum]
 # This file will be removed when implmented functions are decomposed into primitive
 # function in Paddle framework in the future.
 
@@ -21,6 +21,16 @@ __all__ = [
 
 # decomposition for forward function
 def softmax_decomp(x: paddle.Tensor, axis: int = -1) -> paddle.Tensor:
+    """Forward decompsition function of softmax.
+
+    Args:
+        x (paddle.Tensor): Input.
+        axis (int, optional): A dimension along which softmax will be computed. Defaults to -1.
+
+    Returns
+    -------
+    paddle.Tensor: Computed output.
+    """
     x_max = paddle.max(x, axis=axis, keepdim=True)
     x = x - x_max
     return paddle.exp(x) / paddle.sum(paddle.exp(x), axis=axis, keepdim=True)

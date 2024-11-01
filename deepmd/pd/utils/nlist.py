@@ -7,7 +7,7 @@ from typing import (
 import paddle
 
 from deepmd.pd.utils import (
-    aux,
+    decomp,
     env,
 )
 from deepmd.pd.utils.region import (
@@ -119,7 +119,7 @@ def build_neighbor_list(
         assert list(diff.shape) == [batch_size, nloc, nall, 3]
     # nloc x nall
     # rr = paddle.linalg.norm(diff, axis=-1)
-    rr = aux.norm(diff, axis=-1)
+    rr = decomp.norm(diff, axis=-1)
     # if central atom has two zero distances, sorting sometimes can not exclude itself
     rr = rr - paddle.eye(nloc, nall, dtype=rr.dtype).to(device=rr.place).unsqueeze(0)
     rr, nlist = paddle.sort(rr, axis=-1), paddle.argsort(rr, axis=-1)
@@ -268,7 +268,7 @@ def build_directional_neighbor_list(
         assert list(diff.shape) == [batch_size, nloc_cntl, nall_neig, 3]
     # nloc x nall
     # rr = paddle.linalg.norm(diff, axis=-1)
-    rr = aux.norm(diff, axis=-1)
+    rr = decomp.norm(diff, axis=-1)
     rr, nlist = paddle.sort(rr, axis=-1), paddle.argsort(rr, axis=-1)
 
     # We assume that the central and neighbor atoms are diffferent,
@@ -305,7 +305,7 @@ def nlist_distinguish_types(
     #     axis=2,
     #     indices=nlist.masked_fill(mask, 0),
     # )
-    tnlist = aux.take_along_axis(
+    tnlist = decomp.take_along_axis(
         tmp_atype,
         axis=2,
         indices=nlist.masked_fill(mask, 0),
@@ -323,7 +323,7 @@ def nlist_distinguish_types(
         )
         # nloc x s(nsel)
         # inlist = paddle.take_along_axis(nlist, axis=2, indices=imap)
-        inlist = aux.take_along_axis(nlist, axis=2, indices=imap)
+        inlist = decomp.take_along_axis(nlist, axis=2, indices=imap)
         inlist = inlist.masked_fill(~(pick_mask.to(paddle.bool)), -1)
         # nloc x nsel[ii]
         ret_nlist.append(paddle.split(inlist, [ss, snsel - ss], axis=-1)[0])
@@ -407,14 +407,14 @@ def build_multiple_neighbor_list(
     # coord2 = paddle.take_along_axis(coord1, axis=1, index=index).reshape(
     #     [nb, nloc, nsel, 3]
     # )
-    coord2 = aux.take_along_axis(coord1, axis=1, indices=index).reshape(
+    coord2 = decomp.take_along_axis(coord1, axis=1, indices=index).reshape(
         [nb, nloc, nsel, 3]
     )
     # nb x nloc x nsel x 3
     diff = coord2 - coord0[:, :, None, :]
     # nb x nloc x nsel
     # rr = paddle.linalg.norm(diff, axis=-1)
-    rr = aux.norm(diff, axis=-1)
+    rr = decomp.norm(diff, axis=-1)
     rr.masked_fill(nlist_mask, float("inf"))
     nlist0 = nlist
     ret = {}
@@ -516,7 +516,7 @@ def extend_coord_with_ghosts(
         # xyz = xyz.to(device=device)
         # ns x 3
         # shift_idx = xyz[paddle.argsort(paddle.norm(xyz, axis=1))]
-        shift_idx = xyz[paddle.argsort(aux.norm(xyz, axis=1))]
+        shift_idx = xyz[paddle.argsort(decomp.norm(xyz, axis=1))]
         ns, _ = shift_idx.shape
         nall = ns * nloc
         # nf x ns x 3
