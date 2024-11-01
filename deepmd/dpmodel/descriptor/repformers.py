@@ -523,6 +523,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             },
         }
 
+
 # translated by GPT and modified
 def get_residual(
     _dim: int,
