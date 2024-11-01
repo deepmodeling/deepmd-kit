@@ -6,11 +6,11 @@ from typing import (
 from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingNetDP
 from deepmd.dpmodel.fitting.dos_fitting import DOSFittingNet as DOSFittingNetDP
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
-from deepmd.dpmodel.fitting.property_fitting import (
-    PropertyFittingNet as PropertyFittingNetDP,
-)
 from deepmd.dpmodel.fitting.polarizability_fitting import (
     PolarFitting as PolarFittingNetDP,
+)
+from deepmd.dpmodel.fitting.property_fitting import (
+    PropertyFittingNet as PropertyFittingNetDP,
 )
 
 from ..common import (
