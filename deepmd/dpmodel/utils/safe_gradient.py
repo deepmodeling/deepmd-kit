@@ -28,5 +28,5 @@ def safe_for_vector_norm(x, /, *, axis=None, keepdims=False, ord=2):
         xp.linalg.vector_norm(
             xp.where(mask, x, xp.ones_like(x)), axis=axis, keepdims=keepdims, ord=ord
         ),
-        xp.zeros_like(mask_squeezed),
+        xp.zeros_like(mask_squeezed, dtype=x.dtype),
     )
