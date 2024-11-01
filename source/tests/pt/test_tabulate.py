@@ -4,6 +4,9 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.tabulate import (
     unaggregated_dy2_dx,
     unaggregated_dy2_dx_s,
@@ -92,15 +95,15 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dz_pt = unaggregated_dy_dx(
-            torch.from_numpy(self.y),
+            torch.from_numpy(self.y).to(env.DEVICE),
             self.w,
             dy_pt,
-            torch.from_numpy(self.xbar),
+            torch.from_numpy(self.xbar).to(env.DEVICE),
             1,
         )
 
         dz_tf_numpy = dz_tf.numpy()
-        dz_pt_numpy = dz_pt.detach().numpy()
+        dz_pt_numpy = dz_pt.detach().cpu().numpy()
 
         np.testing.assert_almost_equal(dz_tf_numpy, dz_pt_numpy, decimal=10)
 
@@ -114,16 +117,16 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dy2_pt = unaggregated_dy2_dx(
-            torch.from_numpy(self.y),
+            torch.from_numpy(self.y).to(env.DEVICE),
             self.w,
             dy_pt,
             dy2_pt,
-            torch.from_numpy(self.xbar),
+            torch.from_numpy(self.xbar).to(env.DEVICE),
             1,
         )
 
         dy2_tf_numpy = dy2_tf.numpy()
-        dy2_pt_numpy = dy2_pt.detach().numpy()
+        dy2_pt_numpy = dy2_pt.detach().cpu().numpy()
 
         np.testing.assert_almost_equal(dy2_tf_numpy, dy2_pt_numpy, decimal=10)
 
