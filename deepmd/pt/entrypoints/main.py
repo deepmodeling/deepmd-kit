@@ -43,6 +43,7 @@ from deepmd.pt.infer import (
 )
 from deepmd.pt.model.model import (
     BaseModel,
+    get_model,
 )
 from deepmd.pt.train import (
     training,
@@ -500,6 +501,39 @@ def change_bias(
         )
     log.info(f"Saved model to {output_path}")
 
+def enable_compression(
+    input_file: str,
+    output: str,
+    stride: float = 0.01,
+    extraploate: int = 5,
+    check_frequency: int = -1,
+):
+    if input_file.endswith(".pth"):
+        saved_model = torch.jit.load(input_file, map_location="cpu")
+        model_def_script = json.loads(saved_model.model_def_script)
+        model = get_model(model_def_script)
+        model.load_state_dict(saved_model.state_dict())
+    elif input_file.endswith(".pt"):
+        state_dict = torch.load(input_file, map_location="cpu", weights_only=True)
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        model_def_script = state_dict["_extra_state"]["model_params"]
+        model = get_model(model_def_script)
+        modelwrapper = ModelWrapper(model)
+        modelwrapper.load_state_dict(state_dict)
+        model = modelwrapper.model["Default"]
+    else:
+        raise ValueError("PyTorch backend only supports converting .pth or .pt file")
+    
+    model.enable_compression(
+        extraploate,
+        stride,
+        stride * 10,
+        check_frequency,
+    )
+
+    model = torch.jit.script(model)
+    torch.jit.save(model, output)
 
 @record
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
@@ -548,6 +582,14 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             numb_batch=FLAGS.numb_batch,
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
+        )
+    elif FLAGS.command == "compress":
+        enable_compression(
+            input_file=FLAGS.input,
+            output=FLAGS.output,
+            stride=FLAGS.step,
+            extraploate=FLAGS.extrapolate,
+            check_frequency=FLAGS.frequency,
         )
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
