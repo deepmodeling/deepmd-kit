@@ -32,6 +32,13 @@ While `.pth` and `.pt` are the same in the PyTorch package, they have different 
 Both `.xlo` and `.jax` are customized format extensions defined in DeePMD-kit, since JAX has no convention for file extensions.
 Currently, this backend is developed actively, and has no support for training and the C++ interface.
 
+### Paddle {{ paddle_icon }}
+
+- Model filename extension: `.json` and `.pdiparams`
+- Checkpoint filename extension: `.pd`
+
+[Paddle](https://www.paddlepaddle.org.cn/) 3.0 or above is required.
+
 ### DP {{ dpmodel_icon }}
 
 :::{note}
@@ -54,7 +61,7 @@ NumPy 1.21 or above is required.
 
 ### Training
 
-When training and freezing a model, you can use `dp --tf` or `dp --pt` in the command line to switch the backend.
+When training and freezing a model, you can use `dp --tf`, `dp --pt` or `dp --pd` in the command line to switch the backend.
 
 ### Inference
 
@@ -66,5 +73,5 @@ For example, when the model filename ends with `.pb` (the ProtoBuf file), DeePMD
 If a model is supported by two backends, one can use [`dp convert-backend`](./cli.rst) to convert the model file between these two backends.
 
 :::{warning}
-Currently, only the `se_e2_a` model fully supports the backend conversion between TensorFlow {{ tensorflow_icon }} and PyTorch {{ pytorch_icon }}.
+Currently, only the `se_e2_a` model fully supports the backend conversion between TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }} and Paddle {{ paddle_icon }}.
 :::

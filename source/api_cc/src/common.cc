@@ -409,6 +409,9 @@ void deepmd::load_op_library() {
 #ifdef BUILD_PYTORCH
   _load_single_op_library("deepmd_op_pt");
 #endif
+  // #ifdef BUILD_PADDLE
+  //   _load_single_op_library("deepmd_op_pd");
+  // #endif
   // load customized plugins
   const char* env_customized_plugins = std::getenv("DP_PLUGIN_PATH");
   if (env_customized_plugins) {
@@ -1391,6 +1394,9 @@ void deepmd::print_summary(const std::string& pre) {
 #endif
 #ifdef BUILD_PYTORCH
   std::cout << pre << "build with pt lib:  " + global_pt_lib << "\n";
+#endif
+#ifdef BUILD_PADDLE
+  std::cout << pre << "build with pd lib:  " + global_pd_lib << "\n";
 #endif
   std::cout << pre
             << "set tf intra_op_parallelism_threads: " << num_intra_nthreads

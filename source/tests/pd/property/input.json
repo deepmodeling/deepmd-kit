@@ -1,0 +1,77 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "type_map": [
+      "H",
+      "C",
+      "N",
+      "O"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        90
+      ],
+      "rcut_smth": 1.8,
+      "rcut": 6.0,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 8,
+      "precision": "float64",
+      "seed": 1
+    },
+    "fitting_net": {
+      "type": "property",
+      "intensive": true,
+      "task_dim": 3,
+      "neuron": [
+        100,
+        100,
+        100
+      ],
+      "resnet_dt": true,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.0002,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "property",
+    "_comment": " that's all"
+  },
+  "training": {
+    "training_data": {
+      "systems": [
+        "pt/property/single"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "pt/property/single"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1000000,
+    "warmup_steps": 0,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 2000,
+    "_comment": "that's all"
+  }
+}

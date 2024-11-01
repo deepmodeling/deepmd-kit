@@ -32,6 +32,10 @@ jobs:
       run: |
          wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
          unzip libtorch.zip
+    - name: Download paddle_inference_lib
+      run: |
+         wget https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/ce51e82e84fc97e0a55a162037f1554746159cad/paddle_inference.tgz
+         tar -xzvf paddle_inference.tgz
     # https://github.com/actions/runner-images/issues/9491
     - name: Fix kernel mmap rnd bits
       run: sudo sysctl vm.mmap_rnd_bits=28
@@ -49,6 +53,10 @@ jobs:
     # test lammps
     - run: |
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+        export PADDLE_INFERENCE_ROOT=$PWD/paddle_inference_install_dir/
+        export LD_LIBRARY_PATH=${PADDLE_INFERENCE_ROOT}/paddle/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=${PADDLE_INFERENCE_ROOT}/third_party/install/onednn/lib:$LD_LIBRARY_PATH
+        export LD_LIBRARY_PATH=${PADDLE_INFERENCE_ROOT}/third_party/install/mklml/lib:$LD_LIBRARY_PATH
         source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp] mpi4py
       env:
         DP_BUILD_TESTING: 1

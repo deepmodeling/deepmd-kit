@@ -10,6 +10,10 @@ from packaging.version import (
     Version,
 )
 
+from .find_paddle import (
+    find_paddle,
+    get_pd_version,
+)
 from .find_pytorch import (
     find_pytorch,
     get_pt_version,
@@ -21,7 +25,7 @@ from .find_tensorflow import (
 
 
 @lru_cache
-def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
+def get_argument_from_env() -> tuple[str, list, list, dict, str, str, str]:
     """Get the arguments from environment variables.
 
     The environment variables are assumed to be not changed during the build.
@@ -40,6 +44,8 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         The TensorFlow version.
     str
         The PyTorch version.
+    str
+        The Paddle version.
     """
     cmake_args = []
     extra_scripts = {}
@@ -117,6 +123,18 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         cmake_args.append("-DENABLE_PYTORCH=OFF")
         pt_version = None
 
+    if os.environ.get("DP_ENABLE_PADDLE", "0") == "1":
+        pd_install_dir, _ = find_paddle()
+        pd_version = get_pd_version(pd_install_dir)
+        cmake_args.extend(
+            [
+                "-DENABLE_PADDLE=ON",
+            ]
+        )
+    else:
+        cmake_args.append("-DENABLE_PADDLE=OFF")
+        pd_version = None
+
     cmake_args = [
         "-DBUILD_PY_IF:BOOL=TRUE",
         *cmake_args,
@@ -128,11 +146,12 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         extra_scripts,
         tf_version,
         pt_version,
+        pd_version,
     )
 
 
 def set_scikit_build_env():
     """Set scikit-build environment variables before executing scikit-build."""
-    cmake_minimum_required_version, cmake_args, _, _, _, _ = get_argument_from_env()
+    cmake_minimum_required_version, cmake_args, _, _, _, _, _ = get_argument_from_env()
     os.environ["SKBUILD_CMAKE_MINIMUM_VERSION"] = cmake_minimum_required_version
     os.environ["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
