@@ -54,7 +54,7 @@ lammps.fix("1 all nve")
 
 relative = 1.0
 lammps.pair_style(
-    f"deepmd {pb_file} {pb_file2} out_file {md_file} out_freq 1 atomic relative {relative}"
+    f"deepspin {pb_file} {pb_file2} out_file {md_file} out_freq 1 atomic relative {relative}"
 )
 lammps.pair_coeff("* *")
 lammps.run(0)
