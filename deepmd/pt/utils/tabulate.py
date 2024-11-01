@@ -3,7 +3,6 @@ import logging
 from functools import (
     cached_property,
 )
-from unittest import result
 
 import numpy as np
 import torch
@@ -332,15 +331,15 @@ class DPTabulate(BaseTabulate):
         else:
             raise RuntimeError("Unsupported descriptor")
         return layer_size
-    
+
     def _get_network_variable(self, var_name: str) -> dict:
         """Get network variables (weights or biases) for all layers.
-        
+
         Parameters
         ----------
         var_name : str
             Name of the variable to get ('w' for weights, 'b' for biases)
-        
+
         Returns
         -------
         dict
@@ -350,7 +349,9 @@ class DPTabulate(BaseTabulate):
         for layer in range(1, self.layer_size + 1):
             result["layer_" + str(layer)] = []
             if self.descrpt_type == "Atten":
-                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][var_name]
+                node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
+                    var_name
+                ]
                 result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "A":
                 if self.type_one_side:
