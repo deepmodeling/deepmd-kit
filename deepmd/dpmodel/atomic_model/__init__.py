@@ -17,20 +17,17 @@ DPModel = make_model(DPAtomicModel)
 from .base_atomic_model import (
     BaseAtomicModel,
 )
+from .dipole_atomic_model import (
+    DPDipoleAtomicModel,
+)
+from .dos_atomic_model import (
+    DPDOSAtomicModel,
+)
 from .dp_atomic_model import (
     DPAtomicModel,
 )
 from .energy_atomic_model import (
     DPEnergyAtomicModel,
-)
-from .dos_atomic_model import (
-    DPDOSAtomicModel,
-)
-from .polar_atomic_model import (
-    DPPolarAtomicModel,
-)
-from .dipole_atomic_model import (
-    DPDipoleAtomicModel,
 )
 from .linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel,
@@ -41,6 +38,9 @@ from .make_base_atomic_model import (
 )
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
+)
+from .polar_atomic_model import (
+    DPPolarAtomicModel,
 )
 
 __all__ = [
