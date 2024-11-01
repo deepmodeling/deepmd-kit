@@ -15,6 +15,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
     CommonTest,
@@ -33,6 +34,10 @@ if INSTALLED_JAX:
     from deepmd.jax.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2JAX
 else:
     DescrptDPA2JAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2Strict
+else:
+    DescrptDPA2Strict = None
 
 # not implemented
 DescrptDPA2TF = None
@@ -276,11 +281,13 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         return True
 
     skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptDPA2TF
     dp_class = DescrptDPA2DP
     pt_class = DescrptDPA2PT
     jax_class = DescrptDPA2JAX
+    array_api_strict_class = DescrptDPA2Strict
     args = descrpt_dpa2_args().append(Argument("ntypes", int, optional=False))
 
     def setUp(self):
@@ -379,6 +386,16 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
             self.natoms,
             self.coords,
             self.atype,

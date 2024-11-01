@@ -6,39 +6,35 @@ from typing import (
 from deepmd.dpmodel.descriptor.dpa2 import DescrptDPA2 as DescrptDPA2DP
 from deepmd.dpmodel.utils.network import Identity as IdentityDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
-from deepmd.jax.common import (
-    ArrayAPIVariable,
-    flax_module,
-    to_jax_array,
+
+from ..common import (
+    to_array_api_strict_array,
 )
-from deepmd.jax.descriptor.base_descriptor import (
-    BaseDescriptor,
-)
-from deepmd.jax.descriptor.dpa1 import (
-    DescrptBlockSeAtten,
-)
-from deepmd.jax.descriptor.repformers import (
-    DescrptBlockRepformers,
-)
-from deepmd.jax.descriptor.se_t_tebd import (
-    DescrptBlockSeTTebd,
-)
-from deepmd.jax.utils.network import (
+from ..utils.network import (
     NativeLayer,
 )
-from deepmd.jax.utils.type_embed import (
+from ..utils.type_embed import (
     TypeEmbedNet,
+)
+from .base_descriptor import (
+    BaseDescriptor,
+)
+from .dpa1 import (
+    DescrptBlockSeAtten,
+)
+from .repformers import (
+    DescrptBlockRepformers,
+)
+from .se_t_tebd import (
+    DescrptBlockSeTTebd,
 )
 
 
 @BaseDescriptor.register("dpa2")
-@flax_module
 class DescrptDPA2(DescrptDPA2DP):
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"mean", "stddev"}:
-            value = to_jax_array(value)
-            if value is not None:
-                value = ArrayAPIVariable(value)
+            value = to_array_api_strict_array(value)
         elif name in {"repinit"}:
             value = DescrptBlockSeAtten.deserialize(value.serialize())
         elif name in {"repinit_three_body"}:

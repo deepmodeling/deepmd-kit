@@ -224,16 +224,17 @@ def build_multiple_neighbor_list(
         pad = -1 * xp.ones((nb, nloc, nsels[-1] - nsel), dtype=nlist.dtype)
         nlist = xp.concat([nlist, pad], axis=-1)
         nsel = nsels[-1]
-    coord1 = coord.reshape(nb, -1, 3)
+    coord1 = xp.reshape(coord, (nb, -1, 3))
     nall = coord1.shape[1]
     coord0 = coord1[:, :nloc, :]
     nlist_mask = nlist == -1
     tnlist_0 = xp.where(nlist_mask, xp.zeros_like(nlist), nlist)
-    index = xp.tile(tnlist_0.reshape(nb, nloc * nsel, 1), [1, 1, 3])
-    coord2 = xp.take_along_axis(coord1, index, axis=1).reshape(nb, nloc, nsel, 3)
+    index = xp.tile(xp.reshape(tnlist_0, (nb, nloc * nsel, 1)), (1, 1, 3))
+    coord2 = xp_take_along_axis(coord1, index, axis=1)
+    coord2 = xp.reshape(coord2, (nb, nloc, nsel, 3))
     diff = coord2 - coord0[:, :, None, :]
-    rr = xp.linalg.norm(diff, axis=-1)
-    rr = xp.where(nlist_mask, float("inf"), rr)
+    rr = xp.linalg.vector_norm(diff, axis=-1)
+    rr = xp.where(nlist_mask, xp.full_like(rr, float("inf")), rr)
     nlist0 = nlist
     ret = {}
     for rc, ns in zip(rcuts[::-1], nsels[::-1]):

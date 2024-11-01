@@ -12,6 +12,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_take_along_axis,
+)
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -40,6 +43,28 @@ from .descriptor import (
 from .dpa1 import (
     np_softmax,
 )
+
+
+def xp_transpose_01423(x):
+    xp = array_api_compat.array_namespace(x)
+    x_shape2 = x.shape[2]
+    x_shape3 = x.shape[3]
+    x_shape4 = x.shape[4]
+    x = xp.reshape(x, (x.shape[0], x.shape[1], x_shape2 * x_shape3, x_shape4))
+    x = xp.matrix_transpose(x)
+    x = xp.reshape(x, (x.shape[0], x.shape[1], x_shape4, x_shape2, x_shape3))
+    return x
+
+
+def xp_transpose_01342(x):
+    xp = array_api_compat.array_namespace(x)
+    x_shape2 = x.shape[2]
+    x_shape3 = x.shape[3]
+    x_shape4 = x.shape[4]
+    x = xp.reshape(x, (x.shape[0], x.shape[1], x_shape2, x_shape3 * x_shape4))
+    x = xp.matrix_transpose(x)
+    x = xp.reshape(x, (x.shape[0], x.shape[1], x_shape3, x_shape4, x_shape2))
+    return x
 
 
 @DescriptorBlock.register("se_repformer")
@@ -366,7 +391,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
     ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
-        nlist = xp.where(exclude_mask, nlist, -1)
+        nlist = xp.where(exclude_mask, nlist, xp.full_like(nlist, -1))
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
             coord_ext, atype_ext, nlist, self.mean, self.stddev
@@ -375,8 +400,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         # nf x nloc x nnei
         nlist_mask = nlist != -1
         # nf x nloc x nnei
-        sw = sw.reshape(nf, nloc, nnei)
-        sw = xp.where(nlist_mask, sw, 0.0)
+        sw = xp.reshape(sw, (nf, nloc, nnei))
+        sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
         # nf x nloc x tebd_dim
         atype_embd = atype_embd_ext[:, :nloc, :]
         assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
@@ -386,7 +411,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = xp.split(dmatrix, [1], axis=-1)
         else:
-            g2, h2 = xp.linalg.norm(diff, axis=-1, keepdims=True), diff
+            g2, h2 = xp.linalg.vector_norm(diff, axis=-1, keepdims=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nf x nloc x nnei x ng2
@@ -395,11 +420,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         # if a neighbor is real or not is indicated by nlist_mask
         nlist = xp.where(nlist == -1, xp.zeros_like(nlist), nlist)
         # nf x nall x ng1
-        mapping = xp.tile(mapping.reshape(nf, -1, 1), (1, 1, self.g1_dim))
+        mapping = xp.tile(xp.reshape(mapping, (nf, -1, 1)), (1, 1, self.g1_dim))
         for idx, ll in enumerate(self.layers):
             # g1:     nf x nloc x ng1
             # g1_ext: nf x nall x ng1
-            g1_ext = xp.take_along_axis(g1, mapping, axis=1)
+            g1_ext = xp_take_along_axis(g1, mapping, axis=1)
             g1, g2, h2 = ll.call(
                 g1_ext,
                 g2,
@@ -420,8 +445,9 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             use_sqrt_nnei=self.use_sqrt_nnei,
         )
         # (nf x nloc) x ng2 x 3
-        rot_mat = xp.transpose(h2g2, (0, 1, 3, 2))
-        return g1, g2, h2, rot_mat.reshape(nf, nloc, self.dim_emb, 3), sw
+        # rot_mat = xp.transpose(h2g2, (0, 1, 3, 2))
+        rot_mat = xp.matrix_transpose(h2g2)
+        return g1, g2, h2, xp.reshape(rot_mat, (nf, nloc, self.dim_emb, 3)), sw
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
@@ -564,11 +590,11 @@ def _make_nei_g1(
     # g1_ext: nf x nall x ng1
     ng1 = g1_ext.shape[-1]
     # index: nf x (nloc x nnei) x ng1
-    index = xp.tile(nlist.reshape(nf, nloc * nnei, 1), (1, 1, ng1))
+    index = xp.tile(xp.reshape(nlist, (nf, nloc * nnei, 1)), (1, 1, ng1))
     # gg1  : nf x (nloc x nnei) x ng1
-    gg1 = xp.take_along_axis(g1_ext, index, axis=1)
+    gg1 = xp_take_along_axis(g1_ext, index, axis=1)
     # gg1  : nf x nloc x nnei x ng1
-    gg1 = gg1.reshape(nf, nloc, nnei, ng1)
+    gg1 = xp.reshape(gg1, (nf, nloc, nnei, ng1))
     return gg1
 
 
@@ -587,7 +613,7 @@ def _apply_nlist_mask(
         Neighbor list mask, where zero means no neighbor, with shape [nf, nloc, nnei].
     """
     xp = array_api_compat.array_namespace(gg, nlist_mask)
-    masked_gg = xp.where(nlist_mask[:, :, :, None], gg, 0.0)
+    masked_gg = xp.where(nlist_mask[:, :, :, None], gg, xp.zeros_like(gg))
     return masked_gg
 
 
@@ -654,9 +680,11 @@ def _cal_hg(
     if not smooth:
         # nf x nloc
         if not use_sqrt_nnei:
-            invnnei = 1.0 / (epsilon + xp.sum(nlist_mask, axis=-1))
+            invnnei = 1.0 / (epsilon + xp.sum(xp.astype(nlist_mask, g.dtype), axis=-1))
         else:
-            invnnei = 1.0 / (epsilon + xp.sqrt(xp.sum(nlist_mask, axis=-1)))
+            invnnei = 1.0 / (
+                epsilon + xp.sqrt(xp.sum(xp.astype(nlist_mask, g.dtype), axis=-1))
+            )
         # nf x nloc x 1 x 1
         invnnei = invnnei[:, :, xp.newaxis, xp.newaxis]
     else:
@@ -668,7 +696,7 @@ def _cal_hg(
                 (nf, nloc, 1, 1), dtype=g.dtype
             )
     # nf x nloc x 3 x ng
-    hg = xp.matmul(xp.transpose(h, axes=(0, 1, 3, 2)), g) * invnnei
+    hg = xp.matmul(xp.matrix_transpose(h), g) * invnnei
     return hg
 
 
@@ -692,11 +720,11 @@ def _cal_grrg(hg: np.ndarray, axis_neuron: int) -> np.ndarray:
     # nf x nloc x 3 x ng
     nf, nloc, _, ng = hg.shape
     # nf x nloc x 3 x axis
-    hgm = xp.split(hg, [axis_neuron], axis=-1)[0]
+    hgm = hg[..., :axis_neuron]
     # nf x nloc x axis_neuron x ng
-    grrg = xp.matmul(xp.transpose(hgm, axes=(0, 1, 3, 2)), hg) / (3.0**1)
+    grrg = xp.matmul(xp.matrix_transpose(hgm), hg) / (3.0**1)
     # nf x nloc x (axis_neuron * ng)
-    grrg = grrg.reshape(nf, nloc, axis_neuron * ng)
+    grrg = xp.reshape(grrg, (nf, nloc, axis_neuron * ng))
     return grrg
 
 
@@ -802,19 +830,22 @@ class Atten2Map(NativeOP):
         ) = g2.shape
         nd, nh = self.hidden_dim, self.head_num
         # nf x nloc x nnei x nd x (nh x 2)
-        g2qk = self.mapqk(g2).reshape(nf, nloc, nnei, nd, nh * 2)
+        g2qk = self.mapqk(g2)
+        g2qk = xp.reshape(g2qk, (nf, nloc, nnei, nd, nh * 2))
         # nf x nloc x (nh x 2) x nnei x nd
-        g2qk = xp.transpose(g2qk, (0, 1, 4, 2, 3))
+        # g2qk = xp.transpose(g2qk, (0, 1, 4, 2, 3))
+        g2qk = xp_transpose_01423(g2qk)
         # nf x nloc x nh x nnei x nd
-        g2q, g2k = xp.split(g2qk, [nh], axis=2)
+        # g2q, g2k = xp.split(g2qk, [nh], axis=2)
+        g2q = g2qk[:, :, :nh, :, :]
+        g2k = g2qk[:, :, nh:, :, :]
         # g2q = np.linalg.norm(g2q, axis=-1)
         # g2k = np.linalg.norm(g2k, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        attnw = xp.matmul(g2q, xp.transpose(g2k, axes=(0, 1, 2, 4, 3))) / nd**0.5
+        attnw = xp.matmul(g2q, xp.matrix_transpose(g2k)) / nd**0.5
         if self.has_gate:
-            gate = xp.matmul(h2, xp.transpose(h2, axes=(0, 1, 3, 2))).reshape(
-                nf, nloc, 1, nnei, nnei
-            )
+            gate = xp.matmul(h2, xp.matrix_transpose(h2))
+            gate = xp.reshape(gate, (nf, nloc, 1, nnei, nnei))
             attnw = attnw * gate
         # mask the attenmap, nf x nloc x 1 x 1 x nnei
         attnw_mask = ~xp.expand_dims(xp.expand_dims(nlist_mask, axis=2), axis=2)
@@ -825,20 +856,21 @@ class Atten2Map(NativeOP):
                 :, :, None, None, :
             ] - self.attnw_shift
         else:
-            attnw = xp.where(attnw_mask, -xp.inf, attnw)
+            attnw = xp.where(attnw_mask, xp.full_like(attnw, -xp.inf), attnw)
         attnw = np_softmax(attnw, axis=-1)
-        attnw = xp.where(attnw_mask, 0.0, attnw)
+        attnw = xp.where(attnw_mask, xp.zeros_like(attnw), attnw)
         # nf x nloc x nh x nnei x nnei
-        attnw = xp.where(attnw_mask_c, 0.0, attnw)
+        attnw = xp.where(attnw_mask_c, xp.zeros_like(attnw), attnw)
         if self.smooth:
             attnw = attnw * sw[:, :, None, :, None] * sw[:, :, None, None, :]
         # nf x nloc x nnei x nnei
-        h2h2t = xp.matmul(h2, xp.transpose(h2, axes=(0, 1, 3, 2))) / 3.0**0.5
+        h2h2t = xp.matmul(h2, xp.matrix_transpose(h2)) / 3.0**0.5
         # nf x nloc x nh x nnei x nnei
         ret = attnw * h2h2t[:, :, None, :, :]
         # ret = np.exp(g2qk - np.max(g2qk, axis=-1, keepdims=True))
         # nf x nloc x nnei x nnei x nh
-        ret = xp.transpose(ret, (0, 1, 3, 4, 2))
+        # ret = xp.transpose(ret, (0, 1, 3, 4, 2))
+        ret = xp_transpose_01342(ret)
         return ret
 
     def serialize(self) -> dict:
@@ -915,16 +947,18 @@ class Atten2MultiHeadApply(NativeOP):
         nf, nloc, nnei, ng2 = g2.shape
         nh = self.head_num
         # nf x nloc x nnei x ng2 x nh
-        g2v = self.mapv(g2).reshape(nf, nloc, nnei, ng2, nh)
+        g2v = self.mapv(g2)
+        g2v = xp.reshape(g2v, (nf, nloc, nnei, ng2, nh))
         # nf x nloc x nh x nnei x ng2
-        g2v = xp.transpose(g2v, (0, 1, 4, 2, 3))
+        g2v = xp_transpose_01423(g2v)
         # g2v = np.linalg.norm(g2v, axis=-1)
         # nf x nloc x nh x nnei x nnei
-        AA = xp.transpose(AA, (0, 1, 4, 2, 3))
+        AA = xp_transpose_01423(AA)
         # nf x nloc x nh x nnei x ng2
         ret = xp.matmul(AA, g2v)
         # nf x nloc x nnei x ng2 x nh
-        ret = xp.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, (ng2 * nh))
+        ret = xp_transpose_01342(ret)
+        ret = xp.reshape(ret, (nf, nloc, nnei, (ng2 * nh)))
         # nf x nloc x nnei x ng2
         return self.head_map(ret)
 
@@ -991,14 +1025,15 @@ class Atten2EquiVarApply(NativeOP):
         nf, nloc, nnei, _ = h2.shape
         nh = self.head_num
         # nf x nloc x nh x nnei x nnei
-        AA = xp.transpose(AA, (0, 1, 4, 2, 3))
+        AA = xp_transpose_01423(AA)
         h2m = xp.expand_dims(h2, axis=2)
         # nf x nloc x nh x nnei x 3
         h2m = xp.tile(h2m, (1, 1, nh, 1, 1))
         # nf x nloc x nh x nnei x 3
         ret = xp.matmul(AA, h2m)
         # nf x nloc x nnei x 3 x nh
-        ret = xp.transpose(ret, (0, 1, 3, 4, 2)).reshape(nf, nloc, nnei, 3, nh)
+        ret = xp_transpose_01342(ret)
+        ret = xp.reshape(ret, (nf, nloc, nnei, 3, nh))
         # nf x nloc x nnei x 3
         return xp.squeeze(self.head_map(ret), axis=-1)
 
@@ -1089,21 +1124,22 @@ class LocalAtten(NativeOP):
         assert ni == g1.shape[-1]
         assert ni == gg1.shape[-1]
         # nf x nloc x nd x nh
-        g1q = self.mapq(g1).reshape(nf, nloc, nd, nh)
+        g1q = self.mapq(g1)
+        g1q = xp.reshape(g1q, (nf, nloc, nd, nh))
         # nf x nloc x nh x nd
-        g1q = xp.transpose(g1q, (0, 1, 3, 2))
+        g1q = xp.matrix_transpose(g1q)
         # nf x nloc x nnei x (nd+ni) x nh
-        gg1kv = self.mapkv(gg1).reshape(nf, nloc, nnei, nd + ni, nh)
-        gg1kv = xp.transpose(gg1kv, (0, 1, 4, 2, 3))
+        gg1kv = self.mapkv(gg1)
+        gg1kv = xp.reshape(gg1kv, (nf, nloc, nnei, nd + ni, nh))
+        gg1kv = xp_transpose_01423(gg1kv)
         # nf x nloc x nh x nnei x nd, nf x nloc x nh x nnei x ng1
-        gg1k, gg1v = xp.split(gg1kv, [nd], axis=-1)
+        # gg1k, gg1v = xp.split(gg1kv, [nd], axis=-1)
+        gg1k = gg1kv[:, :, :, :, :nd]
+        gg1v = gg1kv[:, :, :, :, nd:]
 
         # nf x nloc x nh x 1 x nnei
         attnw = (
-            xp.matmul(
-                xp.expand_dims(g1q, axis=-2), xp.transpose(gg1k, axes=(0, 1, 2, 4, 3))
-            )
-            / nd**0.5
+            xp.matmul(xp.expand_dims(g1q, axis=-2), xp.matrix_transpose(gg1k)) / nd**0.5
         )
         # nf x nloc x nh x nnei
         attnw = xp.squeeze(attnw, axis=-2)
@@ -1115,18 +1151,16 @@ class LocalAtten(NativeOP):
                 sw, axis=-2
             ) - self.attnw_shift
         else:
-            attnw = xp.where(attnw_mask, -xp.inf, attnw)
+            attnw = xp.where(attnw_mask, xp.full_like(attnw, -xp.inf), attnw)
         attnw = np_softmax(attnw, axis=-1)
-        attnw = xp.where(attnw_mask, 0.0, attnw)
+        attnw = xp.where(attnw_mask, xp.zeros_like(attnw), attnw)
         if self.smooth:
             attnw = attnw * xp.expand_dims(sw, axis=-2)
 
         # nf x nloc x nh x ng1
-        ret = (
-            xp.matmul(xp.expand_dims(attnw, axis=-2), gg1v)
-            .squeeze(-2)
-            .reshape(nf, nloc, nh * ni)
-        )
+        ret = xp.matmul(xp.expand_dims(attnw, axis=-2), gg1v)
+        ret = xp.squeeze(ret, axis=-2)
+        ret = xp.reshape(ret, (nf, nloc, nh * ni))
         # nf x nloc x ng1
         ret = self.head_map(ret)
         return ret
@@ -1498,16 +1532,19 @@ class RepformerLayer(NativeOP):
         ng2 = g2.shape[-1]
         if not self.g1_out_conv:
             # gg1  : nf x nloc x nnei x ng2
-            gg1 = self.proj_g1g2(gg1).reshape(nf, nloc, nnei, ng2)
+            gg1 = self.proj_g1g2(gg1)
+            gg1 = xp.reshape(gg1, (nf, nloc, nnei, ng2))
         else:
             # gg1  : nf x nloc x nnei x ng1
-            gg1 = gg1.reshape(nf, nloc, nnei, ng1)
+            gg1 = xp.reshape(gg1, (nf, nloc, nnei, ng1))
         # nf x nloc x nnei x ng2/ng1
         gg1 = _apply_nlist_mask(gg1, nlist_mask)
         if not self.smooth:
             # normalized by number of neighbors, not smooth
             # nf x nloc
-            invnnei = 1.0 / (self.epsilon + xp.sum(nlist_mask, axis=-1))
+            invnnei = 1.0 / (
+                self.epsilon + xp.sum(xp.astype(nlist_mask, gg1.dtype), axis=-1)
+            )
             # nf x nloc x 1
             invnnei = invnnei[:, :, xp.newaxis]
         else:
@@ -1518,7 +1555,8 @@ class RepformerLayer(NativeOP):
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         else:
             # nf x nloc x ng1
-            g2 = self.proj_g1g2(g2).reshape(nf, nloc, nnei, ng1)
+            g2 = self.proj_g1g2(g2)
+            g2 = xp.reshape(g2, (nf, nloc, nnei, ng1))
             # nb x nloc x ng1
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
         return g1_11
@@ -1588,14 +1626,15 @@ class RepformerLayer(NativeOP):
 
         nf, nloc, nnei, _ = g2.shape
         nall = g1_ext.shape[1]
-        g1, _ = xp.split(g1_ext, [nloc], axis=1)
+        # g1, _ = xp.split(g1_ext, [nloc], axis=1)
+        g1 = g1_ext[:, :nloc, :]
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: list[xp.ndarray] = [g2]
-        h2_update: list[xp.ndarray] = [h2]
-        g1_update: list[xp.ndarray] = [g1]
-        g1_mlp: list[xp.ndarray] = [g1] if not self.g1_out_mlp else []
+        g2_update: list[np.ndarray] = [g2]
+        h2_update: list[np.ndarray] = [h2]
+        g1_update: list[np.ndarray] = [g1]
+        g1_mlp: list[np.ndarray] = [g1] if not self.g1_out_mlp else []
         if self.g1_out_mlp:
             assert self.g1_self_mlp is not None
             g1_self_mlp = self.act(self.g1_self_mlp(g1))
@@ -1678,7 +1717,7 @@ class RepformerLayer(NativeOP):
 
             # nf x nloc x [ng1+ng2+(axisxng2)+(axisxng1)]
             #                  conv   grrg      drrd
-        g1_1 = self.act(self.linear1(xp.concatenate(g1_mlp, axis=-1)))
+        g1_1 = self.act(self.linear1(xp.concat(g1_mlp, axis=-1)))
         g1_update.append(g1_1)
 
         if self.update_g1_has_attn:
