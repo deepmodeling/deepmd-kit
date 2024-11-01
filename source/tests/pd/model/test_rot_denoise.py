@@ -5,9 +5,6 @@ import unittest
 import numpy as np
 import paddle
 
-from deepmd.pd.infer.deep_eval import (
-    eval_model,
-)
 from deepmd.pd.model.model import (
     get_model,
 )
@@ -17,6 +14,9 @@ from deepmd.pd.utils import (
 
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..common import (
+    eval_model,
 )
 from .test_permutation_denoise import (
     model_dpa1,

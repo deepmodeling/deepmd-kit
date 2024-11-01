@@ -15,8 +15,6 @@ from deepmd.env import (
     set_default_nthreads,
 )
 
-log = logging.getLogger(__name__)
-
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 try:
     # only linux
@@ -87,6 +85,7 @@ def enable_prim(enable: bool = True):
 
         core.set_prim_eager_enabled(True)
         core._set_prim_all_enabled(True)
+        log = logging.getLogger(__name__)
         log.info("Enable prim in eager and static mode.")
 
 

@@ -137,7 +137,7 @@ class HessianTest:
         )
 
 
-@unittest.skip("TODO")
+@unittest.skip("Skip temporarily")
 class TestDPModel(unittest.TestCase, HessianTest):
     def setUp(self):
         paddle.seed(2)
