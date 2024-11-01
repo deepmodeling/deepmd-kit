@@ -209,7 +209,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             mean_list.append(mean_item)
             stddev_list.append(stddev_item)
         return mean_list, stddev_list
-    
+
     def enable_compression(
         self,
         min_nbor_dist: float,
