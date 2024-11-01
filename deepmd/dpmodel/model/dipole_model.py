@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+
 from deepmd.dpmodel.atomic_model import (
-    DPDOSAtomicModel,
+    DPDipoleAtomicModel,
 )
 from deepmd.dpmodel.model.model import (
     BaseModel,
@@ -14,12 +15,12 @@ from .make_model import (
     make_model,
 )
 
-DPDOSModel_ = make_model(DPDOSAtomicModel)
+DPDipoleModel_ = make_model(DPDipoleAtomicModel)
 
 
-@BaseModel.register("dos")
-class DOSModel(DPModelCommon, DPDOSModel_):
-    model_type = "dos"
+@BaseModel.register("dipole")
+class DipoleModel(DPModelCommon, DPDipoleModel_):
+    model_type = "dipole"
 
     def __init__(
         self,
@@ -27,6 +28,6 @@ class DOSModel(DPModelCommon, DPDOSModel_):
         **kwargs,
     ):
         DPModelCommon.__init__(self)
-        DPDOSModel_.__init__(self, *args, **kwargs)
+        DPDipoleModel_.__init__(self, *args, **kwargs)
 
     

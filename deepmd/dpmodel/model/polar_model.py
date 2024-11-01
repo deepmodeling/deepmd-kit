@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 from deepmd.dpmodel.atomic_model import (
-    DPDOSAtomicModel,
+    DPPolarAtomicModel,
 )
 from deepmd.dpmodel.model.model import (
     BaseModel,
@@ -14,12 +14,12 @@ from .make_model import (
     make_model,
 )
 
-DPDOSModel_ = make_model(DPDOSAtomicModel)
+DPPolarModel_ = make_model(DPPolarAtomicModel)
 
 
-@BaseModel.register("dos")
-class DOSModel(DPModelCommon, DPDOSModel_):
-    model_type = "dos"
+@BaseModel.register("polar")
+class PolarModel(DPModelCommon, DPPolarModel_):
+    model_type = "polar"
 
     def __init__(
         self,
@@ -27,6 +27,4 @@ class DOSModel(DPModelCommon, DPDOSModel_):
         **kwargs,
     ):
         DPModelCommon.__init__(self)
-        DPDOSModel_.__init__(self, *args, **kwargs)
-
-    
+        DPPolarModel_.__init__(self, *args, **kwargs)

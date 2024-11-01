@@ -22,11 +22,11 @@ from .make_model import (
     make_model,
 )
 
-DPDOSModel_ = make_model(DPPolarAtomicModel)
+DPPolarModel_ = make_model(DPPolarAtomicModel)
 
 
 @BaseModel.register("polar")
-class PolarModel(DPModelCommon, DPDOSModel_):
+class PolarModel(DPModelCommon, DPPolarModel_):
     model_type = "polar"
 
     def __init__(
@@ -35,7 +35,7 @@ class PolarModel(DPModelCommon, DPDOSModel_):
         **kwargs,
     ):
         DPModelCommon.__init__(self)
-        DPDOSModel_.__init__(self, *args, **kwargs)
+        DPPolarModel_.__init__(self, *args, **kwargs)
 
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()

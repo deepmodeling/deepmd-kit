@@ -22,11 +22,11 @@ from .make_model import (
     make_model,
 )
 
-DPDOSModel_ = make_model(DPDipoleAtomicModel)
+DPDipoleModel_ = make_model(DPDipoleAtomicModel)
 
 
 @BaseModel.register("dipole")
-class DipoleModel(DPModelCommon, DPDOSModel_):
+class DipoleModel(DPModelCommon, DPDipoleModel_):
     model_type = "dipole"
 
     def __init__(
@@ -35,7 +35,7 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
         **kwargs,
     ):
         DPModelCommon.__init__(self)
-        DPDOSModel_.__init__(self, *args, **kwargs)
+        DPDipoleModel_.__init__(self, *args, **kwargs)
 
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
