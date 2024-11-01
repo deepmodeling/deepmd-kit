@@ -28,5 +28,3 @@ class DOSModel(DPModelCommon, DPDOSModel_):
     ):
         DPModelCommon.__init__(self)
         DPDOSModel_.__init__(self, *args, **kwargs)
-
-    

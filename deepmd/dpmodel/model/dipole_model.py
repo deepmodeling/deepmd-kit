@@ -29,5 +29,3 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
     ):
         DPModelCommon.__init__(self)
         DPDipoleModel_.__init__(self, *args, **kwargs)
-
-    
