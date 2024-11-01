@@ -193,7 +193,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             table_stride_2: float = 0.1,
             check_frequency: int = -1,
         ) -> None:
-            """Call atomic_model enable_compression()
+            """Call atomic_model enable_compression().
             
             Parameters
                 ----------

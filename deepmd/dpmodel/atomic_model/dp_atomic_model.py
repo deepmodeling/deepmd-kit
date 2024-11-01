@@ -94,7 +94,7 @@ class DPAtomicModel(BaseAtomicModel):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Call descriptor enable_compression()
+        """Call descriptor enable_compression().
         
         Parameters
             ----------
