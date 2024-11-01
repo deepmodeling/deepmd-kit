@@ -33,6 +33,7 @@ from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
 
+
 @BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.

@@ -34,7 +34,6 @@ class DPZBLModel(DPZBLModel_):
     ):
         super().__init__(*args, **kwargs)
 
-
     @classmethod
     def update_sel(
         cls,
