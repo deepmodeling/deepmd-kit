@@ -12,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -32,6 +34,21 @@ if INSTALLED_TF:
     from deepmd.tf.fit.polar import PolarFittingSeA as PolarFittingTF
 else:
     PolarFittingTF = object
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import PolarFittingNet as PolarFittingJAX
+else:
+    PolarFittingJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.fitting import (
+        PolarFittingNet as PolarFittingArrayAPIStrict,
+    )
+else:
+    PolarFittingArrayAPIStrict = object
 from deepmd.utils.argcheck import (
     fitting_polar,
 )
@@ -69,7 +86,11 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
     tf_class = PolarFittingTF
     dp_class = PolarFittingDP
     pt_class = PolarFittingPT
+    jax_class = PolarFittingJAX
+    array_api_strict_class = PolarFittingArrayAPIStrict
     args = fitting_polar()
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     def setUp(self):
         CommonTest.setUp(self)
@@ -142,6 +163,26 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.gr,
             None,
         )["polarizability"]
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return np.asarray(
+            jax_obj(
+                jnp.asarray(self.inputs),
+                jnp.asarray(self.atype.reshape(1, -1)),
+                jnp.asarray(self.gr),
+                None,
+            )["polarizability"]
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return np.asarray(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
+                array_api_strict.asarray(self.gr),
+                None,
+            )["polarizability"]
+        )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:

@@ -214,8 +214,6 @@ class DeepEval(DeepEvalBackend):
             The output of the evaluation. The keys are the names of the output
             variables, and the values are the corresponding output arrays.
         """
-        if fparam is not None or aparam is not None:
-            raise NotImplementedError
         # convert all of the input to numpy array
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
@@ -226,7 +224,7 @@ class DeepEval(DeepEvalBackend):
         )
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, request_defs
+            coords, cells, atom_types, fparam, aparam, request_defs
         )
         return dict(
             zip(
@@ -316,6 +314,8 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: Optional[np.ndarray],
         atom_types: np.ndarray,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp
@@ -333,6 +333,14 @@ class DeepEval(DeepEvalBackend):
             box_input = cells.reshape([-1, 3, 3])
         else:
             box_input = None
+        if fparam is not None:
+            fparam_input = fparam.reshape(nframes, self.get_dim_fparam())
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = aparam.reshape(nframes, natoms, self.get_dim_aparam())
+        else:
+            aparam_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -341,6 +349,8 @@ class DeepEval(DeepEvalBackend):
             to_jax_array(coord_input),
             to_jax_array(type_input),
             box=to_jax_array(box_input),
+            fparam=to_jax_array(fparam_input),
+            aparam=to_jax_array(aparam_input),
             do_atomic_virial=do_atomic_virial,
         )
         if isinstance(batch_output, tuple):
