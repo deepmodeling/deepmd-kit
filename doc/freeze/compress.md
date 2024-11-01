@@ -1,7 +1,7 @@
-# Compress a model {{ tensorflow_icon }}
+# Compress a model {{ tensorflow_icon }} {{ pytorch_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
 ## Theory
@@ -64,9 +64,24 @@ In the compressed DP model, the number of neighbors is precisely indexed at the 
 
 Once the frozen model is obtained from DeePMD-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
 dp compress -i graph.pb -o graph-compress.pb
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+dp compress -i model.pt -o model-compress.pt
+```
+
+:::
+::::
 
 where `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
 
