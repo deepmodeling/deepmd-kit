@@ -20,6 +20,18 @@ from .base_atomic_model import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
+from .energy_atomic_model import (
+    DPEnergyAtomicModel,
+)
+from .dos_atomic_model import (
+    DPDOSAtomicModel,
+)
+from .polar_atomic_model import (
+    DPPolarAtomicModel,
+)
+from .dipole_atomic_model import (
+    DPDipoleAtomicModel,
+)
 from .linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel,
     LinearEnergyAtomicModel,
@@ -35,7 +47,11 @@ __all__ = [
     "make_base_atomic_model",
     "BaseAtomicModel",
     "DPAtomicModel",
+    "DPEnergyAtomicModel",
     "PairTabAtomicModel",
     "LinearEnergyAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
+    "DPDOSAtomicModel",
+    "DPPolarAtomicModel",
+    "DPDipoleAtomicModel",
 ]
