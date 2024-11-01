@@ -62,6 +62,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
   size_vector = 3;
   qe2f = force->qe2f;
   xstyle = ystyle = zstyle = NONE;
+  pair_deepmd_index = 0;
 
   if (strcmp(update->unit_style, "lj") == 0) {
     error->all(FLERR,
@@ -125,6 +126,12 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       }
       sort(bond_type.begin(), bond_type.end());
       iarg = iend;
+    } else if (string(arg[iarg]) == string("pair_deepmd_index")) {
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal pair_deepmd_index, not provided");
+      }
+      pair_deepmd_index = atoi(arg[iarg + 1]);
+      iarg += 2;
     } else {
       break;
     }
@@ -141,7 +148,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     error->one(FLERR, e.what());
   }
 
-  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
+  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1, pair_deepmd_index);
   if (!pair_deepmd) {
     error->all(FLERR, "pair_style deepmd should be set before this fix\n");
   }

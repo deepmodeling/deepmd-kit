@@ -152,6 +152,9 @@ class TestDPTestPropertySeA(unittest.TestCase):
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
         self.config["model"] = deepcopy(model_property)
+        self.config["model"]["type_map"] = [
+            self.config["model"]["type_map"][i] for i in [1, 0, 3, 2]
+        ]
         self.input_json = "test_dp_test_property.json"
         with open(self.input_json, "w") as fp:
             json.dump(self.config, fp, indent=4)

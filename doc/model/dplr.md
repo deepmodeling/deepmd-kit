@@ -198,7 +198,7 @@ fix ID group-ID style_name keyword value ...
 - three or more keyword/value pairs may be appended
 
 ```
-keyword = *model* or *type_associate* or *bond_type* or *efield*
+keyword = *model* or *type_associate* or *bond_type* or *efield* or *pair_deepmd_index*
   *model* value = name
     name = name of DPLR model file (e.g. frozen_model.pb) (not DW model)
   *type_associate* values = NR1 NW1 NR2 NW2 ...
@@ -208,6 +208,8 @@ keyword = *model* or *type_associate* or *bond_type* or *efield*
     NBi = bond type of i-th (real atom, Wannier centroid) pair
   *efield* (optional) values = Ex Ey Ez
     Ex/Ey/Ez = electric field along x/y/z direction
+  *pair_deepmd_index* (optional) values = idx
+    idx = The index of pair_style deepmd, starting from 1, if more than one is used
 ```
 
 **Examples**
@@ -223,6 +225,8 @@ fix_modify	0 virial yes
 ```
 
 The fix command `dplr` calculates the position of WCs by the DW model and back-propagates the long-range interaction on virtual atoms to real toms.
+The fix command must be used after [pair_style `deepmd`](../third-party/lammps-command.md#pair_style-deepmd).
+If there are more than 1 pair_style `deepmd`, `pair_deepmd_index` (starting from 1) must be set to assign the index of the pair_style `deepmd`.
 The atom names specified in [pair_style `deepmd`](../third-party/lammps-command.md#pair_style-deepmd) will be used to determine elements.
 If it is not set, the training parameter {ref}`type_map <model/type_map>` will be mapped to LAMMPS atom types.
 

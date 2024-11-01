@@ -51,18 +51,16 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         model_def_script = data["model_def_script"]
         call_lower = model.call_lower
 
-        nf, nloc, nghost, nfp, nap = jax_export.symbolic_shape(
-            "nf, nloc, nghost, nfp, nap"
-        )
+        nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
         exported = jax_export.export(jax.jit(call_lower))(
             jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),  # extended_coord
             jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),  # extended_atype
             jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
             jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),  # mapping
-            jax.ShapeDtypeStruct((nf, nfp), jnp.float64)
+            jax.ShapeDtypeStruct((nf, model.get_dim_fparam()), jnp.float64)
             if model.get_dim_fparam()
             else None,  # fparam
-            jax.ShapeDtypeStruct((nf, nap), jnp.float64)
+            jax.ShapeDtypeStruct((nf, nloc, model.get_dim_aparam()), jnp.float64)
             if model.get_dim_aparam()
             else None,  # aparam
             False,  # do_atomic_virial

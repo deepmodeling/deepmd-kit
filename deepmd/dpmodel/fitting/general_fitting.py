@@ -388,8 +388,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             assert fparam is not None, "fparam should not be None"
             if fparam.shape[-1] != self.numb_fparam:
                 raise ValueError(
-                    "get an input fparam of dim {fparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_fparam}.",
+                    f"get an input fparam of dim {fparam.shape[-1]}, "
+                    f"which is not consistent with {self.numb_fparam}."
                 )
             fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
             fparam = xp.tile(
@@ -409,8 +409,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             assert aparam is not None, "aparam should not be None"
             if aparam.shape[-1] != self.numb_aparam:
                 raise ValueError(
-                    "get an input aparam of dim {aparam.shape[-1]}, ",
-                    "which is not consistent with {self.numb_aparam}.",
+                    f"get an input aparam of dim {aparam.shape[-1]}, "
+                    f"which is not consistent with {self.numb_aparam}."
                 )
             aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
             aparam = (aparam - self.aparam_avg) * self.aparam_inv_std

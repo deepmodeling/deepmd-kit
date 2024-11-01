@@ -134,7 +134,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         ).reshape(-1, 1)
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
