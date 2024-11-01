@@ -98,8 +98,8 @@ TYPED_TEST(TestInferDeepPotSpin, cpu_build_nlist_atomic) {
   deepmd::DeepPot& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
-  dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord, spin,
-             atype, box);
+  dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
+                  spin, atype, box);
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
   // EXPECT_EQ(atom_ener.size(), natoms);
