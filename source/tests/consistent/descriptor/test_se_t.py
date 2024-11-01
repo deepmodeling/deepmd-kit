@@ -12,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -29,6 +31,14 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_t import DescrptSeT as DescrptSeTTF
 else:
     DescrptSeTTF = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.se_t import DescrptSeT as DescrptSeTJAX
+else:
+    DescrptSeTJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.se_t import DescrptSeT as DescrptSeTStrict
+else:
+    DescrptSeTStrict = None
 from deepmd.utils.argcheck import (
     descrpt_se_t_args,
 )
@@ -91,9 +101,14 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return env_protection != 0.0 or excluded_types
 
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_jax = not INSTALLED_JAX
+
     tf_class = DescrptSeTTF
     dp_class = DescrptSeTDP
     pt_class = DescrptSeTPT
+    jax_class = DescrptSeTJAX
+    array_api_strict_class = DescrptSeTStrict
     args = descrpt_se_t_args()
 
     def setUp(self):
@@ -162,6 +177,24 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
             self.natoms,
             self.coords,
             self.atype,
