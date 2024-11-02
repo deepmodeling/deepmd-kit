@@ -38,12 +38,14 @@ from deepmd.main import (
 from deepmd.pt.cxx_op import (
     ENABLE_CUSTOMIZED_OP,
 )
+from deepmd.pt.entrypoints.compress import (
+    enable_compression,
+)
 from deepmd.pt.infer import (
     inference,
 )
 from deepmd.pt.model.model import (
     BaseModel,
-    get_model,
 )
 from deepmd.pt.train import (
     training,
@@ -501,42 +503,6 @@ def change_bias(
         )
     log.info(f"Saved model to {output_path}")
 
-
-def enable_compression(
-    input_file: str,
-    output: str,
-    stride: float = 0.01,
-    extraploate: int = 5,
-    check_frequency: int = -1,
-):
-    if input_file.endswith(".pth"):
-        saved_model = torch.jit.load(input_file, map_location="cpu")
-        model_def_script = json.loads(saved_model.model_def_script)
-        model = get_model(model_def_script)
-        model.load_state_dict(saved_model.state_dict())
-    elif input_file.endswith(".pt"):
-        state_dict = torch.load(input_file, map_location="cpu", weights_only=True)
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-        model_def_script = state_dict["_extra_state"]["model_params"]
-        model = get_model(model_def_script)
-        modelwrapper = ModelWrapper(model)
-        modelwrapper.load_state_dict(state_dict)
-        model = modelwrapper.model["Default"]
-    else:
-        raise ValueError("PyTorch backend only supports converting .pth or .pt file")
-
-    model.enable_compression(
-        extraploate,
-        stride,
-        stride * 10,
-        check_frequency,
-    )
-
-    model = torch.jit.script(model)
-    torch.jit.save(model, output)
-
-
 @record
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
@@ -586,11 +552,13 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             output=FLAGS.output,
         )
     elif FLAGS.command == "compress":
+        FLAGS.input = str(Path(FLAGS.input).with_suffix(".pth"))
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
         enable_compression(
             input_file=FLAGS.input,
             output=FLAGS.output,
             stride=FLAGS.step,
-            extraploate=FLAGS.extrapolate,
+            extrapolate=FLAGS.extrapolate,
             check_frequency=FLAGS.frequency,
         )
     else:
