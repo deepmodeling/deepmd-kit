@@ -47,7 +47,6 @@ from deepmd.pd.utils.dataloader import (
     get_weighted_sampler,
 )
 from deepmd.pd.utils.env import (
-    CINN,
     DEVICE,
     JIT,
     NUM_WORKERS,
@@ -602,19 +601,6 @@ class Trainer:
                 # find_unused_parameters=True,
             )
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
-
-        if CINN:
-            from paddle import (
-                static,
-            )
-
-            build_strategy = static.BuildStrategy()
-            build_strategy.build_cinn_pass = CINN
-            self.wrapper.forward = paddle.jit.to_static(
-                self.wrapper.forward,
-                build_strategy=build_strategy,
-                full_graph=True,
-            )(self.wrapper.forward)
 
         # Get model prob for multi-task
         if self.multi_task:

@@ -33,7 +33,6 @@ else:
 paddle.device.set_device(DEVICE)
 
 JIT = False
-CINN = False
 CACHE_PER_SYS = 5  # keep at most so many sets per sys in memory
 ENERGY_BIAS_TRAINABLE = True
 
@@ -102,8 +101,8 @@ __all__ = [
     "NUM_WORKERS",
     "DEVICE",
     "JIT",
-    "CINN",
     "CACHE_PER_SYS",
     "ENERGY_BIAS_TRAINABLE",
     "LOCAL_RANK",
+    "enable_prim",
 ]
