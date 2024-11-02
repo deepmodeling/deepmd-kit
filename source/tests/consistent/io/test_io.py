@@ -163,6 +163,15 @@ class IOTest:
                 aparam=aparam,
             )
             rets.append(ret)
+            ret = deep_eval.eval(
+                self.coords,
+                self.box,
+                self.atype,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=True,
+            )
+            rets.append(ret)
         for ret in rets[1:]:
             for vv1, vv2 in zip(rets[0], ret):
                 if np.isnan(vv2).all():
