@@ -17,6 +17,8 @@ from deepmd.utils.argcheck import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     CommonTest,
     parameterized,
@@ -32,6 +34,22 @@ if INSTALLED_PT:
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     PropertyFittingPT = object
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import PropertyFittingNet as PropertyFittingJAX
+else:
+    PropertyFittingJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.fitting import (
+        PropertyFittingNet as PropertyFittingStrict,
+    )
+else:
+    PropertyFittingStrict = object
+
 PropertyFittingTF = object
 
 
@@ -84,9 +102,14 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     def skip_tf(self) -> bool:
         return True
 
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
     tf_class = PropertyFittingTF
     dp_class = PropertyFittingDP
     pt_class = PropertyFittingPT
+    jax_class = PropertyFittingJAX
+    array_api_strict_class = PropertyFittingStrict
     args = fitting_property()
 
     def setUp(self):
@@ -104,7 +127,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
         ).reshape(-1, 1)
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
@@ -182,6 +205,45 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam if numb_fparam else None,
             aparam=self.aparam if numb_aparam else None,
         )["property"]
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            task_dim,
+            intensive,
+        ) = self.param
+        return np.asarray(
+            jax_obj(
+                jnp.asarray(self.inputs),
+                jnp.asarray(self.atype.reshape(1, -1)),
+                fparam=jnp.asarray(self.fparam) if numb_fparam else None,
+                aparam=jnp.asarray(self.aparam) if numb_aparam else None,
+            )["property"]
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        array_api_strict.set_array_api_strict_flags(api_version="2023.12")
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            task_dim,
+            intensive,
+        ) = self.param
+        return np.asarray(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
+                fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
+                aparam=array_api_strict.asarray(self.aparam) if numb_aparam else None,
+            )["property"]
+        )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:

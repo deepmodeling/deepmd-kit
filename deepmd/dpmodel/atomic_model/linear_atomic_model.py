@@ -34,6 +34,7 @@ from .pairtab_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
@@ -324,6 +325,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return False
 
 
+@BaseAtomicModel.register("zbl")
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 

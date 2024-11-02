@@ -104,7 +104,7 @@ class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
         self.atype.sort()
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
