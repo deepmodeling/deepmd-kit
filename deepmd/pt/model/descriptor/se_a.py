@@ -3,10 +3,7 @@ import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -58,16 +55,36 @@ from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
     NetworkCollection,
 )
-from deepmd.pt.model.network.network import (
-    TypeFilter,
-)
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_a"):
+
+    def tabulate_fusion_se_a(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_a is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for model compression for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_a = tabulate_fusion_se_a
 
 
 @BaseDescriptor.register("se_e2_a")
@@ -84,14 +101,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
     ):
@@ -100,6 +116,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        self.compress = False
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -112,7 +129,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             resnet_dt=resnet_dt,
             exclude_types=exclude_types,
             env_protection=env_protection,
-            old_impl=old_impl,
             type_one_side=type_one_side,
             trainable=trainable,
             seed=seed,
@@ -130,7 +146,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.sea.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sea.get_sel()
 
@@ -138,7 +154,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.sea.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -172,7 +188,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -192,7 +208,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return self.sea.dim_out
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -205,7 +221,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -213,11 +229,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -228,10 +244,57 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            data["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        self.sea.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
 
     def forward(
         self,
@@ -239,7 +302,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -284,7 +347,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         self.sea.mean = mean
         self.sea.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.sea.mean, self.sea.stddev
 
@@ -342,15 +405,15 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -374,6 +437,10 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
+    lower: dict[str, int]
+    upper: dict[str, int]
+    table_data: dict[str, torch.Tensor]
+    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -386,12 +453,11 @@ class DescrptBlockSeA(DescriptorBlock):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
-        old_impl: bool = False,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         **kwargs,
     ):
         """Construct an embedding net of type `se_a`.
@@ -404,8 +470,8 @@ class DescrptBlockSeA(DescriptorBlock):
         - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
         """
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
@@ -414,7 +480,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
         self.resnet_dt = resnet_dt
-        self.old_impl = old_impl
         self.env_protection = env_protection
         self.ntypes = len(sel)
         self.type_one_side = type_one_side
@@ -434,41 +499,33 @@ class DescrptBlockSeA(DescriptorBlock):
         stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
-        self.filter_layers_old = None
-        self.filter_layers = None
 
-        if self.old_impl:
-            if not self.type_one_side:
-                raise ValueError(
-                    "The old implementation does not support type_one_side=False."
-                )
-            filter_layers = []
-            # TODO: remove
-            start_index = 0
-            for type_i in range(self.ntypes):
-                one = TypeFilter(start_index, sel[type_i], self.filter_neuron)
-                filter_layers.append(one)
-                start_index += sel[type_i]
-            self.filter_layers_old = torch.nn.ModuleList(filter_layers)
-        else:
-            ndim = 1 if self.type_one_side else 2
-            filter_layers = NetworkCollection(
-                ndim=ndim, ntypes=len(sel), network_type="embedding_network"
+        # add for compression
+        self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_data = {}
+        self.table_config = []
+
+        ndim = 1 if self.type_one_side else 2
+        filter_layers = NetworkCollection(
+            ndim=ndim, ntypes=len(sel), network_type="embedding_network"
+        )
+        for ii, embedding_idx in enumerate(
+            itertools.product(range(self.ntypes), repeat=ndim)
+        ):
+            filter_layers[embedding_idx] = EmbeddingNet(
+                1,
+                self.filter_neuron,
+                activation_function=self.activation_function,
+                precision=self.precision,
+                resnet_dt=self.resnet_dt,
+                seed=child_seed(self.seed, ii),
             )
-            for ii, embedding_idx in enumerate(
-                itertools.product(range(self.ntypes), repeat=ndim)
-            ):
-                filter_layers[embedding_idx] = EmbeddingNet(
-                    1,
-                    self.filter_neuron,
-                    activation_function=self.activation_function,
-                    precision=self.precision,
-                    resnet_dt=self.resnet_dt,
-                    seed=child_seed(self.seed, ii),
-                )
-            self.filter_layers = filter_layers
+        self.filter_layers = filter_layers
         self.stats = None
         # set trainable
+        self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
 
@@ -484,7 +541,7 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -496,6 +553,10 @@ class DescrptBlockSeA(DescriptorBlock):
         """Returns the output dimension."""
         return self.dim_out
 
+    def get_dim_rot_mat_1(self) -> int:
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
+        return self.filter_neuron[-1]
+
     def get_dim_emb(self) -> int:
         """Returns the output dimension."""
         return self.neuron[-1]
@@ -505,11 +566,11 @@ class DescrptBlockSeA(DescriptorBlock):
         return self.dim_in
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -548,7 +609,7 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -556,11 +617,11 @@ class DescrptBlockSeA(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -582,10 +643,14 @@ class DescrptBlockSeA(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+            self.mean.copy_(
+                torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
+            )
+        self.stddev.copy_(
+            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+        )
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -595,10 +660,23 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def enable_compression(
+        self,
+        table_data,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        self.compress = True
+        self.table_data = table_data
+        self.table_config = table_config
+        self.lower = lower
+        self.upper = upper
 
     def forward(
         self,
@@ -635,66 +713,75 @@ class DescrptBlockSeA(DescriptorBlock):
             protection=self.env_protection,
         )
 
-        if self.old_impl:
-            assert self.filter_layers_old is not None
-            dmatrix = dmatrix.view(
-                -1, self.ndescrpt
-            )  # shape is [nframes*nall, self.ndescrpt]
-            xyz_scatter = torch.empty(  # pylint: disable=no-explicit-dtype
-                1,
-                device=env.DEVICE,
-            )
-            ret = self.filter_layers_old[0](dmatrix)
-            xyz_scatter = ret
-            for ii, transform in enumerate(self.filter_layers_old[1:]):
-                # shape is [nframes*nall, 4, self.filter_neuron[-1]]
-                ret = transform.forward(dmatrix)
-                xyz_scatter = xyz_scatter + ret
-        else:
-            assert self.filter_layers is not None
-            dmatrix = dmatrix.view(-1, self.nnei, 4)
-            dmatrix = dmatrix.to(dtype=self.prec)
-            nfnl = dmatrix.shape[0]
-            # pre-allocate a shape to pass jit
-            xyz_scatter = torch.zeros(
-                [nfnl, 4, self.filter_neuron[-1]],
-                dtype=self.prec,
-                device=extended_coord.device,
-            )
-            # nfnl x nnei
-            exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
-            for embedding_idx, ll in enumerate(self.filter_layers.networks):
+        dmatrix = dmatrix.view(-1, self.nnei, 4)
+        dmatrix = dmatrix.to(dtype=self.prec)
+        nfnl = dmatrix.shape[0]
+        # pre-allocate a shape to pass jit
+        xyz_scatter = torch.zeros(
+            [nfnl, 4, self.filter_neuron[-1]],
+            dtype=self.prec,
+            device=extended_coord.device,
+        )
+        # nfnl x nnei
+        exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+            if self.type_one_side:
+                ii = embedding_idx
+                ti = -1
+                # torch.jit is not happy with slice(None)
+                # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
+                # applying a mask seems to cause performance degradation
+                ti_mask = None
+            else:
+                # ti: center atom type, ii: neighbor type...
+                ii = embedding_idx // self.ntypes
+                ti = embedding_idx % self.ntypes
+                ti_mask = atype.ravel().eq(ti)
+            # nfnl x nt
+            if ti_mask is not None:
+                mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
+            else:
+                mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
+            # nfnl x nt x 4
+            if ti_mask is not None:
+                rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
+            else:
+                rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
+            rr = rr * mm[:, :, None]
+            ss = rr[:, :, :1]
+
+            if self.compress:
                 if self.type_one_side:
-                    ii = embedding_idx
-                    # torch.jit is not happy with slice(None)
-                    # ti_mask = torch.ones(nfnl, dtype=torch.bool, device=dmatrix.device)
-                    # applying a mask seems to cause performance degradation
-                    ti_mask = None
+                    net = "filter_-1_net_" + str(ii)
                 else:
-                    # ti: center atom type, ii: neighbor type...
-                    ii = embedding_idx // self.ntypes
-                    ti = embedding_idx % self.ntypes
-                    ti_mask = atype.ravel().eq(ti)
-                # nfnl x nt
-                if ti_mask is not None:
-                    mm = exclude_mask[ti_mask, self.sec[ii] : self.sec[ii + 1]]
-                else:
-                    mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
-                # nfnl x nt x 4
-                if ti_mask is not None:
-                    rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
-                else:
-                    rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-                rr = rr * mm[:, :, None]
-                ss = rr[:, :, :1]
+                    net = "filter_" + str(ti) + "_net_" + str(ii)
+                info = [
+                    self.lower[net],
+                    self.upper[net],
+                    self.upper[net] * self.table_config[0],
+                    self.table_config[1],
+                    self.table_config[2],
+                    self.table_config[3],
+                ]
+                ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
+                tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
+                gr = torch.ops.deepmd.tabulate_fusion_se_a(
+                    tensor_data.contiguous(),
+                    torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
+                    ss.contiguous(),
+                    rr.contiguous(),
+                    self.filter_neuron[-1],
+                )[0]
+            else:
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = torch.matmul(rr.permute(0, 2, 1), gg)
-                if ti_mask is not None:
-                    xyz_scatter[ti_mask] += gr
-                else:
-                    xyz_scatter += gr
+
+            if ti_mask is not None:
+                xyz_scatter[ti_mask] += gr
+            else:
+                xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)

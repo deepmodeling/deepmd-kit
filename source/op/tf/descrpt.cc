@@ -293,7 +293,7 @@ class DescrptOp : public OpKernel {
       } else if (nei_mode == -1) {
         ::build_nlist(d_nlist_a, d_nlist_r, d_coord3, rcut_a, rcut_r, NULL);
       } else {
-        throw deepmd::deepmd_exception("unknow neighbor mode");
+        throw deepmd::deepmd_exception("unknown neighbor mode");
       }
 
       // loop over atoms, compute descriptors for each atom

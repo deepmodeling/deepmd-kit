@@ -240,7 +240,7 @@ def one_layer(
                 x = op_module.quantize_nvnmd(inputs, 1, NBIT_DATA_FL, NBIT_DATA_FL, -1)
                 inputs = tf.ensure_shape(x, [None, shape[1]])
             # wx
-            # normlize weight mode: 0 all | 1 column
+            # normalize weight mode: 0 all | 1 column
             norm_mode = 0 if final_layer else 1
             wx = op_module.matmul_fitnet_nvnmd(
                 inputs, w, NBIT_DATA_FL, NBIT_SHORT_FL, norm_mode

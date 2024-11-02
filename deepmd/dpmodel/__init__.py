@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from deepmd.utils.entry_point import (
+    load_entry_point,
+)
+
 from .common import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
@@ -32,3 +36,6 @@ __all__ = [
     "get_deriv_name",
     "get_hessian_name",
 ]
+
+
+load_entry_point("deepmd.dpmodel")

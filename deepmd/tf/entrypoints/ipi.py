@@ -4,9 +4,6 @@
 import os
 import subprocess
 import sys
-from typing import (
-    List,
-)
 
 from deepmd.tf.lmp import (
     get_op_dir,
@@ -15,8 +12,8 @@ from deepmd.tf.lmp import (
 ROOT_DIR = get_op_dir()
 
 
-def _program(name: str, args: List[str]):
-    """Execuate a program.
+def _program(name: str, args: list[str]):
+    """Execute a program.
 
     Parameters
     ----------

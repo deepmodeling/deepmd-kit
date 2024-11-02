@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import sys
 import unittest
+from unittest.mock import (
+    patch,
+)
+
+import array_api_strict as xp
 
 from deepmd.utils.batch_size import (
     AutoBatchSize,
@@ -9,11 +13,6 @@ from deepmd.utils.batch_size import (
 from deepmd.utils.errors import (
     OutOfMemoryError,
 )
-
-if sys.version_info >= (3, 9):
-    import array_api_strict as xp
-else:
-    raise unittest.SkipTest("array_api_strict doesn't support Python<=3.8")
 
 
 class CustomizedAutoBatchSizeCPU(AutoBatchSize):
@@ -81,7 +80,7 @@ class TestAutoBatchSize(unittest.TestCase):
         self.assertEqual(nb, 128)
         self.assertEqual(result.shape, (128, 2))
 
-    @unittest.mock.patch.dict(os.environ, {"DP_INFER_BATCH_SIZE": "256"}, clear=True)
+    @patch.dict(os.environ, {"DP_INFER_BATCH_SIZE": "256"}, clear=True)
     def test_execute_oom_environment_variables(self):
         # DP_INFER_BATCH_SIZE = 256 = 128 * 2, nb is always 128
         auto_batch_size = CustomizedAutoBatchSizeGPU(999, 2.0)

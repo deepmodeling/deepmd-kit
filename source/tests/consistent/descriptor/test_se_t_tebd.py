@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -16,6 +15,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     CommonTest,
     parameterized,
@@ -29,6 +30,16 @@ if INSTALLED_PT:
 else:
     DescrptSeTTebdPT = None
 DescrptSeTTebdTF = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdJAX
+else:
+    DescrptSeTTebdJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.se_t_tebd import (
+        DescrptSeTTebd as DescrptSeTTebdStrict,
+    )
+else:
+    DescrptSeTTebdStrict = None
 from deepmd.utils.argcheck import (
     descrpt_se_e3_tebd_args,
 )
@@ -135,9 +146,14 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return True
 
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
     tf_class = DescrptSeTTebdTF
     dp_class = DescrptSeTTebdDP
     pt_class = DescrptSeTTebdPT
+    jax_class = DescrptSeTTebdJAX
+    array_api_strict_class = DescrptSeTTebdStrict
     args = descrpt_se_e3_tebd_args().append(Argument("ntypes", int, optional=False))
 
     def setUp(self):
@@ -187,7 +203,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             use_tebd_bias,
         ) = self.param
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
             obj,
             self.natoms,
@@ -217,7 +233,27 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             mixed_types=True,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

@@ -103,7 +103,7 @@ void DeepmdPlugin::init_from_json(char* json_file) {
 
     std::cout << "Successfully init plugin!" << std::endl;
   } else {
-    std::cerr << "Invaild json file: " << json_file << std::endl;
+    std::cerr << "Invalid json file: " << json_file << std::endl;
     exit(1);
   }
 }

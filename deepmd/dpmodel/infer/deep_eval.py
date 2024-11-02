@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
-    Type,
     Union,
 )
 
@@ -26,6 +23,9 @@ from deepmd.dpmodel.utils.batch_size import (
 )
 from deepmd.dpmodel.utils.serialization import (
     load_dp_model,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.infer.deep_dipole import (
     DeepDipole,
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 
 class DeepEval(DeepEvalBackend):
-    """NumPy backend implementaion of DeepEval.
+    """NumPy backend implementation of DeepEval.
 
     Parameters
     ----------
@@ -108,7 +108,7 @@ class DeepEval(DeepEvalBackend):
         """Get the number of atom types of this model."""
         return len(self.type_map)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.type_map
 
@@ -121,7 +121,7 @@ class DeepEval(DeepEvalBackend):
         return self.dp.get_dim_aparam()
 
     @property
-    def model_type(self) -> Type["DeepEvalWrapper"]:
+    def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
         model_output_type = self.dp.model_output_type()
         if "energy" in model_output_type:
@@ -137,7 +137,7 @@ class DeepEval(DeepEvalBackend):
         else:
             raise RuntimeError("Unknown model type")
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -167,7 +167,7 @@ class DeepEval(DeepEvalBackend):
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
         **kwargs: Any,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
 
         Parameters
@@ -204,8 +204,6 @@ class DeepEval(DeepEvalBackend):
             The output of the evaluation. The keys are the names of the output
             variables, and the values are the corresponding output arrays.
         """
-        if fparam is not None or aparam is not None:
-            raise NotImplementedError
         # convert all of the input to numpy array
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
@@ -216,7 +214,7 @@ class DeepEval(DeepEvalBackend):
         )
         request_defs = self._get_request_defs(atomic)
         out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, request_defs
+            coords, cells, atom_types, fparam, aparam, request_defs
         )
         return dict(
             zip(
@@ -225,7 +223,7 @@ class DeepEval(DeepEvalBackend):
             )
         )
 
-    def _get_request_defs(self, atomic: bool) -> List[OutputVariableDef]:
+    def _get_request_defs(self, atomic: bool) -> list[OutputVariableDef]:
         """Get the requested output definitions.
 
         When atomic is True, all output_def are requested.
@@ -289,7 +287,7 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         atom_types: np.ndarray,
         mixed_type: bool = False,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         if mixed_type:
             natoms = len(atom_types[0])
         else:
@@ -306,7 +304,9 @@ class DeepEval(DeepEvalBackend):
         coords: np.ndarray,
         cells: Optional[np.ndarray],
         atom_types: np.ndarray,
-        request_defs: List[OutputVariableDef],
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
+        request_defs: list[OutputVariableDef],
     ):
         model = self.dp
 
@@ -323,12 +323,25 @@ class DeepEval(DeepEvalBackend):
             box_input = cells.reshape([-1, 3, 3])
         else:
             box_input = None
+        if fparam is not None:
+            fparam_input = fparam.reshape(nframes, self.get_dim_fparam())
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = aparam.reshape(nframes, natoms, self.get_dim_aparam())
+        else:
+            aparam_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
         )
         batch_output = model(
-            coord_input, type_input, box=box_input, do_atomic_virial=do_atomic_virial
+            coord_input,
+            type_input,
+            box=box_input,
+            fparam=fparam_input,
+            aparam=aparam_input,
+            do_atomic_virial=do_atomic_virial,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -343,12 +356,12 @@ class DeepEval(DeepEvalBackend):
                 if batch_output[dp_name] is not None:
                     out = batch_output[dp_name].reshape(shape)
                 else:
-                    out = np.full(shape, np.nan)  # pylint: disable=no-explicit-dtype
+                    out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 results.append(
-                    np.full(np.abs(shape), np.nan)  # pylint: disable=no-explicit-dtype
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 )  # this is kinda hacky
         return tuple(results)
 
@@ -372,3 +385,7 @@ class DeepEval(DeepEvalBackend):
             return [nframes, natoms, *odef.shape, 1]
         else:
             raise RuntimeError("unknown category")
+
+    def get_model_def_script(self) -> dict:
+        """Get model definition script."""
+        return json.loads(self.model.get_model_def_script())

@@ -21,7 +21,7 @@ if INSTALLED_PD:
 class FittingTest:
     """Useful utilities for descriptor tests."""
 
-    def build_tf_fitting(self, obj, inputs, natoms, atype, fparam, suffix):
+    def build_tf_fitting(self, obj, inputs, natoms, atype, fparam, aparam, suffix):
         t_inputs = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_inputs")
         t_natoms = tf.placeholder(tf.int32, natoms.shape, name="i_natoms")
         t_atype = tf.placeholder(tf.int32, [None], name="i_atype")
@@ -33,6 +33,12 @@ class FittingTest:
             )
             extras["fparam"] = t_fparam
             feed_dict[t_fparam] = fparam
+        if aparam is not None:
+            t_aparam = tf.placeholder(
+                GLOBAL_TF_FLOAT_PRECISION, [None, None], name="i_aparam"
+            )
+            extras["aparam"] = t_aparam
+            feed_dict[t_aparam] = aparam
         t_out = obj.build(
             t_inputs,
             t_natoms,

@@ -2,8 +2,6 @@
 import copy
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -30,7 +28,7 @@ from .general_fitting import (
 @GeneralFitting.register("invar")
 @fitting_check_output
 class InvarFitting(GeneralFitting):
-    r"""Fitting the energy (or a rotationally invariant porperty of `dim_out`) of the system. The force and the virial can also be trained.
+    r"""Fitting the energy (or a rotationally invariant property of `dim_out`) of the system. The force and the virial can also be trained.
 
     Lets take the energy fitting task as an example.
     The potential energy :math:`E` is a fitting network function of the descriptor :math:`\mathcal{D}`:
@@ -92,7 +90,7 @@ class InvarFitting(GeneralFitting):
             Suppose that we have :math:`N_l` hidden layers in the fitting net,
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -105,9 +103,9 @@ class InvarFitting(GeneralFitting):
             And the aparam will not be used as the atomic parameters for embedding.
     mixed_types
             If false, different atomic types uses different fitting net, otherwise different atom types share the same fitting net.
-    exclude_types: List[int]
+    exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
     """
@@ -118,33 +116,29 @@ class InvarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         dim_out: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         bias_atom: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
-        atom_ener: Optional[List[float]] = None,
+        trainable: Optional[list[bool]] = None,
+        atom_ener: Optional[list[float]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: Optional[list[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = True,
-        exclude_types: List[int] = [],
-        type_map: Optional[List[str]] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        exclude_types: list[int] = [],
+        type_map: Optional[list[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
             raise NotImplementedError("spin is not implemented")
-        if use_aparam_as_mask:
-            raise NotImplementedError("use_aparam_as_mask is not implemented")
-        if use_aparam_as_mask:
-            raise NotImplementedError("use_aparam_as_mask is not implemented")
         if layer_name is not None:
             raise NotImplementedError("layer_name is not implemented")
 
@@ -219,7 +213,7 @@ class InvarFitting(GeneralFitting):
         h2: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters

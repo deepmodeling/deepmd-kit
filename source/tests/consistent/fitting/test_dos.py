@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -13,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -37,12 +38,27 @@ from deepmd.utils.argcheck import (
     fitting_dos,
 )
 
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import DOSFittingNet as DOSFittingJAX
+else:
+    DOSFittingJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.fitting import DOSFittingNet as DOSFittingStrict
+else:
+    DOSFittingStrict = object
+
 
 @parameterized(
     (True, False),  # resnet_dt
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
+    (0, 1),  # numb_aparam
     (10, 20),  # numb_dos
 )
 class TestDOS(CommonTest, FittingTest, unittest.TestCase):
@@ -53,6 +69,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return {
@@ -60,6 +77,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "precision": precision,
             "numb_fparam": numb_fparam,
+            "numb_aparam": numb_aparam,
             "seed": 20240217,
             "numb_dos": numb_dos,
         }
@@ -71,13 +89,24 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return CommonTest.skip_pt
 
+    @property
+    def skip_jax(self) -> bool:
+        return not INSTALLED_JAX
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        return not INSTALLED_ARRAY_API_STRICT
+
     tf_class = DOSFittingTF
     dp_class = DOSFittingDP
     pt_class = DOSFittingPT
+    jax_class = DOSFittingJAX
+    array_api_strict_class = DOSFittingStrict
     args = fitting_dos()
 
     def setUp(self):
@@ -90,14 +119,18 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
         # inconsistent if not sorted
         self.atype.sort()
         self.fparam = -np.ones((1,), dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.aparam = np.zeros_like(
+            self.atype, dtype=GLOBAL_NP_FLOAT_PRECISION
+        ).reshape(-1, 1)
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return {
@@ -106,12 +139,13 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             "mixed_types": mixed_types,
         }
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         (
             resnet_dt,
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return self.build_tf_fitting(
@@ -120,6 +154,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             self.natoms,
             self.atype,
             self.fparam if numb_fparam else None,
+            self.aparam if numb_aparam else None,
             suffix,
         )
 
@@ -129,6 +164,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return (
@@ -137,6 +173,9 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 fparam=torch.from_numpy(self.fparam).to(device=PT_DEVICE)
                 if numb_fparam
+                else None,
+                aparam=torch.from_numpy(self.aparam).to(device=PT_DEVICE)
+                if numb_aparam
                 else None,
             )["dos"]
             .detach()
@@ -150,15 +189,54 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return dp_obj(
             self.inputs,
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
+            aparam=self.aparam if numb_aparam else None,
         )["dos"]
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_jax(self, jax_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            numb_dos,
+        ) = self.param
+        return np.asarray(
+            jax_obj(
+                jnp.asarray(self.inputs),
+                jnp.asarray(self.atype.reshape(1, -1)),
+                fparam=jnp.asarray(self.fparam) if numb_fparam else None,
+                aparam=jnp.asarray(self.aparam) if numb_aparam else None,
+            )["dos"]
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        array_api_strict.set_array_api_strict_flags(api_version="2023.12")
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            numb_dos,
+        ) = self.param
+        return np.asarray(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
+                fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
+                aparam=array_api_strict.asarray(self.aparam) if numb_aparam else None,
+            )["dos"]
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:
             # shape is not same
             ret = ret[0].reshape(-1, self.natoms[0], 1)
@@ -172,6 +250,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         if precision == "float64":
@@ -189,6 +268,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         if precision == "float64":

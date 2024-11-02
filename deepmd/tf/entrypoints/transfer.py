@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Module used for transfering parameters between models."""
+"""Module used for transferring parameters between models."""
 
 import logging
 import re
-from typing import (
-    Dict,
-    Optional,
+from collections.abc import (
     Sequence,
+)
+from typing import (
+    Optional,
 )
 
 import numpy as np
@@ -42,7 +43,7 @@ def convert_matrix(
     shape : Sequence[int]
         shape to cast resulting array to
     dtype : Optional[type]
-        type that finall array will be cast to, If None no casting will take place
+        type that final array will be cast to, If None no casting will take place
 
     Returns
     -------
@@ -57,7 +58,7 @@ def convert_matrix(
 
 
 def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
-    """Transfer operation from old fron graph to new prepared raw graph.
+    """Transfer operation from old from graph to new prepared raw graph.
 
     Parameters
     ----------
@@ -66,7 +67,7 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
     raw_model : str
         new model that will accept ops from old model
     output : str
-        new model with transfered parameters will be saved to this location
+        new model with transferred parameters will be saved to this location
     **kwargs
         additional arguments
     """
@@ -103,7 +104,7 @@ def load_graph(graph_name: str) -> tf.Graph:
 
 
 def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
-    """Trasform old graph into new.
+    """Transform old graph into new.
 
     Parameters
     ----------
@@ -115,7 +116,7 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
     Returns
     -------
     tf.Graph
-        new graph with parameters transfered form the old one
+        new graph with parameters transferred form the old one
     """
     old_graph_def = old_graph.as_graph_def()
     raw_graph_def = raw_graph.as_graph_def()
@@ -234,7 +235,7 @@ def check_dim(raw_graph_node: tf.Tensor, old_graph_node: tf.Tensor, node_name: s
         )
 
 
-def load_transform_node(graph: tf.Graph) -> Dict[str, tf.Tensor]:
+def load_transform_node(graph: tf.Graph) -> dict[str, tf.Tensor]:
     """Load nodes and their names from graph to dict.
 
     Parameters
@@ -244,7 +245,7 @@ def load_transform_node(graph: tf.Graph) -> Dict[str, tf.Tensor]:
 
     Returns
     -------
-    Dict[str, tf.Tensor]
+    dict[str, tf.Tensor]
         mapping on graph node names and corresponding tensors
     """
     transform_node_pattern = re.compile(TRANSFER_PATTERN)

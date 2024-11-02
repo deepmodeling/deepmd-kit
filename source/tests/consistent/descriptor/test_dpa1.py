@@ -3,7 +3,6 @@ import unittest
 from typing import (
     Any,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -17,6 +16,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -34,6 +35,14 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_atten import DescrptDPA1Compat as DescrptDPA1TF
 else:
     DescrptDPA1TF = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.dpa1 import DescrptDPA1 as DescriptorDPA1JAX
+else:
+    DescriptorDPA1JAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.dpa1 import DescrptDPA1 as DescriptorDPA1Strict
+else:
+    DescriptorDPA1Strict = None
 from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
 )
@@ -43,22 +52,22 @@ from deepmd.utils.argcheck import (
     (4,),  # tebd_dim
     ("concat", "strip"),  # tebd_input_mode
     (True,),  # resnet_dt
-    (True, False),  # type_one_side
+    (True,),  # type_one_side
     (20,),  # attn
     (0, 2),  # attn_layer
-    (True, False),  # attn_dotr
+    (True,),  # attn_dotr
     ([], [[0, 1]]),  # excluded_types
     (0.0,),  # env_protection
     (True, False),  # set_davg_zero
     (1.0,),  # scaling_factor
-    (True, False),  # normalize
+    (True,),  # normalize
     (None, 1.0),  # temperature
     (1e-5,),  # ln_eps
-    (True, False),  # smooth_type_embedding
+    (True,),  # smooth_type_embedding
     (True,),  # concat_output_tebd
     ("float64",),  # precision
     (True, False),  # use_econf_tebd
-    (False, True),  # use_tebd_bias
+    (False,),  # use_tebd_bias
 )
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -118,11 +127,9 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     def is_meaningless_zero_attention_layer_tests(
         self,
         attn_layer: int,
-        attn_dotr: bool,
-        normalize: bool,
         temperature: Optional[float],
     ) -> bool:
-        return attn_layer == 0 and (attn_dotr or normalize or temperature is not None)
+        return attn_layer == 0 and (temperature is not None)
 
     @property
     def skip_pt(self) -> bool:
@@ -149,8 +156,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_pt or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
-            attn_dotr,
-            normalize,
             temperature,
         )
 
@@ -179,9 +184,66 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_dp or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
+            temperature,
+        )
+
+    @property
+    def skip_jax(self) -> bool:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            type_one_side,
+            attn,
+            attn_layer,
             attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
             normalize,
             temperature,
+            ln_eps,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return not INSTALLED_JAX or self.is_meaningless_zero_attention_layer_tests(
+            attn_layer,
+            temperature,
+        )
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            type_one_side,
+            attn,
+            attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            ln_eps,
+            smooth_type_embedding,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return (
+            not INSTALLED_ARRAY_API_STRICT
+            or self.is_meaningless_zero_attention_layer_tests(
+                attn_layer,
+                temperature,
+            )
         )
 
     @property
@@ -218,8 +280,6 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             )
             or self.is_meaningless_zero_attention_layer_tests(
                 attn_layer,
-                attn_dotr,
-                normalize,
                 temperature,
             )
         )
@@ -227,6 +287,9 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptDPA1TF
     dp_class = DescrptDPA1DP
     pt_class = DescrptDPA1PT
+    jax_class = DescriptorDPA1JAX
+    array_api_strict_class = DescriptorDPA1Strict
+
     args = descrpt_se_atten_args().append(Argument("ntypes", int, optional=False))
 
     def setUp(self):
@@ -284,7 +347,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             use_tebd_bias,
         ) = self.param
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
             obj,
             self.natoms,
@@ -314,7 +377,27 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             mixed_types=True,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

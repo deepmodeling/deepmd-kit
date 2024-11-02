@@ -26,6 +26,7 @@ from ....consistent.common import (
     parameterized,
 )
 from ....utils import (
+    CI,
     TEST_DEVICE,
 )
 from ...common.cases.atomic_model.atomic_model import (
@@ -98,7 +99,7 @@ from ..fitting.test_fitting import (
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -165,7 +166,7 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -227,7 +228,7 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -290,7 +291,7 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -351,7 +352,7 @@ class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):
@@ -429,7 +430,7 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
         ),  # fitting_class_param & class
     ),
 )
-@unittest.skipIf(TEST_DEVICE != "cpu", "Only test on CPU.")
+@unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestPropertyAtomicModelDP(unittest.TestCase, PropertyAtomicModelTest, DPTestCase):
     @classmethod
     def setUpClass(cls):

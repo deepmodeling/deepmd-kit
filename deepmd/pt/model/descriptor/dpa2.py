@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -87,15 +84,14 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         concat_output_tebd: bool = True,
         precision: str = "float64",
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
-        old_impl: bool = False,
+        type_map: Optional[list[str]] = None,
     ):
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
@@ -111,7 +107,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             The precision of the embedding net parameters.
         smooth : bool, optional
             Whether to use smoothness in processes such as attention weights calculation.
-        exclude_types : List[List[int]], optional
+        exclude_types : list[list[int]], optional
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         env_protection : float, optional
@@ -127,7 +123,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             Whether to use electronic configuration type embedding.
         use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-        type_map : List[str], Optional
+        type_map : list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
         Returns
@@ -238,7 +234,6 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             g1_out_conv=self.repformer_args.g1_out_conv,
             g1_out_mlp=self.repformer_args.g1_out_mlp,
             seed=child_seed(seed, 1),
-            old_impl=old_impl,
         )
         self.rcsl_list = [
             (self.repformers.get_rcut(), self.repformers.get_nsel()),
@@ -324,7 +319,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -332,7 +327,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -348,11 +343,11 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         return self.repformers.dim_emb
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -378,7 +373,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -389,6 +384,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         if shared_level == 0:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            if self.use_three_body:
+                self.repinit_three_body.share_params(
+                    base_class.repinit_three_body, 0, resume=resume
+                )
             self._modules["g1_shape_tranform"] = base_class._modules[
                 "g1_shape_tranform"
             ]
@@ -398,6 +397,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
             self.repinit.share_params(base_class.repinit, 0, resume=resume)
+            if self.use_three_body:
+                self.repinit_three_body.share_params(
+                    base_class.repinit_three_body, 0, resume=resume
+                )
         # shared_level: 2
         # share all parameters in type_embedding and repformers
         elif shared_level == 2:
@@ -415,7 +418,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -480,7 +483,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -488,36 +491,47 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
             The path to the stat file.
 
         """
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+        descrpt_list = [self.repinit, self.repformers]
+        if self.use_three_body:
+            descrpt_list.append(self.repinit_three_body)
+        for ii, descrpt in enumerate(descrpt_list):
             descrpt.compute_input_stats(merged, path)
 
     def set_stat_mean_and_stddev(
         self,
-        mean: List[torch.Tensor],
-        stddev: List[torch.Tensor],
+        mean: list[torch.Tensor],
+        stddev: list[torch.Tensor],
     ) -> None:
         """Update mean and stddev for descriptor."""
-        for ii, descrpt in enumerate([self.repinit, self.repformers]):
+        descrpt_list = [self.repinit, self.repformers]
+        if self.use_three_body:
+            descrpt_list.append(self.repinit_three_body)
+        for ii, descrpt in enumerate(descrpt_list):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
-    def get_stat_mean_and_stddev(self) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+    def get_stat_mean_and_stddev(self) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         """Get mean and stddev for descriptor."""
-        return [self.repinit.mean, self.repformers.mean], [
+        mean_list = [self.repinit.mean, self.repformers.mean]
+        stddev_list = [
             self.repinit.stddev,
             self.repformers.stddev,
         ]
+        if self.use_three_body:
+            mean_list.append(self.repinit_three_body.mean)
+            stddev_list.append(self.repinit_three_body.stddev)
+        return mean_list, stddev_list
 
     def serialize(self) -> dict:
         repinit = self.repinit
@@ -692,7 +706,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -797,15 +811,15 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
 )
 
@@ -356,7 +355,7 @@ class EnerStdLoss(Loss):
         return results
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         data_requirements = []
         # data required
@@ -674,7 +673,7 @@ class EnerSpinLoss(Loss):
             error_ae_train,
         ) = train_out
 
-        # than test data, if tensorboard log writter is present, commpute summary
+        # than test data, if tensorboard log writer is present, compute summary
         # and write tensorboard logs
         if tb_writer:
             summary_merged_op = tf.summary.merge(
@@ -726,7 +725,7 @@ class EnerSpinLoss(Loss):
         return print_str
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         data_requirements = []
         # data required
@@ -872,7 +871,7 @@ class EnerDipoleLoss(Loss):
         return results
 
     @property
-    def label_requirement(self) -> List[DataRequirementItem]:
+    def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         data_requirements = []
         # data required

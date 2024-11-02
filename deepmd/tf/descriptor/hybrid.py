@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -41,14 +38,14 @@ class DescrptHybrid(Descriptor):
 
     Parameters
     ----------
-    list : list : List[Union[Descriptor, Dict[str, Any]]]
+    list : list : list[Union[Descriptor, dict[str, Any]]]
             Build a descriptor from the concatenation of the list of descriptors.
             The descriptor can be either an object or a dictionary.
     """
 
     def __init__(
         self,
-        list: List[Union[Descriptor, Dict[str, Any]]],
+        list: list[Union[Descriptor, dict[str, Any]]],
         ntypes: Optional[int] = None,
         spin: Optional[Spin] = None,
         **kwargs,
@@ -75,7 +72,7 @@ class DescrptHybrid(Descriptor):
         for ii in range(1, self.numb_descrpt):
             assert (
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
-            ), f"number of atom types in {ii}th descrptor does not match others"
+            ), f"number of atom types in {ii}th descriptor does not match others"
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -93,7 +90,7 @@ class DescrptHybrid(Descriptor):
 
     def get_nlist(
         self,
-    ) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    ) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Get the neighbor information of the descriptor, returns the
         nlist of the descriptor with the largest cut-off radius.
 
@@ -111,7 +108,7 @@ class DescrptHybrid(Descriptor):
         maxr_idx = np.argmax([ii.get_rcut() for ii in self.descrpt_list])
         return self.get_nlist_i(maxr_idx)
 
-    def get_nlist_i(self, ii: int) -> Tuple[tf.Tensor, tf.Tensor, List[int], List[int]]:
+    def get_nlist_i(self, ii: int) -> tuple[tf.Tensor, tf.Tensor, list[int], list[int]]:
         """Get the neighbor information of the ii-th descriptor.
 
         Parameters
@@ -275,7 +272,7 @@ class DescrptHybrid(Descriptor):
 
     def prod_force_virial(
         self, atom_ener: tf.Tensor, natoms: tf.Tensor
-    ) -> Tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         """Compute force and virial.
 
         Parameters
@@ -320,7 +317,7 @@ class DescrptHybrid(Descriptor):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters
@@ -355,7 +352,7 @@ class DescrptHybrid(Descriptor):
             )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------
@@ -385,7 +382,7 @@ class DescrptHybrid(Descriptor):
         for idx, ii in enumerate(self.descrpt_list):
             ii.init_variables(graph, graph_def, suffix=f"{suffix}_{idx}")
 
-    def get_tensor_names(self, suffix: str = "") -> Tuple[str]:
+    def get_tensor_names(self, suffix: str = "") -> tuple[str]:
         """Get names of tensors.
 
         Parameters
@@ -395,7 +392,7 @@ class DescrptHybrid(Descriptor):
 
         Returns
         -------
-        Tuple[str]
+        tuple[str]
             Names of tensors
         """
         tensor_names = []
@@ -429,15 +426,15 @@ class DescrptHybrid(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

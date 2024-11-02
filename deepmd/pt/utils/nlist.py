@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -21,7 +19,7 @@ def extend_input_and_build_neighbor_list(
     coord,
     atype,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     mixed_types: bool = False,
     box: Optional[torch.Tensor] = None,
 ):
@@ -55,10 +53,10 @@ def build_neighbor_list(
     atype: torch.Tensor,
     nloc: int,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
-    """Build neightbor list for a single frame. keeps nsel neighbors.
+    """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
@@ -71,7 +69,7 @@ def build_neighbor_list(
         number of local atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -137,7 +135,7 @@ def _trim_mask_distinguish_nlist(
     rr: torch.Tensor,
     nlist: torch.Tensor,
     rcut: float,
-    sel: List[int],
+    sel: list[int],
     distinguish_types: bool,
 ) -> torch.Tensor:
     """Trim the size of nlist, mask if any central atom is virtual, distinguish types if necessary."""
@@ -150,7 +148,13 @@ def _trim_mask_distinguish_nlist(
         nlist = nlist[:, :, :nsel]
     else:
         rr = torch.cat(
-            [rr, torch.ones([batch_size, nloc, nsel - nnei], device=rr.device) + rcut],  # pylint: disable=no-explicit-dtype
+            [
+                rr,
+                torch.ones(
+                    [batch_size, nloc, nsel - nnei], device=rr.device, dtype=rr.dtype
+                )
+                + rcut,
+            ],
             dim=-1,
         )
         nlist = torch.cat(
@@ -178,7 +182,7 @@ def build_directional_neighbor_list(
     coord_neig: torch.Tensor,
     atype_neig: torch.Tensor,
     rcut: float,
-    sel: Union[int, List[int]],
+    sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
     """Build directional neighbor list.
@@ -205,7 +209,7 @@ def build_directional_neighbor_list(
         if type < 0 the atom is treated as virtual atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -260,7 +264,7 @@ def build_directional_neighbor_list(
     rr = torch.linalg.norm(diff, dim=-1)
     rr, nlist = torch.sort(rr, dim=-1)
 
-    # We assume that the central and neighbor atoms are diffferent,
+    # We assume that the central and neighbor atoms are different,
     # thus we do not need to exclude self-neighbors.
     # # if central atom has two zero distances, sorting sometimes can not exclude itself
     # rr -= torch.eye(nloc_cntl, nall_neig, dtype=rr.dtype, device=rr.device).unsqueeze(0)
@@ -277,7 +281,7 @@ def build_directional_neighbor_list(
 def nlist_distinguish_types(
     nlist: torch.Tensor,
     atype: torch.Tensor,
-    sel: List[int],
+    sel: list[int],
 ):
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
@@ -327,9 +331,9 @@ def get_multiple_nlist_key(
 def build_multiple_neighbor_list(
     coord: torch.Tensor,
     nlist: torch.Tensor,
-    rcuts: List[float],
-    nsels: List[int],
-) -> Dict[str, torch.Tensor]:
+    rcuts: list[float],
+    nsels: list[int],
+) -> dict[str, torch.Tensor]:
     """Input one neighbor list, and produce multiple neighbor lists with
     different cutoff radius and numbers of selection out of it.  The
     required rcuts and nsels should be smaller or equal to the input nlist.
@@ -341,14 +345,14 @@ def build_multiple_neighbor_list(
     nlist : torch.Tensor
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
-    rcuts : List[float]
+    rcuts : list[float]
         list of cut-off radius in ascending order.
-    nsels : List[int]
+    nsels : list[int]
         maximal number of neighbors in ascending order.
 
     Returns
     -------
-    nlist_dict : Dict[str, torch.Tensor]
+    nlist_dict : dict[str, torch.Tensor]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 
@@ -425,12 +429,15 @@ def extend_coord_with_ghosts(
     extended_atype: torch.Tensor
         extended atom type of shape [-1, nall].
     index_mapping: torch.Tensor
-        maping extended index to the local index
+        mapping extended index to the local index
 
     """
     device = coord.device
     nf, nloc = atype.shape
-    aidx = torch.tile(torch.arange(nloc, device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
+    # int64 for index
+    aidx = torch.tile(
+        torch.arange(nloc, device=device, dtype=torch.int64).unsqueeze(0), [nf, 1]
+    )
     if cell is None:
         nall = nloc
         extend_coord = coord.clone()
@@ -445,13 +452,19 @@ def extend_coord_with_ghosts(
         # nf x 3
         # *2: ghost copies on + and - directions
         # +1: central cell
-        nbuff = torch.ceil(rcut / to_face).to(torch.long)
+        nbuff = torch.ceil(rcut / to_face).to(torch.int64)
         # 3
         nbuff = torch.amax(nbuff, dim=0)  # faster than torch.max
         nbuff_cpu = nbuff.cpu()
-        xi = torch.arange(-nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
-        yi = torch.arange(-nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
-        zi = torch.arange(-nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu")  # pylint: disable=no-explicit-dtype
+        xi = torch.arange(
+            -nbuff_cpu[0], nbuff_cpu[0] + 1, 1, device="cpu", dtype=torch.int64
+        )
+        yi = torch.arange(
+            -nbuff_cpu[1], nbuff_cpu[1] + 1, 1, device="cpu", dtype=torch.int64
+        )
+        zi = torch.arange(
+            -nbuff_cpu[2], nbuff_cpu[2] + 1, 1, device="cpu", dtype=torch.int64
+        )
         eye_3 = torch.eye(3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device="cpu")
         xyz = xi.view(-1, 1, 1, 1) * eye_3[0]
         xyz = xyz + yi.view(1, -1, 1, 1) * eye_3[1]
@@ -459,7 +472,7 @@ def extend_coord_with_ghosts(
         xyz = xyz.view(-1, 3)
         xyz = xyz.to(device=device, non_blocking=True)
         # ns x 3
-        shift_idx = xyz[torch.argsort(torch.norm(xyz, dim=1))]
+        shift_idx = xyz[torch.argsort(torch.linalg.norm(xyz, dim=-1))]
         ns, _ = shift_idx.shape
         nall = ns * nloc
         # nf x ns x 3

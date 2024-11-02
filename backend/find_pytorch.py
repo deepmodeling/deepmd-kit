@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
+import platform
 import site
 from functools import (
     lru_cache,
@@ -18,19 +19,20 @@ from sysconfig import (
     get_path,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
+from packaging.specifiers import (
+    SpecifierSet,
+)
 from packaging.version import (
     Version,
 )
 
 
 @lru_cache
-def find_pytorch() -> Tuple[Optional[str], List[str]]:
+def find_pytorch() -> tuple[Optional[str], list[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:
@@ -106,6 +108,20 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     """
     if pt_version is None:
         return {"torch": []}
+    if (
+        os.environ.get("CIBUILDWHEEL", "0") == "1"
+        and platform.system() == "Linux"
+        and platform.machine() == "x86_64"
+    ):
+        cuda_version = os.environ.get("CUDA_VERSION", "12.2")
+        if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
+            # CUDA 12.2, cudnn 9
+            pt_version = "2.5.0"
+        elif cuda_version in SpecifierSet(">=11,<12"):
+            # CUDA 11.8, cudnn 8
+            pt_version = "2.3.1"
+        else:
+            raise RuntimeError("Unsupported CUDA version") from None
     if pt_version == "":
         pt_version = os.environ.get("PYTORCH_VERSION", "")
 

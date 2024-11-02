@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -12,6 +10,9 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     NetworkCollection,
@@ -38,9 +39,9 @@ class DescrptSeAttenV2(DescrptDPA1):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         resnet_dt: bool = False,
@@ -50,7 +51,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -65,9 +66,9 @@ class DescrptSeAttenV2(DescrptDPA1):
         stripped_type_embedding: Optional[bool] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         DescrptDPA1.__init__(
             self,
@@ -148,8 +149,8 @@ class DescrptSeAttenV2(DescrptDPA1):
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
-                "davg": obj["davg"],
-                "dstd": obj["dstd"],
+                "davg": to_numpy_array(obj["davg"]),
+                "dstd": to_numpy_array(obj["dstd"]),
             },
             ## to be updated when the options are supported.
             "trainable": self.trainable,

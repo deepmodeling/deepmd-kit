@@ -3,10 +3,7 @@ from copy import (
     deepcopy,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import torch
@@ -33,7 +30,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
-    model_type = "ener"
+    model_type = "zbl"
 
     def __init__(
         self,
@@ -68,7 +65,7 @@ class DPZBLModel(DPZBLModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
             atype,
@@ -135,15 +132,15 @@ class DPZBLModel(DPZBLModel_):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

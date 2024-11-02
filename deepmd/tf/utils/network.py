@@ -264,7 +264,7 @@ def embedding_net(
     stddev : float
         Standard deviation of initializing network parameters
     bavg : float
-        Mean of network intial bias
+        Mean of network initial bias
     seed : int
         Random seed for initializing network parameters
     trainable : boolean

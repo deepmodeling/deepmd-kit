@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    List,
     Optional,
     Union,
 )
@@ -57,7 +56,7 @@ class EnerModel(StandardModel):
     use_srtab
             The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
     smin_alpha
-            The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
+            The short-range tabulated interaction will be switched according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
     sw_rmin
             The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
@@ -77,7 +76,7 @@ class EnerModel(StandardModel):
         descriptor: dict,
         fitting_net: dict,
         type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
         use_srtab: Optional[str] = None,
@@ -517,7 +516,7 @@ class EnerModel(StandardModel):
         bias_adjust_mode : str
             The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
             'change-by-statistic' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
+                    and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic energy bias in the target dataset.
         """
         self.fitting.change_energy_bias(

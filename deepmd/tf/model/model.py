@@ -8,10 +8,7 @@ from enum import (
     Enum,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -90,7 +87,7 @@ class Model(ABC, make_plugin_registry("model")):
     use_srtab
         The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly.
     smin_alpha
-        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
+        The short-range tabulated interaction will be switched according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided.
     sw_rmin
         The lower boundary of the interpolation between short-range tabulated interaction and DP. It is only required when `use_srtab` is provided.
     sw_rmin
@@ -113,7 +110,7 @@ class Model(ABC, make_plugin_registry("model")):
     def __init__(
         self,
         type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         data_stat_nbatch: int = 10,
         data_bias_nsample: int = 10,
         data_stat_protect: float = 1e-2,
@@ -360,7 +357,7 @@ class Model(ABC, make_plugin_registry("model")):
         return dout
 
     def _import_graph_def_from_frz_model(
-        self, frz_model: str, feed_dict: dict, return_elements: List[str]
+        self, frz_model: str, feed_dict: dict, return_elements: list[str]
     ):
         return_nodes = [x[:-2] for x in return_elements]
         graph, graph_def = load_graph_def(frz_model)
@@ -370,7 +367,7 @@ class Model(ABC, make_plugin_registry("model")):
         )
 
     def _import_graph_def_from_ckpt_meta(
-        self, ckpt_meta: str, feed_dict: dict, return_elements: List[str]
+        self, ckpt_meta: str, feed_dict: dict, return_elements: list[str]
     ):
         return_nodes = [x[:-2] for x in return_elements]
         with tf.Graph().as_default() as graph:
@@ -414,7 +411,7 @@ class Model(ABC, make_plugin_registry("model")):
         bias_adjust_mode : str
             The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
             'change-by-statistic' : perform predictions on energies of target dataset,
-                    and do least sqaure on the errors to obtain the target shift as bias.
+                    and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic energy bias in the target dataset.
         """
         raise RuntimeError("Not supported")
@@ -469,7 +466,7 @@ class Model(ABC, make_plugin_registry("model")):
         box: tf.Tensor,
         mesh: tf.Tensor,
         **kwargs,
-    ) -> Dict[str, tf.Tensor]:
+    ) -> dict[str, tf.Tensor]:
         """Generate the feed_dict for current descriptor.
 
         Parameters
@@ -515,9 +512,9 @@ class Model(ABC, make_plugin_registry("model")):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Notes
@@ -527,7 +524,7 @@ class Model(ABC, make_plugin_registry("model")):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -586,7 +583,7 @@ class Model(ABC, make_plugin_registry("model")):
 
     @property
     @abstractmethod
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
 
 
@@ -647,7 +644,7 @@ class StandardModel(Model):
         descriptor: Union[dict, Descriptor],
         fitting_net: Union[dict, Fitting],
         type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -761,15 +758,15 @@ class StandardModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -863,6 +860,6 @@ class StandardModel(Model):
         }
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return self.descrpt.input_requirement + self.fitting.input_requirement

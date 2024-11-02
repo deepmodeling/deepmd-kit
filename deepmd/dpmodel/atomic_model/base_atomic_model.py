@@ -1,16 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
+import math
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.common import (
     NativeOP,
+    to_numpy_array,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -19,6 +18,9 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     PairExcludeMask,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
@@ -36,11 +38,11 @@ BaseAtomicModel_ = make_base_atomic_model(np.ndarray)
 class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def __init__(
         self,
-        type_map: List[str],
-        atom_exclude_types: List[int] = [],
-        pair_exclude_types: List[Tuple[int, int]] = [],
+        type_map: list[str],
+        atom_exclude_types: list[int] = [],
+        pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[Dict[str, np.ndarray]] = None,
+        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
     ):
         super().__init__()
         self.type_map = type_map
@@ -52,13 +54,17 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def init_out_stat(self):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
-        self.bias_keys: List[str] = list(self.fitting_output_def().keys())
+        self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
         self.n_out = len(self.bias_keys)
-        out_bias_data = np.zeros([self.n_out, ntypes, self.max_out_size])  # pylint: disable=no-explicit-dtype
-        out_std_data = np.ones([self.n_out, ntypes, self.max_out_size])  # pylint: disable=no-explicit-dtype
+        out_bias_data = np.zeros(
+            [self.n_out, ntypes, self.max_out_size], dtype=GLOBAL_NP_FLOAT_PRECISION
+        )
+        out_std_data = np.ones(
+            [self.n_out, ntypes, self.max_out_size], dtype=GLOBAL_NP_FLOAT_PRECISION
+        )
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
@@ -78,13 +84,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             raise KeyError(key)
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def reinit_atom_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
@@ -94,7 +100,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def reinit_pair_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
@@ -119,7 +125,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -143,7 +149,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         mapping: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -152,7 +158,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         Parameters
         ----------
         extended_coord
-            extended coodinates, shape: nf x (nall x 3)
+            extended coordinates, shape: nf x (nall x 3)
         extended_atype
             extended atom typs, shape: nf x nall
             for a type < 0 indicating the atomic is virtual.
@@ -175,17 +181,18 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             ret_dict["mask"][ff,ii] == 0 indicating the ii-th atom of the ff-th frame is virtual.
 
         """
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         _, nloc, _ = nlist.shape
         atype = extended_atype[:, :nloc]
         if self.pair_excl is not None:
             pair_mask = self.pair_excl.build_type_exclude_mask(nlist, extended_atype)
             # exclude neighbors in the nlist
-            nlist = np.where(pair_mask == 1, nlist, -1)
+            nlist = xp.where(pair_mask == 1, nlist, -1)
 
         ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
             extended_coord,
-            np.where(ext_atom_mask, extended_atype, 0),
+            xp.where(ext_atom_mask, extended_atype, 0),
             nlist,
             mapping=mapping,
             fparam=fparam,
@@ -194,13 +201,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
-        atom_mask = ext_atom_mask[:, :nloc].astype(np.int32)
+        atom_mask = ext_atom_mask[:, :nloc].astype(xp.int32)
         if self.atom_excl is not None:
             atom_mask *= self.atom_excl.build_type_exclude_mask(atype)
 
         for kk in ret_dict.keys():
             out_shape = ret_dict[kk].shape
-            out_shape2 = np.prod(out_shape[2:])
+            out_shape2 = math.prod(out_shape[2:])
             ret_dict[kk] = (
                 ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
                 * atom_mask[:, :, None]
@@ -217,7 +224,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         mapping: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         return self.forward_common_atomic(
             extended_coord,
             extended_atype,
@@ -235,14 +242,15 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             "rcond": self.rcond,
             "preset_out_bias": self.preset_out_bias,
             "@variables": {
-                "out_bias": self.out_bias,
-                "out_std": self.out_std,
+                "out_bias": to_numpy_array(self.out_bias),
+                "out_std": to_numpy_array(self.out_std),
             },
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "BaseAtomicModel":
-        data = copy.deepcopy(data)
+        # do not deep copy Descriptor and Fitting class
+        data = data.copy()
         variables = data.pop("@variables")
         obj = cls(**data)
         for kk in variables.keys():
@@ -251,7 +259,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, np.ndarray],
+        ret: dict[str, np.ndarray],
         atype: np.ndarray,
     ):
         """Apply the stat to each atomic output.
@@ -274,7 +282,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def _varsize(
         self,
-        shape: List[int],
+        shape: list[int],
     ) -> int:
         output_size = 1
         len_shape = len(shape)
@@ -286,7 +294,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self,
         kk: str,
     ) -> int:
-        res: List[int] = []
+        res: list[int] = []
         for i, e in enumerate(self.bias_keys):
             if e == kk:
                 res.append(i)
@@ -295,8 +303,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
     def _fetch_out_stat(
         self,
-        keys: List[str],
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+        keys: list[str],
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

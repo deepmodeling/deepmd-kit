@@ -2,8 +2,6 @@
 import copy
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -55,13 +53,13 @@ class PairTabAtomicModel(BaseAtomicModel):
         The cutoff radius.
     sel : int or list[int]
         The maxmum number of atoms in the cut-off radius.
-    type_map : List[str]
+    type_map : list[str]
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     rcond : float, optional
         The condition number for the regression of atomic energy.
     atom_ener
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
 
     """
 
@@ -69,15 +67,15 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, List[int]],
-        type_map: List[str],
+        sel: Union[int, list[int]],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
-        self.rcut = rcut
-        self.tab = self._set_pairtab(tab_file, rcut)
+        self.rcut = float(rcut)
+        self.tab = self._set_pairtab(tab_file, self.rcut)
 
         self.type_map = type_map
         self.ntypes = len(type_map)
@@ -87,7 +85,7 @@ class PairTabAtomicModel(BaseAtomicModel):
             (
                 tab_info,
                 tab_data,
-            ) = self.tab.get()  # this returns -> Tuple[np.array, np.array]
+            ) = self.tab.get()  # this returns -> tuple[np.array, np.array]
             nspline, ntypes_tab = tab_info[-2:].astype(int)
             self.register_buffer("tab_info", torch.from_numpy(tab_info))
             self.register_buffer(
@@ -106,7 +104,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         )
 
         # self.model_type = "ener"
-        # self.model_version = MODEL_VERSION ## this shoud be in the parent class
+        # self.model_version = MODEL_VERSION ## this should be in the parent class
 
         if isinstance(sel, int):
             self.sel = sel
@@ -138,10 +136,10 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_rcut(self) -> float:
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [self.sel]
 
     def get_nsel(self) -> int:
@@ -169,7 +167,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return False
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -218,7 +216,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -226,11 +224,11 @@ class PairTabAtomicModel(BaseAtomicModel):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -248,8 +246,8 @@ class PairTabAtomicModel(BaseAtomicModel):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
         if self.do_grad_r() or self.do_grad_c():
@@ -271,9 +269,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
-            torch.arange(extended_atype.size(0), device=extended_coord.device)[  # pylint: disable=no-explicit-dtype
-                :, None, None
-            ],
+            torch.arange(
+                extended_atype.size(0),
+                device=extended_coord.device,
+                dtype=torch.int64,
+            )[:, None, None],
             masked_nlist,
         ]
 
@@ -470,7 +470,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return 0
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution

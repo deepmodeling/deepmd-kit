@@ -4,9 +4,7 @@
 import subprocess as sp
 import sys
 from typing import (
-    List,
     Optional,
-    Tuple,
 )
 
 from deepmd.tf.env import (
@@ -25,7 +23,7 @@ def get_gpus():
 
     Returns
     -------
-    Optional[List[int]]
+    Optional[list[int]]
         List of available GPU IDs. Otherwise, None.
     """
     if not tf.test.is_built_with_cuda() and not (
@@ -45,18 +43,18 @@ def get_gpus():
         stdout, stderr = p.communicate()
         if p.returncode != 0:
             decoded = stderr.decode("UTF-8")
-            raise RuntimeError(f"Failed to detect availbe GPUs due to:\n{decoded}")
+            raise RuntimeError(f"Failed to detect available GPUs due to:\n{decoded}")
         decoded = stdout.decode("UTF-8").strip()
         num_gpus = int(decoded)
         return list(range(num_gpus)) if num_gpus > 0 else None
 
 
-def get_resource() -> Tuple[str, List[str], Optional[List[int]]]:
+def get_resource() -> tuple[str, list[str], Optional[list[int]]]:
     """Get local resources: nodename, nodelist, and gpus.
 
     Returns
     -------
-    Tuple[str, List[str], Optional[List[int]]]
+    tuple[str, list[str], Optional[list[int]]]
         nodename, nodelist, and gpus
     """
     nodename, nodelist = get_host_names()

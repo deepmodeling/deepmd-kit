@@ -6,8 +6,6 @@ from abc import (
 )
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -57,7 +55,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         pass
 
     @abstractmethod
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         pass
 
@@ -83,7 +81,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -91,11 +89,11 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -104,7 +102,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """
         raise NotImplementedError
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
@@ -112,7 +110,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         raise NotImplementedError
 
@@ -152,7 +150,7 @@ def extend_descrpt_stat(des, type_map, des_with_stat=None):
     ----------
     des : DescriptorBlock
         The descriptor block to be extended.
-    type_map : List[str]
+    type_map : list[str]
         The name of each type of atoms to be extended.
     des_with_stat : DescriptorBlock, Optional
         The descriptor block has additional statistics of types from newly provided `type_map`.

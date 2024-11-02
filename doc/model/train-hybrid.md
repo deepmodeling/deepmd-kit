@@ -1,7 +1,7 @@
-# Descriptor `"hybrid"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
+# Descriptor `"hybrid"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
 This descriptor hybridizes multiple descriptors to form a new descriptor. For example, we have a list of descriptors denoted by $\mathcal D_1$, $\mathcal D_2$, ..., $\mathcal D_N$, the hybrid descriptor this the concatenation of the list, i.e. $\mathcal D = (\mathcal D_1, \mathcal D_2, \cdots, \mathcal D_N)$.
@@ -25,7 +25,7 @@ This way, one can set the different cutoff radii for different descriptors.[^1]
 
 ## Instructions
 
-To use the descriptor in DeePMD-kit, one firstly set the {ref}`type <model/descriptor/type>` to {ref}`hybrid <model/descriptor[hybrid]>`, then provide the definitions of the descriptors by the items in the `list`,
+To use the descriptor in DeePMD-kit, one firstly set the {ref}`type <model[standard]/descriptor/type>` to {ref}`hybrid <model[standard]/descriptor[hybrid]>`, then provide the definitions of the descriptors by the items in the `list`,
 
 ```json
         "descriptor" :{

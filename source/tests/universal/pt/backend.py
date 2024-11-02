@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from functools import (
+    lru_cache,
+)
+
 import numpy as np
 import torch
 
@@ -18,13 +22,28 @@ class PTTestCase(BackendTestCase):
     module: "torch.nn.Module"
     """PT module to test."""
 
+    @classmethod
+    @lru_cache(maxsize=1)
+    def _get_script_module(cls):
+        with torch.jit.optimized_execution(False):
+            return torch.jit.script(cls.module)
+
     @property
     def script_module(self):
+        if hasattr(self.__class__, "module"):
+            return self._get_script_module()
         with torch.jit.optimized_execution(False):
             return torch.jit.script(self.module)
 
+    @classmethod
+    @lru_cache(maxsize=1)
+    def _get_deserialized_module(cls):
+        return cls.module.deserialize(cls.module.serialize())
+
     @property
     def deserialized_module(self):
+        if hasattr(self.__class__, "module"):
+            return self._get_deserialized_module()
         return self.module.deserialize(self.module.serialize())
 
     @property
@@ -34,6 +53,14 @@ class PTTestCase(BackendTestCase):
             self.deserialized_module,
         ]
         return modules
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        if hasattr(cls, "module"):
+            del cls.module
+        cls._get_deserialized_module.cache_clear()
+        cls._get_script_module.cache_clear()
 
     def test_jit(self):
         if getattr(self, "skip_test_jit", False):

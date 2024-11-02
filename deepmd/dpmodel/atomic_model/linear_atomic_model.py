@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 from typing import (
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -14,6 +11,9 @@ from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
     nlist_distinguish_types,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -34,6 +34,7 @@ from .pairtab_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
@@ -48,8 +49,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     def __init__(
         self,
-        models: List[BaseAtomicModel],
-        type_map: List[str],
+        models: list[BaseAtomicModel],
+        type_map: list[str],
         **kwargs,
     ):
         super().__init__(type_map, **kwargs)
@@ -104,12 +105,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the cut-off radius."""
         return max(self.get_model_rcuts())
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -125,22 +126,22 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 else None,
             )
 
-    def get_model_rcuts(self) -> List[float]:
+    def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
         return [model.get_rcut() for model in self.models]
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def get_model_nsels(self) -> List[int]:
+    def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""
         return [model.get_nsel() for model in self.models]
 
-    def get_model_sels(self) -> List[Union[int, List[int]]]:
+    def get_model_sels(self) -> list[Union[int, list[int]]]:
         """Get the sels for each individual models."""
         return [model.get_sel() for model in self.models]
 
-    def _sort_rcuts_sels(self) -> Tuple[List[float], List[int]]:
+    def _sort_rcuts_sels(self) -> tuple[list[float], list[int]]:
         # sort the pair of rcut and sels in ascending order, first based on sel, then on rcut.
         zipped = sorted(
             zip(self.get_model_rcuts(), self.get_model_nsels()),
@@ -156,13 +157,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         mapping: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Return atomic prediction.
 
         Parameters
         ----------
         extended_coord
-            coodinates in extended region, (nframes, nall * 3)
+            coordinates in extended region, (nframes, nall * 3)
         extended_atype
             atomic type in extended region, (nframes, nall)
         nlist
@@ -219,16 +220,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return fit_ret
 
     @staticmethod
-    def remap_atype(ori_map: List[str], new_map: List[str]) -> np.ndarray:
+    def remap_atype(ori_map: list[str], new_map: list[str]) -> np.ndarray:
         """
         This method is used to map the atype from the common type_map to the original type_map of
         indivial AtomicModels.
 
         Parameters
         ----------
-        ori_map : List[str]
+        ori_map : list[str]
             The original type map of an AtomicModel.
-        new_map : List[str]
+        new_map : list[str]
             The common type map of the DPZBLLinearEnergyAtomicModel, created by the `get_type_map` method,
             must be a subset of the ori_map.
 
@@ -284,12 +285,16 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
-        nlists_: List[np.ndarray],
-    ) -> List[np.ndarray]:
+        nlists_: list[np.ndarray],
+    ) -> list[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
-        return [np.ones((nframes, nloc, 1)) / nmodels for _ in range(nmodels)]  # pylint: disable=no-explicit-dtype
+        # the dtype of weights is the interface data type.
+        return [
+            np.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION) / nmodels
+            for _ in range(nmodels)
+        ]
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
@@ -300,7 +305,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return max([model.get_dim_aparam() for model in self.models])
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
 
         Only atoms with selected atom types have atomic contribution
@@ -320,6 +325,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return False
 
 
+@BaseAtomicModel.register("zbl")
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
@@ -337,7 +343,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     smin_alpha
-        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor.
+        The short-range tabulated interaction will be switched according to the distance of the nearest neighbor.
         This distance is calculated by softmin.
     """
 
@@ -347,7 +353,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         zbl_model: PairTabAtomicModel,
         sw_rmin: float,
         sw_rmax: float,
-        type_map: List[str],
+        type_map: list[str],
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
     ):
@@ -391,13 +397,13 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         self,
         extended_coord: np.ndarray,
         extended_atype: np.ndarray,
-        nlists_: List[np.ndarray],
-    ) -> List[np.ndarray]:
+        nlists_: list[np.ndarray],
+    ) -> list[np.ndarray]:
         """ZBL weight.
 
         Returns
         -------
-        List[np.ndarray]
+        list[np.ndarray]
             the atomic ZBL weight for interpolation. (nframes, nloc, 1)
         """
         assert (

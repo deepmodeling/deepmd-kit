@@ -501,7 +501,7 @@ void compute_descriptor(std::vector<double> &descrpt_a,
       if (fmt_nlist_a[nei_iter] < 0) {
         break;
       }
-      // drdS, stored in tranposed form
+      // drdS, stored in transposed form
       double dtrdST[4][3];
       double *rr = &sel_a_diff[nei_iter][0];
       double tr[3];

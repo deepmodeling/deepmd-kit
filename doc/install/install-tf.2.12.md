@@ -2,7 +2,7 @@
 
 TensorFlow's C++ interface will be compiled from the source code. In this manual, we install TensorFlow 2.12.0. It is noted that the source code of TensorFlow 2.12.0 uses C++ 17, so one needs a C++ compiler that supports C++ 17.
 
-Firstly one installs Bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be lanuched to use [bazel](https://github.com/bazelbuild/bazel).
+Firstly one installs Bazel. [bazelisk](https://github.com/bazelbuild/bazelisk) can be launched to use [bazel](https://github.com/bazelbuild/bazel).
 
 ```bash
 wget https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64 -O /some/workspace/bazel/bin/bazel

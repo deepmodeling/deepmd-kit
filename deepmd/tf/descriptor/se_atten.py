@@ -4,10 +4,7 @@ import re
 import warnings
 from typing import (
     Any,
-    List,
     Optional,
-    Set,
-    Tuple,
     Union,
 )
 
@@ -125,7 +122,7 @@ class DescrptSeAtten(DescrptSeA):
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
             Default is 'False'.
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     set_davg_zero: bool
@@ -162,7 +159,7 @@ class DescrptSeAtten(DescrptSeA):
             Setting this parameter to `True` is equivalent to setting `tebd_input_mode` to 'strip'.
             Setting it to `False` is equivalent to setting `tebd_input_mode` to 'concat'.
             The default value is `None`, which means the `tebd_input_mode` setting will be used instead.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
 
     Raises
@@ -175,16 +172,16 @@ class DescrptSeAtten(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         seed: Optional[int] = None,
         type_one_side: bool = True,
         set_davg_zero: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
@@ -203,7 +200,7 @@ class DescrptSeAtten(DescrptSeA):
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
         stripped_type_embedding: Optional[bool] = None,
-        type_map: Optional[List[str]] = None,  # to be compat with input
+        type_map: Optional[list[str]] = None,  # to be compat with input
         **kwargs,
     ) -> None:
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -426,8 +423,9 @@ class DescrptSeAtten(DescrptSeA):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
         suffix: str = "",
+        tebd_suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -447,6 +445,8 @@ class DescrptSeAtten(DescrptSeA):
             The overflow check frequency
         suffix : str, optional
             The suffix of the scope
+        tebd_suffix : str, optional
+            The suffix of the type embedding scope, only for DescrptDPA1Compat
         """
         # do some checks before the mocel compression process
         assert (
@@ -499,7 +499,9 @@ class DescrptSeAtten(DescrptSeA):
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
 
-        self.final_type_embedding = get_two_side_type_embedding(self, graph)
+        self.final_type_embedding = get_two_side_type_embedding(
+            self, graph, suffix=tebd_suffix
+        )
         type_side_suffix = get_extra_embedding_net_suffix(type_one_side=False)
         self.matrix = get_extra_side_embedding_net_variable(
             self, graph_def, type_side_suffix, "matrix", suffix
@@ -705,7 +707,7 @@ class DescrptSeAtten(DescrptSeA):
         assert (
             input_dict is not None
             and input_dict.get("type_embedding", None) is not None
-        ), "se_atten desctiptor must use type_embedding"
+        ), "se_atten descriptor must use type_embedding"
         type_embedding = input_dict.get("type_embedding", None)
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
@@ -1420,9 +1422,9 @@ class DescrptSeAtten(DescrptSeA):
 
     def build_type_exclude_mask_mixed(
         self,
-        exclude_types: Set[Tuple[int, int]],
+        exclude_types: set[tuple[int, int]],
         ntypes: int,
-        sel: List[int],
+        sel: list[int],
         ndescrpt: int,
         atype: tf.Tensor,
         shape0: tf.Tensor,
@@ -1432,21 +1434,21 @@ class DescrptSeAtten(DescrptSeA):
 
         Notes
         -----
-        This method has the similiar way to build the type exclude mask as
+        This method has the similar way to build the type exclude mask as
         :meth:`deepmd.tf.descriptor.descriptor.Descriptor.build_type_exclude_mask`.
-        The mathmatical expression has been explained in that method.
+        The mathematical expression has been explained in that method.
         The difference is that the attention descriptor has provided the type of
         the neighbors (idx_j) that is not in order, so we use it from an extra
         input.
 
         Parameters
         ----------
-        exclude_types : List[Tuple[int, int]]
+        exclude_types : list[tuple[int, int]]
             The list of excluded types, e.g. [(0, 1), (1, 0)] means the interaction
             between type 0 and type 1 is excluded.
         ntypes : int
             The number of types.
-        sel : List[int]
+        sel : list[int]
             The list of the number of selected neighbors for each type.
         ndescrpt : int
             The number of descriptors for each atom.
@@ -1511,15 +1513,15 @@ class DescrptSeAtten(DescrptSeA):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -1646,7 +1648,7 @@ class DescrptSeAtten(DescrptSeA):
         ntypes: int,
         ndim: int,
         in_dim: int,
-        neuron: List[int],
+        neuron: list[int],
         activation_function: str,
         resnet_dt: bool,
         variables: dict,
@@ -1663,7 +1665,7 @@ class DescrptSeAtten(DescrptSeA):
             The dimension of elements
         in_dim : int
             The input dimension
-        neuron : List[int]
+        neuron : list[int]
             The neuron list
         activation_function : str
             The activation function
@@ -2055,7 +2057,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
     attn_mask: bool
             (Only support False to keep consistent with other backend references.)
             If mask the diagonal of attention weights
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -2088,7 +2090,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
             (Only support None to keep consistent with old implementation.)
@@ -2099,9 +2101,9 @@ class DescrptDPA1Compat(DescrptSeAtten):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
-        neuron: List[int] = [25, 50, 100],
+        neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
@@ -2112,7 +2114,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
@@ -2126,7 +2128,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         spin: Optional[Any] = None,
         # consistent with argcheck, not used though
         seed: Optional[int] = None,
@@ -2250,6 +2252,56 @@ class DescrptDPA1Compat(DescrptSeAtten):
             # nf x nloc x (out_dim + tebd_dim)
             self.dout = tf.concat([self.dout, atom_embed], axis=-1)
         return self.dout
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        graph: tf.Graph,
+        graph_def: tf.GraphDef,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+        suffix: str = "",
+        tebd_suffix: str = "",
+    ) -> None:
+        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        graph : tf.Graph
+            The graph of the model
+        graph_def : tf.GraphDef
+            The graph_def of the model
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        suffix : str, optional
+            The suffix of the scope
+        tebd_suffix : str, optional
+            Same as suffix.
+        """
+        assert (
+            tebd_suffix == ""
+        ), "DescrptDPA1Compat must use the same tebd_suffix as suffix!"
+        super().enable_compression(
+            min_nbor_dist,
+            graph,
+            graph_def,
+            table_extrapolate=table_extrapolate,
+            table_stride_1=table_stride_1,
+            table_stride_2=table_stride_2,
+            check_frequency=check_frequency,
+            suffix=suffix,
+            tebd_suffix=suffix,
+        )
 
     def init_variables(
         self,

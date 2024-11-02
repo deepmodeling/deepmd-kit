@@ -7,8 +7,6 @@ from pathlib import (
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Dict,
-    List,
     Optional,
     Union,
 )
@@ -34,7 +32,7 @@ __all__ = ["DP"]
 class DP(Calculator):
     """Implementation of ASE deepmd calculator.
 
-    Implemented propertie are `energy`, `forces` and `stress`
+    Implemented properties are `energy`, `forces` and `stress`
 
     Parameters
     ----------
@@ -42,7 +40,7 @@ class DP(Calculator):
         path to the model
     label : str, optional
         calculator label, by default "DP"
-    type_dict : Dict[str, int], optional
+    type_dict : dict[str, int], optional
         mapping of element types and their numbers, best left None and the calculator
         will infer this information from model, by default None
     neighbor_list : ase.neighborlist.NeighborList, optional
@@ -72,7 +70,7 @@ class DP(Calculator):
     """
 
     name = "DP"
-    implemented_properties: ClassVar[List[str]] = [
+    implemented_properties: ClassVar[list[str]] = [
         "energy",
         "free_energy",
         "forces",
@@ -84,7 +82,7 @@ class DP(Calculator):
         self,
         model: Union[str, "Path"],
         label: str = "DP",
-        type_dict: Optional[Dict[str, int]] = None,
+        type_dict: Optional[dict[str, int]] = None,
         neighbor_list=None,
         **kwargs,
     ) -> None:
@@ -100,8 +98,8 @@ class DP(Calculator):
     def calculate(
         self,
         atoms: Optional["Atoms"] = None,
-        properties: List[str] = ["energy", "forces", "virial"],
-        system_changes: List[str] = all_changes,
+        properties: list[str] = ["energy", "forces", "virial"],
+        system_changes: list[str] = all_changes,
     ):
         """Run calculation with deepmd model.
 
@@ -109,10 +107,10 @@ class DP(Calculator):
         ----------
         atoms : Optional[Atoms], optional
             atoms object to run the calculation on, by default None
-        properties : List[str], optional
+        properties : list[str], optional
             unused, only for function signature compatibility,
             by default ["energy", "forces", "stress"]
-        system_changes : List[str], optional
+        system_changes : list[str], optional
             unused, only for function signature compatibility, by default all_changes
         """
         if atoms is not None:

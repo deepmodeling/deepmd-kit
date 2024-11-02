@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -13,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -34,6 +35,17 @@ from deepmd.utils.argcheck import (
     descrpt_se_r_args,
 )
 
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.se_e2_r import DescrptSeR as DescrptSeRJAX
+else:
+    DescrptSeRJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.se_e2_r import (
+        DescrptSeR as DescrptSeRArrayAPIStrict,
+    )
+else:
+    DescrptSeRArrayAPIStrict = None
+
 
 @parameterized(
     (True, False),  # resnet_dt
@@ -41,7 +53,7 @@ from deepmd.utils.argcheck import (
     ([], [[0, 1]]),  # excluded_types
     ("float32", "float64"),  # precision
 )
-class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
+class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         (
@@ -82,9 +94,31 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return not type_one_side or CommonTest.skip_dp
 
+    @property
+    def skip_jax(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_JAX
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_ARRAY_API_STRICT
+
     tf_class = DescrptSeRTF
     dp_class = DescrptSeRDP
     pt_class = DescrptSeRPT
+    jax_class = DescrptSeRJAX
+    array_api_strict_class = DescrptSeRArrayAPIStrict
     args = descrpt_se_r_args()
 
     def setUp(self):
@@ -121,7 +155,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
             obj,
             self.natoms,
@@ -149,7 +183,25 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             self.box,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

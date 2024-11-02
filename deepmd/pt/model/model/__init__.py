@@ -36,6 +36,9 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .dp_linear_model import (
+    LinearEnergyModel,
+)
 from .dp_model import (
     DPModelCommon,
 )
@@ -69,12 +72,35 @@ from .spin_model import (
 )
 
 
+def _get_standard_model_components(model_params, ntypes):
+    # descriptor
+    model_params["descriptor"]["ntypes"] = ntypes
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    descriptor = BaseDescriptor(**model_params["descriptor"])
+    # fitting
+    fitting_net = model_params.get("fitting_net", {})
+    fitting_net["type"] = fitting_net.get("type", "ener")
+    fitting_net["ntypes"] = descriptor.get_ntypes()
+    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
+    fitting_net["mixed_types"] = descriptor.mixed_types()
+    if fitting_net["type"] in ["dipole", "polar"]:
+        fitting_net["embedding_width"] = descriptor.get_dim_emb()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
+    grad_force = "direct" not in fitting_net["type"]
+    if not grad_force:
+        fitting_net["out_dim"] = descriptor.get_dim_emb()
+        if "ener" in fitting_net["type"]:
+            fitting_net["return_energy"] = True
+    fitting = BaseFitting(**fitting_net)
+    return descriptor, fitting, fitting_net["type"]
+
+
 def get_spin_model(model_params):
     model_params = copy.deepcopy(model_params)
     if not model_params["spin"]["use_spin"] or isinstance(
         model_params["spin"]["use_spin"][0], int
     ):
-        use_spin = np.full(len(model_params["type_map"]), False)  # pylint: disable=no-explicit-dtype
+        use_spin = np.full(len(model_params["type_map"]), False, dtype=bool)
         use_spin[model_params["spin"]["use_spin"]] = True
         model_params["spin"]["use_spin"] = use_spin.tolist()
     # include virtual spin and placeholder types
@@ -105,27 +131,50 @@ def get_spin_model(model_params):
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 
 
+def get_linear_model(model_params):
+    model_params = copy.deepcopy(model_params)
+    weights = model_params.get("weights", "mean")
+    list_of_models = []
+    ntypes = len(model_params["type_map"])
+    for sub_model_params in model_params["models"]:
+        if "descriptor" in sub_model_params:
+            # descriptor
+            sub_model_params["descriptor"]["ntypes"] = ntypes
+            descriptor, fitting, _ = _get_standard_model_components(
+                sub_model_params, ntypes
+            )
+            list_of_models.append(
+                DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
+            )
+
+        else:  # must be pairtab
+            assert (
+                "type" in sub_model_params and sub_model_params["type"] == "pairtab"
+            ), "Sub-models in LinearEnergyModel must be a DPModel or a PairTable Model"
+            list_of_models.append(
+                PairTabAtomicModel(
+                    sub_model_params["tab_file"],
+                    sub_model_params["rcut"],
+                    sub_model_params["sel"],
+                    type_map=model_params["type_map"],
+                )
+            )
+
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
+    return LinearEnergyModel(
+        models=list_of_models,
+        type_map=model_params["type_map"],
+        weights=weights,
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+    )
+
+
 def get_zbl_model(model_params):
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
-    # descriptor
-    model_params["descriptor"]["ntypes"] = ntypes
-    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
-    descriptor = BaseDescriptor(**model_params["descriptor"])
-    # fitting
-    fitting_net = model_params.get("fitting_net", None)
-    fitting_net["type"] = fitting_net.get("type", "ener")
-    fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
-    fitting_net["mixed_types"] = descriptor.mixed_types()
-    fitting_net["embedding_width"] = descriptor.get_dim_out()
-    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
-    grad_force = "direct" not in fitting_net["type"]
-    if not grad_force:
-        fitting_net["out_dim"] = descriptor.get_dim_emb()
-        if "ener" in fitting_net["type"]:
-            fitting_net["return_energy"] = True
-    fitting = BaseFitting(**fitting_net)
+    descriptor, fitting, _ = _get_standard_model_components(model_params, ntypes)
     dp_model = DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
     # pairtab
     filepath = model_params["use_srtab"]
@@ -151,44 +200,64 @@ def get_zbl_model(model_params):
     )
 
 
+def _can_be_converted_to_float(value):
+    try:
+        float(value)
+        return True
+    except (TypeError, ValueError):
+        # return false for any failure...
+        return False
+
+
+def _convert_preset_out_bias_to_array(preset_out_bias, type_map):
+    if preset_out_bias is not None:
+        for kk in preset_out_bias:
+            if len(preset_out_bias[kk]) != len(type_map):
+                raise ValueError(
+                    "length of the preset_out_bias should be the same as the type_map"
+                )
+            for jj in range(len(preset_out_bias[kk])):
+                if preset_out_bias[kk][jj] is not None:
+                    if isinstance(preset_out_bias[kk][jj], list):
+                        bb = preset_out_bias[kk][jj]
+                    elif _can_be_converted_to_float(preset_out_bias[kk][jj]):
+                        bb = [float(preset_out_bias[kk][jj])]
+                    else:
+                        raise ValueError(
+                            f"unsupported type/value of the {jj}th element of "
+                            f"preset_out_bias['{kk}'] "
+                            f"{type(preset_out_bias[kk][jj])}"
+                        )
+                    preset_out_bias[kk][jj] = np.array(bb)
+    return preset_out_bias
+
+
 def get_standard_model(model_params):
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
-    # descriptor
-    model_params["descriptor"]["ntypes"] = ntypes
-    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
-    descriptor = BaseDescriptor(**model_params["descriptor"])
-    # fitting
-    fitting_net = model_params.get("fitting_net", {})
-    fitting_net["type"] = fitting_net.get("type", "ener")
-    fitting_net["ntypes"] = descriptor.get_ntypes()
-    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
-    fitting_net["mixed_types"] = descriptor.mixed_types()
-    if fitting_net["type"] in ["dipole", "polar"]:
-        fitting_net["embedding_width"] = descriptor.get_dim_emb()
-    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
-    grad_force = "direct" not in fitting_net["type"]
-    if not grad_force:
-        fitting_net["out_dim"] = descriptor.get_dim_emb()
-        if "ener" in fitting_net["type"]:
-            fitting_net["return_energy"] = True
-    fitting = BaseFitting(**fitting_net)
+    descriptor, fitting, fitting_net_type = _get_standard_model_components(
+        model_params, ntypes
+    )
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
+    preset_out_bias = model_params.get("preset_out_bias")
+    preset_out_bias = _convert_preset_out_bias_to_array(
+        preset_out_bias, model_params["type_map"]
+    )
 
-    if fitting_net["type"] == "dipole":
+    if fitting_net_type == "dipole":
         modelcls = DipoleModel
-    elif fitting_net["type"] == "polar":
+    elif fitting_net_type == "polar":
         modelcls = PolarModel
-    elif fitting_net["type"] == "dos":
+    elif fitting_net_type == "dos":
         modelcls = DOSModel
-    elif fitting_net["type"] in ["ener", "direct_force_ener"]:
+    elif fitting_net_type in ["ener", "direct_force_ener"]:
         modelcls = EnergyModel
-    elif fitting_net["type"] == "property":
+    elif fitting_net_type == "property":
         modelcls = PropertyModel
     else:
-        raise RuntimeError(f"Unknown fitting type: {fitting_net['type']}")
+        raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
     model = modelcls(
         descriptor=descriptor,
@@ -196,6 +265,7 @@ def get_standard_model(model_params):
         type_map=model_params["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
+        preset_out_bias=preset_out_bias,
     )
     model.model_def_script = json.dumps(model_params_old)
     return model
@@ -210,6 +280,8 @@ def get_model(model_params):
             return get_zbl_model(model_params)
         else:
             return get_standard_model(model_params)
+    elif model_type == "linear_ener":
+        return get_linear_model(model_params)
     else:
         return BaseModel.get_class_by_type(model_type).get_model(model_params)
 
@@ -228,4 +300,5 @@ __all__ = [
     "DPZBLModel",
     "make_model",
     "make_hessian_model",
+    "LinearEnergyModel",
 ]

@@ -2,12 +2,11 @@
 import copy
 from typing import (
     Any,
-    Dict,
-    List,
     Optional,
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.common import (
@@ -15,6 +14,9 @@ from deepmd.common import (
 )
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
@@ -82,11 +84,11 @@ class PolarFitting(GeneralFitting):
     fit_diag : bool
             Fit the diagonal part of the rotational invariant polarizability matrix, which will be converted to
             normal polarizability matrix by contracting with the rotation matrix.
-    scale : List[float]
+    scale : list[float]
             The output of the fitting net (polarizability matrix) for type i atom will be scaled by scale[i]
     shift_diag : bool
             Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -95,26 +97,25 @@ class PolarFitting(GeneralFitting):
         ntypes: int,
         dim_descrpt: int,
         embedding_width: int,
-        neuron: List[int] = [120, 120, 120],
+        neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[List[bool]] = None,
+        trainable: Optional[list[bool]] = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[List[Optional[str]]] = None,
+        layer_name: Optional[list[Optional[str]]] = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
-        exclude_types: List[int] = [],
-        old_impl: bool = False,
+        exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[List[float]] = None,
+        scale: Optional[list[float]] = None,
         shift_diag: bool = True,
-        type_map: Optional[List[str]] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        type_map: Optional[list[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -127,23 +128,18 @@ class PolarFitting(GeneralFitting):
 
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
-        self.scale = scale
-        if self.scale is None:
-            self.scale = [1.0 for _ in range(ntypes)]
+        if scale is None:
+            scale = [1.0 for _ in range(ntypes)]
         else:
-            if isinstance(self.scale, list):
-                assert (
-                    len(self.scale) == ntypes
-                ), "Scale should be a list of length ntypes."
-            elif isinstance(self.scale, float):
-                self.scale = [self.scale for _ in range(ntypes)]
+            if isinstance(scale, list):
+                assert len(scale) == ntypes, "Scale should be a list of length ntypes."
+            elif isinstance(scale, float):
+                scale = [scale for _ in range(ntypes)]
             else:
                 raise ValueError(
                     "Scale must be a list of float of length ntypes or a float."
                 )
-        self.scale = np.array(self.scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(
-            ntypes, 1
-        )
+        self.scale = np.array(scale, dtype=GLOBAL_NP_FLOAT_PRECISION).reshape(ntypes, 1)
         self.shift_diag = shift_diag
         self.constant_matrix = np.zeros(ntypes, dtype=GLOBAL_NP_FLOAT_PRECISION)
         super().__init__(
@@ -167,7 +163,6 @@ class PolarFitting(GeneralFitting):
             type_map=type_map,
             seed=seed,
         )
-        self.old_impl = False
 
     def _net_out_dim(self):
         """Set the FittingNet output dim."""
@@ -194,11 +189,10 @@ class PolarFitting(GeneralFitting):
         data["type"] = "polar"
         data["@version"] = 3
         data["embedding_width"] = self.embedding_width
-        data["old_impl"] = self.old_impl
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
-        data["@variables"]["scale"] = self.scale
-        data["@variables"]["constant_matrix"] = self.constant_matrix
+        data["@variables"]["scale"] = to_numpy_array(self.scale)
+        data["@variables"]["constant_matrix"] = to_numpy_array(self.constant_matrix)
         return data
 
     @classmethod
@@ -223,7 +217,7 @@ class PolarFitting(GeneralFitting):
         )
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -257,7 +251,7 @@ class PolarFitting(GeneralFitting):
         h2: Optional[np.ndarray] = None,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Calculate the fitting.
 
         Parameters
@@ -281,6 +275,7 @@ class PolarFitting(GeneralFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
+        xp = array_api_compat.array_namespace(descriptor, atype)
         nframes, nloc, _ = descriptor.shape
         assert (
             gr is not None
@@ -289,28 +284,39 @@ class PolarFitting(GeneralFitting):
         out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        out = out * self.scale[atype]
+        # out = out * self.scale[atype, ...]
+        scale_atype = xp.reshape(
+            xp.take(self.scale, xp.reshape(atype, [-1]), axis=0), (*atype.shape, 1)
+        )
+        out = out * scale_atype
         # (nframes * nloc, m1, 3)
-        gr = gr.reshape(nframes * nloc, -1, 3)
+        gr = xp.reshape(gr, (nframes * nloc, -1, 3))
 
         if self.fit_diag:
-            out = out.reshape(-1, self.embedding_width)
-            out = np.einsum("ij,ijk->ijk", out, gr)
+            out = xp.reshape(out, (-1, self.embedding_width))
+            # out = np.einsum("ij,ijk->ijk", out, gr)
+            out = out[:, :, None] * gr
         else:
-            out = out.reshape(-1, self.embedding_width, self.embedding_width)
-            out = (out + np.transpose(out, axes=(0, 2, 1))) / 2
-            out = np.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
-        out = np.einsum(
-            "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
-        )  # (nframes * nloc, 3, 3)
-        out = out.reshape(nframes, nloc, 3, 3)
+            out = xp.reshape(out, (-1, self.embedding_width, self.embedding_width))
+            out = (out + xp.matrix_transpose(out)) / 2
+            # out = np.einsum("bim,bmj->bij", out, gr)  # (nframes * nloc, m1, 3)
+            out = out @ gr
+        # out = np.einsum(
+        #     "bim,bmj->bij", np.transpose(gr, axes=(0, 2, 1)), out
+        # )  # (nframes * nloc, 3, 3)
+        out = xp.matrix_transpose(gr) @ out
+        out = xp.reshape(out, (nframes, nloc, 3, 3))
         if self.shift_diag:
-            bias = self.constant_matrix[atype]
+            # bias = self.constant_matrix[atype]
+            bias = xp.reshape(
+                xp.take(self.constant_matrix, xp.reshape(atype, [-1]), axis=0),
+                (nframes, nloc),
+            )
             # (nframes, nloc, 1)
-            bias = np.expand_dims(bias, axis=-1) * self.scale[atype]
-            eye = np.eye(3)  # pylint: disable=no-explicit-dtype
-            eye = np.tile(eye, (nframes, nloc, 1, 1))
+            bias = bias[..., None] * scale_atype
+            eye = xp.eye(3, dtype=descriptor.dtype)
+            eye = xp.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
-            bias = np.expand_dims(bias, axis=-1) * eye
+            bias = bias[..., None] * eye
             out = out + bias
         return {"polarizability": out}

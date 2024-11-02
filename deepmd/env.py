@@ -7,10 +7,6 @@ from configparser import (
 from pathlib import (
     Path,
 )
-from typing import (
-    Dict,
-    Tuple,
-)
 
 import numpy as np
 
@@ -105,8 +101,8 @@ def set_default_nthreads():
         set_env_if_empty("DP_INTER_OP_PARALLELISM_THREADS", "0", verbose=False)
 
 
-def get_default_nthreads() -> Tuple[int, int]:
-    """Get paralellism settings.
+def get_default_nthreads() -> tuple[int, int]:
+    """Get parallelism settings.
 
     The method will first read the environment variables with the prefix `DP_`.
     If not found, it will read the environment variables with the prefix `TF_`
@@ -114,7 +110,7 @@ def get_default_nthreads() -> Tuple[int, int]:
 
     Returns
     -------
-    Tuple[int, int]
+    tuple[int, int]
         number of `DP_INTRA_OP_PARALLELISM_THREADS` and
         `DP_INTER_OP_PARALLELISM_THREADS`
     """
@@ -133,7 +129,7 @@ def get_default_nthreads() -> Tuple[int, int]:
 
 def _get_package_constants(
     config_file: Path = CONFIG_FILE,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Read package constants set at compile time by CMake to dictionary.
 
     Parameters
@@ -143,7 +139,7 @@ def _get_package_constants(
 
     Returns
     -------
-    Dict[str, str]
+    dict[str, str]
         dictionary with package constants
     """
     if not config_file.is_file():

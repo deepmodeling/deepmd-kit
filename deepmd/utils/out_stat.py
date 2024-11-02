@@ -3,10 +3,13 @@
 
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
+
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 
 
 def compute_stats_from_redu(
@@ -14,11 +17,11 @@ def compute_stats_from_redu(
     natoms: np.ndarray,
     assigned_bias: Optional[np.ndarray] = None,
     rcond: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
     Given the reduced output value and the number of atoms for each atom,
-    compute the least-squares solution as the atomic output bais and std.
+    compute the least-squares solution as the atomic output bias and std.
 
     Parameters
     ----------
@@ -86,11 +89,11 @@ def compute_stats_from_redu(
 def compute_stats_from_atomic(
     output: np.ndarray,
     atype: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
     Given the output value and the type of atoms,
-    compute the atomic output bais and std.
+    compute the atomic output bias and std.
 
     Parameters
     ----------
@@ -116,8 +119,8 @@ def compute_stats_from_atomic(
     # compute output bias
     nframes, nloc, ndim = output.shape
     ntypes = atype.max() + 1
-    output_bias = np.zeros((ntypes, ndim))  # pylint: disable=no-explicit-dtype
-    output_std = np.zeros((ntypes, ndim))  # pylint: disable=no-explicit-dtype
+    output_bias = np.zeros((ntypes, ndim), dtype=GLOBAL_NP_FLOAT_PRECISION)
+    output_std = np.zeros((ntypes, ndim), dtype=GLOBAL_NP_FLOAT_PRECISION)
     for type_i in range(ntypes):
         mask = atype == type_i
         output_bias[type_i] = (

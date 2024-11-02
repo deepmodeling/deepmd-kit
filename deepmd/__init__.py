@@ -17,7 +17,7 @@ except ImportError:
 
 
 def DeepPotential(*args, **kwargs):
-    """Factory function that forwards to DeepEval (for compatbility
+    """Factory function that forwards to DeepEval (for compatibility
     and performance).
 
     Parameters

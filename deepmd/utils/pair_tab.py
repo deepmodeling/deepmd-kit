@@ -4,7 +4,6 @@
 import logging
 from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -37,6 +36,7 @@ class PairTab:
 
     def __init__(self, filename: str, rcut: Optional[float] = None) -> None:
         """Constructor."""
+        self.data_type = np.float64
         self.reinit(filename, rcut)
 
     def reinit(self, filename: str, rcut: Optional[float] = None) -> None:
@@ -57,7 +57,7 @@ class PairTab:
         if filename is None:
             self.tab_info, self.tab_data = None, None
             return
-        self.vdata = np.loadtxt(filename)
+        self.vdata = np.loadtxt(filename, dtype=self.data_type)
         self.rmin = self.vdata[0][0]
         self.rmax = self.vdata[-1][0]
         self.hh = self.vdata[1][0] - self.vdata[0][0]
@@ -169,11 +169,14 @@ class PairTab:
 
             # if table values decay to `0` before rcut, pad table with `0`s.
             elif self.rcut > self.rmax:
-                pad_zero = np.zeros((rcut_idx - upper_idx, self.ncol))  # pylint: disable=no-explicit-dtype
-                pad_zero[:, 0] = np.linspace(  # pylint: disable=no-explicit-dtype
+                pad_zero = np.zeros(
+                    (rcut_idx - upper_idx, self.ncol), dtype=self.vdata.dtype
+                )
+                pad_zero[:, 0] = np.linspace(
                     self.rmax + self.hh,
                     self.rmax + self.hh * (rcut_idx - upper_idx),
                     rcut_idx - upper_idx,
+                    dtype=self.vdata.dtype,
                 )
                 self.vdata = np.concatenate((self.vdata, pad_zero), axis=0)
         else:
@@ -187,19 +190,22 @@ class PairTab:
                 log.warning(
                     "The rcut goes beyond table upper boundary, performing extrapolation."
                 )
-                pad_extrapolation = np.zeros((rcut_idx - upper_idx, self.ncol))  # pylint: disable=no-explicit-dtype
+                pad_extrapolation = np.zeros(
+                    (rcut_idx - upper_idx, self.ncol), dtype=self.vdata.dtype
+                )
 
-                pad_extrapolation[:, 0] = np.linspace(  # pylint: disable=no-explicit-dtype
+                pad_extrapolation[:, 0] = np.linspace(
                     self.rmax + self.hh,
                     self.rmax + self.hh * (rcut_idx - upper_idx),
                     rcut_idx - upper_idx,
+                    dtype=self.vdata.dtype,
                 )
                 # need to calculate table values to fill in with cubic spline
                 pad_extrapolation = self._extrapolate_table(pad_extrapolation)
 
                 self.vdata = np.concatenate((self.vdata, pad_extrapolation), axis=0)
 
-    def get(self) -> Tuple[np.array, np.array]:
+    def get(self) -> tuple[np.array, np.array]:
         """Get the serialized table."""
         return self.tab_info, self.tab_data
 
@@ -253,7 +259,9 @@ class PairTab:
         return pad_extrapolation
 
     def _make_data(self):
-        data = np.zeros([self.ntypes * self.ntypes * 4 * self.nspline])  # pylint: disable=no-explicit-dtype
+        data = np.zeros(
+            [self.ntypes * self.ntypes * 4 * self.nspline], dtype=self.data_type
+        )
         stride = 4 * self.nspline
         idx_iter = 0
         xx = self.vdata[:, 0]
@@ -263,7 +271,7 @@ class PairTab:
                 cs = CubicSpline(xx, vv, bc_type="clamped")
                 dd = cs(xx, 1)
                 dd *= self.hh
-                dtmp = np.zeros(stride)  # pylint: disable=no-explicit-dtype
+                dtmp = np.zeros(stride, dtype=self.data_type)
                 for ii in range(self.nspline):
                     dtmp[ii * 4 + 0] = 2 * vv[ii] - 2 * vv[ii + 1] + dd[ii] + dd[ii + 1]
                     dtmp[ii * 4 + 1] = (

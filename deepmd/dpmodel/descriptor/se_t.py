@@ -2,18 +2,21 @@
 import copy
 import itertools
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.common import (
+    get_xp_precision,
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
@@ -26,9 +29,6 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
-)
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -73,7 +73,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     env_protection : float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     precision : str
@@ -82,7 +82,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     ntypes : int
             Number of element types.
@@ -93,17 +93,17 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         env_protection: float = 0.0,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        type_map: Optional[list[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
     ) -> None:
         del ntypes
@@ -124,17 +124,18 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
+        self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
 
         in_dim = 1  # not considiering type embedding
-        self.embeddings = NetworkCollection(
+        embeddings = NetworkCollection(
             ntypes=self.ntypes,
             ndim=2,
             network_type="embedding_network",
         )
         for ii, embedding_idx in enumerate(
-            itertools.product(range(self.ntypes), repeat=self.embeddings.ndim)
+            itertools.product(range(self.ntypes), repeat=embeddings.ndim)
         ):
-            self.embeddings[embedding_idx] = EmbeddingNet(
+            embeddings[embedding_idx] = EmbeddingNet(
                 in_dim,
                 self.neuron,
                 self.activation_function,
@@ -142,8 +143,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
                 self.precision,
                 seed=child_seed(self.seed, ii),
             )
+        self.embeddings = embeddings
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
-        self.nnei = np.sum(self.sel)
+        self.nnei = sum(self.sel)
         self.davg = np.zeros(
             [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
         )
@@ -174,7 +176,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         return self.get_dim_out()
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -227,7 +229,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         raise NotImplementedError
 
@@ -235,11 +237,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -252,13 +254,13 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -281,7 +283,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         nlist
             The neighbor list. shape: nf x nloc x nnei
         mapping
-            The index mapping from extended to lcoal region. not used by this descriptor.
+            The index mapping from extended to local region. not used by this descriptor.
 
         Returns
         -------
@@ -301,20 +303,22 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             The smooth switch function.
         """
         del mapping
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         # nf x nloc x nnei x 4
         rr, diff, ww = self.env_mat.call(
             coord_ext, atype_ext, nlist, self.davg, self.dstd
         )
         nf, nloc, nnei, _ = rr.shape
-        sec = np.append([0], np.cumsum(self.sel))
+        sec = self.sel_cumsum
 
         ng = self.neuron[-1]
-        result = np.zeros([nf * nloc, ng], dtype=PRECISION_DICT[self.precision])
+        result = xp.zeros([nf * nloc, ng], dtype=get_xp_precision(xp, self.precision))
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
-        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
-        rr = rr.reshape(nf * nloc, nnei, 4)
+        exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
+        rr = xp.reshape(rr, (nf * nloc, nnei, 4))
+        rr = xp.astype(rr, get_xp_precision(xp, self.precision))
 
         for embedding_idx in itertools.product(
             range(self.ntypes), repeat=self.embeddings.ndim
@@ -327,23 +331,26 @@ class DescrptSeT(NativeOP, BaseDescriptor):
                 # nfnl x nt_i x 3
                 rr_i = rr[:, sec[ti] : sec[ti + 1], 1:]
                 mm_i = exclude_mask[:, sec[ti] : sec[ti + 1]]
-                rr_i = rr_i * mm_i[:, :, None]
+                rr_i = rr_i * xp.astype(mm_i[:, :, None], rr_i.dtype)
                 # nfnl x nt_j x 3
                 rr_j = rr[:, sec[tj] : sec[tj + 1], 1:]
                 mm_j = exclude_mask[:, sec[tj] : sec[tj + 1]]
-                rr_j = rr_j * mm_j[:, :, None]
+                rr_j = rr_j * xp.astype(mm_j[:, :, None], rr_j.dtype)
                 # nfnl x nt_i x nt_j
-                env_ij = np.einsum("ijm,ikm->ijk", rr_i, rr_j)
+                # env_ij = np.einsum("ijm,ikm->ijk", rr_i, rr_j)
+                env_ij = xp.sum(rr_i[:, :, None, :] * rr_j[:, None, :, :], axis=-1)
                 # nfnl x nt_i x nt_j x 1
                 env_ij_reshape = env_ij[:, :, :, None]
                 # nfnl x nt_i x nt_j x ng
                 gg = self.embeddings[embedding_idx].call(env_ij_reshape)
                 # nfnl x nt_i x nt_j x ng
-                res_ij = np.einsum("ijk,ijkm->im", env_ij, gg)
+                # res_ij = np.einsum("ijk,ijkm->im", env_ij, gg)
+                res_ij = xp.sum(env_ij[:, :, :, None] * gg, axis=(1, 2))
                 res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                 result += res_ij
         # nf x nloc x ng
-        result = result.reshape(nf, nloc, ng).astype(GLOBAL_NP_FLOAT_PRECISION)
+        result = xp.reshape(result, (nf, nloc, ng))
+        result = xp.astype(result, get_xp_precision(xp, "global"))
         return result, None, None, None, ww
 
     def serialize(self) -> dict:
@@ -371,8 +378,8 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             "exclude_types": self.exclude_types,
             "env_protection": self.env_protection,
             "@variables": {
-                "davg": self.davg,
-                "dstd": self.dstd,
+                "davg": to_numpy_array(self.davg),
+                "dstd": to_numpy_array(self.dstd),
             },
             "type_map": self.type_map,
             "trainable": self.trainable,
@@ -399,15 +406,15 @@ class DescrptSeT(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Iterator,
+)
+from typing import (
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -24,7 +25,7 @@ from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
 
 
 class NeighborStatOP(torch.nn.Module):
-    """Class for getting neighbor statics data information.
+    """Class for getting neighbor statistics data information.
 
     Parameters
     ----------
@@ -43,7 +44,7 @@ class NeighborStatOP(torch.nn.Module):
         mixed_types: bool,
     ) -> None:
         super().__init__()
-        self.rcut = rcut
+        self.rcut = float(rcut)
         self.ntypes = ntypes
         self.mixed_types = mixed_types
 
@@ -52,7 +53,7 @@ class NeighborStatOP(torch.nn.Module):
         coord: torch.Tensor,
         atype: torch.Tensor,
         cell: Optional[torch.Tensor],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Calculate the neareest neighbor distance between atoms, maximum nbor size of
         atoms and the output data range of the environment matrix.
 
@@ -139,7 +140,7 @@ class NeighborStat(BaseNeighborStat):
 
     def iterator(
         self, data: DeepmdDataSystem
-    ) -> Iterator[Tuple[np.ndarray, float, str]]:
+    ) -> Iterator[tuple[np.ndarray, float, str]]:
         """Abstract method for producing data.
 
         Yields

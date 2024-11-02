@@ -9,7 +9,6 @@ import logging
 import time
 from typing import (
     Any,
-    Dict,
     Optional,
 )
 
@@ -115,7 +114,7 @@ def train(
         mpi_log=mpi_log,
     )
     if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
-        # avoid conflict of visible gpus among multipe tf sessions in one process
+        # avoid conflict of visible gpus among multiple tf sessions in one process
         reset_default_tf_session_config(cpu_only=True)
 
     # load json database
@@ -186,12 +185,12 @@ def train(
     _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: Dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
+def _do_work(jdata: dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
     """Run serial model training.
 
     Parameters
     ----------
-    jdata : Dict[str, Any]
+    jdata : dict[str, Any]
         arguments read form json/yaml control file
     run_opt : RunOptions
         object with run configuration

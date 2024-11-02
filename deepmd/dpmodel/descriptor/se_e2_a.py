@@ -3,18 +3,20 @@ import copy
 import itertools
 from typing import (
     Any,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
@@ -108,7 +110,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             If the weights of embedding net are trainable.
     type_one_side
             Try to build N_types embedding nets. Otherwise, building N_types^2 embedding nets
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -121,7 +123,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The precision of the embedding net parameters. Supported options are |PRECISION|
     spin
             The deepspin object.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     ntypes : int
             Number of element types.
@@ -147,22 +149,22 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
         type_one_side: bool = True,
-        exclude_types: List[List[int]] = [],
+        exclude_types: list[list[int]] = [],
         env_protection: float = 0.0,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         spin: Optional[Any] = None,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ) -> None:
         del ntypes
         ## seed, uniform_seed, not included.
@@ -188,15 +190,15 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.reinit_exclude(exclude_types)
 
         in_dim = 1  # not considiering type embedding
-        self.embeddings = NetworkCollection(
+        embeddings = NetworkCollection(
             ntypes=self.ntypes,
             ndim=(1 if self.type_one_side else 2),
             network_type="embedding_network",
         )
         for ii, embedding_idx in enumerate(
-            itertools.product(range(self.ntypes), repeat=self.embeddings.ndim)
+            itertools.product(range(self.ntypes), repeat=embeddings.ndim)
         ):
-            self.embeddings[embedding_idx] = EmbeddingNet(
+            embeddings[embedding_idx] = EmbeddingNet(
                 in_dim,
                 self.neuron,
                 self.activation_function,
@@ -204,8 +206,9 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 self.precision,
                 seed=child_seed(seed, ii),
             )
+        self.embeddings = embeddings
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
-        self.nnei = np.sum(self.sel)
+        self.nnei = np.sum(self.sel).item()
         self.davg = np.zeros(
             [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
         )
@@ -213,6 +216,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             [self.ntypes, self.nnei, 4], dtype=PRECISION_DICT[self.precision]
         )
         self.orig_sel = self.sel
+        self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
 
     def __setitem__(self, key, value):
         if key in ("avg", "data_avg", "davg"):
@@ -277,12 +281,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -297,11 +301,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns the number of element types."""
         return self.ntypes
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def compute_input_stats(self, merged: List[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -314,7 +318,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
@@ -323,15 +327,16 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         ss,
         embedding_idx,
     ):
+        xp = array_api_compat.array_namespace(ss)
         nf_times_nloc, nnei = ss.shape[0:2]
-        ss = ss.reshape(nf_times_nloc, nnei, 1)
+        ss = xp.reshape(ss, (nf_times_nloc, nnei, 1))
         # (nf x nloc) x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -354,7 +359,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         nlist
             The neighbor list. shape: nf x nloc x nnei
         mapping
-            The index mapping from extended to lcoal region. not used by this descriptor.
+            The index mapping from extended to local region. not used by this descriptor.
 
         Returns
         -------
@@ -446,8 +451,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             "env_mat": self.env_mat.serialize(),
             "embeddings": self.embeddings.serialize(),
             "@variables": {
-                "davg": self.davg,
-                "dstd": self.dstd,
+                "davg": to_numpy_array(self.davg),
+                "dstd": to_numpy_array(self.dstd),
             },
             "type_map": self.type_map,
         }
@@ -473,15 +478,15 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -499,3 +504,89 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist
+
+
+class DescrptSeAArrayAPI(DescrptSeA):
+    def call(
+        self,
+        coord_ext,
+        atype_ext,
+        nlist,
+        mapping: Optional[np.ndarray] = None,
+    ):
+        """Compute the descriptor.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nallx3)
+        atype_ext
+            The extended aotm types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to local region. not used by this descriptor.
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant and permutationally invariant single particle
+            representation. shape: nf x nloc x ng x 3
+        g2
+            The rotationally invariant pair-partical representation.
+            this descriptor returns None
+        h2
+            The rotationally equivariant pair-partical representation.
+            this descriptor returns None
+        sw
+            The smooth switch function.
+        """
+        if not self.type_one_side:
+            raise NotImplementedError(
+                "type_one_side == False is not supported in DescrptSeAArrayAPI"
+            )
+        del mapping
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        input_dtype = coord_ext.dtype
+        # nf x nloc x nnei x 4
+        rr, diff, ww = self.env_mat.call(
+            coord_ext, atype_ext, nlist, self.davg, self.dstd
+        )
+        nf, nloc, nnei, _ = rr.shape
+        sec = self.sel_cumsum
+
+        ng = self.neuron[-1]
+        gr = xp.zeros([nf * nloc, ng, 4], dtype=self.dstd.dtype)
+        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
+        # merge nf and nloc axis, so for type_one_side == False,
+        # we don't require atype is the same in all frames
+        exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
+        rr = xp.reshape(rr, (nf * nloc, nnei, 4))
+        rr = xp.astype(rr, self.dstd.dtype)
+
+        for embedding_idx in itertools.product(
+            range(self.ntypes), repeat=self.embeddings.ndim
+        ):
+            (tt,) = embedding_idx
+            mm = exclude_mask[:, sec[tt] : sec[tt + 1]]
+            tr = rr[:, sec[tt] : sec[tt + 1], :]
+            tr = tr * xp.astype(mm[:, :, None], tr.dtype)
+            ss = tr[..., 0:1]
+            gg = self.cal_g(ss, embedding_idx)
+            # gr_tmp = xp.einsum("lni,lnj->lij", gg, tr)
+            gr_tmp = xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
+            gr += gr_tmp
+        gr = xp.reshape(gr, (nf, nloc, ng, 4))
+        # nf x nloc x ng x 4
+        gr /= self.nnei
+        gr1 = gr[:, :, : self.axis_neuron, :]
+        # nf x nloc x ng x ng1
+        # grrg = xp.einsum("flid,fljd->flij", gr, gr1)
+        grrg = xp.sum(gr[:, :, :, None, :] * gr1[:, :, None, :, :], axis=4)
+        # nf x nloc x (ng x ng1)
+        grrg = xp.astype(
+            xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron)), input_dtype
+        )
+        return grrg, gr[..., 1:], None, None, ww

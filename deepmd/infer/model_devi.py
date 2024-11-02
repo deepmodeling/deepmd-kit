@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    Tuple,
     overload,
 )
 
@@ -29,7 +28,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: Literal[False] = ...,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 @overload
@@ -38,7 +37,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: Literal[True] = ...,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 @overload
@@ -47,7 +46,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: bool = False,
-) -> Tuple[np.ndarray, ...]: ...
+) -> tuple[np.ndarray, ...]: ...
 
 
 def calc_model_devi_f(
@@ -55,7 +54,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: bool = False,
-) -> Tuple[np.ndarray, ...]:
+) -> tuple[np.ndarray, ...]:
     """Calculate model deviation of force.
 
     Parameters
@@ -141,7 +140,7 @@ def calc_model_devi_v(
     vs: np.ndarray,
     real_v: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculate model deviation of virial.
 
     Parameters
@@ -329,7 +328,7 @@ def calc_model_devi(
     forces = np.array(forces)
     virials = np.array(virials)
 
-    devi = [np.arange(coord.shape[0]) * frequency]  # pylint: disable=no-explicit-dtype
+    devi = [np.arange(coord.shape[0], dtype=np.int64) * frequency]
     if real_data is None:
         devi += list(calc_model_devi_v(virials, relative=relative_v))
         devi_f = list(calc_model_devi_f(forces, relative=relative, atomic=atomic))
@@ -379,7 +378,7 @@ def make_model_devi(
     frequency : int
         The number of steps that elapse between writing coordinates
         in a trajectory by a MD engine (such as Gromacs / LAMMPS).
-        This paramter is used to determine the index in the output file.
+        This parameter is used to determine the index in the output file.
     real_error : bool, default: False
         If True, calculate the RMS real error instead of model deviation.
     atomic : bool, default: False
@@ -503,7 +502,7 @@ def make_model_devi(
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)
-        devis[:, 0] = np.arange(nframes_tot) * frequency  # pylint: disable=no-explicit-dtype
+        devis[:, 0] = np.arange(nframes_tot, dtype=np.int64) * frequency
         write_model_devi_out(devis, output, header=system, atomic=atomic)
         devis_coll.append(devis)
     return devis_coll

@@ -3,10 +3,7 @@ import itertools
 from typing import (
     Callable,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -61,10 +58,33 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
+)
 
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_t"):
+
+    def tabulate_fusion_se_t(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_t is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for model compression for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_t = tabulate_fusion_se_t
 
 
 @BaseDescriptor.register("se_e3")
@@ -95,7 +115,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
     env_protection : float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     precision : str
@@ -104,7 +124,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             If the weights of embedding net are trainable.
     seed : int, Optional
             Random seed for initializing the network parameters.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
 
@@ -112,17 +132,17 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         env_protection: float = 0.0,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
-        type_map: Optional[List[str]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
+        type_map: Optional[list[str]] = None,
         ntypes: Optional[int] = None,  # to be compat with input
         # not implemented
         spin=None,
@@ -132,6 +152,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        self.compress = False
         self.seat = DescrptBlockSeT(
             rcut,
             rcut_smth,
@@ -159,7 +180,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.seat.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.seat.get_sel()
 
@@ -167,7 +188,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.seat.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -201,7 +222,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -221,7 +242,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         return self.seat.dim_out
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -234,7 +255,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -242,11 +263,11 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -255,9 +276,57 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """
         return self.seat.compute_input_stats(merged, path)
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            exclude_types=data["exclude_types"],
+            activation_fn=ActivationFn(data["activation_function"]),
+        )
+        stride_1_scaled = table_stride_1 * 10
+        stride_2_scaled = table_stride_2 * 10
+        self.table_config = [
+            table_extrapolate,
+            stride_1_scaled,
+            stride_2_scaled,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, stride_1_scaled, stride_2_scaled
+        )
+        self.seat.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
+
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         """Update the type exclusions."""
         self.seat.reinit_exclude(exclude_types)
@@ -268,7 +337,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -314,7 +383,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         self.seat.mean = mean
         self.seat.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.seat.mean, self.seat.stddev
 
@@ -367,15 +436,15 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -399,21 +468,25 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeT(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
+    lower: dict[str, int]
+    upper: dict[str, int]
+    table_data: dict[str, torch.Tensor]
+    table_config: list[Union[int, float]]
 
     def __init__(
         self,
         rcut: float,
         rcut_smth: float,
-        sel: List[int],
-        neuron: List[int] = [24, 48, 96],
+        sel: list[int],
+        neuron: list[int] = [24, 48, 96],
         resnet_dt: bool = False,
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         env_protection: float = 0.0,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         r"""Construct an embedding net of type `se_e3`.
 
@@ -438,7 +511,7 @@ class DescrptBlockSeT(DescriptorBlock):
             The activation function in the embedding net. Supported options are |ACTIVATION_FN|
         env_protection : float
             Protection parameter to prevent division by zero errors during environment matrix calculations.
-        exclude_types : List[List[int]]
+        exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
         precision : str
@@ -449,8 +522,8 @@ class DescrptBlockSeT(DescriptorBlock):
             Random seed for initializing the network parameters.
         """
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.set_davg_zero = set_davg_zero
@@ -470,6 +543,12 @@ class DescrptBlockSeT(DescriptorBlock):
         self.split_sel = self.sel
         self.nnei = sum(sel)
         self.ndescrpt = self.nnei * 4
+        # add for compression
+        self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_data = {}
+        self.table_config = []
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
@@ -511,7 +590,7 @@ class DescrptBlockSeT(DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -532,11 +611,11 @@ class DescrptBlockSeT(DescriptorBlock):
         return self.dim_in
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -575,7 +654,7 @@ class DescrptBlockSeT(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -583,11 +662,11 @@ class DescrptBlockSeT(DescriptorBlock):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -609,10 +688,14 @@ class DescrptBlockSeT(DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
-            self.mean.copy_(torch.tensor(mean, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
-        self.stddev.copy_(torch.tensor(stddev, device=env.DEVICE))  # pylint: disable=no-explicit-dtype
+            self.mean.copy_(
+                torch.tensor(mean, device=env.DEVICE, dtype=self.mean.dtype)
+            )
+        self.stddev.copy_(
+            torch.tensor(stddev, device=env.DEVICE, dtype=self.stddev.dtype)
+        )
 
-    def get_stats(self) -> Dict[str, StatItem]:
+    def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         if self.stats is None:
             raise RuntimeError(
@@ -622,10 +705,23 @@ class DescrptBlockSeT(DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def enable_compression(
+        self,
+        table_data,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        self.compress = True
+        self.table_data = table_data
+        self.table_config = table_config
+        self.lower = lower
+        self.upper = upper
 
     def forward(
         self,
@@ -710,12 +806,36 @@ class DescrptBlockSeT(DescriptorBlock):
                 rr_j = rr_j * mm_j[:, :, None]
                 # nfnl x nt_i x nt_j
                 env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
-                # nfnl x nt_i x nt_j x 1
-                env_ij_reshape = env_ij.unsqueeze(-1)
-                # nfnl x nt_i x nt_j x ng
-                gg = ll.forward(env_ij_reshape)
-                # nfnl x nt_i x nt_j x ng
-                res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
+                if self.compress:
+                    ebd_env_ij = env_ij.view(-1, 1)
+                    net = "filter_" + str(ti) + "_net_" + str(tj)
+                    info = [
+                        self.lower[net],
+                        self.upper[net],
+                        self.upper[net] * self.table_config[0],
+                        self.table_config[1],
+                        self.table_config[2],
+                        self.table_config[3],
+                    ]
+                    tensor_data = (
+                        self.table_data[net].to(env_ij.device).to(dtype=self.prec)
+                    )
+                    ebd_env_ij = ebd_env_ij.to(dtype=self.prec)
+                    env_ij = env_ij.to(dtype=self.prec)
+                    res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
+                        tensor_data.contiguous(),
+                        torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
+                        ebd_env_ij.contiguous(),
+                        env_ij.contiguous(),
+                        self.filter_neuron[-1],
+                    )[0]
+                else:
+                    # nfnl x nt_i x nt_j x 1
+                    env_ij_reshape = env_ij.unsqueeze(-1)
+                    # nfnl x nt_i x nt_j x ng
+                    gg = ll.forward(env_ij_reshape)
+                    # nfnl x nt_i x nt_j x ng
+                    res_ij = torch.einsum("ijk,ijkm->im", env_ij, gg)
                 res_ij = res_ij * (1.0 / float(nei_type_i) / float(nei_type_j))
                 result += res_ij
         # xyz_scatter /= (self.nnei * self.nnei)

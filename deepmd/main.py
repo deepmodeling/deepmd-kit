@@ -14,10 +14,7 @@ from collections import (
     defaultdict,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
-    Type,
 )
 
 from deepmd.backend.backend import (
@@ -57,10 +54,10 @@ class RawTextArgumentDefaultsHelpFormatter(
     """This formatter is used to print multile-line help message with default value."""
 
 
-BACKENDS: Dict[str, Type[Backend]] = Backend.get_backends_by_feature(
+BACKENDS: dict[str, type[Backend]] = Backend.get_backends_by_feature(
     Backend.Feature.ENTRY_POINT
 )
-BACKEND_TABLE: Dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
+BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.items()}
 
 
 class BackendOption(argparse.Action):
@@ -131,7 +128,7 @@ def main_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    BACKEND_ALIAS: Dict[str, List[str]] = defaultdict(list)
+    BACKEND_ALIAS: dict[str, list[str]] = defaultdict(list)
     for alias, backend in BACKEND_TABLE.items():
         BACKEND_ALIAS[backend].append(alias)
     for backend, alias in BACKEND_ALIAS.items():
@@ -836,7 +833,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_show = subparsers.add_parser(
         "show",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Show the information of a model",
+        help="Show the information of a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
@@ -857,12 +854,12 @@ def main_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse arguments and convert argument strings to objects.
 
     Parameters
     ----------
-    args : List[str]
+    args : list[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
 
@@ -881,15 +878,21 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main():
+def main(args: Optional[list[str]] = None):
     """DeePMD-kit new entry point.
+
+    Parameters
+    ----------
+    args : list[str]
+        list of command line arguments, main purpose is testing default option None
+        takes arguments from sys.argv
 
     Raises
     ------
     RuntimeError
         if no command was input
     """
-    args = parse_args()
+    args = parse_args(args=args)
 
     if args.backend not in BACKEND_TABLE:
         raise ValueError(f"Unknown backend {args.backend}")
@@ -901,6 +904,7 @@ def main():
         "neighbor-stat",
         "gui",
         "convert-backend",
+        "show",
     ):
         # common entrypoints
         from deepmd.entrypoints.main import main as deepmd_main
@@ -911,7 +915,6 @@ def main():
         "compress",
         "convert-from",
         "train-nvnmd",
-        "show",
         "change-bias",
     ):
         deepmd_main = BACKENDS[args.backend]().entry_point_hook

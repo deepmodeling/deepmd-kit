@@ -7,7 +7,6 @@ from abc import (
 )
 from typing import (
     Callable,
-    Tuple,
 )
 
 import array_api_compat
@@ -62,11 +61,6 @@ class AutoBatchSize(ABC):
             self.maximum_working_batch_size = initial_batch_size
             if self.is_gpu_available():
                 self.minimal_not_working_batch_size = 2**31
-                log.info(
-                    "If you encounter the error 'an illegal memory access was encountered', this may be due to a TensorFlow issue. "
-                    "To avoid this, set the environment variable DP_INFER_BATCH_SIZE to a smaller value than the last adjusted batch size. "
-                    "The environment variable DP_INFER_BATCH_SIZE controls the inference batch size (nframes * natoms). "
-                )
             else:
                 self.minimal_not_working_batch_size = (
                     self.maximum_working_batch_size + 1
@@ -81,7 +75,7 @@ class AutoBatchSize(ABC):
 
     def execute(
         self, callable: Callable, start_index: int, natoms: int
-    ) -> Tuple[int, tuple]:
+    ) -> tuple[int, tuple]:
         """Excuate a method with given batch size.
 
         Parameters
@@ -153,7 +147,7 @@ class AutoBatchSize(ABC):
 
     def execute_all(
         self, callable: Callable, total_size: int, natoms: int, *args, **kwargs
-    ) -> Tuple[np.ndarray]:
+    ) -> tuple[np.ndarray]:
         """Excuate a method with all given data.
 
         This method is compatible with Array API.
@@ -161,7 +155,7 @@ class AutoBatchSize(ABC):
         Parameters
         ----------
         callable : Callable
-            The method should accept *args and **kwargs as input and return the similiar array.
+            The method should accept *args and **kwargs as input and return the similar array.
         total_size : int
             Total size
         natoms : int
@@ -174,7 +168,7 @@ class AutoBatchSize(ABC):
 
         def execute_with_batch_size(
             batch_size: int, start_index: int
-        ) -> Tuple[int, Tuple[np.ndarray]]:
+        ) -> tuple[int, tuple[np.ndarray]]:
             end_index = start_index + batch_size
             end_index = min(end_index, total_size)
             return (end_index - start_index), callable(

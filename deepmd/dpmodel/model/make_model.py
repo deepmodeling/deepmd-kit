@@ -1,12 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Dict,
-    List,
+    Callable,
     Optional,
-    Tuple,
-    Type,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
@@ -42,7 +40,96 @@ from .transform_output import (
 )
 
 
-def make_model(T_AtomicModel: Type[BaseAtomicModel]):
+def model_call_from_call_lower(
+    *,  # enforce keyword-only arguments
+    call_lower: Callable[
+        [
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            Optional[np.ndarray],
+            Optional[np.ndarray],
+            bool,
+        ],
+        dict[str, np.ndarray],
+    ],
+    rcut: float,
+    sel: list[int],
+    mixed_types: bool,
+    model_output_def: ModelOutputDef,
+    coord: np.ndarray,
+    atype: np.ndarray,
+    box: Optional[np.ndarray] = None,
+    fparam: Optional[np.ndarray] = None,
+    aparam: Optional[np.ndarray] = None,
+    do_atomic_virial: bool = False,
+):
+    """Return model prediction from lower interface.
+
+    Parameters
+    ----------
+    coord
+        The coordinates of the atoms.
+        shape: nf x (nloc x 3)
+    atype
+        The type of atoms. shape: nf x nloc
+    box
+        The simulation box. shape: nf x 9
+    fparam
+        frame parameter. nf x ndf
+    aparam
+        atomic parameter. nf x nloc x nda
+    do_atomic_virial
+        If calculate the atomic virial.
+
+    Returns
+    -------
+    ret_dict
+        The result dict of type dict[str,np.ndarray].
+        The keys are defined by the `ModelOutputDef`.
+
+    """
+    nframes, nloc = atype.shape[:2]
+    cc, bb, fp, ap = coord, box, fparam, aparam
+    del coord, box, fparam, aparam
+    if bb is not None:
+        coord_normalized = normalize_coord(
+            cc.reshape(nframes, nloc, 3),
+            bb.reshape(nframes, 3, 3),
+        )
+    else:
+        coord_normalized = cc.copy()
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord_normalized, atype, bb, rcut
+    )
+    nlist = build_neighbor_list(
+        extended_coord,
+        extended_atype,
+        nloc,
+        rcut,
+        sel,
+        distinguish_types=not mixed_types,
+    )
+    extended_coord = extended_coord.reshape(nframes, -1, 3)
+    model_predict_lower = call_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        fparam=fp,
+        aparam=ap,
+        do_atomic_virial=do_atomic_virial,
+    )
+    model_predict = communicate_extended_output(
+        model_predict_lower,
+        model_output_def,
+        mapping,
+        do_atomic_virial=do_atomic_virial,
+    )
+    return model_predict
+
+
+def make_model(T_AtomicModel: type[BaseAtomicModel]):
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -79,7 +166,8 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             else:
                 self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
             self.precision_dict = PRECISION_DICT
-            self.reverse_precision_dict = RESERVED_PRECISON_DICT
+            # not supported by flax
+            # self.reverse_precision_dict = RESERVED_PRECISON_DICT
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
             self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
@@ -87,7 +175,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
-        def model_output_type(self) -> List[str]:
+        def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
             output_def = self.model_output_def()
             var_defs = output_def.var_defs
@@ -106,7 +194,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
             do_atomic_virial: bool = False,
-        ) -> Dict[str, np.ndarray]:
+        ) -> dict[str, np.ndarray]:
             """Return model prediction.
 
             Parameters
@@ -128,47 +216,25 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             Returns
             -------
             ret_dict
-                The result dict of type Dict[str,np.ndarray].
+                The result dict of type dict[str,np.ndarray].
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            nframes, nloc = atype.shape[:2]
             cc, bb, fp, ap, input_prec = self.input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
-            if bb is not None:
-                coord_normalized = normalize_coord(
-                    cc.reshape(nframes, nloc, 3),
-                    bb.reshape(nframes, 3, 3),
-                )
-            else:
-                coord_normalized = cc.copy()
-            extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-                coord_normalized, atype, bb, self.get_rcut()
-            )
-            nlist = build_neighbor_list(
-                extended_coord,
-                extended_atype,
-                nloc,
-                self.get_rcut(),
-                self.get_sel(),
-                distinguish_types=not self.mixed_types(),
-            )
-            extended_coord = extended_coord.reshape(nframes, -1, 3)
-            model_predict_lower = self.call_lower(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
+            model_predict = model_call_from_call_lower(
+                call_lower=self.call_lower,
+                rcut=self.get_rcut(),
+                sel=self.get_sel(),
+                mixed_types=self.mixed_types(),
+                model_output_def=self.model_output_def(),
+                coord=cc,
+                atype=atype,
+                box=bb,
                 fparam=fp,
                 aparam=ap,
-                do_atomic_virial=do_atomic_virial,
-            )
-            model_predict = communicate_extended_output(
-                model_predict_lower,
-                self.model_output_def(),
-                mapping,
                 do_atomic_virial=do_atomic_virial,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
@@ -192,7 +258,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x (nall x 3).
+                coordinates in extended region. nf x (nall x 3).
             extended_atype
                 atomic type in extended region. nf x nall.
             nlist
@@ -224,22 +290,42 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
-            atomic_ret = self.atomic_model.forward_common_atomic(
+            model_predict = self.forward_common_atomic(
                 cc_ext,
                 extended_atype,
                 nlist,
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
-            )
-            model_predict = fit_output_to_model_output(
-                atomic_ret,
-                self.atomic_output_def(),
-                cc_ext,
                 do_atomic_virial=do_atomic_virial,
             )
             model_predict = self.output_type_cast(model_predict, input_prec)
             return model_predict
+
+        def forward_common_atomic(
+            self,
+            extended_coord: np.ndarray,
+            extended_atype: np.ndarray,
+            nlist: np.ndarray,
+            mapping: Optional[np.ndarray] = None,
+            fparam: Optional[np.ndarray] = None,
+            aparam: Optional[np.ndarray] = None,
+            do_atomic_virial: bool = False,
+        ):
+            atomic_ret = self.atomic_model.forward_common_atomic(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            return fit_output_to_model_output(
+                atomic_ret,
+                self.atomic_output_def(),
+                extended_coord,
+                do_atomic_virial=do_atomic_virial,
+            )
 
         forward_lower = call_lower
 
@@ -249,7 +335,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             box: Optional[np.ndarray] = None,
             fparam: Optional[np.ndarray] = None,
             aparam: Optional[np.ndarray] = None,
-        ) -> Tuple[
+        ) -> tuple[
             np.ndarray,
             Optional[np.ndarray],
             Optional[np.ndarray],
@@ -257,21 +343,16 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             str,
         ]:
             """Cast the input data to global float type."""
-            input_prec = self.reverse_precision_dict[
-                self.precision_dict[coord.dtype.name]
-            ]
+            input_prec = RESERVED_PRECISON_DICT[self.precision_dict[coord.dtype.name]]
             ###
             ### type checking would not pass jit, convert to coord prec anyway
             ###
-            _lst: List[Optional[np.ndarray]] = [
+            _lst: list[Optional[np.ndarray]] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
             box, fparam, aparam = _lst
-            if (
-                input_prec
-                == self.reverse_precision_dict[self.global_np_float_precision]
-            ):
+            if input_prec == RESERVED_PRECISON_DICT[self.global_np_float_precision]:
                 return coord, box, fparam, aparam, input_prec
             else:
                 pp = self.global_np_float_precision
@@ -285,13 +366,12 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         def output_type_cast(
             self,
-            model_ret: Dict[str, np.ndarray],
+            model_ret: dict[str, np.ndarray],
             input_prec: str,
-        ) -> Dict[str, np.ndarray]:
+        ) -> dict[str, np.ndarray]:
             """Convert the model output to the input prec."""
             do_cast = (
-                input_prec
-                != self.reverse_precision_dict[self.global_np_float_precision]
+                input_prec != RESERVED_PRECISON_DICT[self.global_np_float_precision]
             )
             pp = self.precision_dict[input_prec]
             odef = self.model_output_def()
@@ -327,7 +407,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             the `nlist` is pad with -1.
 
             3. If the number of neighbors in the `nlist` is larger than sum(self.sel),
-            the nearest sum(sel) neighbors will be preseved.
+            the nearest sum(sel) neighbors will be preserved.
 
             Known limitations:
 
@@ -337,7 +417,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x nall x 3
+                coordinates in extended region. nf x nall x 3
             extended_atype
                 atomic type in extended region. nf x nall
             nlist
@@ -348,7 +428,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             Returns
             -------
             formated_nlist
-                the formated nlist.
+                the formatted nlist.
 
             """
             n_nf, n_nloc, n_nnei = nlist.shape
@@ -370,6 +450,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             nnei: int,
             extra_nlist_sort: bool = False,
         ):
+            xp = array_api_compat.array_namespace(extended_coord, nlist)
             n_nf, n_nloc, n_nnei = nlist.shape
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
             nall = extended_coord.shape[1]
@@ -377,10 +458,10 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
 
             if n_nnei < nnei:
                 # make a copy before revise
-                ret = np.concatenate(
+                ret = xp.concat(
                     [
                         nlist,
-                        -1 * np.ones([n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype),
+                        -1 * xp.ones([n_nf, n_nloc, nnei - n_nnei], dtype=nlist.dtype),
                     ],
                     axis=-1,
                 )
@@ -389,16 +470,16 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
                 n_nf, n_nloc, n_nnei = nlist.shape
                 # make a copy before revise
                 m_real_nei = nlist >= 0
-                ret = np.where(m_real_nei, nlist, 0)
+                ret = xp.where(m_real_nei, nlist, 0)
                 coord0 = extended_coord[:, :n_nloc, :]
                 index = ret.reshape(n_nf, n_nloc * n_nnei, 1).repeat(3, axis=2)
-                coord1 = np.take_along_axis(extended_coord, index, axis=1)
+                coord1 = xp.take_along_axis(extended_coord, index, axis=1)
                 coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
-                rr = np.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = np.where(m_real_nei, rr, float("inf"))
-                rr, ret_mapping = np.sort(rr, axis=-1), np.argsort(rr, axis=-1)
-                ret = np.take_along_axis(ret, ret_mapping, axis=2)
-                ret = np.where(rr > rcut, -1, ret)
+                rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                rr = xp.where(m_real_nei, rr, float("inf"))
+                rr, ret_mapping = xp.sort(rr, axis=-1), xp.argsort(rr, axis=-1)
+                ret = xp.take_along_axis(ret, ret_mapping, axis=2)
+                ret = xp.where(rr > rcut, -1, ret)
                 ret = ret[..., :nnei]
             # not extra_nlist_sort and n_nnei <= nnei:
             elif n_nnei == nnei:
@@ -427,7 +508,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -449,7 +530,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
 
-        def get_sel_type(self) -> List[int]:
+        def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 
             Only atoms with selected atom types have atomic contribution
@@ -469,7 +550,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Get the cut-off radius."""
             return self.atomic_model.get_rcut()
 
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
@@ -481,7 +562,7 @@ def make_model(T_AtomicModel: Type[BaseAtomicModel]):
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nnei()
 
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
 

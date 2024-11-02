@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -13,6 +12,8 @@ from deepmd.utils.argcheck import (
 )
 
 from .common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
@@ -31,6 +32,17 @@ if INSTALLED_TF:
     from deepmd.tf.utils.type_embed import TypeEmbedNet as TypeEmbedNetTF
 else:
     TypeEmbedNetTF = object
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.utils.type_embed import TypeEmbedNet as TypeEmbedNetJAX
+else:
+    TypeEmbedNetJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    from ..array_api_strict.utils.type_embed import TypeEmbedNet as TypeEmbedNetStrict
+else:
+    TypeEmbedNetStrict = None
 if INSTALLED_PD:
     import paddle
 
@@ -71,11 +83,15 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     tf_class = TypeEmbedNetTF
     dp_class = TypeEmbedNetDP
     pt_class = TypeEmbedNetPT
+    jax_class = TypeEmbedNetJAX
     pd_class = TypeEmbedNetPD
+    array_api_strict_class = TypeEmbedNetStrict
     args = type_embedding_args()
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
@@ -83,7 +99,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        # implict argument not input by users
+        # implicit argument not input by users
         return {
             "ntypes": self.ntypes,
             "padding": padding,
@@ -95,7 +111,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
 
         self.ntypes = 2
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return [
             obj.build(
                 obj.ntypes,
@@ -112,13 +128,27 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             for x in (pt_obj(device=PT_DEVICE),)
         ]
 
+    def eval_jax(self, jax_obj: Any) -> Any:
+        out = jax_obj()
+        # ensure output is not numpy array
+        for x in (out,):
+            if isinstance(x, np.ndarray):
+                raise ValueError("Output is numpy array")
+        return [np.array(x) if isinstance(x, jnp.ndarray) else x for x in (out,)]
+
     def eval_pd(self, pd_obj: Any) -> Any:
         return [
             x.detach().cpu().numpy() if paddle.is_tensor(x) else x
             for x in (pd_obj(device=PD_DEVICE),)
         ]
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        out = array_api_strict_obj()
+        return [
+            np.asarray(x) if hasattr(x, "__array_namespace__") else x for x in (out,)
+        ]
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property

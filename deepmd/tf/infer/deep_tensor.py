@@ -2,10 +2,7 @@
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Dict,
-    List,
     Optional,
-    Tuple,
 )
 
 import numpy as np
@@ -41,7 +38,7 @@ class DeepTensor(DeepEval):
         The neighbor list object. If None, then build the native neighbor list.
     """
 
-    tensors: ClassVar[Dict[str, str]] = {
+    tensors: ClassVar[dict[str, str]] = {
         # descriptor attrs
         "t_ntypes": "descrpt_attr/ntypes:0",
         "t_rcut": "descrpt_attr/rcut:0",
@@ -127,11 +124,11 @@ class DeepTensor(DeepEval):
         """Get the cut-off radius of this model."""
         return self.rcut
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
         return self.tmap
 
-    def get_sel_type(self) -> List[int]:
+    def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model."""
         return self.tselt
 
@@ -147,7 +144,7 @@ class DeepTensor(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: List[int],
+        atom_types: list[int],
         atomic: bool = True,
         fparam: Optional[np.ndarray] = None,
         aparam: Optional[np.ndarray] = None,
@@ -189,7 +186,7 @@ class DeepTensor(DeepEval):
             If atomic == False then of size nframes x output_dim
             else of size nframes x natoms x output_dim
         """
-        # standarize the shape of inputs
+        # standardize the shape of inputs
         if mixed_type:
             natoms = atom_types[0].size
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
@@ -277,13 +274,13 @@ class DeepTensor(DeepEval):
         self,
         coords: np.ndarray,
         cells: Optional[np.ndarray],
-        atom_types: List[int],
+        atom_types: list[int],
         atomic: bool = False,
         fparam: Optional[np.array] = None,
         aparam: Optional[np.array] = None,
         efield: Optional[np.array] = None,
         mixed_type: bool = False,
-    ) -> Tuple[np.ndarray, ...]:
+    ) -> tuple[np.ndarray, ...]:
         """Evaluate the model with interface similar to the energy model.
         Will return global tensor, component-wise force and virial
         and optionally atomic tensor and atomic virial.
@@ -333,7 +330,7 @@ class DeepTensor(DeepEval):
         """
         assert self._support_gfv, "do not support eval_full with old tensor model"
 
-        # standarize the shape of inputs
+        # standardize the shape of inputs
         if mixed_type:
             natoms = atom_types[0].size
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])

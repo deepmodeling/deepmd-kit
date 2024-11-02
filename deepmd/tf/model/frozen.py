@@ -6,9 +6,7 @@ from enum import (
     Enum,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -244,15 +242,15 @@ class FrozenModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -285,7 +283,7 @@ class FrozenModel(Model):
         raise RuntimeError("Should not touch here.")
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         data_requirement = []
         numb_fparam = self.model.get_dim_fparam()

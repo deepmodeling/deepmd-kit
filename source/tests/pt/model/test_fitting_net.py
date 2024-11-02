@@ -133,7 +133,7 @@ class TestFittingNet(unittest.TestCase):
             assert key is not None
             var = values[key]
             with torch.no_grad():
-                # Keep parameter value consistency between 2 implentations
+                # Keep parameter value consistency between 2 implementations
                 param.data.copy_(torch.from_numpy(var))
         embedding = torch.from_numpy(self.embedding)
         embedding = embedding.view(4, -1, self.embedding_width)

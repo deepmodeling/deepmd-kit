@@ -6,7 +6,7 @@
 In the following context, we use the PyTorch backend as the example, while it also applies to other backends listed above.
 :::
 
-If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
+If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainer, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
 
@@ -73,7 +73,7 @@ class SomeDescript(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
     ):
         pass
@@ -137,6 +137,15 @@ class SomeAtomicModel(BaseAtomicModel, torch.nn.Module):
         pass
 ```
 
+### Floating-point precision
+
+When creating a new component, the floating-point precision should obey the [Floating-point precision of the model](../model/precision.md) section.
+In implementation, the component should
+
+- store parameters in the component precision, except those for output normalization;
+- store output normalization parameters in {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`;
+- before input normalization, cast the input tensor to the component precision; before output normalization, cast the output tensor to the {py:data}`deepmd.pt.utils.env.GLOBAL_PT_FLOAT_PRECISION`.
+
 ## Register new arguments
 
 To let someone uses your new component in their input file, you need to create a new method that returns some `Argument` of your new component, and then register new arguments. For example, the code below
@@ -149,7 +158,7 @@ from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")
-def descrpt_some_args() -> List[Argument]:
+def descrpt_some_args() -> list[Argument]:
     return [
         Argument("arg1", bool, optional=False, doc="balabala"),
         Argument("arg2", float, optional=True, default=6.0, doc="haha"),

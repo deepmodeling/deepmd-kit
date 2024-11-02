@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -27,8 +24,14 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.env import (
     RESERVED_PRECISON_DICT,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -157,7 +160,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             (Only support False to keep consistent with other backend references.)
             (Not used in this version. True option is not implemented.)
             If mask the diagonal of attention weights
-    exclude_types : List[List[int]]
+    exclude_types : list[list[int]]
             The excluded pairs of types which have no interaction with each other.
             For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection: float
@@ -191,7 +194,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             Whether to use electronic configuration type embedding.
     use_tebd_bias : bool, Optional
             Whether to use bias in the type embedding layer.
-    type_map: List[str], Optional
+    type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     spin
             (Only support None to keep consistent with other backend references.)
@@ -215,7 +218,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[List[int], int],
+        sel: Union[list[int], int],
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -229,7 +232,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         scaling_factor: int = 1.0,
         normalize=True,
@@ -241,14 +244,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         smooth_type_embedding: bool = True,
         type_one_side: bool = False,
         stripped_type_embedding: Optional[bool] = None,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
         type: Optional[str] = None,
-        old_impl: bool = False,
     ):
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
@@ -264,6 +266,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
+
+        self.tebd_input_mode = tebd_input_mode
 
         del type, spin, attn_mask
         self.se_atten = DescrptBlockSeAtten(
@@ -293,11 +297,11 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             trainable_ln=trainable_ln,
             ln_eps=ln_eps,
             seed=child_seed(seed, 1),
-            old_impl=old_impl,
         )
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        self.compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
             tebd_dim,
@@ -326,7 +330,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the number of selected atoms in the cut-off radius."""
         return self.se_atten.get_nsel()
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.se_atten.get_sel()
 
@@ -334,7 +338,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the number of element types."""
         return self.se_atten.get_ntypes()
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
 
@@ -349,11 +353,11 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         return self.se_atten.dim_emb
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -376,7 +380,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -405,7 +409,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """
@@ -413,11 +417,11 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -435,12 +439,12 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.se_atten.mean = mean
         self.se_atten.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_stat_mean_and_stddev(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Get mean and stddev for descriptor."""
         return self.se_atten.mean, self.se_atten.stddev
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -556,13 +560,91 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         )
         return obj
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the mocel compression process
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        assert (
+            not self.se_atten.resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.se_atten.exclude_types:
+            if (tt[0] not in range(self.se_atten.ntypes)) or (
+                tt[1] not in range(self.se_atten.ntypes)
+            ):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_atten.ntypes)
+                    + "!"
+                )
+        if (
+            self.se_atten.ntypes * self.se_atten.ntypes
+            - len(self.se_atten.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Empty embedding-nets are not supported in model compression!"
+            )
+
+        if self.se_atten.attn_layer != 0:
+            raise RuntimeError("Cannot compress model when attention layer is not 0.")
+
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
+
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            data["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+
+        self.se_atten.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
+
     def forward(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
         mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
     ):
         """Compute the descriptor.
 
@@ -617,15 +699,15 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

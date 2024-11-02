@@ -2,21 +2,16 @@
 from collections import (
     defaultdict,
 )
-from typing import (
-    Dict,
-    List,
-    Tuple,
-)
 
 import numpy as np
 
 
-def weighted_average(errors: List[Dict[str, Tuple[float, float]]]) -> Dict:
-    """Compute wighted average of prediction errors (MAE or RMSE) for model.
+def weighted_average(errors: list[dict[str, tuple[float, float]]]) -> dict:
+    """Compute weighted average of prediction errors (MAE or RMSE) for model.
 
     Parameters
     ----------
-    errors : List[Dict[str, Tuple[float, float]]]
+    errors : list[dict[str, tuple[float, float]]]
         List: the error of systems
         Dict: the error of quantities, name given by the key
         str: the name of the quantity, must starts with 'mae' or 'rmse'

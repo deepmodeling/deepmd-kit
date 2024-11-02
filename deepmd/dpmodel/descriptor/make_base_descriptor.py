@@ -5,9 +5,7 @@ from abc import (
 )
 from typing import (
     Callable,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -61,7 +59,7 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def get_sel(self) -> List[int]:
+        def get_sel(self) -> list[int]:
             """Returns the number of selected neighboring atoms for each type."""
             pass
 
@@ -79,7 +77,7 @@ def make_base_descriptor(
             pass
 
         @abstractmethod
-        def get_type_map(self) -> List[str]:
+        def get_type_map(self) -> list[str]:
             """Get the name to each type of atoms."""
             pass
 
@@ -118,13 +116,13 @@ def make_base_descriptor(
             """
             Share the parameters of self to the base_class with shared_level during multitask training.
             If not start from checkpoint (resume is False),
-            some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+            some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
             """
             pass
 
         @abstractmethod
         def change_type_map(
-            self, type_map: List[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat=None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -143,11 +141,36 @@ def make_base_descriptor(
 
         def compute_input_stats(
             self,
-            merged: Union[Callable[[], List[dict]], List[dict]],
+            merged: Union[Callable[[], list[dict]], list[dict]],
             path: Optional[DPPath] = None,
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
+
+        def enable_compression(
+            self,
+            min_nbor_dist: float,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+            Parameters
+            ----------
+            min_nbor_dist
+                The nearest distance between atoms
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            raise NotImplementedError("This descriptor doesn't support compression!")
 
         @abstractmethod
         def fwd(
@@ -188,15 +211,15 @@ def make_base_descriptor(
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[List[str]],
+            type_map: Optional[list[str]],
             local_jdata: dict,
-        ) -> Tuple[dict, Optional[float]]:
+        ) -> tuple[dict, Optional[float]]:
             """Update the selection and perform neighbor statistics.
 
             Parameters
             ----------
             train_data : DeepmdDataSystem
-                data used to do neighbor statictics
+                data used to do neighbor statistics
             type_map : list[str], optional
                 The name of each type of atoms
             local_jdata : dict

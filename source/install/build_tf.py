@@ -16,10 +16,10 @@ For CUDA only:
 # https://stackoverflow.com/a/41901923/9567349
 import sys
 
-if sys.version_info[0] < 3:
+if sys.version_info[0] < 3:  # noqa: UP036
     raise Exception("Python 3 or a more recent version is required.")
 
-# The script should only rely on the stardard Python libraries.
+# The script should only rely on the standard Python libraries.
 
 import argparse
 import hashlib
@@ -56,8 +56,6 @@ from shutil import (
     ignore_patterns,
 )
 from typing import (
-    Dict,
-    List,
     Optional,
 )
 
@@ -225,11 +223,11 @@ class Build(metaclass=ABCMeta):
     """Build process."""
 
     @abstractproperty
-    def resources(self) -> Dict[str, OnlineResource]:
+    def resources(self) -> dict[str, OnlineResource]:
         """Required resources."""
 
     @abstractproperty
-    def dependencies(self) -> Dict[str, "Build"]:
+    def dependencies(self) -> dict[str, "Build"]:
         """Required dependencies."""
 
     def download_all_resources(self):
@@ -335,7 +333,7 @@ def copytree2(src: Path, dst: Path, *args, **kwargs):
         call(
             [
                 "/bin/cp",
-                # archieve, recursive, force, do not create one inside
+                # achieve, recursive, force, do not create one inside
                 # https://stackoverflow.com/a/24486142/9567349
                 "-arfT",
                 str(tmpdst),
@@ -364,7 +362,7 @@ def include_patterns(*include_patterns):
     return _ignore_patterns
 
 
-def call(commands: List[str], env={}, **kwargs):
+def call(commands: list[str], env={}, **kwargs):
     """Call commands and print to screen for debug.
 
     Raises
@@ -388,7 +386,7 @@ def call(commands: List[str], env={}, **kwargs):
 
 # online resources to download
 RESOURCES = {
-    # bazelisk is used to warpper bazel
+    # bazelisk is used to wrapper bazel
     "bazelisk-1.11.0": OnlineResource(
         "bazel-linux-amd64-1.11.0",
         "https://github.com/bazelbuild/bazelisk/releases/download/v1.11.0/bazelisk-linux-amd64",
@@ -423,14 +421,14 @@ class BuildBazelisk(Build):
 
     @property
     @lru_cache
-    def resources(self) -> Dict[str, OnlineResource]:
+    def resources(self) -> dict[str, OnlineResource]:
         return {
             "bazelisk": RESOURCES["bazelisk-" + self.version],
         }
 
     @property
     @lru_cache
-    def dependencies(self) -> Dict[str, Build]:
+    def dependencies(self) -> dict[str, Build]:
         return {}
 
     def build(self):
@@ -449,12 +447,12 @@ class BuildNumPy(Build):
 
     @property
     @lru_cache
-    def resources(self) -> Dict[str, OnlineResource]:
+    def resources(self) -> dict[str, OnlineResource]:
         return {}
 
     @property
     @lru_cache
-    def dependencies(self) -> Dict[str, Build]:
+    def dependencies(self) -> dict[str, Build]:
         return {}
 
     @property
@@ -481,12 +479,12 @@ class BuildCUDA(Build):
 
     @property
     @lru_cache
-    def resources(self) -> Dict[str, OnlineResource]:
+    def resources(self) -> dict[str, OnlineResource]:
         return {}
 
     @property
     @lru_cache
-    def dependencies(self) -> Dict[str, Build]:
+    def dependencies(self) -> dict[str, Build]:
         return {}
 
     def build(self):
@@ -554,12 +552,12 @@ class BuildROCM(Build):
 
     @property
     @lru_cache
-    def resources(self) -> Dict[str, OnlineResource]:
+    def resources(self) -> dict[str, OnlineResource]:
         return {}
 
     @property
     @lru_cache
-    def dependencies(self) -> Dict[str, Build]:
+    def dependencies(self) -> dict[str, Build]:
         return {}
 
     def build(self):
@@ -599,14 +597,14 @@ class BuildTensorFlow(Build):
 
     @property
     @lru_cache
-    def resources(self) -> Dict[str, OnlineResource]:
+    def resources(self) -> dict[str, OnlineResource]:
         return {
             "tensorflow": RESOURCES["tensorflow-" + self.version],
         }
 
     @property
     @lru_cache
-    def dependencies(self) -> Dict[str, Build]:
+    def dependencies(self) -> dict[str, Build]:
         optional_dep = {}
         if self.enable_cuda:
             optional_dep["cuda"] = BuildCUDA()
@@ -778,12 +776,12 @@ class BuildTensorFlow(Build):
         }
 
     @property
-    def _build_targets(self) -> List[str]:
+    def _build_targets(self) -> list[str]:
         # C++ interface
         return ["//tensorflow:libtensorflow_cc" + get_shlib_ext()]
 
     @property
-    def _build_opts(self) -> List[str]:
+    def _build_opts(self) -> list[str]:
         opts = [
             "--logging=6",
             "--verbose_failures",
@@ -798,7 +796,7 @@ class BuildTensorFlow(Build):
         return opts
 
     @property
-    def _bazel_opts(self) -> List[str]:
+    def _bazel_opts(self) -> list[str]:
         return []
 
     @property
@@ -826,7 +824,7 @@ def clean_package():
 # interface
 
 
-def env() -> Dict[str, str]:
+def env() -> dict[str, str]:
     return {
         "Python": sys.executable,
         "CUDA": CUDA_PATH,
@@ -855,12 +853,12 @@ class RawTextArgumentDefaultsHelpFormatter(
     pass
 
 
-def parse_args(args: Optional[List[str]] = None):
+def parse_args(args: Optional[list[str]] = None):
     """TensorFlow C++ Library Installer commandline options argument parser.
 
     Parameters
     ----------
-    args : List[str]
+    args : list[str]
         list of command line arguments, main purpose is testing default option None
         takes arguments from sys.argv
     """

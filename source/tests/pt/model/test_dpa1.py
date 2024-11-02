@@ -70,7 +70,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 tebd_input_mode=tm,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
-                old_impl=False,
+                seed=GLOBAL_SEED,
             ).to(env.DEVICE)
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
@@ -107,68 +107,6 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=atol,
                 err_msg=err_msg,
             )
-            # old impl
-            if (
-                idt is False
-                and prec == "float64"
-                and to is False
-                and tm == "concat"
-                and ect is False
-            ):
-                dd3 = DescrptDPA1(
-                    self.rcut,
-                    self.rcut_smth,
-                    self.sel_mix,
-                    self.nt,
-                    attn_layer=2,
-                    precision=prec,
-                    resnet_dt=idt,
-                    smooth_type_embedding=sm,
-                    old_impl=True,
-                ).to(env.DEVICE)
-                dd0_state_dict = dd0.se_atten.state_dict()
-                dd3_state_dict = dd3.se_atten.state_dict()
-
-                dd0_state_dict_attn = dd0.se_atten.dpa1_attention.state_dict()
-                dd3_state_dict_attn = dd3.se_atten.dpa1_attention.state_dict()
-                for i in dd3_state_dict:
-                    dd3_state_dict[i] = (
-                        dd0_state_dict[
-                            i.replace(".deep_layers.", ".layers.")
-                            .replace("filter_layers_old.", "filter_layers._networks.")
-                            .replace(
-                                ".attn_layer_norm.weight", ".attn_layer_norm.matrix"
-                            )
-                        ]
-                        .detach()
-                        .clone()
-                    )
-                    if ".bias" in i and "attn_layer_norm" not in i:
-                        dd3_state_dict[i] = dd3_state_dict[i].unsqueeze(0)
-                dd3.se_atten.load_state_dict(dd3_state_dict)
-
-                dd0_state_dict_tebd = dd0.type_embedding.state_dict()
-                dd3_state_dict_tebd = dd3.type_embedding.state_dict()
-                for i in dd3_state_dict_tebd:
-                    dd3_state_dict_tebd[i] = (
-                        dd0_state_dict_tebd[i.replace("embedding.weight", "matrix")]
-                        .detach()
-                        .clone()
-                    )
-                dd3.type_embedding.load_state_dict(dd3_state_dict_tebd)
-
-                rd3, _, _, _, _ = dd3(
-                    torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
-                    torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
-                    torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
-                )
-                np.testing.assert_allclose(
-                    rd0.detach().cpu().numpy(),
-                    rd3.detach().cpu().numpy(),
-                    rtol=rtol,
-                    atol=atol,
-                    err_msg=err_msg,
-                )
 
     def test_jit(
         self,
@@ -209,7 +147,7 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 tebd_input_mode=tm,
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
-                old_impl=False,
+                seed=GLOBAL_SEED,
             )
             dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.se_atten.dstd = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)

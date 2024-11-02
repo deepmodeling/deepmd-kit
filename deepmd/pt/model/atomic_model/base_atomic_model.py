@@ -4,13 +4,11 @@ import copy
 import logging
 from typing import (
     Callable,
-    Dict,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
+import numpy as np
 import torch
 
 from deepmd.dpmodel.atomic_model import (
@@ -66,21 +64,21 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         of the atomic model. Implemented by removing the pairs from the nlist.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_out_bias : Dict[str, List[Optional[torch.Tensor]]], optional
+    preset_out_bias : dict[str, list[Optional[np.ndarray]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
-        The `set_davg_zero` key in the descrptor should be set.
+        The `set_davg_zero` key in the descriptor should be set.
 
     """
 
     def __init__(
         self,
-        type_map: List[str],
-        atom_exclude_types: List[int] = [],
-        pair_exclude_types: List[Tuple[int, int]] = [],
+        type_map: list[str],
+        atom_exclude_types: list[int] = [],
+        pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[Dict[str, torch.Tensor]] = None,
+        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
     ):
         torch.nn.Module.__init__(self)
         BaseAtomicModel_.__init__(self)
@@ -93,7 +91,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def init_out_stat(self):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
-        self.bias_keys: List[str] = list(self.fitting_output_def().keys())
+        self.bias_keys: list[str] = list(self.fitting_output_def().keys())
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -123,13 +121,13 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             raise KeyError(key)
 
     @torch.jit.export
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
     def reinit_atom_exclude(
         self,
-        exclude_types: List[int] = [],
+        exclude_types: list[int] = [],
     ):
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
@@ -139,7 +137,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def reinit_pair_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
@@ -152,7 +150,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self,
         atype: torch.Tensor,
     ) -> torch.Tensor:
-        """The atoms with type < 0 are treated as virutal atoms,
+        """The atoms with type < 0 are treated as virtual atoms,
         which serves as place-holders for multi-frame calculations
         with different number of atoms in different frames.
 
@@ -164,7 +162,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         Returns
         -------
         mask
-            True for real atoms and False for virutal atoms.
+            True for real atoms and False for virtual atoms.
 
         """
         # supposed to be supported by all backends
@@ -194,8 +192,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+    ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
         This method accept extended coordinates, extended atom typs, neighbor list,
@@ -204,7 +202,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         Parameters
         ----------
         extended_coord
-            extended coodinates, shape: nf x (nall x 3)
+            extended coordinates, shape: nf x (nall x 3)
         extended_atype
             extended atom typs, shape: nf x nall
             for a type < 0 indicating the atomic is virtual.
@@ -275,8 +273,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         mapping: Optional[torch.Tensor] = None,
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[Dict[str, torch.Tensor]] = None,
-    ) -> Dict[str, torch.Tensor]:
+        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+    ) -> dict[str, torch.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
             extended_atype,
@@ -288,7 +286,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         )
 
     def change_type_map(
-        self, type_map: List[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -353,7 +351,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -361,11 +359,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -376,7 +374,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
     ):
         """
@@ -384,11 +382,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         stat_file_path : Optional[DPPath]
@@ -403,7 +401,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def apply_out_stat(
         self,
-        ret: Dict[str, torch.Tensor],
+        ret: dict[str, torch.Tensor],
         atype: torch.Tensor,
     ):
         """Apply the stat to each atomic output.
@@ -434,11 +432,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
         Parameters
         ----------
-        sample_merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         bias_adjust_mode : str
@@ -479,7 +477,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(coord, atype, box, fparam=None, aparam=None):
-            with torch.no_grad():  # it's essential for pure torch forward function to use auto_batchsize
+            with (
+                torch.no_grad()
+            ):  # it's essential for pure torch forward function to use auto_batchsize
                 (
                     extended_coord,
                     extended_atype,
@@ -519,7 +519,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def _varsize(
         self,
-        shape: List[int],
+        shape: list[int],
     ) -> int:
         output_size = 1
         len_shape = len(shape)
@@ -531,7 +531,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self,
         kk: str,
     ) -> int:
-        res: List[int] = []
+        res: list[int] = []
         for i, e in enumerate(self.bias_keys):
             if e == kk:
                 res.append(i)
@@ -540,8 +540,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def _store_out_stat(
         self,
-        out_bias: Dict[str, torch.Tensor],
-        out_std: Dict[str, torch.Tensor],
+        out_bias: dict[str, torch.Tensor],
+        out_std: dict[str, torch.Tensor],
         add: bool = False,
     ):
         ntypes = self.get_ntypes()
@@ -561,8 +561,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def _fetch_out_stat(
         self,
-        keys: List[str],
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
+        keys: list[str],
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         ret_bias = {}
         ret_std = {}
         ntypes = self.get_ntypes()

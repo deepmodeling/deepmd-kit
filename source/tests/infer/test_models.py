@@ -153,8 +153,6 @@ class TestDeepPot(unittest.TestCase):
 
     def test_descriptor(self):
         _, extension = self.param
-        if extension == ".pth":
-            self.skipTest("eval_descriptor not supported for PyTorch models")
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue
@@ -323,6 +321,12 @@ class TestDeepPot(unittest.TestCase):
                 expected_sv.ravel(),
                 default_places,
                 err_msg=f"Result {ii} virial",
+            )
+
+    def test_model_script_def(self):
+        if self.case.model_def_script is not None:
+            self.assertDictEqual(
+                self.case.model_def_script, self.dp.get_model_def_script()
             )
 
 

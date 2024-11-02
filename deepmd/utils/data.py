@@ -4,7 +4,6 @@
 import bisect
 import logging
 from typing import (
-    List,
     Optional,
 )
 
@@ -25,7 +24,7 @@ log = logging.getLogger(__name__)
 class DeepmdData:
     """Class for a data system.
 
-    It loads data from hard disk, and mantains the data as a `data_dict`
+    It loads data from hard disk, and maintains the data as a `data_dict`
 
     Parameters
     ----------
@@ -44,7 +43,7 @@ class DeepmdData:
     trn_all_set
             [DEPRECATED] Deprecated. Now all sets are trained and tested.
     sort_atoms : bool
-            Sort atoms by atom types. Required to enable when the data is directly feeded to
+            Sort atoms by atom types. Required to enable when the data is directly fed to
             descriptors except mixed types.
     """
 
@@ -53,7 +52,7 @@ class DeepmdData:
         sys_path: str,
         set_prefix: str = "set",
         shuffle_test: bool = True,
-        type_map: Optional[List[str]] = None,
+        type_map: Optional[list[str]] = None,
         optional_type_map: bool = True,
         modifier=None,
         trn_all_set: bool = False,
@@ -134,7 +133,7 @@ class DeepmdData:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: Optional[list[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
@@ -197,7 +196,7 @@ class DeepmdData:
         assert key_out not in self.data_dict, "output key should not have been added"
         assert (
             self.data_dict[key_in]["repeat"] == 1
-        ), "reduced proerties should not have been repeated"
+        ), "reduced properties should not have been repeated"
 
         self.data_dict[key_out] = {
             "ndof": self.data_dict[key_in]["ndof"],
@@ -282,7 +281,7 @@ class DeepmdData:
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
-        idx = np.arange(self.iterator, iterator_1)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(self.iterator, iterator_1, dtype=np.int64)
         self.iterator += batch_size
         ret = self._get_subdata(self.batch_set, idx)
         return ret
@@ -306,7 +305,7 @@ class DeepmdData:
                 else self.test_set["type"].shape[0]
             )
             # print('ntest', self.test_set['type'].shape[0], ntests, ntests_)
-            idx = np.arange(ntests_)  # pylint: disable=no-explicit-dtype
+            idx = np.arange(ntests_, dtype=np.int64)
         ret = self._get_subdata(self.test_set, idx=idx)
         if self.modifier is not None:
             self.modifier.modify_data(ret, self)
@@ -319,11 +318,11 @@ class DeepmdData:
         else:
             return max(self.get_atom_type()) + 1
 
-    def get_type_map(self) -> List[str]:
+    def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
 
-    def get_atom_type(self) -> List[int]:
+    def get_atom_type(self) -> list[int]:
         """Get atom types."""
         return self.atom_type
 
@@ -394,14 +393,14 @@ class DeepmdData:
                 new_types.append(ii)
         new_types = np.array(new_types, dtype=int)
         natoms = new_types.shape[0]
-        idx = np.arange(natoms)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(natoms, dtype=np.int64)
         idx_map = np.lexsort((idx, new_types))
         return idx_map
 
     def _get_natoms_2(self, ntypes):
         sample_type = self.atom_type
         natoms = len(sample_type)
-        natoms_vec = np.zeros(ntypes).astype(int)  # pylint: disable=no-explicit-dtype
+        natoms_vec = np.zeros(ntypes, dtype=np.int64)
         for ii in range(ntypes):
             natoms_vec[ii] = np.count_nonzero(sample_type == ii)
         return natoms, natoms_vec
@@ -451,7 +450,7 @@ class DeepmdData:
     def _shuffle_data(self, data):
         ret = {}
         nframes = data["coord"].shape[0]
-        idx = np.arange(nframes)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(nframes, dtype=np.int64)
         # the training times of each frame
         idx = np.repeat(idx, np.reshape(data["numb_copy"], (nframes,)))
         dp_random.shuffle(idx)
@@ -692,7 +691,7 @@ class DeepmdData:
 
     def _make_idx_map(self, atom_type):
         natoms = atom_type.shape[0]
-        idx = np.arange(natoms)  # pylint: disable=no-explicit-dtype
+        idx = np.arange(natoms, dtype=np.int64)
         if self.sort_atoms:
             idx_map = np.lexsort((idx, atom_type))
         else:
@@ -753,7 +752,7 @@ class DataRequirementItem:
         atomic: bool = False,
         must: bool = False,
         high_prec: bool = False,
-        type_sel: Optional[List[int]] = None,
+        type_sel: Optional[list[int]] = None,
         repeat: int = 1,
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,

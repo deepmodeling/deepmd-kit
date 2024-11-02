@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import array_api_compat
 import numpy as np
 
 
@@ -21,8 +22,9 @@ def phys2inter(
         the internal coordinates
 
     """
-    rec_cell = np.linalg.inv(cell)
-    return np.matmul(coord, rec_cell)
+    xp = array_api_compat.array_namespace(coord, cell)
+    rec_cell = xp.linalg.inv(cell)
+    return xp.matmul(coord, rec_cell)
 
 
 def inter2phys(
@@ -44,7 +46,8 @@ def inter2phys(
         the physical coordinates
 
     """
-    return np.matmul(coord, cell)
+    xp = array_api_compat.array_namespace(coord, cell)
+    return xp.matmul(coord, cell)
 
 
 def normalize_coord(
@@ -56,7 +59,7 @@ def normalize_coord(
     Parameters
     ----------
     coord : np.ndarray
-        orignal coordinates of shape [*, na, 3].
+        original coordinates of shape [*, na, 3].
     cell : np.ndarray
         simulation cell shape [*, 3, 3].
 
@@ -66,8 +69,9 @@ def normalize_coord(
         wrapped coordinates of shape [*, na, 3].
 
     """
+    xp = array_api_compat.array_namespace(coord, cell)
     icoord = phys2inter(coord, cell)
-    icoord = np.remainder(icoord, 1.0)
+    icoord = xp.remainder(icoord, 1.0)
     return inter2phys(icoord, cell)
 
 
@@ -87,17 +91,19 @@ def to_face_distance(
         the to face distances of shape [*, 3]
 
     """
+    xp = array_api_compat.array_namespace(cell)
     cshape = cell.shape
-    dist = b_to_face_distance(cell.reshape([-1, 3, 3]))
-    return dist.reshape(list(cshape[:-2]) + [3])  # noqa:RUF005
+    dist = b_to_face_distance(xp.reshape(cell, [-1, 3, 3]))
+    return xp.reshape(dist, list(cshape[:-2]) + [3])  # noqa:RUF005
 
 
 def b_to_face_distance(cell):
-    volume = np.linalg.det(cell)
-    c_yz = np.cross(cell[:, 1], cell[:, 2], axis=-1)
-    _h2yz = volume / np.linalg.norm(c_yz, axis=-1)
-    c_zx = np.cross(cell[:, 2], cell[:, 0], axis=-1)
-    _h2zx = volume / np.linalg.norm(c_zx, axis=-1)
-    c_xy = np.cross(cell[:, 0], cell[:, 1], axis=-1)
-    _h2xy = volume / np.linalg.norm(c_xy, axis=-1)
-    return np.stack([_h2yz, _h2zx, _h2xy], axis=1)
+    xp = array_api_compat.array_namespace(cell)
+    volume = xp.linalg.det(cell)
+    c_yz = xp.linalg.cross(cell[:, 1, ...], cell[:, 2, ...], axis=-1)
+    _h2yz = volume / xp.linalg.vector_norm(c_yz, axis=-1)
+    c_zx = xp.linalg.cross(cell[:, 2, ...], cell[:, 0, ...], axis=-1)
+    _h2zx = volume / xp.linalg.vector_norm(c_zx, axis=-1)
+    c_xy = xp.linalg.cross(cell[:, 0, ...], cell[:, 1, ...], axis=-1)
+    _h2xy = volume / xp.linalg.vector_norm(c_xy, axis=-1)
+    return xp.stack([_h2yz, _h2zx, _h2xy], axis=1)

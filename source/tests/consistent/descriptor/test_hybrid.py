@@ -2,7 +2,6 @@
 import unittest
 from typing import (
     Any,
-    Tuple,
 )
 
 import numpy as np
@@ -13,6 +12,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -29,6 +30,16 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.hybrid import DescrptHybrid as DescrptHybridTF
 else:
     DescrptHybridTF = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.hybrid import DescrptHybrid as DescrptHybridJAX
+else:
+    DescrptHybridJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.hybrid import (
+        DescrptHybrid as DescrptHybridStrict,
+    )
+else:
+    DescrptHybridStrict = None
 from deepmd.utils.argcheck import (
     descrpt_hybrid_args,
 )
@@ -69,7 +80,12 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptHybridTF
     dp_class = DescrptHybridDP
     pt_class = DescrptHybridPT
+    jax_class = DescrptHybridJAX
+    array_api_strict_class = DescrptHybridStrict
     args = descrpt_hybrid_args()
+
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     def setUp(self):
         CommonTest.setUp(self)
@@ -105,7 +121,7 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
         )
         self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
 
-    def build_tf(self, obj: Any, suffix: str) -> Tuple[list, dict]:
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
             obj,
             self.natoms,
@@ -133,5 +149,23 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
             self.box,
         )
 
-    def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)

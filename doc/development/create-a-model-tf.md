@@ -1,6 +1,6 @@
 # Create a model in TensorFlow {{ tensorflow_icon }}
 
-If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainner, etc, you may want to read this section.
+If you'd like to create a new model that isn't covered by the existing DeePMD-kit library, but reuse DeePMD-kit's other efficient modules such as data processing, trainer, etc, you may want to read this section.
 
 To incorporate your custom model you'll need to:
 
@@ -37,7 +37,7 @@ from deepmd.utils.argcheck import descrpt_args_plugin
 
 
 @descrpt_args_plugin.register("some_descrpt")
-def descrpt_some_args() -> List[Argument]:
+def descrpt_some_args() -> list[Argument]:
     return [
         Argument("arg1", bool, optional=False, doc="balabala"),
         Argument("arg2", float, optional=True, default=6.0, doc="haha"),

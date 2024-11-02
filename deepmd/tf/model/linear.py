@@ -8,9 +8,7 @@ from functools import (
     reduce,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -50,7 +48,7 @@ class LinearModel(Model):
         If "sum", the weights are set to be 1.
     """
 
-    def __init__(self, models: List[dict], weights: List[float], **kwargs):
+    def __init__(self, models: list[dict], weights: list[float], **kwargs):
         super().__init__(**kwargs)
         self.models = [Model(**model) for model in models]
         if isinstance(weights, list):
@@ -140,15 +138,15 @@ class LinearModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -175,7 +173,7 @@ class LinearModel(Model):
         return local_jdata_cpy, min_nbor_dist
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return reduce(
             operator.iadd, [model.input_requirement for model in self.models], []

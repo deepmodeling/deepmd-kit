@@ -8,7 +8,6 @@ from pathlib import (
 )
 from typing import (
     TYPE_CHECKING,
-    List,
     Optional,
 )
 
@@ -80,10 +79,10 @@ class RunOptions:
 
     Attributes
     ----------
-    gpus: Optional[List[int]]
+    gpus: Optional[list[int]]
         list of GPUs if any are present else None
     is_chief: bool
-        in distribured training it is true for tha main MPI process in serail it is
+        in distribured training it is true for the main MPI process in serail it is
         always true
     world_size: int
         total worker count
@@ -91,17 +90,17 @@ class RunOptions:
         index of the MPI task
     nodename: str
         name of the node
-    node_list_ : List[str]
+    node_list_ : list[str]
         the list of nodes of the current mpirun
     my_device: str
-        deviice type - gpu or cpu
+        device type - gpu or cpu
     """
 
-    gpus: Optional[List[int]]
+    gpus: Optional[list[int]]
     world_size: int
     my_rank: int
     nodename: str
-    nodelist: List[int]
+    nodelist: list[int]
     my_device: str
 
     _HVD: Optional["HVD"]
@@ -181,7 +180,7 @@ class RunOptions:
         else:
             log.warning(
                 f"Log handles have already been set. It is not advisable to "
-                f"reset them{', especially when runnig with MPI!' if self._HVD else ''}"
+                f"reset them{', especially when running with MPI!' if self._HVD else ''}"
             )
 
     def _try_init_distrib(self):
@@ -194,7 +193,7 @@ class RunOptions:
             log.warning("Switch to serial execution due to lack of horovod module.")
             self.is_distrib = False
 
-        # Do real intialization
+        # Do real initialization
         if self.is_distrib:
             self._init_distributed(HVD)
             self._HVD = HVD

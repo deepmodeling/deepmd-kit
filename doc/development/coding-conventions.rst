@@ -30,7 +30,7 @@ Rules
 -----
 
 The code must be compatible with the oldest supported version of python
-which is 3.8.
+which is 3.9.
 
 The project follows the generic coding conventions as
 specified in the `Style Guide for Python Code`_, `Docstring
@@ -72,7 +72,7 @@ Conventions`_ and `Typing Conventions`_ PEPs, clarified and extended as follows:
 
      f"something {'this' if x else 'that'}"
 
-* Use f-strings ``s = f"{x:.2f}"`` instead of old style formating with ``"%f" % x``.
+* Use f-strings ``s = f"{x:.2f}"`` instead of old style formatting with ``"%f" % x``.
   string format method ``"{x:.2f}".format()`` may be used sparsely where it is more
   convenient than f-strings.
 

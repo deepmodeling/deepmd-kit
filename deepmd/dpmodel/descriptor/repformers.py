@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -110,7 +108,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         The precision of the embedding net parameters.
     smooth : bool, optional
         Whether to use smoothness in processes such as attention weights calculation.
-    exclude_types : List[List[int]], optional
+    exclude_types : list[list[int]], optional
         The excluded pairs of types which have no interaction with each other.
         For example, `[[0, 1]]` means no interaction between type 0 and type 1.
     env_protection : float, optional
@@ -159,7 +157,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         update_residual_init: str = "norm",
         set_davg_zero: bool = True,
         smooth: bool = True,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
@@ -167,7 +165,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.rcut = rcut
@@ -272,7 +270,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
 
-    def get_sel(self) -> List[int]:
+    def get_sel(self) -> list[int]:
         """Returns the number of selected atoms for each type."""
         return self.sel
 
@@ -309,11 +307,11 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
             raise KeyError(key)
 
     def mixed_types(self) -> bool:
-        """If true, the discriptor
+        """If true, the descriptor
         1. assumes total number of atoms aligned across frames;
         2. requires a neighbor list that does not distinguish different atomic types.
 
-        If false, the discriptor
+        If false, the descriptor
         1. assumes total number of atoms of each atom type aligned across frames;
         2. requires a neighbor list that distinguishes different atomic types.
 
@@ -337,7 +335,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], List[dict]], List[dict]],
+        merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
     ):
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
@@ -349,7 +347,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def reinit_exclude(
         self,
-        exclude_types: List[Tuple[int, int]] = [],
+        exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -436,7 +434,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, List[int]]] = None,
+    seed: Optional[Union[int, list[int]]] = None,
 ) -> np.ndarray:
     """
     Get residual tensor for one update vector.
@@ -694,7 +692,7 @@ class Atten2Map(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -812,7 +810,7 @@ class Atten2MultiHeadApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -897,7 +895,7 @@ class Atten2EquiVarApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -970,7 +968,7 @@ class LocalAtten(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -1132,7 +1130,7 @@ class RepformerLayer(NativeOP):
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, List[int]]] = None,
+        seed: Optional[Union[int, list[int]]] = None,
     ):
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -1482,7 +1480,7 @@ class RepformerLayer(NativeOP):
         """
         Parameters
         ----------
-        g1_ext : nf x nall x ng1         extended single-atom chanel
+        g1_ext : nf x nall x ng1         extended single-atom channel
         g2 : nf x nloc x nnei x ng2  pair-atom channel, invariant
         h2 : nf x nloc x nnei x 3    pair-atom channel, equivariant
         nlist : nf x nloc x nnei        neighbor list (padded neis are set to 0)
@@ -1491,7 +1489,7 @@ class RepformerLayer(NativeOP):
 
         Returns
         -------
-        g1:     nf x nloc x ng1         updated single-atom chanel
+        g1:     nf x nloc x ng1         updated single-atom channel
         g2:     nf x nloc x nnei x ng2  updated pair-atom channel, invariant
         h2:     nf x nloc x nnei x 3    updated pair-atom channel, equivariant
         """
@@ -1508,10 +1506,10 @@ class RepformerLayer(NativeOP):
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 
-        g2_update: List[np.ndarray] = [g2]
-        h2_update: List[np.ndarray] = [h2]
-        g1_update: List[np.ndarray] = [g1]
-        g1_mlp: List[np.ndarray] = [g1] if not self.g1_out_mlp else []
+        g2_update: list[np.ndarray] = [g2]
+        h2_update: list[np.ndarray] = [h2]
+        g1_update: list[np.ndarray] = [g1]
+        g1_mlp: list[np.ndarray] = [g1] if not self.g1_out_mlp else []
         if self.g1_out_mlp:
             assert self.g1_self_mlp is not None
             g1_self_mlp = self.act(self.g1_self_mlp(g1))
@@ -1613,7 +1611,7 @@ class RepformerLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: List[np.ndarray],
+        update_list: list[np.ndarray],
     ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1621,7 +1619,7 @@ class RepformerLayer(NativeOP):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: List[np.ndarray]) -> np.ndarray:
+    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1630,7 +1628,7 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: List[np.ndarray], update_name: str = "g1"
+        self, update_list: list[np.ndarray], update_name: str = "g1"
     ) -> np.ndarray:
         nitem = len(update_list)
         uu = update_list[0]
@@ -1648,7 +1646,7 @@ class RepformerLayer(NativeOP):
         return uu
 
     def list_update(
-        self, update_list: List[np.ndarray], update_name: str = "g1"
+        self, update_list: list[np.ndarray], update_name: str = "g1"
     ) -> np.ndarray:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)

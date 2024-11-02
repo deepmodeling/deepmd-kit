@@ -3,9 +3,7 @@ from enum import (
     Enum,
 )
 from typing import (
-    List,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -69,7 +67,7 @@ class PairTabModel(Model):
     model_type = "ener"
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: Union[int, List[int]], **kwargs
+        self, tab_file: str, rcut: float, sel: Union[int, list[int]], **kwargs
     ):
         super().__init__()
         self.tab_file = tab_file
@@ -246,7 +244,7 @@ class PairTabModel(Model):
 
     def get_loss(self, loss: dict, lr) -> Optional[Union[Loss, dict]]:
         """Get the loss function(s)."""
-        # nothing nees to do
+        # nothing needs to do
         return
 
     def get_rcut(self) -> float:
@@ -275,9 +273,9 @@ class PairTabModel(Model):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[List[str]],
+        type_map: Optional[list[str]],
         local_jdata: dict,
-    ) -> Tuple[dict, Optional[float]]:
+    ) -> tuple[dict, Optional[float]]:
         """Update the selection and perform neighbor statistics.
 
         Notes
@@ -287,7 +285,7 @@ class PairTabModel(Model):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -308,6 +306,6 @@ class PairTabModel(Model):
         return local_jdata_cpy, min_nbor_dist
 
     @property
-    def input_requirement(self) -> List[DataRequirementItem]:
+    def input_requirement(self) -> list[DataRequirementItem]:
         """Return data requirements needed for the model input."""
         return []

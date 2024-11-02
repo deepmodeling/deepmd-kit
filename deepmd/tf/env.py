@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Module that sets tensorflow working environment and exports inportant constants."""
+"""Module that sets tensorflow working environment and exports important constants."""
 
 import ctypes
+import logging
 import os
 import platform
 from importlib import (
@@ -75,17 +76,27 @@ if platform.system() == "Linux":
     dlopen_library("nvidia.cusparse.lib", "libcusparse.so*")
     dlopen_library("nvidia.cudnn.lib", "libcudnn.so*")
 
+
+FILTER_MSGS = [
+    "is deprecated and will be removed in a future version.",
+    "disable_mixed_precision_graph_rewrite() called when mixed precision is already disabled.",
+]
+
+
+class TFWarningFilter(logging.Filter):
+    def filter(self, record):
+        return not any(msg in record.getMessage().strip() for msg in FILTER_MSGS)
+
+
 # keras 3 is incompatible with tf.compat.v1
 # https://keras.io/getting_started/#tensorflow--keras-2-backwards-compatibility
 # 2024/04/24: deepmd.tf doesn't import tf.keras any more
 
-# import tensorflow v1 compatability
-try:
-    import tensorflow.compat.v1 as tf
+# import tensorflow v1 compatibility
+import tensorflow.compat.v1 as tf
 
-    tf.disable_v2_behavior()
-except ImportError:
-    import tensorflow as tf
+tf.get_logger().addFilter(TFWarningFilter())
+tf.disable_v2_behavior()
 try:
     import tensorflow.compat.v2 as tfv2
 except ImportError:
@@ -328,7 +339,7 @@ def get_module(module_name: str) -> "ModuleType":
         try:
             module = tf.load_op_library(str(module_file))
         except tf.errors.NotFoundError as e:
-            # check CXX11_ABI_FLAG is compatiblity
+            # check CXX11_ABI_FLAG is compatibility
             # see https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html
             # ABI should be the same
             if "CXX11_ABI_FLAG" in tf.__dict__:
@@ -366,7 +377,7 @@ def get_module(module_name: str) -> "ModuleType":
                     "instead."
                 ) from e
             error_message = (
-                "This deepmd-kit package is inconsitent with TensorFlow "
+                "This deepmd-kit package is inconsistent with TensorFlow "
                 f"Runtime, thus an error is raised when loading {module_name}. "
                 "You need to rebuild deepmd-kit against this TensorFlow "
                 "runtime."

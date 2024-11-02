@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Dict,
     Optional,
     Union,
 )
@@ -18,8 +17,8 @@ log = logging.getLogger(__name__)
 class ModelWrapper(torch.nn.Module):
     def __init__(
         self,
-        model: Union[torch.nn.Module, Dict],
-        loss: Union[torch.nn.Module, Dict] = None,
+        model: Union[torch.nn.Module, dict],
+        loss: Union[torch.nn.Module, dict] = None,
         model_params=None,
         shared_links=None,
     ):
@@ -64,7 +63,7 @@ class ModelWrapper(torch.nn.Module):
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         supported_types = ["descriptor", "fitting_net"]
         for shared_item in shared_links:
@@ -183,12 +182,12 @@ class ModelWrapper(torch.nn.Module):
             )
             return model_pred, loss, more_loss
 
-    def set_extra_state(self, state: Dict):
+    def set_extra_state(self, state: dict):
         self.model_params = state["model_params"]
         self.train_infos = state["train_infos"]
         return None
 
-    def get_extra_state(self) -> Dict:
+    def get_extra_state(self) -> dict:
         state = {
             "model_params": self.model_params,
             "train_infos": self.train_infos,
