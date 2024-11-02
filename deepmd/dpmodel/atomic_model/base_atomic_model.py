@@ -141,31 +141,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_bias = self.out_bias[:, remap_index, :]
         self.out_std = self.out_std[:, remap_index, :]
 
-    def enable_compression(
-        self,
-        min_nbor_dist: float,
-        table_extrapolate: float = 5,
-        table_stride_1: float = 0.01,
-        table_stride_2: float = 0.1,
-        check_frequency: int = -1,
-    ) -> None:
-        """Call descriptor enable_compression().
-
-        Parameters
-        ----------
-        min_nbor_dist
-            The nearest distance between atoms
-        table_extrapolate
-            The scale of model extrapolation
-        table_stride_1
-            The uniform stride of the first table
-        table_stride_2
-            The uniform stride of the second table
-        check_frequency
-            The overflow check frequency
-        """
-        raise NotImplementedError("This atomi model doesn't support compression!")
-
     def forward_common_atomic(
         self,
         extended_coord: np.ndarray,
