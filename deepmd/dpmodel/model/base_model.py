@@ -198,7 +198,7 @@ def make_base_model() -> type[object]:
             table_stride_2: float = 0.1,
             check_frequency: int = -1,
         ) -> None:
-            """Call descriptor enable_compression().
+            """Enable model compression by tabulation.
 
             Parameters
             ----------
@@ -213,7 +213,7 @@ def make_base_model() -> type[object]:
             check_frequency
                 The overflow check frequency
             """
-            raise NotImplementedError("This atomi model doesn't support compression!")
+            raise NotImplementedError("This atomic model doesn't support compression!")
 
         @classmethod
         def get_model(cls, model_params: dict) -> "BaseBaseModel":
