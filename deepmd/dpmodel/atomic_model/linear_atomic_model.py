@@ -149,6 +149,38 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Compress model.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        for model in self.models:
+            model.enable_compression(
+                min_nbor_dist,
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            )
+
     def forward_atomic(
         self,
         extended_coord,
