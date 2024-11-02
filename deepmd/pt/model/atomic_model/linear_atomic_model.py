@@ -183,7 +183,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         sorted_rcuts: list[float] = outer_sorted[:, 0].tolist()
         sorted_sels: list[int] = outer_sorted[:, 1].to(torch.int64).tolist()
         return sorted_rcuts, sorted_sels
-    
+
     def enable_compression(
         self,
         min_nbor_dist: float,

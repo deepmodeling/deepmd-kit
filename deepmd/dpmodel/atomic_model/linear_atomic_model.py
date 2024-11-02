@@ -148,7 +148,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             key=lambda x: (x[1], x[0]),
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
-    
+
     def enable_compression(
         self,
         min_nbor_dist: float,
