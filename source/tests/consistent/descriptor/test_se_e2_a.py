@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -30,6 +31,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
 else:
     DescrptSeATF = None
+if INSTALLED_PD:
+    from deepmd.pd.model.descriptor.se_a import DescrptSeA as DescrptSeAPD
+else:
+    DescrptSeAPD = None
 from deepmd.utils.argcheck import (
     descrpt_se_a_args,
 )
@@ -99,9 +104,21 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return env_protection != 0.0
 
+    @property
+    def skip_pd(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return CommonTest.skip_pd
+
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
+    pd_class = DescrptSeAPD
     args = descrpt_se_a_args()
 
     def setUp(self):
@@ -172,6 +189,15 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return self.eval_pd_descriptor(
+            pd_obj,
             self.natoms,
             self.coords,
             self.atype,

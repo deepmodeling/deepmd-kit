@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -33,6 +34,13 @@ if INSTALLED_TF:
     from deepmd.tf.fit.ener import EnerFitting as EnerFittingTF
 else:
     EnerFittingTF = object
+if INSTALLED_PD:
+    import paddle
+
+    from deepmd.pd.model.task.ener import EnergyFittingNet as EnerFittingPD
+    from deepmd.pd.utils.env import DEVICE as PD_DEVICE
+else:
+    EnerFittingPD = object
 from deepmd.utils.argcheck import (
     fitting_ener,
 )
@@ -75,9 +83,21 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_pt
 
+    @property
+    def skip_pd(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            atom_ener,
+        ) = self.param
+        return CommonTest.skip_pd
+
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
+    pd_class = EnerFittingPD
     args = fitting_ener()
 
     def setUp(self):
@@ -157,6 +177,28 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
         )["energy"]
+
+    @unittest.skip("cublas bf16 gemm requires GPU compute capability >= 80 in Paddle")
+    def eval_pd(self, pd_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            atom_ener,
+        ) = self.param
+        return (
+            pd_obj(
+                paddle.to_tensor(self.inputs).to(device=PD_DEVICE),
+                paddle.to_tensor(self.atype.reshape([1, -1])).to(device=PD_DEVICE),
+                fparam=paddle.to_tensor(self.fparam).to(device=PD_DEVICE)
+                if numb_fparam
+                else None,
+            )["energy"]
+            .detach()
+            .cpu()
+            .numpy()
+        )
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:

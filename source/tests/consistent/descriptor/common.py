@@ -12,6 +12,7 @@ from deepmd.dpmodel.utils.nlist import (
 )
 
 from ..common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -28,6 +29,14 @@ if INSTALLED_TF:
     from deepmd.tf.env import (
         GLOBAL_TF_FLOAT_PRECISION,
         tf,
+    )
+if INSTALLED_PD:
+    import paddle
+
+    from deepmd.pd.utils.env import DEVICE as PD_DEVICE
+    from deepmd.pd.utils.nlist import build_neighbor_list as build_neighbor_list_pd
+    from deepmd.pd.utils.nlist import (
+        extend_coord_with_ghosts as extend_coord_with_ghosts_pd,
     )
 
 
@@ -98,4 +107,26 @@ class DescriptorTest:
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
             for x in pt_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
+        ]
+
+    def eval_pd_descriptor(
+        self, pd_obj: Any, natoms, coords, atype, box, mixed_types: bool = False
+    ) -> Any:
+        ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pd(
+            paddle.to_tensor(coords).to(PD_DEVICE).reshape([1, -1, 3]),
+            paddle.to_tensor(atype).to(PD_DEVICE).reshape([1, -1]),
+            paddle.to_tensor(box).to(PD_DEVICE).reshape([1, 3, 3]),
+            pd_obj.get_rcut(),
+        )
+        nlist = build_neighbor_list_pd(
+            ext_coords,
+            ext_atype,
+            natoms[0],
+            pd_obj.get_rcut(),
+            pd_obj.get_sel(),
+            distinguish_types=(not mixed_types),
+        )
+        return [
+            x.detach().cpu().numpy() if paddle.is_tensor(x) else x
+            for x in pd_obj(ext_coords, ext_atype, nlist=nlist, mapping=mapping)
         ]

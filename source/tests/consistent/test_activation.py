@@ -12,6 +12,7 @@ from ..seed import (
     GLOBAL_SEED,
 )
 from .common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     parameterized,
@@ -19,14 +20,20 @@ from .common import (
 
 if INSTALLED_PT:
     from deepmd.pt.utils.utils import ActivationFn as ActivationFn_pt
+    from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy_array
     from deepmd.pt.utils.utils import (
-        to_numpy_array,
         to_torch_tensor,
     )
 if INSTALLED_TF:
     from deepmd.tf.common import get_activation_func as get_activation_fn_tf
     from deepmd.tf.env import (
         tf,
+    )
+if INSTALLED_PD:
+    from deepmd.pd.utils.utils import ActivationFn as ActivationFn_pd
+    from deepmd.pd.utils.utils import to_numpy_array as paddle_to_numpy_array
+    from deepmd.pd.utils.utils import (
+        to_paddle_tensor,
     )
 
 
@@ -53,7 +60,15 @@ class TestActivationFunctionConsistent(unittest.TestCase):
     @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
     def test_pt_consistent_with_ref(self):
         if INSTALLED_PT:
-            test = to_numpy_array(
+            test = torch_to_numpy_array(
                 ActivationFn_pt(self.activation)(to_torch_tensor(self.random_input))
+            )
+            np.testing.assert_allclose(self.ref, test, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PD, "Paddle is not installed")
+    def test_pd_consistent_with_ref(self):
+        if INSTALLED_PD:
+            test = paddle_to_numpy_array(
+                ActivationFn_pd(self.activation)(to_paddle_tensor(self.random_input))
             )
             np.testing.assert_allclose(self.ref, test, atol=1e-10)

@@ -14,6 +14,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -33,6 +34,12 @@ if INSTALLED_TF:
     from deepmd.tf.model.ener import EnerModel as EnergyModelTF
 else:
     EnergyModelTF = None
+if INSTALLED_PD:
+    from deepmd.pd.model.model import get_model as get_model_pd
+    from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
+
+else:
+    EnergyModelPD = None
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -85,6 +92,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     tf_class = EnergyModelTF
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
+    pd_class = EnergyModelPD
     args = model_args()
 
     def skip_tf(self):
@@ -100,6 +108,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
+        elif cls is EnergyModelPD:
+            return get_model_pd(data)
         return cls(**data, **self.addtional_data)
 
     def setUp(self):
@@ -177,4 +187,6 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         elif backend is self.RefBackend.TF:
             return (ret[0].ravel(), ret[1].ravel())
+        elif backend is self.RefBackend.PD:
+            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         raise ValueError(f"Unknown backend: {backend}")

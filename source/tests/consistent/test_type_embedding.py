@@ -13,6 +13,7 @@ from deepmd.utils.argcheck import (
 )
 
 from .common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -30,6 +31,13 @@ if INSTALLED_TF:
     from deepmd.tf.utils.type_embed import TypeEmbedNet as TypeEmbedNetTF
 else:
     TypeEmbedNetTF = object
+if INSTALLED_PD:
+    import paddle
+
+    from deepmd.pd.model.network.network import TypeEmbedNetConsistent as TypeEmbedNetPD
+    from deepmd.pd.utils.env import DEVICE as PD_DEVICE
+else:
+    TypeEmbedNetPD = object
 
 
 @parameterized(
@@ -63,6 +71,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     tf_class = TypeEmbedNetTF
     dp_class = TypeEmbedNetDP
     pt_class = TypeEmbedNetPT
+    pd_class = TypeEmbedNetPD
     args = type_embedding_args()
 
     @property
@@ -101,6 +110,12 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
             for x in (pt_obj(device=PT_DEVICE),)
+        ]
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return [
+            x.detach().cpu().numpy() if paddle.is_tensor(x) else x
+            for x in (pd_obj(device=PD_DEVICE),)
         ]
 
     def extract_ret(self, ret: Any, backend) -> Tuple[np.ndarray, ...]:

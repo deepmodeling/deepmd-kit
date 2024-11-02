@@ -35,9 +35,10 @@ from deepmd.backend.tensorflow import (
 
 INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
+INSTALLED_PD = Backend.get_backend("paddle")().is_available()
 
-if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT):
-    raise ImportError("TensorFlow or PyTorch should be tested in the CI")
+if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_PD):
+    raise ImportError("TensorFlow, PyTorch or Paddle should be tested in the CI")
 
 
 if INSTALLED_TF:
@@ -57,6 +58,7 @@ __all__ = [
     "CommonTest",
     "INSTALLED_TF",
     "INSTALLED_PT",
+    "INSTALLED_PD",
 ]
 
 
@@ -71,6 +73,8 @@ class CommonTest(ABC):
     """Native DP model class."""
     pt_class: ClassVar[Optional[type]]
     """PyTorch model class."""
+    pd_class: ClassVar[Optional[type]]
+    """Paddle model class."""
     args: ClassVar[Optional[Union[Argument, List[Argument]]]]
     """Arguments that maps to the `data`."""
     skip_dp: ClassVar[bool] = False
@@ -79,6 +83,8 @@ class CommonTest(ABC):
     """Whether to skip the TensorFlow model."""
     skip_pt: ClassVar[bool] = not INSTALLED_PT
     """Whether to skip the PyTorch model."""
+    skip_pd: ClassVar[bool] = not INSTALLED_PD
+    """Whether to skip the Paddle model."""
     rtol = 1e-10
     """Relative tolerance for comparing the return value. Override for float32."""
     atol = 1e-10
@@ -149,12 +155,23 @@ class CommonTest(ABC):
             The object of PT
         """
 
+    @abstractmethod
+    def eval_pd(self, pd_obj: Any) -> Any:
+        """Evaluate the return value of PD.
+
+        Parameters
+        ----------
+        pd_obj : Any
+            The object of PD
+        """
+
     class RefBackend(Enum):
         """Reference backend."""
 
         TF = 1
         DP = 2
         PT = 3
+        PD = 4
 
     @abstractmethod
     def extract_ret(self, ret: Any, backend: RefBackend) -> Tuple[np.ndarray, ...]:
@@ -215,6 +232,11 @@ class CommonTest(ABC):
         data = obj.serialize()
         return ret, data
 
+    def get_pd_ret_serialization_from_cls(self, obj):
+        ret = self.eval_pd(obj)
+        data = obj.serialize()
+        return ret, data
+
     def get_reference_backend(self):
         """Get the reference backend.
 
@@ -226,6 +248,8 @@ class CommonTest(ABC):
             return self.RefBackend.TF
         if not self.skip_pt:
             return self.RefBackend.PT
+        if not self.skip_pd:
+            return self.RefBackend.PD
         raise ValueError("No available reference")
 
     def get_reference_ret_serialization(self, ref: RefBackend):
@@ -239,6 +263,9 @@ class CommonTest(ABC):
         if ref == self.RefBackend.PT:
             obj = self.init_backend_cls(self.pt_class)
             return self.get_pt_ret_serialization_from_cls(obj)
+        if ref == self.RefBackend.PD:
+            obj = self.init_backend_cls(self.pd_class)
+            return self.get_pd_ret_serialization_from_cls(obj)
         raise ValueError("No available reference")
 
     def test_tf_consistent_with_ref(self):
@@ -351,6 +378,45 @@ class CommonTest(ABC):
         ret1, data1 = self.get_pt_ret_serialization_from_cls(obj1)
         obj2 = self.pt_class.deserialize(data1)
         ret2, data2 = self.get_pt_ret_serialization_from_cls(obj2)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+            else:
+                self.assertEqual(rr1, rr2)
+
+    def test_pd_consistent_with_ref(self):
+        """Test whether PD and reference are consistent."""
+        if self.skip_pt:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.PD:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        obj = self.pt_class.deserialize(data1)
+        ret2 = self.eval_pt(obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.PD)
+        data2 = obj.serialize()
+        if obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
+            # tf, pd serialization mismatch
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+
+    def test_pd_self_consistent(self):
+        """Test whether PT is self consistent."""
+        if self.skip_pd:
+            self.skipTest("Unsupported backend")
+        obj1 = self.init_backend_cls(self.pd_class)
+        ret1, data1 = self.get_pd_ret_serialization_from_cls(obj1)
+        obj2 = self.pd_class.deserialize(data1)
+        ret2, data2 = self.get_pd_ret_serialization_from_cls(obj2)
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
             if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):

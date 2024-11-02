@@ -8,6 +8,7 @@ from deepmd.common import (
 )
 
 from ..common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -20,6 +21,9 @@ if INSTALLED_TF:
         GLOBAL_TF_FLOAT_PRECISION,
         tf,
     )
+if INSTALLED_PD:
+    from deepmd.pd.utils.utils import to_numpy_array as paddle_to_numpy
+    from deepmd.pd.utils.utils import to_paddle_tensor as numpy_to_paddle
 
 
 class ModelTest:
@@ -60,5 +64,15 @@ class ModelTest:
                 numpy_to_torch(coords),
                 numpy_to_torch(atype),
                 box=numpy_to_torch(box),
+            ).items()
+        }
+
+    def eval_pd_model(self, pd_obj: Any, natoms, coords, atype, box) -> Any:
+        return {
+            kk: paddle_to_numpy(vv)
+            for kk, vv in pd_obj(
+                numpy_to_paddle(coords),
+                numpy_to_paddle(atype),
+                box=numpy_to_paddle(box),
             ).items()
         }
