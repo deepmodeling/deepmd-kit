@@ -119,7 +119,7 @@ class TestSeA(unittest.TestCase):
             model_config["type_map"],
         )
         ds.add_data_requirement(energy_data_requirement)
-        self.np_batch, self.pt_batch = get_single_batch(ds)
+        self.np_batch, self.pd_batch = get_single_batch(ds)
         self.sec = np.cumsum(self.sel)
         self.ntypes = len(self.sel)
         self.nnei = sum(self.sel)
@@ -142,8 +142,8 @@ class TestSeA(unittest.TestCase):
             stddev=std_ones.detach().cpu(),
         )
 
-        pt_coord = self.pt_batch["coord"].to(env.DEVICE)
-        atype = self.pt_batch["atype"].to(env.DEVICE)
+        pt_coord = self.pd_batch["coord"].to(env.DEVICE)
+        atype = self.pd_batch["atype"].to(env.DEVICE)
         pt_coord.stop_gradient = False
         (
             extended_coord,
@@ -152,11 +152,11 @@ class TestSeA(unittest.TestCase):
             nlist,
         ) = extend_input_and_build_neighbor_list(
             pt_coord,
-            self.pt_batch["atype"].to(env.DEVICE),
+            self.pd_batch["atype"].to(env.DEVICE),
             self.rcut,
             self.sel,
             mixed_types=False,
-            box=self.pt_batch["box"].to(env.DEVICE),
+            box=self.pd_batch["box"].to(env.DEVICE),
         )
         my_d, _, _ = prod_env_mat(
             extended_coord,
