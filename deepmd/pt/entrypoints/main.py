@@ -503,6 +503,7 @@ def change_bias(
         )
     log.info(f"Saved model to {output_path}")
 
+
 @record
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
