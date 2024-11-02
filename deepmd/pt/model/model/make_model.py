@@ -97,7 +97,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 if vv.category == OutputVariableCategory.OUT.value:
                     vars.append(kk)
             return vars
-        
+
         def enable_compression(
             self,
             table_extrapolate: float = 5,

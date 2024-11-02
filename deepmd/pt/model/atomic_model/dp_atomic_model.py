@@ -159,7 +159,7 @@ class DPAtomicModel(BaseAtomicModel):
         data["fitting"] = fitting_obj
         obj = super().deserialize(data)
         return obj
-    
+
     def enable_compression(
         self,
         min_nbor_dist: float,
