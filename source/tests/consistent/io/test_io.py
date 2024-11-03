@@ -75,7 +75,7 @@ class IOTest:
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
-            # ("tensorflow", 0),
+            ("tensorflow", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
             ("jax", 0),
