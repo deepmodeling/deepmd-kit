@@ -25,20 +25,19 @@ if TYPE_CHECKING:
     )
 
 
-@Backend.register("jax")
+@Backend.register("jax2tf")
 class JAXBackend(Backend):
-    """JAX backend."""
+    """JAX to TensorFlow backend."""
 
-    name = "JAX"
+    name = "JAX2TF"
     """The formal name of the backend."""
     features: ClassVar[Backend.Feature] = (
         Backend.Feature.IO
-        | Backend.Feature.ENTRY_POINT
-        | Backend.Feature.DEEP_EVAL
-        | Backend.Feature.NEIGHBOR_STAT
+        # | Backend.Feature.ENTRY_POINT
+        # | Backend.Feature.DEEP_EVAL
     )
     """The features of the backend."""
-    suffixes: ClassVar[list[str]] = [".hlo", ".jax"]
+    suffixes: ClassVar[list[str]] = [".savedmodel"]
     """The suffixes of the backend."""
 
     def is_available(self) -> bool:
@@ -49,7 +48,7 @@ class JAXBackend(Backend):
         bool
             Whether the backend is available.
         """
-        return find_spec("jax") is not None
+        return find_spec("jax") is not None and find_spec("tensorflow") is not None
 
     @property
     def entry_point_hook(self) -> Callable[["Namespace"], None]:
@@ -71,11 +70,12 @@ class JAXBackend(Backend):
         type[DeepEvalBackend]
             The Deep Eval backend of the backend.
         """
-        from deepmd.jax.infer.deep_eval import (
-            DeepEval,
-        )
+        raise NotImplementedError
+        # from deepmd.jax.infer.deep_eval import (
+        #     DeepEval,
+        # )
 
-        return DeepEval
+        # return DeepEval
 
     @property
     def neighbor_stat(self) -> type["NeighborStat"]:
@@ -86,11 +86,7 @@ class JAXBackend(Backend):
         type[NeighborStat]
             The neighbor statistics of the backend.
         """
-        from deepmd.jax.utils.neighbor_stat import (
-            NeighborStat,
-        )
-
-        return NeighborStat
+        raise NotImplementedError
 
     @property
     def serialize_hook(self) -> Callable[[str], dict]:
@@ -101,11 +97,7 @@ class JAXBackend(Backend):
         Callable[[str], dict]
             The serialize hook of the backend.
         """
-        from deepmd.jax.utils.serialization import (
-            serialize_from_file,
-        )
-
-        return serialize_from_file
+        raise NotImplementedError
 
     @property
     def deserialize_hook(self) -> Callable[[str, dict], None]:
@@ -116,7 +108,7 @@ class JAXBackend(Backend):
         Callable[[str, dict], None]
             The deserialize hook of the backend.
         """
-        from deepmd.jax.utils.serialization import (
+        from deepmd.jax.jax2tf.serialization import (
             deserialize_to_file,
         )
 

@@ -46,46 +46,6 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     model_def_script=ocp.args.JsonSave(model_def_script),
                 ),
             )
-    elif model_file.endswith(".savedmodel"):
-        import tensorflow as tf
-        from jax.experimental import (
-            jax2tf,
-        )
-
-        model = BaseModel.deserialize(data["model"])
-        model_def_script = data["model_def_script"]
-        call_lower = model.call_lower
-
-        my_model = tf.Module()
-
-        # Save a function that can take scalar inputs.
-        my_model.call_lower = tf.function(
-            jax2tf.convert(
-                call_lower,
-                polymorphic_shapes=[
-                    "(nf, nloc + nghost, 3)",
-                    "(nf, nloc + nghost)",
-                    f"(nf, nloc, {model.get_nnei()})",
-                    "(nf, np)",
-                    "(nf, na)",
-                ],
-            ),
-            autograph=False,
-            input_signature=[
-                tf.TensorSpec([None, None, 3], tf.float64),
-                tf.TensorSpec([None, None], tf.int64),
-                tf.TensorSpec([None, None, model.get_nnei()], tf.int64),
-                tf.TensorSpec([None, None], tf.float64),
-                tf.TensorSpec([None, None], tf.float64),
-            ],
-        )
-        my_model.model_def_script = model_def_script
-        tf.saved_model.save(
-            my_model,
-            model_file,
-            options=tf.saved_model.SaveOptions(experimental_custom_gradients=True),
-        )
-
     elif model_file.endswith(".hlo"):
         model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
