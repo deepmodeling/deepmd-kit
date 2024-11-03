@@ -55,22 +55,22 @@ class TFModelWrapper(tf.Module):
         self._call_lower_atomic_virial = jax2tf.call_tf(
             self.model.call_lower_atomic_virial
         )
-        self.type_map = decode_list_of_bytes(self.model.type_map.numpy().tolist())
-        self.rcut = self.model.rcut.numpy().item()
-        self.dim_fparam = self.model.dim_fparam.numpy().item()
-        self.dim_aparam = self.model.dim_aparam.numpy().item()
-        self.sel_type = self.model.sel_type.numpy().tolist()
-        self._is_aparam_nall = self.model.is_aparam_nall.numpy().item()
+        self.type_map = decode_list_of_bytes(self.model.get_type_map().numpy().tolist())
+        self.rcut = self.model.get_rcut().numpy().item()
+        self.dim_fparam = self.model.get_dim_fparam().numpy().item()
+        self.dim_aparam = self.model.get_dim_aparam().numpy().item()
+        self.sel_type = self.model.get_sel_type().numpy().tolist()
+        self._is_aparam_nall = self.model.is_aparam_nall().numpy().item()
         self._model_output_type = decode_list_of_bytes(
-            self.model.model_output_type.numpy().tolist()
+            self.model.model_output_type().numpy().tolist()
         )
-        self._mixed_types = self.model.mixed_types.numpy().item()
-        if hasattr(self.model, "min_nbor_dist"):
-            self.min_nbor_dist = self.model.min_nbor_dist.numpy().item()
+        self._mixed_types = self.model.mixed_types().numpy().item()
+        if hasattr(self.model, "get_min_nbor_dist"):
+            self.min_nbor_dist = self.model.get_min_nbor_dist().numpy().item()
         else:
             self.min_nbor_dist = None
-        self.sel = self.model.sel.numpy().tolist()
-        self.model_def_script = self.model.model_def_script.numpy().decode()
+        self.sel = self.model.get_sel().numpy().tolist()
+        self.model_def_script = self.model.get_model_def_script().numpy().decode()
 
     def __call__(
         self,

@@ -71,24 +71,42 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         tf_model.call_lower_atomic_virial = exported_whether_do_atomic_virial(
             do_atomic_virial=True
         )
-        # set other attributes
-        tf_model.type_map = tf.Variable(model.get_type_map(), dtype=tf.string)
-        tf_model.rcut = tf.Variable(model.get_rcut(), dtype=tf.double)
-        tf_model.dim_fparam = tf.Variable(model.get_dim_fparam(), dtype=tf.int64)
-        tf_model.dim_aparam = tf.Variable(model.get_dim_aparam(), dtype=tf.int64)
-        tf_model.sel_type = tf.Variable(model.get_sel_type(), dtype=tf.int64)
-        tf_model.is_aparam_nall = tf.Variable(model.is_aparam_nall(), dtype=tf.bool)
-        tf_model.model_output_type = tf.Variable(
-            model.model_output_type(), dtype=tf.string
+        # set functions to export other attributes
+        tf_model.get_type_map = tf.function(
+            lambda: tf.constant(model.get_type_map(), dtype=tf.string)
         )
-        tf_model.mixed_types = tf.Variable(model.mixed_types(), dtype=tf.bool)
+        tf_model.get_rcut = tf.function(
+            lambda: tf.constant(model.get_rcut(), dtype=tf.double)
+        )
+        tf_model.get_dim_fparam = tf.function(
+            lambda: tf.constant(model.get_dim_fparam(), dtype=tf.int64)
+        )
+        tf_model.get_dim_aparam = tf.function(
+            lambda: tf.constant(model.get_dim_aparam(), dtype=tf.int64)
+        )
+        tf_model.get_sel_type = tf.function(
+            lambda: tf.constant(model.get_sel_type(), dtype=tf.int64)
+        )
+        tf_model.is_aparam_nall = tf.function(
+            lambda: tf.constant(model.is_aparam_nall(), dtype=tf.bool)
+        )
+        tf_model.model_output_type = tf.function(
+            lambda: tf.constant(model.model_output_type(), dtype=tf.string)
+        )
+        tf_model.mixed_types = tf.function(
+            lambda: tf.constant(model.mixed_types(), dtype=tf.bool)
+        )
         if model.get_min_nbor_dist() is not None:
-            tf_model.min_nbor_dist = tf.Variable(
-                model.get_min_nbor_dist(), dtype=tf.double
+            tf_model.get_min_nbor_dist = tf.function(
+                lambda: tf.constant(model.get_min_nbor_dist(), dtype=tf.double)
             )
-        tf_model.sel = tf.Variable(model.get_sel(), dtype=tf.int64)
-        tf_model.model_def_script = tf.Variable(
-            json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
+        tf_model.get_sel = tf.function(
+            lambda: tf.constant(model.get_sel(), dtype=tf.int64)
+        )
+        tf_model.get_model_def_script = tf.function(
+            lambda: tf.constant(
+                json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
+            )
         )
         tf.saved_model.save(
             tf_model,
