@@ -30,13 +30,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         def exported_whether_do_atomic_virial(do_atomic_virial):
             def call_lower_with_fixed_do_atomic_virial(
-                coord, atype, nlist, nlist_start, fparam, aparam
+                coord, atype, nlist, mapping, fparam, aparam
             ):
                 return call_lower(
                     coord,
                     atype,
                     nlist,
-                    nlist_start,
+                    mapping,
                     fparam,
                     aparam,
                     do_atomic_virial=do_atomic_virial,
@@ -44,20 +44,23 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
             return tf.function(
                 jax2tf.convert(
-                    call_lower,
+                    call_lower_with_fixed_do_atomic_virial,
                     polymorphic_shapes=[
                         "(nf, nloc + nghost, 3)",
                         "(nf, nloc + nghost)",
                         f"(nf, nloc, {model.get_nnei()})",
+                        "(nf, nloc + nghost)",
                         f"(nf, {model.get_dim_fparam()})",
                         f"(nf, nloc, {model.get_dim_aparam()})",
                     ],
+                    with_gradient=True,
                 ),
                 autograph=False,
                 input_signature=[
                     tf.TensorSpec([None, None, 3], tf.float64),
-                    tf.TensorSpec([None, None], tf.int64),
+                    tf.TensorSpec([None, None], tf.int32),
                     tf.TensorSpec([None, None, model.get_nnei()], tf.int64),
+                    tf.TensorSpec([None, None], tf.int64),
                     tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                     tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
                 ],

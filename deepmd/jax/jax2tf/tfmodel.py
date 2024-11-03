@@ -40,6 +40,11 @@ OUTPUT_DEFS = {
 }
 
 
+def decode_list_of_bytes(list_of_bytes: list[bytes]) -> list[str]:
+    """Decode a list of bytes to a list of strings."""
+    return [x.decode() for x in list_of_bytes]
+
+
 class TFModelWrapper(tf.Module):
     def __init__(
         self,
@@ -50,13 +55,15 @@ class TFModelWrapper(tf.Module):
         self._call_lower_atomic_virial = jax2tf.call_tf(
             self.model.call_lower_atomic_virial
         )
-        self.type_map = self.model.type_map.numpy().tolist()
+        self.type_map = decode_list_of_bytes(self.model.type_map.numpy().tolist())
         self.rcut = self.model.rcut.numpy().item()
         self.dim_fparam = self.model.dim_fparam.numpy().item()
         self.dim_aparam = self.model.dim_aparam.numpy().item()
         self.sel_type = self.model.sel_type.numpy().tolist()
         self._is_aparam_nall = self.model.is_aparam_nall.numpy().item()
-        self._model_output_type = self.model.model_output_type.numpy().tolist()
+        self._model_output_type = decode_list_of_bytes(
+            self.model.model_output_type.numpy().tolist()
+        )
         self._mixed_types = self.model.mixed_types.numpy().item()
         if hasattr(self.model, "min_nbor_dist"):
             self.min_nbor_dist = self.model.min_nbor_dist.numpy().item()
@@ -168,6 +175,16 @@ class TFModelWrapper(tf.Module):
             call_lower = self._call_lower_atomic_virial
         else:
             call_lower = self._call_lower
+        # Attempt to convert a value (None) with an unsupported type (<class 'NoneType'>) to a Tensor.
+        if fparam is None:
+            fparam = jnp.empty(
+                (extended_coord.shape[0], self.get_dim_fparam()), dtype=jnp.float64
+            )
+        if aparam is None:
+            aparam = jnp.empty(
+                (extended_coord.shape[0], nlist.shape[1], self.get_dim_aparam()),
+                dtype=jnp.float64,
+            )
         return call_lower(
             extended_coord,
             extended_atype,

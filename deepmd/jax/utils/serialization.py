@@ -55,13 +55,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         def exported_whether_do_atomic_virial(do_atomic_virial):
             def call_lower_with_fixed_do_atomic_virial(
-                coord, atype, nlist, nlist_start, fparam, aparam
+                coord, atype, nlist, mapping, fparam, aparam
             ):
                 return call_lower(
                     coord,
                     atype,
                     nlist,
-                    nlist_start,
+                    mapping,
                     fparam,
                     aparam,
                     do_atomic_virial=do_atomic_virial,
