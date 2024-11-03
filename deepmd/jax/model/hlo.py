@@ -45,6 +45,7 @@ class HLO(BaseModel):
     def __init__(
         self,
         stablehlo,
+        stablehlo_atomic_virial,
         model_def_script,
         type_map,
         rcut,
@@ -58,6 +59,9 @@ class HLO(BaseModel):
         sel,
     ) -> None:
         self._call_lower = jax_export.deserialize(stablehlo).call
+        self._call_lower_atomic_virial = jax_export.deserialize(
+            stablehlo_atomic_virial
+        ).call
         self.stablehlo = stablehlo
         self.type_map = type_map
         self.rcut = rcut
@@ -170,14 +174,17 @@ class HLO(BaseModel):
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
     ):
-        return self._call_lower(
+        if do_atomic_virial:
+            call_lower = self._call_lower_atomic_virial
+        else:
+            call_lower = self._call_lower
+        return call_lower(
             extended_coord,
             extended_atype,
             nlist,
             mapping,
             fparam,
             aparam,
-            do_atomic_virial,
         )
 
     def get_type_map(self) -> list[str]:

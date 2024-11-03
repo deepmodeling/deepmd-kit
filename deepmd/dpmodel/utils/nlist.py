@@ -233,18 +233,13 @@ def build_multiple_neighbor_list(
     coord2 = xp_take_along_axis(coord1, index, axis=1)
     coord2 = xp.reshape(coord2, (nb, nloc, nsel, 3))
     diff = coord2 - coord0[:, :, None, :]
-    # jax raises NaN error using norm
-    # but note: we don't actually need to sqrt here; the squared value is enough
-    # rr = xp.linalg.vector_norm(diff, axis=-1)
-    rr2 = xp.sum(xp.square(diff), axis=-1)
-    rr2 = xp.where(nlist_mask, xp.full_like(rr2, float("inf")), rr2)
+    rr = xp.linalg.vector_norm(diff, axis=-1)
+    rr = xp.where(nlist_mask, xp.full_like(rr, float("inf")), rr)
     nlist0 = nlist
     ret = {}
     for rc, ns in zip(rcuts[::-1], nsels[::-1]):
         tnlist_1 = nlist0[:, :, :ns]
-        tnlist_1 = xp.where(
-            rr2[:, :, :ns] > rc * rc, xp.full_like(tnlist_1, -1), tnlist_1
-        )
+        tnlist_1 = xp.where(rr[:, :, :ns] > rc, xp.full_like(tnlist_1, -1), tnlist_1)
         ret[get_multiple_nlist_key(rc, ns)] = tnlist_1
     return ret
 
