@@ -107,8 +107,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             "sel": model.get_sel(),
         }
         save_dp_model(filename=model_file, model_dict=data)
+    elif model_file.endswith(".savedmodel"):
+        from deepmd.jax.jax2tf.serialization import (
+            deserialize_to_file as deserialize_to_savedmodel,
+        )
+
+        return deserialize_to_savedmodel(model_file, data)
     else:
-        raise ValueError("JAX backend only supports converting .jax directory")
+        raise ValueError("Unsupported file extension")
 
 
 def serialize_from_file(model_file: str) -> dict:

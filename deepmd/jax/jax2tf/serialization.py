@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+
 import tensorflow as tf
 from jax.experimental import (
     jax2tf,
@@ -24,32 +26,69 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         model_def_script = data["model_def_script"]
         call_lower = model.call_lower
 
-        my_model = tf.Module()
+        tf_model = tf.Module()
+
+        def exported_whether_do_atomic_virial(do_atomic_virial):
+            def call_lower_with_fixed_do_atomic_virial(
+                coord, atype, nlist, nlist_start, fparam, aparam
+            ):
+                return call_lower(
+                    coord,
+                    atype,
+                    nlist,
+                    nlist_start,
+                    fparam,
+                    aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+
+            return tf.function(
+                jax2tf.convert(
+                    call_lower,
+                    polymorphic_shapes=[
+                        "(nf, nloc + nghost, 3)",
+                        "(nf, nloc + nghost)",
+                        f"(nf, nloc, {model.get_nnei()})",
+                        f"(nf, {model.get_dim_fparam()})",
+                        f"(nf, nloc, {model.get_dim_aparam()})",
+                    ],
+                ),
+                autograph=False,
+                input_signature=[
+                    tf.TensorSpec([None, None, 3], tf.float64),
+                    tf.TensorSpec([None, None], tf.int64),
+                    tf.TensorSpec([None, None, model.get_nnei()], tf.int64),
+                    tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+                    tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+                ],
+            )
 
         # Save a function that can take scalar inputs.
-        my_model.call_lower = tf.function(
-            jax2tf.convert(
-                call_lower,
-                polymorphic_shapes=[
-                    "(nf, nloc + nghost, 3)",
-                    "(nf, nloc + nghost)",
-                    f"(nf, nloc, {model.get_nnei()})",
-                    f"(nf, {model.get_dim_fparam()})",
-                    f"(nf, nloc, {model.get_dim_aparam()})",
-                ],
-            ),
-            autograph=False,
-            input_signature=[
-                tf.TensorSpec([None, None, 3], tf.float64),
-                tf.TensorSpec([None, None], tf.int64),
-                tf.TensorSpec([None, None, model.get_nnei()], tf.int64),
-                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
-                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
-            ],
+        tf_model.call_lower = exported_whether_do_atomic_virial(do_atomic_virial=False)
+        tf_model.call_lower_atomic_virial = exported_whether_do_atomic_virial(
+            do_atomic_virial=True
         )
-        my_model.model_def_script = model_def_script
+        # set other attributes
+        tf_model.type_map = tf.Variable(model.get_type_map(), dtype=tf.string)
+        tf_model.rcut = tf.Variable(model.get_rcut(), dtype=tf.double)
+        tf_model.dim_fparam = tf.Variable(model.get_dim_fparam(), dtype=tf.int64)
+        tf_model.dim_aparam = tf.Variable(model.get_dim_aparam(), dtype=tf.int64)
+        tf_model.sel_type = tf.Variable(model.get_sel_type(), dtype=tf.int64)
+        tf_model.is_aparam_nall = tf.Variable(model.is_aparam_nall(), dtype=tf.bool)
+        tf_model.model_output_type = tf.Variable(
+            model.model_output_type(), dtype=tf.string
+        )
+        tf_model.mixed_types = tf.Variable(model.mixed_types(), dtype=tf.bool)
+        if model.get_min_nbor_dist() is not None:
+            tf_model.min_nbor_dist = tf.Variable(
+                model.get_min_nbor_dist(), dtype=tf.double
+            )
+        tf_model.sel = tf.Variable(model.get_sel(), dtype=tf.int64)
+        tf_model.model_def_script = tf.Variable(
+            json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
+        )
         tf.saved_model.save(
-            my_model,
+            tf_model,
             model_file,
             options=tf.saved_model.SaveOptions(experimental_custom_gradients=True),
         )
