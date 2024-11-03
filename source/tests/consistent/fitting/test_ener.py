@@ -130,7 +130,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             (numb_aparam, use_aparam_as_mask),
             atom_ener,
         ) = self.param
-        return CommonTest.skip_pd
+        # Paddle do not support "bfloat16" in some kernels,
+        # so skip this in CI test
+        return CommonTest.skip_pd or precision == "bfloat16"
 
     tf_class = EnerFittingTF
     dp_class = EnerFittingDP
