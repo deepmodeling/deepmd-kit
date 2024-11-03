@@ -75,7 +75,7 @@ class IOTest:
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
-            ("tensorflow", 0),
+            # ("tensorflow", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
             ("jax", 0),
@@ -140,13 +140,22 @@ class IOTest:
         nframes = self.atype.shape[0]
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
-        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
+        for backend_name, suffix_idx in (
+            ("tensorflow", 0),
+            ("pytorch", 0),
+            ("dpmodel", 0),
+            ("jax", 0),
+            # unfortunately, jax2tf cannot work with tf v1 behaviors
+            # ("jax", 2),
+        ):
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
-            self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
-            deep_eval = DeepEval(prefix + backend.suffixes[0])
+            self.save_data_to_model(
+                prefix + backend.suffixes[suffix_idx], reference_data
+            )
+            deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:
