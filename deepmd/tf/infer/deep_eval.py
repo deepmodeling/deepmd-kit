@@ -111,7 +111,7 @@ class DeepEval(DeepEvalBackend):
             raise RuntimeError(
                 f"model in graph (version {self.model_version}) is incompatible"
                 f"with the model (version {MODEL_VERSION}) supported by the current code."
-                "See https://deepmd.rtfd.io/compatability/ for details."
+                "See https://deepmd.rtfd.io/compatibility/ for details."
             )
 
         # set default to False, as subclasses may not support
@@ -190,7 +190,7 @@ class DeepEval(DeepEvalBackend):
             "numb_dos": "fitting_attr/numb_dos:0",
             # model attrs
             "sel_type": "model_attr/sel_type:0",
-            # additonal inputs
+            # additional inputs
             "efield": "t_efield:0",
             "fparam": "t_fparam:0",
             "aparam": "t_aparam:0",
@@ -312,12 +312,12 @@ class DeepEval(DeepEvalBackend):
         return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(self) -> bool:
-        """Check the model compatability.
+        """Check the model compatibility.
 
         Returns
         -------
         bool
-            If the model stored in the graph file is compatable with the current code
+            If the model stored in the graph file is compatible with the current code
         """
         model_version_major = int(self.model_version.split(".")[0])
         model_version_minor = int(self.model_version.split(".")[1])
@@ -781,7 +781,7 @@ class DeepEval(DeepEvalBackend):
         aparam=None,
         efield=None,
     ):
-        # standarize the shape of inputs
+        # standardize the shape of inputs
         natoms, nframes = self._get_natoms_and_nframes(
             coords,
             atom_types,
@@ -1118,7 +1118,7 @@ class DeepEval(DeepEvalBackend):
         return self.has_efield
 
     def get_model_def_script(self) -> dict:
-        """Get model defination script."""
+        """Get model definition script."""
         t_script = self._get_tensor("train_attr/training_script:0")
         [script] = run_sess(self.sess, [t_script], feed_dict={})
         model_def_script = script.decode("utf-8")
@@ -1171,7 +1171,7 @@ class DeepEvalOld:
             raise RuntimeError(
                 f"model in graph (version {self.model_version}) is incompatible"
                 f"with the model (version {MODEL_VERSION}) supported by the current code."
-                "See https://deepmd.rtfd.io/compatability/ for details."
+                "See https://deepmd.rtfd.io/compatibility/ for details."
             )
 
         # set default to False, as subclasses may not support
@@ -1224,12 +1224,12 @@ class DeepEvalOld:
         return tf.Session(graph=self.graph, config=default_tf_session_config)
 
     def _graph_compatable(self) -> bool:
-        """Check the model compatability.
+        """Check the model compatibility.
 
         Returns
         -------
         bool
-            If the model stored in the graph file is compatable with the current code
+            If the model stored in the graph file is compatible with the current code
         """
         model_version_major = int(self.model_version.split(".")[0])
         model_version_minor = int(self.model_version.split(".")[1])

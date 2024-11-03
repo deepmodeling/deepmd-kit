@@ -30,7 +30,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
-    model_type = "ener"
+    model_type = "zbl"
 
     def __init__(
         self,
@@ -140,7 +140,7 @@ class DPZBLModel(DPZBLModel_):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

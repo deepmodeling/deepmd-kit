@@ -156,7 +156,7 @@ class TestParserOutput(unittest.TestCase):
                 namespace = parse_args(cmd_args)
         except SystemExit as e:
             raise SystemExit(
-                f"Encountered expection when parsing arguments ->\n\n"
+                f"Encountered exception when parsing arguments ->\n\n"
                 f"{buffer.getvalue()}\n"
                 f"passed in arguments were: {cmd_args}\n"
                 f"built from dict {mapping}"
@@ -188,7 +188,7 @@ class TestParserOutput(unittest.TestCase):
                 namespace = parse_args(cmd_args)
         except SystemExit as e:
             raise SystemExit(
-                f"Encountered expection when parsing DEFAULT arguments ->\n\n"
+                f"Encountered exception when parsing DEFAULT arguments ->\n\n"
                 f"{buffer.getvalue()}\n"
                 f"passed in arguments were: {cmd_args}\n"
                 f"built from dict {mapping}"

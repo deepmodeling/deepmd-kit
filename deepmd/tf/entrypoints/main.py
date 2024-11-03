@@ -60,7 +60,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
         args = parse_args(args=args)
 
     # do not set log handles for None, it is useless
-    # log handles for train will be set separatelly
+    # log handles for train will be set separately
     # when the use of MPI will be determined in `RunOptions`
     if args.command not in (None, "train"):
         set_log_handles(args.log_level, Path(args.log_path) if args.log_path else None)

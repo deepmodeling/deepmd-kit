@@ -34,6 +34,7 @@ from .pairtab_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
@@ -148,6 +149,38 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Compress model.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        for model in self.models:
+            model.enable_compression(
+                min_nbor_dist,
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            )
+
     def forward_atomic(
         self,
         extended_coord,
@@ -162,7 +195,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         Parameters
         ----------
         extended_coord
-            coodinates in extended region, (nframes, nall * 3)
+            coordinates in extended region, (nframes, nall * 3)
         extended_atype
             atomic type in extended region, (nframes, nall)
         nlist
@@ -324,6 +357,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return False
 
 
+@BaseAtomicModel.register("zbl")
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
@@ -341,7 +375,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         Mapping atom type to the name (str) of the type.
         For example `type_map[1]` gives the name of the type 1.
     smin_alpha
-        The short-range tabulated interaction will be swithed according to the distance of the nearest neighbor.
+        The short-range tabulated interaction will be switched according to the distance of the nearest neighbor.
         This distance is calculated by softmin.
     """
 

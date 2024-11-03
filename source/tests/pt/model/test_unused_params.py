@@ -38,10 +38,10 @@ class TestUnusedParamsDPA2(unittest.TestCase):
             [True],
         ):
             if (not drrd) and (not grrg) and h2:
-                # skip the case h2 is not envolved
+                # skip the case h2 is not involved
                 continue
             if (not grrg) and (not conv):
-                # skip the case g2 is not envolved
+                # skip the case g2 is not involved
                 continue
             model = copy.deepcopy(model_dpa2)
             model["descriptor"]["repformer"]["nlayers"] = 2

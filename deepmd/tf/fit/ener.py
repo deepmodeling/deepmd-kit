@@ -109,9 +109,9 @@ class EnerFitting(Fitting):
     Parameters
     ----------
     ntypes
-            The ntypes of the descrptor :math:`\mathcal{D}`
+            The ntypes of the descriptor :math:`\mathcal{D}`
     dim_descrpt
-            The dimension of the descrptor :math:`\mathcal{D}`
+            The dimension of the descriptor :math:`\mathcal{D}`
     neuron
             Number of neurons :math:`N` in each hidden layer of the fitting net
     resnet_dt
@@ -132,7 +132,7 @@ class EnerFitting(Fitting):
     seed
             Random seed for initializing the network parameters.
     atom_ener
-            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+            Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -252,7 +252,7 @@ class EnerFitting(Fitting):
         return self.numb_aparam
 
     def compute_output_stats(self, all_stat: dict, mixed_type: bool = False) -> None:
-        """Compute the ouput statistics.
+        """Compute the output statistics.
 
         Parameters
         ----------
@@ -384,7 +384,7 @@ class EnerFitting(Fitting):
             ext_fparam = tf.reshape(ext_fparam, [-1, self.numb_fparam])
             ext_fparam = tf.cast(ext_fparam, self.fitting_precision)
             layer = tf.concat([layer, ext_fparam], axis=1)
-        if aparam is not None:
+        if aparam is not None and not self.use_aparam_as_mask:
             ext_aparam = tf.slice(
                 aparam,
                 [0, start_index * self.numb_aparam],
@@ -561,7 +561,7 @@ class EnerFitting(Fitting):
                     trainable=False,
                     initializer=tf.constant_initializer(self.fparam_inv_std),
                 )
-            if self.numb_aparam > 0:
+            if self.numb_aparam > 0 and not self.use_aparam_as_mask:
                 t_aparam_avg = tf.get_variable(
                     "t_aparam_avg",
                     self.numb_aparam,
@@ -575,6 +575,13 @@ class EnerFitting(Fitting):
                     dtype=GLOBAL_TF_FLOAT_PRECISION,
                     trainable=False,
                     initializer=tf.constant_initializer(self.aparam_inv_std),
+                )
+            else:
+                t_aparam_avg = tf.zeros(
+                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
+                )
+                t_aparam_istd = tf.ones(
+                    self.numb_aparam, dtype=GLOBAL_TF_FLOAT_PRECISION
                 )
 
         inputs = tf.reshape(inputs, [-1, natoms[0], self.dim_descrpt])
@@ -602,12 +609,11 @@ class EnerFitting(Fitting):
             fparam = (fparam - t_fparam_avg) * t_fparam_istd
 
         aparam = None
-        if not self.use_aparam_as_mask:
-            if self.numb_aparam > 0:
-                aparam = input_dict["aparam"]
-                aparam = tf.reshape(aparam, [-1, self.numb_aparam])
-                aparam = (aparam - t_aparam_avg) * t_aparam_istd
-                aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+            aparam = input_dict["aparam"]
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam])
+            aparam = (aparam - t_aparam_avg) * t_aparam_istd
+            aparam = tf.reshape(aparam, [-1, self.numb_aparam * natoms[0]])
 
         atype_nall = tf.reshape(atype, [-1, natoms[1]])
         self.atype_nloc = tf.slice(
@@ -783,7 +789,7 @@ class EnerFitting(Fitting):
             self.fparam_inv_std = get_tensor_by_name_from_graph(
                 graph, f"fitting_attr{suffix}/t_fparam_istd"
             )
-        if self.numb_aparam > 0:
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             self.aparam_avg = get_tensor_by_name_from_graph(
                 graph, f"fitting_attr{suffix}/t_aparam_avg"
             )
@@ -822,7 +828,7 @@ class EnerFitting(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------
@@ -883,7 +889,7 @@ class EnerFitting(Fitting):
         if fitting.numb_fparam > 0:
             fitting.fparam_avg = data["@variables"]["fparam_avg"]
             fitting.fparam_inv_std = data["@variables"]["fparam_inv_std"]
-        if fitting.numb_aparam > 0:
+        if fitting.numb_aparam > 0 and not fitting.use_aparam_as_mask:
             fitting.aparam_avg = data["@variables"]["aparam_avg"]
             fitting.aparam_inv_std = data["@variables"]["aparam_inv_std"]
         return fitting
@@ -922,7 +928,11 @@ class EnerFitting(Fitting):
             "nets": self.serialize_network(
                 ntypes=self.ntypes,
                 ndim=0 if self.mixed_types else 1,
-                in_dim=self.dim_descrpt + self.numb_fparam + self.numb_aparam,
+                in_dim=(
+                    self.dim_descrpt
+                    + self.numb_fparam
+                    + (0 if self.use_aparam_as_mask else self.numb_aparam)
+                ),
                 neuron=self.n_neuron,
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
@@ -985,7 +995,7 @@ def change_energy_bias_lower(
     bias_adjust_mode : str
         The mode for changing energy bias : ['change-by-statistic', 'set-by-statistic']
         'change-by-statistic' : perform predictions on energies of target dataset,
-                and do least sqaure on the errors to obtain the target shift as bias.
+                and do least square on the errors to obtain the target shift as bias.
         'set-by-statistic' : directly use the statistic energy bias in the target dataset.
     ntest : int
         The number of test samples in a system to change the energy bias.

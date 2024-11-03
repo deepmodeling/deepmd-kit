@@ -46,11 +46,11 @@ class PolarFittingSeA(Fitting):
     Parameters
     ----------
     ntypes
-            The ntypes of the descrptor :math:`\mathcal{D}`
+            The ntypes of the descriptor :math:`\mathcal{D}`
     dim_descrpt
-            The dimension of the descrptor :math:`\mathcal{D}`
+            The dimension of the descriptor :math:`\mathcal{D}`
     embedding_width
-            The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
+            The rotation matrix dimension of the descriptor :math:`\mathcal{D}`
     neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
@@ -221,7 +221,7 @@ class PolarFittingSeA(Fitting):
                 else:  # No atomic polar in this system, so it should have global polar
                     if (
                         not all_stat["find_polarizability"][ss] > 0.0
-                    ):  # This system is jsut a joke?
+                    ):  # This system is just a joke?
                         continue
                     # Till here, we have global polar
                     sys_matrix.append(
@@ -526,7 +526,7 @@ class PolarFittingSeA(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------
@@ -618,7 +618,7 @@ class GlobalPolarFittingSeA:
     Parameters
     ----------
     descrpt : tf.Tensor
-            The descrptor
+            The descriptor
     neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
@@ -745,7 +745,7 @@ class GlobalPolarFittingSeA:
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------

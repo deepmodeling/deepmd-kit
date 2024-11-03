@@ -485,7 +485,7 @@ class ProdEnvMatAOp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
-    // must declar out of if, otherwise the memory will be destroyed!
+    // must declare out of if, otherwise the memory will be destroyed!
     Tensor int_temp;
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);
@@ -791,7 +791,7 @@ class ProdEnvMatROp : public OpKernel {
     const FPTYPE* std = std_tensor.flat<FPTYPE>().data();
     const int* p_type = type_tensor.flat<int>().data();
 
-    // must declar out of if, otherwise the memory will be destroyed!
+    // must declare out of if, otherwise the memory will be destroyed!
     Tensor int_temp;
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);
@@ -1144,7 +1144,7 @@ class ProdEnvMatAMixOp : public OpKernel {
       }
     }
 
-    // must declar out of if, otherwise the memory will be destroyed!
+    // must declare out of if, otherwise the memory will be destroyed!
     Tensor int_temp;
     Tensor uint64_temp;
     std::vector<Tensor> tensor_list(7);

@@ -3,10 +3,17 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import orbax.checkpoint as ocp
 
+from deepmd.dpmodel.utils.serialization import (
+    load_dp_model,
+    save_dp_model,
+)
 from deepmd.jax.env import (
     jax,
+    jax_export,
+    jnp,
     nnx,
 )
 from deepmd.jax.model.model import (
@@ -78,6 +85,68 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             model_file,
             options=tf.saved_model.SaveOptions(experimental_custom_gradients=True),
         )
+
+    elif model_file.endswith(".hlo"):
+        model = BaseModel.deserialize(data["model"])
+        model_def_script = data["model_def_script"]
+        call_lower = model.call_lower
+
+        nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
+
+        def exported_whether_do_atomic_virial(do_atomic_virial):
+            def call_lower_with_fixed_do_atomic_virial(
+                coord, atype, nlist, nlist_start, fparam, aparam
+            ):
+                return call_lower(
+                    coord,
+                    atype,
+                    nlist,
+                    nlist_start,
+                    fparam,
+                    aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+
+            return jax_export.export(jax.jit(call_lower_with_fixed_do_atomic_virial))(
+                jax.ShapeDtypeStruct(
+                    (nf, nloc + nghost, 3), jnp.float64
+                ),  # extended_coord
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),  # extended_atype
+                jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),  # mapping
+                jax.ShapeDtypeStruct((nf, model.get_dim_fparam()), jnp.float64)
+                if model.get_dim_fparam()
+                else None,  # fparam
+                jax.ShapeDtypeStruct((nf, nloc, model.get_dim_aparam()), jnp.float64)
+                if model.get_dim_aparam()
+                else None,  # aparam
+            )
+
+        exported = exported_whether_do_atomic_virial(do_atomic_virial=False)
+        exported_atomic_virial = exported_whether_do_atomic_virial(
+            do_atomic_virial=True
+        )
+        serialized: bytearray = exported.serialize()
+        serialized_atomic_virial = exported_atomic_virial.serialize()
+        data = data.copy()
+        data.setdefault("@variables", {})
+        data["@variables"]["stablehlo"] = np.void(serialized)
+        data["@variables"]["stablehlo_atomic_virial"] = np.void(
+            serialized_atomic_virial
+        )
+        data["constants"] = {
+            "type_map": model.get_type_map(),
+            "rcut": model.get_rcut(),
+            "dim_fparam": model.get_dim_fparam(),
+            "dim_aparam": model.get_dim_aparam(),
+            "sel_type": model.get_sel_type(),
+            "is_aparam_nall": model.is_aparam_nall(),
+            "model_output_type": model.model_output_type(),
+            "mixed_types": model.mixed_types(),
+            "min_nbor_dist": model.get_min_nbor_dist(),
+            "sel": model.get_sel(),
+        }
+        save_dp_model(filename=model_file, model_dict=data)
     else:
         raise ValueError("JAX backend only supports converting .jax directory")
 
@@ -131,6 +200,11 @@ def serialize_from_file(model_file: str) -> dict:
             "model_def_script": model_def_script,
             "@variables": {},
         }
+        return data
+    elif model_file.endswith(".hlo"):
+        data = load_dp_model(model_file)
+        data.pop("constants")
+        data["@variables"].pop("stablehlo")
         return data
     else:
         raise ValueError("JAX backend only supports converting .jax directory")

@@ -64,7 +64,7 @@ To make the `aparam.npy` used for descriptor `se_a_mask`, two variables in `fitt
 ```
 
 - `neuron`, `resnet_dt` and `seed` are the same as the {ref}`fitting_net <model[standard]/fitting_net[ener]>` section for fitting energy.
-- {ref}`numb_aparam <model[standard]/fitting_net[ener]/numb_aparam>` gives the dimesion of the `aparam.npy` file. In this example, it is set to 1 and stores the real/virtual sign of the atoms. For real/virtual atoms, the corresponding sign in `aparam.npy` is set to 1/0.
+- {ref}`numb_aparam <model[standard]/fitting_net[ener]/numb_aparam>` gives the dimension of the `aparam.npy` file. In this example, it is set to 1 and stores the real/virtual sign of the atoms. For real/virtual atoms, the corresponding sign in `aparam.npy` is set to 1/0.
 - {ref}`use_aparam_as_mask <model[standard]/fitting_net[ener]/use_aparam_as_mask>` is set to `true` to use the `aparam.npy` as the mask of the atoms in the descriptor `se_a_mask`.
 
 Finally, to make a reasonable fitting task with `se_a_mask` descriptor for DP/MM simulations, the loss function with `se_a_mask` is designed to include the atomic forces difference in specific atoms of the input particles only.

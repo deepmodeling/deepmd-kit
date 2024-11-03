@@ -12,7 +12,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 22
+#define DP_C_API_VERSION 23
 
 /**
  * @brief Neighbor list.
@@ -67,6 +67,16 @@ extern DP_Nlist* DP_NewNlist_comm(int inum_,
                                   int* sendproc,
                                   int* recvproc,
                                   void* world);
+
+/*
+ * @brief Set mask for a neighbor list.
+ *
+ * @param nl Neighbor list.
+ * @param mask mask.
+ * @since API version 23
+ *
+ **/
+extern void DP_NlistSetMask(DP_Nlist* nl, int mask);
 
 /**
  * @brief Delete a neighbor list.

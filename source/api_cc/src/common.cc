@@ -241,6 +241,9 @@ void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist) {
     int jnum = inlist.numneigh[ii];
     jlist[ii].resize(jnum);
     memcpy(&jlist[ii][0], inlist.firstneigh[ii], jnum * sizeof(int));
+    for (int jj = 0; jj < jnum; ++jj) {
+      jlist[ii][jj] &= inlist.mask;
+    }
   }
 }
 
@@ -934,7 +937,7 @@ void deepmd::select_map(std::vector<VT>& out,
         for (int ii = 0; ii < in.size() / stride / nframes; ++ii) {
 #ifdef DEBUG
       assert(ii < idx_map.size() && "idx goes over the idx map size");
-      assert(idx_map[ii] < out.size() && "mappped idx goes over the out size");
+      assert(idx_map[ii] < out.size() && "mapped idx goes over the out size");
 #endif
       if (idx_map[ii] >= 0) {
         int to_ii = idx_map[ii];

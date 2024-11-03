@@ -1105,7 +1105,7 @@ class RepformerLayer(torch.nn.Module):
         """
         Parameters
         ----------
-        g1_ext : nf x nall x ng1         extended single-atom chanel
+        g1_ext : nf x nall x ng1         extended single-atom channel
         g2 : nf x nloc x nnei x ng2  pair-atom channel, invariant
         h2 : nf x nloc x nnei x 3    pair-atom channel, equivariant
         nlist : nf x nloc x nnei        neighbor list (padded neis are set to 0)
@@ -1114,7 +1114,7 @@ class RepformerLayer(torch.nn.Module):
 
         Returns
         -------
-        g1:     nf x nloc x ng1         updated single-atom chanel
+        g1:     nf x nloc x ng1         updated single-atom channel
         g2:     nf x nloc x nnei x ng2  updated pair-atom channel, invariant
         h2:     nf x nloc x nnei x 3    updated pair-atom channel, equivariant
         """

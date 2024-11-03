@@ -20,8 +20,8 @@ def get_type_embedding(self, graph):
     return type_embedding
 
 
-def get_two_side_type_embedding(self, graph):
-    type_embedding = get_tensor_by_name_from_graph(graph, "t_typeebd")
+def get_two_side_type_embedding(self, graph, suffix=""):
+    type_embedding = get_tensor_by_name_from_graph(graph, f"t_typeebd{suffix}")
     type_embedding = type_embedding.astype(self.filter_np_precision)
     type_embedding_shape = type_embedding.shape
 

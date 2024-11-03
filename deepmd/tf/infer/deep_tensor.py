@@ -186,7 +186,7 @@ class DeepTensor(DeepEval):
             If atomic == False then of size nframes x output_dim
             else of size nframes x natoms x output_dim
         """
-        # standarize the shape of inputs
+        # standardize the shape of inputs
         if mixed_type:
             natoms = atom_types[0].size
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])
@@ -330,7 +330,7 @@ class DeepTensor(DeepEval):
         """
         assert self._support_gfv, "do not support eval_full with old tensor model"
 
-        # standarize the shape of inputs
+        # standardize the shape of inputs
         if mixed_type:
             natoms = atom_types[0].size
             atom_types = np.array(atom_types, dtype=int).reshape([-1, natoms])

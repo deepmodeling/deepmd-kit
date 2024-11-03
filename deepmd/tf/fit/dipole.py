@@ -41,11 +41,11 @@ class DipoleFittingSeA(Fitting):
     Parameters
     ----------
     ntypes
-            The ntypes of the descrptor :math:`\mathcal{D}`
+            The ntypes of the descriptor :math:`\mathcal{D}`
     dim_descrpt
-            The dimension of the descrptor :math:`\mathcal{D}`
+            The dimension of the descriptor :math:`\mathcal{D}`
     embedding_width
-            The rotation matrix dimension of the descrptor :math:`\mathcal{D}`
+            The rotation matrix dimension of the descriptor :math:`\mathcal{D}`
     neuron : list[int]
             Number of neurons in each hidden layer of the fitting net
     resnet_dt : bool
@@ -320,7 +320,7 @@ class DipoleFittingSeA(Fitting):
         )
 
     def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
-        """Reveive the mixed precision setting.
+        """Receive the mixed precision setting.
 
         Parameters
         ----------

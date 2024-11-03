@@ -6,6 +6,7 @@ from typing import (
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -207,6 +208,7 @@ class DipoleFitting(GeneralFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
+        xp = array_api_compat.array_namespace(descriptor, atype)
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # (nframes, nloc, m1)
@@ -214,9 +216,11 @@ class DipoleFitting(GeneralFitting):
             self.var_name
         ]
         # (nframes * nloc, 1, m1)
-        out = out.reshape(-1, 1, self.embedding_width)
+        out = xp.reshape(out, (-1, 1, self.embedding_width))
         # (nframes * nloc, m1, 3)
-        gr = gr.reshape(nframes * nloc, -1, 3)
+        gr = xp.reshape(gr, (nframes * nloc, -1, 3))
         # (nframes, nloc, 3)
-        out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        # out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        out = out @ gr
+        out = xp.reshape(out, (nframes, nloc, 3))
         return {self.var_name: out}

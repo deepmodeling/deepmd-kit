@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 
 class NeighborStatOP:
-    """Class for getting neighbor statics data information.
+    """Class for getting neighbor statistics data information.
 
     Parameters
     ----------

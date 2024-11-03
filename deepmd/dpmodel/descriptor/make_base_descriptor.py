@@ -116,7 +116,7 @@ def make_base_descriptor(
             """
             Share the parameters of self to the base_class with shared_level during multitask training.
             If not start from checkpoint (resume is False),
-            some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+            some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
             """
             pass
 
@@ -146,6 +146,31 @@ def make_base_descriptor(
         ):
             """Update mean and stddev for descriptor elements."""
             raise NotImplementedError
+
+        def enable_compression(
+            self,
+            min_nbor_dist: float,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+            Parameters
+            ----------
+            min_nbor_dist
+                The nearest distance between atoms
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            raise NotImplementedError("This descriptor doesn't support compression!")
 
         @abstractmethod
         def fwd(
@@ -194,7 +219,7 @@ def make_base_descriptor(
             Parameters
             ----------
             train_data : DeepmdDataSystem
-                data used to do neighbor statictics
+                data used to do neighbor statistics
             type_map : list[str], optional
                 The name of each type of atoms
             local_jdata : dict

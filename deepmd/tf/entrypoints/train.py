@@ -114,7 +114,7 @@ def train(
         mpi_log=mpi_log,
     )
     if run_opt.is_distrib and len(run_opt.gpus or []) > 1:
-        # avoid conflict of visible gpus among multipe tf sessions in one process
+        # avoid conflict of visible gpus among multiple tf sessions in one process
         reset_default_tf_session_config(cpu_only=True)
 
     # load json database

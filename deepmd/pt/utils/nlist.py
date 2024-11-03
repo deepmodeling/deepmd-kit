@@ -56,7 +56,7 @@ def build_neighbor_list(
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> torch.Tensor:
-    """Build neightbor list for a single frame. keeps nsel neighbors.
+    """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
@@ -264,7 +264,7 @@ def build_directional_neighbor_list(
     rr = torch.linalg.norm(diff, dim=-1)
     rr, nlist = torch.sort(rr, dim=-1)
 
-    # We assume that the central and neighbor atoms are diffferent,
+    # We assume that the central and neighbor atoms are different,
     # thus we do not need to exclude self-neighbors.
     # # if central atom has two zero distances, sorting sometimes can not exclude itself
     # rr -= torch.eye(nloc_cntl, nall_neig, dtype=rr.dtype, device=rr.device).unsqueeze(0)
@@ -429,7 +429,7 @@ def extend_coord_with_ghosts(
     extended_atype: torch.Tensor
         extended atom type of shape [-1, nall].
     index_mapping: torch.Tensor
-        maping extended index to the local index
+        mapping extended index to the local index
 
     """
     device = coord.device

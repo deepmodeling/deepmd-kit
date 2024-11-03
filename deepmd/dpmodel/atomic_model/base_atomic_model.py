@@ -158,7 +158,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         Parameters
         ----------
         extended_coord
-            extended coodinates, shape: nf x (nall x 3)
+            extended coordinates, shape: nf x (nall x 3)
         extended_atype
             extended atom typs, shape: nf x nall
             for a type < 0 indicating the atomic is virtual.
