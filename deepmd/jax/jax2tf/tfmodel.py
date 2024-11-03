@@ -266,7 +266,7 @@ class TFModelWrapper(tf.Module):
 
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        return self.nsel
+        return self.get_nsel()
 
     def get_sel(self) -> list[int]:
         return self.sel
