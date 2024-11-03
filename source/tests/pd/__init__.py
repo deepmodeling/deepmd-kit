@@ -2,4 +2,5 @@
 from deepmd.pd.utils import (
     env,
 )
+
 env.enable_prim(True)
