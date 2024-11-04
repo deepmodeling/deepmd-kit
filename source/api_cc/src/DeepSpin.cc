@@ -62,7 +62,7 @@ void DeepSpin::init(const std::string& model,
     throw deepmd::deepmd_exception("Unknown file type");
   }
   inited = true;
-  dpbase = dp;
+  dpbase = dp;  // make sure the base funtions work
 }
 
 // support spin

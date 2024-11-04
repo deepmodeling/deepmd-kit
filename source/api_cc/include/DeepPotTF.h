@@ -16,7 +16,7 @@ class DeepPotTF : public DeepPotBase {
    * @brief DP constructor without initialization.
    **/
   DeepPotTF();
-  ~DeepPotTF();
+  virtual ~DeepPotTF();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.

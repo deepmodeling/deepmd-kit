@@ -16,7 +16,7 @@ class DeepSpinTF : public DeepSpinBase {
    * @brief DP constructor without initialization.
    **/
   DeepSpinTF();
-  ~DeepSpinTF();
+  virtual ~DeepSpinTF();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
