@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// skip this test for memory sanitizer, need more work to fix
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/stat.h>
