@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
 import write_lmp_data
-#box = np.array([0, 10, 0, 10, 0, 10, 0, 0, 0])
-#coord = np.array(
+
+# box = np.array([0, 10, 0, 10, 0, 10, 0, 0, 0])
+# coord = np.array(
 #    [
 #        [1.43305000, 0.27562200, 0.16633000],
 #        [1.13861000, 3.43510000, 0.42374000],
@@ -12,8 +14,8 @@ import write_lmp_data
 #        [1.43305000, 0.27562200, 0.16633000],
 #        [1.13861000, 3.43510000, 0.42374000],
 #    ]
-#)
-#type_OH = np.array([1, 1, 2, 2, 2, 2, 3, 3])
+# )
+# type_OH = np.array([1, 1, 2, 2, 2, 2, 3, 3])
 
 box = np.array([0, 20, 0, 20, 0, 20, 0, 0, 0])
 coord = np.array(
@@ -33,4 +35,6 @@ type_OH = np.array([1, 1, 2, 2, 2, 2, 3, 3])
 charge = np.array([6, 6, 1, 1, 1, 1, -8, -8])
 bond_list = (((1, 7), (2, 8)),)
 mass_list = np.array([15.99940, 1.00794, 15.99940])
-write_lmp_data.write_lmp_data_full(box, coord, mol_list, type_OH, charge, "write.out", bond_list, mass_list)
+write_lmp_data.write_lmp_data_full(
+    box, coord, mol_list, type_OH, charge, "write.out", bond_list, mass_list
+)
