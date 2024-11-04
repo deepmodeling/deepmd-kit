@@ -1,4 +1,6 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import numpy as np
+
 expected_f_lr = np.array(
     [
         [0.20445234, 0.27936500, -0.23179282],
