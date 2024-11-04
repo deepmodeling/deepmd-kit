@@ -18,7 +18,7 @@ class DeepPotJAX : public DeepPotBase {
    * @brief DP constructor without initialization.
    **/
   DeepPotJAX();
-  ~DeepPotJAX();
+  virtual ~DeepPotJAX();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.

@@ -89,9 +89,9 @@ class TestInferDeepPotAJAX : public ::testing::Test {
         expected_tot_v[dd] += expected_v[ii * 9 + dd];
       }
     }
-  };
+  }
 
-  void TearDown() override {};
+  void TearDown() override {}
 };
 
 TYPED_TEST_SUITE(TestInferDeepPotAJAX, ValueTypes);
