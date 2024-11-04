@@ -171,7 +171,7 @@ class DeepSpin : public DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepSpin();
-  ~DeepSpin();
+  virtual ~DeepSpin();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -432,7 +432,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepSpinModelDevi();
-  ~DeepSpinModelDevi();
+  virtual ~DeepSpinModelDevi();
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model files.

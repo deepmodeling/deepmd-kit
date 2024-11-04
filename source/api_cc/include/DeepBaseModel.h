@@ -86,7 +86,7 @@ class DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepBaseModel();
-  ~DeepBaseModel();
+  virtual ~DeepBaseModel();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -153,7 +153,7 @@ class DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepBaseModelDevi();
-  ~DeepBaseModelDevi();
+  virtual ~DeepBaseModelDevi();
 
   /**
    * @brief Get the cutoff radius.

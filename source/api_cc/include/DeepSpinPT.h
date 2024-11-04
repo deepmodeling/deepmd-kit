@@ -16,7 +16,7 @@ class DeepSpinPT : public DeepSpinBase {
    * @brief DP constructor without initialization.
    **/
   DeepSpinPT();
-  ~DeepSpinPT();
+  virtual ~DeepSpinPT();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.

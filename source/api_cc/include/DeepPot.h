@@ -210,7 +210,7 @@ class DeepPot : public DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepPot();
-  ~DeepPot();
+  virtual ~DeepPot();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -532,7 +532,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepPotModelDevi();
-  ~DeepPotModelDevi();
+  virtual ~DeepPotModelDevi();
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model files.
