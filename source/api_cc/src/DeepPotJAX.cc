@@ -123,6 +123,7 @@ inline std::vector<T> get_vector(TFE_Context* ctx,
   std::vector<T> result;
   tensor_to_vector(result, retval, status);
   // deallocate
+  TFE_DeleteTensorHandle(retval);
   TFE_DeleteOp(op);
   return result;
 }
