@@ -45,7 +45,7 @@ jobs:
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
-        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak -DENABLE_SANITIZE=1' || '' }}
+        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
     # test lammps
     - run: |
         export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
