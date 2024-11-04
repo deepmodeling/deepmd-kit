@@ -8,11 +8,8 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
       lammps_download
       GIT_REPOSITORY https://github.com/lammps/lammps
       GIT_TAG ${LAMMPS_VERSION})
-    FetchContent_GetProperties(lammps_download)
-    if(NOT lammps_download_POPULATED)
-      FetchContent_Populate(lammps_download)
-      set(LAMMPS_SOURCE_ROOT ${lammps_download_SOURCE_DIR})
-    endif()
+    FetchContent_MakeAvailable(lammps_download)
+    set(LAMMPS_SOURCE_ROOT ${lammps_download_SOURCE_DIR})
   endif()
   set(LAMMPS_HEADER_DIR ${LAMMPS_SOURCE_ROOT}/src)
   message(STATUS "LAMMPS_HEADER_DIR is ${LAMMPS_HEADER_DIR}")
@@ -77,7 +74,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_precompile_headers(${libname} PUBLIC [["deepmd.hpp"]])
     remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     if("$ENV{CIBUILDWHEEL}" STREQUAL "1" OR "$ENV{LMP_CXX11_ABI_0}" STREQUAL
-                                            "1")
+                                           "1")
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
     endif()
   else()
@@ -96,7 +93,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set_target_properties(${libname} PROPERTIES LINK_FLAGS
-                                                "-Wl,-undefined,dynamic_lookup")
+                                               "-Wl,-undefined,dynamic_lookup")
   else()
     set_target_properties(
       ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}"
