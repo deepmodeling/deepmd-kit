@@ -431,3 +431,10 @@ TYPED_TEST(TestInferDeepPotAJAX, print_summary) {
   deepmd::DeepPot& dp = this->dp;
   dp.print_summary("");
 }
+
+TYPED_TEST(TestInferDeepPotAJAX, get_type_map) {
+  deepmd::DeepPot& dp = this->dp;
+  std::string type_map;
+  dp.get_type_map(type_map);
+  EXPECT_EQ(type_map, "O H");
+}

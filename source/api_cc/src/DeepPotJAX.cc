@@ -143,14 +143,17 @@ inline std::vector<std::string> get_vector_string(
   TFE_TensorHandle* retval = retvals[0];
   TF_Tensor* tensor = TFE_TensorHandleResolve(retval, status);
   check_status(status);
-  char* data = (char*)TF_TensorData(tensor);
   // calculate the number of bytes in each string
   int64_t bytes_each_string =
       TF_TensorByteSize(tensor) / TF_TensorElementCount(tensor);
   // copy data
   std::vector<std::string> result;
   for (int ii = 0; ii < TF_TensorElementCount(tensor); ++ii) {
-    result.push_back(std::string(data + ii * bytes_each_string));
+    const TF_TString* datastr = static_cast<const TF_TString*>(
+        TF_TensorData(tensor) + ii * bytes_each_string);
+    const char* dst = TF_TString_GetDataPointer(datastr);
+    size_t dst_len = TF_TString_GetSize(datastr);
+    result.push_back(std::string(dst, dst_len));
   }
 
   // deallocate
