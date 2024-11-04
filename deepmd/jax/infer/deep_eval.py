@@ -90,15 +90,24 @@ class DeepEval(DeepEvalBackend):
         self.output_def = output_def
         self.model_path = model_file
 
-        model_data = load_dp_model(model_file)
-        self.dp = HLO(
-            stablehlo=model_data["@variables"]["stablehlo"].tobytes(),
-            stablehlo_atomic_virial=model_data["@variables"][
-                "stablehlo_atomic_virial"
-            ].tobytes(),
-            model_def_script=model_data["model_def_script"],
-            **model_data["constants"],
-        )
+        if model_file.endswith(".hlo"):
+            model_data = load_dp_model(model_file)
+            self.dp = HLO(
+                stablehlo=model_data["@variables"]["stablehlo"].tobytes(),
+                stablehlo_atomic_virial=model_data["@variables"][
+                    "stablehlo_atomic_virial"
+                ].tobytes(),
+                model_def_script=model_data["model_def_script"],
+                **model_data["constants"],
+            )
+        elif model_file.endswith(".savedmodel"):
+            from deepmd.jax.jax2tf.tfmodel import (
+                TFModelWrapper,
+            )
+
+            self.dp = TFModelWrapper(model_file)
+        else:
+            raise ValueError("Unsupported file extension")
         self.rcut = self.dp.get_rcut()
         self.type_map = self.dp.get_type_map()
         if isinstance(auto_batch_size, bool):
