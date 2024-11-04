@@ -282,8 +282,14 @@ void PairDeepMDBase::cum_sum(std::map<int, int> &sum, std::map<int, int> &vec) {
   }
 }
 
-PairDeepMDBase::PairDeepMDBase(LAMMPS *lmp, const char *cite_user_package)
-    : Pair(lmp)
+PairDeepMDBase::PairDeepMDBase(
+    LAMMPS *lmp,
+    const char *cite_user_package,
+    deepmd_compat::DeepBaseModel &deep_model,
+    deepmd_compat::DeepBaseModelDevi &deep_model_devi)
+    : Pair(lmp),
+      deep_base(deep_model),
+      deep_base_model_devi(deep_model_devi)
 
 {
   if (lmp->citeme) {
@@ -347,7 +353,7 @@ void PairDeepMDBase::print_summary(const string pre) const {
 
     cout << "Summary of lammps deepmd module ..." << endl;
     cout << pre << ">>> Info of deepmd-kit:" << endl;
-    deep_pot.print_summary(pre);
+    deep_base.print_summary(pre);
     cout << pre << ">>> Info of lammps module:" << endl;
     cout << pre << "use deepmd-kit at:  " << STR_DEEPMD_ROOT << endl;
     cout << pre << "source:             " << STR_GIT_SUMM << endl;
@@ -398,289 +404,6 @@ void PairDeepMDBase::allocate() {
   }
 }
 
-static bool is_key(const string &input) {
-  vector<string> keys;
-  keys.push_back("out_freq");
-  keys.push_back("out_file");
-  keys.push_back("fparam");
-  keys.push_back("aparam");
-  keys.push_back("fparam_from_compute");
-  keys.push_back("aparam_from_compute");
-  keys.push_back("ttm");
-  keys.push_back("atomic");
-  keys.push_back("relative");
-  keys.push_back("relative_v");
-  keys.push_back("virtual_len");
-  keys.push_back("spin_norm");
-
-  for (int ii = 0; ii < keys.size(); ++ii) {
-    if (input == keys[ii]) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void PairDeepMDBase::settings(int narg, char **arg) {
-  if (narg <= 0) {
-    error->all(FLERR, "Illegal pair_style command");
-  }
-
-  vector<string> models;
-  int iarg = 0;
-  while (iarg < narg) {
-    if (is_key(arg[iarg])) {
-      break;
-    }
-    iarg++;
-  }
-  for (int ii = 0; ii < iarg; ++ii) {
-    models.push_back(arg[ii]);
-  }
-  numb_models = models.size();
-  if (numb_models == 1) {
-    try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd_compat::deepmd_exception &e) {
-      error->one(FLERR, e.what());
-    }
-    cutoff = deep_pot.cutoff() * dist_unit_cvt_factor;
-    numb_types = deep_pot.numb_types();
-    numb_types_spin = deep_pot.numb_types_spin();
-    dim_fparam = deep_pot.dim_fparam();
-    dim_aparam = deep_pot.dim_aparam();
-  } else {
-    try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-      deep_pot_model_devi.init(models, get_node_rank(),
-                               get_file_content(models));
-    } catch (deepmd_compat::deepmd_exception &e) {
-      error->one(FLERR, e.what());
-    }
-    cutoff = deep_pot_model_devi.cutoff() * dist_unit_cvt_factor;
-    numb_types = deep_pot_model_devi.numb_types();
-    numb_types_spin = deep_pot_model_devi.numb_types_spin();
-    dim_fparam = deep_pot_model_devi.dim_fparam();
-    dim_aparam = deep_pot_model_devi.dim_aparam();
-    assert(cutoff == deep_pot.cutoff() * dist_unit_cvt_factor);
-    assert(numb_types == deep_pot.numb_types());
-    assert(numb_types_spin == deep_pot.numb_types_spin());
-    assert(dim_fparam == deep_pot.dim_fparam());
-    assert(dim_aparam == deep_pot.dim_aparam());
-  }
-
-  out_freq = 100;
-  out_file = "model_devi.out";
-  out_each = 0;
-  out_rel = 0;
-  eps = 0.;
-  fparam.clear();
-  aparam.clear();
-  while (iarg < narg) {
-    if (!is_key(arg[iarg])) {
-      error->all(FLERR,
-                 "Illegal pair_style command\nwrong number of parameters\n");
-    }
-    if (string(arg[iarg]) == string("out_freq")) {
-      if (iarg + 1 >= narg) {
-        error->all(FLERR, "Illegal out_freq, not provided");
-      }
-      out_freq = atoi(arg[iarg + 1]);
-      iarg += 2;
-    } else if (string(arg[iarg]) == string("out_file")) {
-      if (iarg + 1 >= narg) {
-        error->all(FLERR, "Illegal out_file, not provided");
-      }
-      out_file = string(arg[iarg + 1]);
-      iarg += 2;
-    } else if (string(arg[iarg]) == string("fparam")) {
-      for (int ii = 0; ii < dim_fparam; ++ii) {
-        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          char tmp[1024];
-          sprintf(tmp, "Illegal fparam, the dimension should be %d",
-                  dim_fparam);
-          error->all(FLERR, tmp);
-        }
-        fparam.push_back(atof(arg[iarg + 1 + ii]));
-      }
-      iarg += 1 + dim_fparam;
-    } else if (string(arg[iarg]) == string("aparam")) {
-      for (int ii = 0; ii < dim_aparam; ++ii) {
-        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          char tmp[1024];
-          sprintf(tmp, "Illegal aparam, the dimension should be %d",
-                  dim_aparam);
-          error->all(FLERR, tmp);
-        }
-        aparam.push_back(atof(arg[iarg + 1 + ii]));
-      }
-      iarg += 1 + dim_aparam;
-    } else if (string(arg[iarg]) == string("ttm")) {
-#ifdef USE_TTM
-      for (int ii = 0; ii < 1; ++ii) {
-        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          error->all(FLERR, "invalid ttm key: should be ttm ttm_fix_id(str)");
-        }
-      }
-      do_ttm = true;
-      ttm_fix_id = arg[iarg + 1];
-      iarg += 1 + 1;
-#else
-      error->all(FLERR,
-                 "The deepmd-kit was compiled without support for TTM, please "
-                 "rebuild it with LAMMPS version >=20210831");
-#endif
-    }
-
-    ///////////////////////////////////////////////
-    // pair_style     deepmd cp.pb fparam_from_compute TEMP
-    // compute        TEMP all temp
-    //////////////////////////////////////////////
-    else if (string(arg[iarg]) == string("fparam_from_compute")) {
-      for (int ii = 0; ii < 1; ++ii) {
-        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          error->all(FLERR,
-                     "invalid fparam_from_compute key: should be "
-                     "fparam_from_compute compute_fparam_id(str)");
-        }
-      }
-      do_compute_fparam = true;
-      compute_fparam_id = arg[iarg + 1];
-      iarg += 1 + 1;
-    } else if (string(arg[iarg]) == string("aparam_from_compute")) {
-      for (int ii = 0; ii < 1; ++ii) {
-        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          error->all(FLERR,
-                     "invalid aparam_from_compute key: should be "
-                     "aparam_from_compute compute_aparam_id(str)");
-        }
-      }
-      do_compute_aparam = true;
-      compute_aparam_id = arg[iarg + 1];
-      iarg += 1 + 1;
-    } else if (string(arg[iarg]) == string("atomic")) {
-      out_each = 1;
-      iarg += 1;
-    } else if (string(arg[iarg]) == string("relative")) {
-      out_rel = 1;
-      eps = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
-      iarg += 2;
-    } else if (string(arg[iarg]) == string("relative_v")) {
-      out_rel_v = 1;
-      eps_v = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
-      iarg += 2;
-    } else if (string(arg[iarg]) == string("virtual_len")) {
-      virtual_len.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        virtual_len[ii] = atof(arg[iarg + ii + 1]);
-      }
-      iarg += numb_types_spin + 1;
-    } else if (string(arg[iarg]) == string("spin_norm")) {
-      spin_norm.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        spin_norm[ii] = atof(arg[iarg + ii + 1]);
-      }
-      iarg += numb_types_spin + 1;
-    }
-  }
-
-  if (out_freq < 0) {
-    error->all(FLERR, "Illegal out_freq, should be >= 0");
-  }
-  if ((int)do_ttm + (int)do_compute_aparam + (int)(aparam.size() > 0) > 1) {
-    error->all(FLERR,
-               "aparam, aparam_from_compute, and ttm should NOT be set "
-               "simultaneously");
-  }
-  if (do_compute_fparam && fparam.size() > 0) {
-    error->all(
-        FLERR,
-        "fparam and fparam_from_compute should NOT be set simultaneously");
-  }
-
-  if (comm->me == 0) {
-    if (numb_models > 1 && out_freq > 0) {
-      if (!is_restart) {
-        fp.open(out_file);
-        fp << scientific;
-        if (!atom->sp_flag) {
-          fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
-             << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
-             << setw(18 + 1) << "max_devi_f" << setw(18 + 1) << "min_devi_f"
-             << setw(18 + 1) << "avg_devi_f";
-          if (out_each) {
-            // at this time, we don't know how many atoms
-            fp << setw(18 + 1) << "atm_devi_f(N)";
-          }
-          fp << endl;
-        } else {
-          fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
-             << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
-             << setw(18 + 1) << "max_devi_fr" << setw(18 + 1) << "min_devi_fr"
-             << setw(18 + 1) << "avg_devi_fr" << setw(18 + 1) << "max_devi_fm"
-             << setw(18 + 1) << "min_devi_fm" << setw(18 + 1) << "avg_devi_fm"
-             << endl;
-        }
-      } else {
-        fp.open(out_file, std::ofstream::out | std::ofstream::app);
-        fp << scientific;
-      }
-    }
-    string pre = "  ";
-    cout << pre << ">>> Info of model(s):" << endl
-         << pre << "using " << setw(3) << numb_models << " model(s): ";
-    if (narg == 1) {
-      cout << arg[0] << " ";
-    } else {
-      for (int ii = 0; ii < models.size(); ++ii) {
-        cout << models[ii] << " ";
-      }
-    }
-    cout << endl
-         << pre << "rcut in model:      " << cutoff << endl
-         << pre << "ntypes in model:    " << numb_types << endl;
-    if (fparam.size() > 0) {
-      cout << pre << "using fparam(s):    ";
-      for (int ii = 0; ii < dim_fparam; ++ii) {
-        cout << fparam[ii] << "  ";
-      }
-      cout << endl;
-    }
-    if (do_compute_fparam) {
-      cout << pre << "using compute id (fparam):      ";
-      cout << compute_fparam_id << "  " << endl;
-    }
-    if (do_compute_aparam) {
-      cout << pre << "using compute id (aparam):      ";
-      cout << compute_aparam_id << "  " << endl;
-    }
-    if (aparam.size() > 0) {
-      cout << pre << "using aparam(s):    ";
-      for (int ii = 0; ii < aparam.size(); ++ii) {
-        cout << aparam[ii] << "  ";
-      }
-      cout << endl;
-    }
-    if (do_ttm) {
-      cout << pre << "using ttm fix:      ";
-      cout << ttm_fix_id << "  ";
-      if (dim_fparam > 0) {
-        cout << "(fparam)" << endl;
-      } else if (dim_aparam > 0) {
-        cout << "(aparam)" << endl;
-      }
-    }
-  }
-
-  // comm_reverse = numb_models * 3;
-  if (atom->sp_flag) {
-    comm_reverse = numb_models * 3 * 2;
-  } else {
-    comm_reverse = numb_models * 3;
-  }
-  all_force.resize(numb_models);
-}
-
 void PairDeepMDBase::read_restart(FILE *) { is_restart = true; }
 
 void PairDeepMDBase::write_restart(FILE *) {
@@ -724,7 +447,7 @@ void PairDeepMDBase::coeff(int narg, char **arg) {
     // the number of types in the system matches that in the model
     std::vector<std::string> type_map;
     std::string type_map_str;
-    deep_pot.get_type_map(type_map_str);
+    deep_base.get_type_map(type_map_str);
     // convert the string to a vector of strings
     std::istringstream iss(type_map_str);
     std::string type_name;

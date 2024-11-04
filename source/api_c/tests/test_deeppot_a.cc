@@ -168,22 +168,22 @@ TEST_F(TestInferDeepPotA, float_infer) {
 }
 
 TEST_F(TestInferDeepPotA, cutoff) {
-  double cutoff = DP_DeepPotGetCutoff(dp);
+  double cutoff = DP_DeepBaseModelGetCutoff((DP_DeepBaseModel*)dp);
   EXPECT_EQ(cutoff, 6.0);
 }
 
 TEST_F(TestInferDeepPotA, numb_types) {
-  int numb_types = DP_DeepPotGetNumbTypes(dp);
+  int numb_types = DP_DeepBaseModelGetNumbTypes((DP_DeepBaseModel*)dp);
   EXPECT_EQ(numb_types, 2);
 }
 
 TEST_F(TestInferDeepPotA, numb_types_spin) {
-  int numb_types_spin = DP_DeepPotGetNumbTypesSpin(dp);
+  int numb_types_spin = DP_DeepBaseModelGetNumbTypesSpin((DP_DeepBaseModel*)dp);
   EXPECT_EQ(numb_types_spin, 0);
 }
 
 TEST_F(TestInferDeepPotA, type_map) {
-  const char* type_map = DP_DeepPotGetTypeMap(dp);
+  const char* type_map = DP_DeepBaseModelGetTypeMap((DP_DeepBaseModel*)dp);
   char expected_type_map[] = "O H";
   EXPECT_EQ(strcmp(type_map, expected_type_map), 0);
   DP_DeleteChar(type_map);

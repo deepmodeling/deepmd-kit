@@ -97,7 +97,7 @@ inline void _DP_DeepPotCompute<float>(DP_DeepPot *dp,
 
 // support spin
 template <typename FPTYPE>
-inline void _DP_DeepPotComputeSP(DP_DeepPot *dp,
+inline void _DP_DeepPotComputeSP(DP_DeepSpin *dp,
                                  const int nframes,
                                  const int natom,
                                  const FPTYPE *coord,
@@ -114,7 +114,7 @@ inline void _DP_DeepPotComputeSP(DP_DeepPot *dp,
                                  FPTYPE *atomic_virial);
 
 template <>
-inline void _DP_DeepPotComputeSP<double>(DP_DeepPot *dp,
+inline void _DP_DeepPotComputeSP<double>(DP_DeepSpin *dp,
                                          const int nframes,
                                          const int natom,
                                          const double *coord,
@@ -129,13 +129,13 @@ inline void _DP_DeepPotComputeSP<double>(DP_DeepPot *dp,
                                          double *virial,
                                          double *atomic_energy,
                                          double *atomic_virial) {
-  DP_DeepPotCompute2SP(dp, nframes, natom, coord, spin, atype, cell, fparam,
-                       aparam, energy, force, force_mag, virial, atomic_energy,
-                       atomic_virial);
+  DP_DeepSpinCompute2(dp, nframes, natom, coord, spin, atype, cell, fparam,
+                      aparam, energy, force, force_mag, virial, atomic_energy,
+                      atomic_virial);
 }
 
 template <>
-inline void _DP_DeepPotComputeSP<float>(DP_DeepPot *dp,
+inline void _DP_DeepPotComputeSP<float>(DP_DeepSpin *dp,
                                         const int nframes,
                                         const int natom,
                                         const float *coord,
@@ -150,9 +150,9 @@ inline void _DP_DeepPotComputeSP<float>(DP_DeepPot *dp,
                                         float *virial,
                                         float *atomic_energy,
                                         float *atomic_virial) {
-  DP_DeepPotComputef2SP(dp, nframes, natom, coord, spin, atype, cell, fparam,
-                        aparam, energy, force, force_mag, virial, atomic_energy,
-                        atomic_virial);
+  DP_DeepSpinComputef2(dp, nframes, natom, coord, spin, atype, cell, fparam,
+                       aparam, energy, force, force_mag, virial, atomic_energy,
+                       atomic_virial);
 }
 
 template <typename FPTYPE>
@@ -219,7 +219,7 @@ inline void _DP_DeepPotComputeNList<float>(DP_DeepPot *dp,
 
 // support spin
 template <typename FPTYPE>
-inline void _DP_DeepPotComputeNListSP(DP_DeepPot *dp,
+inline void _DP_DeepPotComputeNListSP(DP_DeepSpin *dp,
                                       const int nframes,
                                       const int natom,
                                       const FPTYPE *coord,
@@ -239,7 +239,7 @@ inline void _DP_DeepPotComputeNListSP(DP_DeepPot *dp,
                                       FPTYPE *atomic_virial);
 
 template <>
-inline void _DP_DeepPotComputeNListSP<double>(DP_DeepPot *dp,
+inline void _DP_DeepPotComputeNListSP<double>(DP_DeepSpin *dp,
                                               const int nframes,
                                               const int natom,
                                               const double *coord,
@@ -257,13 +257,13 @@ inline void _DP_DeepPotComputeNListSP<double>(DP_DeepPot *dp,
                                               double *virial,
                                               double *atomic_energy,
                                               double *atomic_virial) {
-  DP_DeepPotComputeNList2SP(dp, nframes, natom, coord, spin, atype, cell,
-                            nghost, nlist, ago, fparam, aparam, energy, force,
-                            force_mag, virial, atomic_energy, atomic_virial);
+  DP_DeepSpinComputeNList2(dp, nframes, natom, coord, spin, atype, cell, nghost,
+                           nlist, ago, fparam, aparam, energy, force, force_mag,
+                           virial, atomic_energy, atomic_virial);
 }
 
 template <>
-inline void _DP_DeepPotComputeNListSP<float>(DP_DeepPot *dp,
+inline void _DP_DeepPotComputeNListSP<float>(DP_DeepSpin *dp,
                                              const int nframes,
                                              const int natom,
                                              const float *coord,
@@ -281,9 +281,9 @@ inline void _DP_DeepPotComputeNListSP<float>(DP_DeepPot *dp,
                                              float *virial,
                                              float *atomic_energy,
                                              float *atomic_virial) {
-  DP_DeepPotComputeNListf2SP(dp, nframes, natom, coord, spin, atype, cell,
-                             nghost, nlist, ago, fparam, aparam, energy, force,
-                             force_mag, virial, atomic_energy, atomic_virial);
+  DP_DeepSpinComputeNListf2(dp, nframes, natom, coord, spin, atype, cell,
+                            nghost, nlist, ago, fparam, aparam, energy, force,
+                            force_mag, virial, atomic_energy, atomic_virial);
 }
 
 template <typename FPTYPE>
@@ -449,7 +449,7 @@ inline void _DP_DeepPotModelDeviComputeNList<float>(DP_DeepPotModelDevi *dp,
 }
 
 template <typename FPTYPE>
-inline void _DP_DeepPotModelDeviComputeNListSP(DP_DeepPotModelDevi *dp,
+inline void _DP_DeepPotModelDeviComputeNListSP(DP_DeepSpinModelDevi *dp,
                                                const int natom,
                                                const FPTYPE *coord,
                                                const FPTYPE *spin,
@@ -467,7 +467,7 @@ inline void _DP_DeepPotModelDeviComputeNListSP(DP_DeepPotModelDevi *dp,
                                                FPTYPE *atomic_energy,
                                                FPTYPE *atomic_virial);
 template <>
-inline void _DP_DeepPotModelDeviComputeNListSP<double>(DP_DeepPotModelDevi *dp,
+inline void _DP_DeepPotModelDeviComputeNListSP<double>(DP_DeepSpinModelDevi *dp,
                                                        const int natom,
                                                        const double *coord,
                                                        const double *spin,
@@ -484,12 +484,12 @@ inline void _DP_DeepPotModelDeviComputeNListSP<double>(DP_DeepPotModelDevi *dp,
                                                        double *virial,
                                                        double *atomic_energy,
                                                        double *atomic_virial) {
-  DP_DeepPotModelDeviComputeNList2SP(
+  DP_DeepSpinModelDeviComputeNList2(
       dp, 1, natom, coord, spin, atype, cell, nghost, nlist, ago, fparam,
       aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
 }
 template <>
-inline void _DP_DeepPotModelDeviComputeNListSP<float>(DP_DeepPotModelDevi *dp,
+inline void _DP_DeepPotModelDeviComputeNListSP<float>(DP_DeepSpinModelDevi *dp,
                                                       const int natom,
                                                       const float *coord,
                                                       const float *spin,
@@ -506,7 +506,7 @@ inline void _DP_DeepPotModelDeviComputeNListSP<float>(DP_DeepPotModelDevi *dp,
                                                       float *virial,
                                                       float *atomic_energy,
                                                       float *atomic_virial) {
-  DP_DeepPotModelDeviComputeNListf2SP(
+  DP_DeepSpinModelDeviComputeNListf2(
       dp, 1, natom, coord, spin, atype, cell, nghost, nlist, ago, fparam,
       aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
 }
@@ -837,15 +837,127 @@ void inline convert_nlist(InputNlist &to_nlist,
                             to_nlist.firstneigh);
 }
 /**
+ * @brief Deep Potential Base Model.
+ **/
+class DeepBaseModel {
+ public:
+  /**
+   * @brief DP Base Model constructor without initialization.
+   **/
+  DeepBaseModel() : dpbase(nullptr) {};
+  ~DeepBaseModel() { DP_DeleteDeepBaseModel(dpbase); };
+
+  /**
+   * @brief Get the cutoff radius.
+   * @return The cutoff radius.
+   **/
+  double cutoff() const {
+    assert(dpbase);
+    return DP_DeepBaseModelGetCutoff(dpbase);
+  };
+  /**
+   * @brief Get the number of types.
+   * @return The number of types.
+   **/
+  int numb_types() const {
+    assert(dpbase);
+    return DP_DeepBaseModelGetNumbTypes(dpbase);
+  };
+  /**
+   * @brief Get the number of types with spin.
+   * @return The number of types with spin.
+   **/
+  int numb_types_spin() const {
+    assert(dpbase);
+    return DP_DeepBaseModelGetNumbTypesSpin(dpbase);
+  };
+  /**
+   * @brief Get the type map (element name of the atom types) of this model.
+   * @param[out] type_map The type map of this model.
+   **/
+  void get_type_map(std::string &type_map) {
+    const char *type_map_c = DP_DeepBaseModelGetTypeMap(dpbase);
+    type_map.assign(type_map_c);
+    DP_DeleteChar(type_map_c);
+  };
+  /**
+   * @brief Print the summary of DeePMD-kit, including the version and the build
+   * information.
+   * @param[in] pre The prefix to each line.
+   */
+  void print_summary(const std::string &pre) const {
+    DP_PrintSummary(pre.c_str());
+  }
+  /**
+   * @brief Get the dimension of the frame parameter.
+   * @return The dimension of the frame parameter.
+   **/
+  int dim_fparam() const {
+    assert(dpbase);
+    return dfparam;
+  }
+  /**
+   * @brief Get the dimension of the atomic parameter.
+   * @return The dimension of the atomic parameter.
+   **/
+  int dim_aparam() const {
+    assert(dpbase);
+    return daparam;
+  }
+
+ protected:
+  DP_DeepBaseModel *dpbase;
+  int dfparam;
+  int daparam;
+  bool aparam_nall;
+  template <typename VALUETYPE>
+  void validate_fparam_aparam(const int &nframes,
+                              const int &nloc,
+                              const std::vector<VALUETYPE> &fparam,
+                              const std::vector<VALUETYPE> &aparam) const {
+    if (fparam.size() != dfparam &&
+        fparam.size() != static_cast<size_t>(nframes) * dfparam) {
+      throw deepmd::hpp::deepmd_exception(
+          "the dim of frame parameter provided is not consistent with what the "
+          "model uses");
+    }
+
+    if (aparam.size() != static_cast<size_t>(daparam) * nloc &&
+        aparam.size() != static_cast<size_t>(nframes) * daparam * nloc) {
+      throw deepmd::hpp::deepmd_exception(
+          "the dim of atom parameter provided is not consistent with what the "
+          "model uses");
+    }
+  }
+  template <typename VALUETYPE>
+  void tile_fparam_aparam(std::vector<VALUETYPE> &out_param,
+                          const int &nframes,
+                          const int &dparam,
+                          const std::vector<VALUETYPE> &param) const {
+    if (param.size() == dparam) {
+      out_param.resize(static_cast<size_t>(nframes) * dparam);
+      for (int ii = 0; ii < nframes; ++ii) {
+        std::copy(param.begin(), param.end(),
+                  out_param.begin() + static_cast<std::ptrdiff_t>(ii) * dparam);
+      }
+    } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
+      out_param = param;
+    }
+  }
+};
+
+/**
  * @brief Deep Potential.
  **/
-class DeepPot {
+class DeepPot : public DeepBaseModel {
  public:
   /**
    * @brief DP constructor without initialization.
    **/
   DeepPot() : dp(nullptr) {};
-  ~DeepPot() { DP_DeleteDeepPot(dp); };
+  ~DeepPot() {
+    // the base destructor will be called
+  };
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -883,10 +995,11 @@ class DeepPot {
     }
     dp = DP_NewDeepPotWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
                                  file_content.size());
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
-    dfparam = DP_DeepPotGetDimFParam(dp);
-    daparam = DP_DeepPotGetDimAParam(dp);
-    aparam_nall = DP_DeepPotIsAParamNAll(dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    dfparam = DP_DeepBaseModelGetDimFParam((DP_DeepBaseModel *)dp);
+    daparam = DP_DeepBaseModelGetDimAParam((DP_DeepBaseModel *)dp);
+    aparam_nall = DP_DeepBaseModelIsAParamNAll((DP_DeepBaseModel *)dp);
+    dpbase = (DP_DeepBaseModel *)dp;
   };
 
   /**
@@ -943,73 +1056,7 @@ class DeepPot {
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
                                   nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
-  };
-  // support spin
-  /**
-   * @brief Evaluate the energy, force, magnetic force and virial by using this
-   *DP with spin input.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] force_mag The magnetic force on each atom.
-   * @param[out] virial The virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
-   *be of size nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9 (PBC) or empty (no PBC).
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   * @warning Natoms should not be zero when computing multiple frames.
-   **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
-      ENERGYVTYPE &ener,
-      std::vector<VALUETYPE> &force,
-      std::vector<VALUETYPE> &force_mag,
-      std::vector<VALUETYPE> &virial,
-      const std::vector<VALUETYPE> &coord,
-      const std::vector<VALUETYPE> &spin,
-      const std::vector<int> &atype,
-      const std::vector<VALUETYPE> &box,
-      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
-    assert(nframes * natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == nframes * 9);
-    }
-    const VALUETYPE *coord_ = &coord[0];
-    const VALUETYPE *spin_ = &spin[0];
-    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
-    const int *atype_ = &atype[0];
-    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(static_cast<size_t>(nframes) * natoms * 3);
-    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    VALUETYPE *force_ = &force[0];
-    VALUETYPE *force_mag_ = &force_mag[0];
-    VALUETYPE *virial_ = &virial[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, natoms, fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
-    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-
-    _DP_DeepPotComputeSP<VALUETYPE>(dp, nframes, natoms, coord_, spin_, atype_,
-                                    box_, fparam__, aparam__, ener_, force_,
-                                    force_mag_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -1075,7 +1122,7 @@ class DeepPot {
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
                                   atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
 
   /**
@@ -1104,54 +1151,6 @@ class DeepPot {
    *same aparam.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
-      ENERGYVTYPE &ener,
-      std::vector<VALUETYPE> &force,
-      std::vector<VALUETYPE> &force_mag,
-      std::vector<VALUETYPE> &virial,
-      std::vector<VALUETYPE> &atom_energy,
-      std::vector<VALUETYPE> &atom_virial,
-      const std::vector<VALUETYPE> &coord,
-      const std::vector<VALUETYPE> &spin,
-      const std::vector<int> &atype,
-      const std::vector<VALUETYPE> &box,
-      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
-    assert(nframes * natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == nframes * 9);
-    }
-    const VALUETYPE *coord_ = &coord[0];
-    const VALUETYPE *spin_ = &spin[0];
-    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
-    const int *atype_ = &atype[0];
-
-    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(static_cast<size_t>(nframes) * natoms * 3);
-    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
-    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
-    VALUETYPE *force_ = &force[0];
-    VALUETYPE *force_mag_ = &force_mag[0];
-    VALUETYPE *virial_ = &virial[0];
-    VALUETYPE *atomic_ener_ = &atom_energy[0];
-    VALUETYPE *atomic_virial_ = &atom_virial[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, natoms, fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
-    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-
-    _DP_DeepPotComputeSP<VALUETYPE>(
-        dp, nframes, natoms, coord_, spin_, atype_, box_, fparam__, aparam__,
-        ener_, force_, force_mag_, virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
-  };
 
   /**
    * @brief Evaluate the energy, force and virial by using this DP with the
@@ -1217,55 +1216,7 @@ class DeepPot {
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
-  };
-  // support spin
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
-      ENERGYVTYPE &ener,
-      std::vector<VALUETYPE> &force,
-      std::vector<VALUETYPE> &force_mag,
-      std::vector<VALUETYPE> &virial,
-      const std::vector<VALUETYPE> &coord,
-      const std::vector<VALUETYPE> &spin,
-      const std::vector<int> &atype,
-      const std::vector<VALUETYPE> &box,
-      const int nghost,
-      const InputNlist &lmp_list,
-      const int &ago,
-      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
-    assert(nframes * natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == nframes * 9);
-    }
-    const VALUETYPE *coord_ = &coord[0];
-    const VALUETYPE *spin_ = &spin[0];
-    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
-    const int *atype_ = &atype[0];
-    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(static_cast<size_t>(nframes) * natoms * 3);
-    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    VALUETYPE *force_ = &force[0];
-    VALUETYPE *force_mag_ = &force_mag[0];
-    VALUETYPE *virial_ = &virial[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
-                           fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes,
-                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
-                       aparam);
-    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    _DP_DeepPotComputeNListSP<VALUETYPE>(dp, nframes, natoms, coord_, spin_,
-                                         atype_, box_, nghost, lmp_list.nl, ago,
-                                         fparam__, aparam__, ener_, force_,
-                                         force_mag_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -1341,61 +1292,7 @@ class DeepPot {
                                        box_, nghost, lmp_list.nl, ago, fparam__,
                                        aparam__, ener_, force_, virial_,
                                        atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
-  };
-  // support spin
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
-      ENERGYVTYPE &ener,
-      std::vector<VALUETYPE> &force,
-      std::vector<VALUETYPE> &force_mag,
-      std::vector<VALUETYPE> &virial,
-      std::vector<VALUETYPE> &atom_energy,
-      std::vector<VALUETYPE> &atom_virial,
-      const std::vector<VALUETYPE> &coord,
-      const std::vector<VALUETYPE> &spin,
-      const std::vector<int> &atype,
-      const std::vector<VALUETYPE> &box,
-      const int nghost,
-      const InputNlist &lmp_list,
-      const int &ago,
-      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
-    assert(nframes * natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == nframes * 9);
-    }
-    const VALUETYPE *coord_ = &coord[0];
-    const VALUETYPE *spin_ = &spin[0];
-    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
-    const int *atype_ = &atype[0];
-    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    force.resize(static_cast<size_t>(nframes) * natoms * 3);
-    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
-    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
-    VALUETYPE *force_ = &force[0];
-    VALUETYPE *force_mag_ = &force_mag[0];
-    VALUETYPE *virial_ = &virial[0];
-    VALUETYPE *atomic_ener_ = &atom_energy[0];
-    VALUETYPE *atomic_virial_ = &atom_virial[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
-                           fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes,
-                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
-                       aparam);
-    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    _DP_DeepPotComputeNListSP<VALUETYPE>(
-        dp, nframes, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl,
-        ago, fparam__, aparam__, ener_, force_, force_mag_, virial_,
-        atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
   /**
    * @brief Evaluate the energy, force and virial by using this DP with the
@@ -1452,7 +1349,7 @@ class DeepPot {
     _DP_DeepPotComputeMixedType<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
                                            box_, fparam__, aparam__, ener_,
                                            force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -1518,181 +1415,78 @@ class DeepPot {
     _DP_DeepPotComputeMixedType<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, fparam__, aparam__, ener_,
         force_, virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
-  /**
-   * @brief Get the cutoff radius.
-   * @return The cutoff radius.
-   **/
-  double cutoff() const {
-    assert(dp);
-    return DP_DeepPotGetCutoff(dp);
-  };
-  /**
-   * @brief Get the number of types.
-   * @return The number of types.
-   **/
-  int numb_types() const {
-    assert(dp);
-    return DP_DeepPotGetNumbTypes(dp);
-  };
-  /**
-   * @brief Get the number of types with spin.
-   * @return The number of types with spin.
-   **/
-  int numb_types_spin() const {
-    assert(dp);
-    return DP_DeepPotGetNumbTypesSpin(dp);
-  };
-  /**
-   * @brief Get the type map (element name of the atom types) of this model.
-   * @param[out] type_map The type map of this model.
-   **/
-  void get_type_map(std::string &type_map) {
-    const char *type_map_c = DP_DeepPotGetTypeMap(dp);
-    type_map.assign(type_map_c);
-    DP_DeleteChar(type_map_c);
-  };
-  /**
-   * @brief Print the summary of DeePMD-kit, including the version and the build
-   * information.
-   * @param[in] pre The prefix to each line.
-   */
-  void print_summary(const std::string &pre) const {
-    DP_PrintSummary(pre.c_str());
-  }
-  /**
-   * @brief Get the dimension of the frame parameter.
-   * @return The dimension of the frame parameter.
-   **/
-  int dim_fparam() const {
-    assert(dp);
-    return dfparam;
-  }
-  /**
-   * @brief Get the dimension of the atomic parameter.
-   * @return The dimension of the atomic parameter.
-   **/
-  int dim_aparam() const {
-    assert(dp);
-    return daparam;
-  }
 
  private:
   DP_DeepPot *dp;
-  int dfparam;
-  int daparam;
-  bool aparam_nall;
-  template <typename VALUETYPE>
-  void validate_fparam_aparam(const int &nframes,
-                              const int &nloc,
-                              const std::vector<VALUETYPE> &fparam,
-                              const std::vector<VALUETYPE> &aparam) const {
-    if (fparam.size() != dfparam &&
-        fparam.size() != static_cast<size_t>(nframes) * dfparam) {
-      throw deepmd::hpp::deepmd_exception(
-          "the dim of frame parameter provided is not consistent with what the "
-          "model uses");
-    }
-
-    if (aparam.size() != static_cast<size_t>(daparam) * nloc &&
-        aparam.size() != static_cast<size_t>(nframes) * daparam * nloc) {
-      throw deepmd::hpp::deepmd_exception(
-          "the dim of atom parameter provided is not consistent with what the "
-          "model uses");
-    }
-  }
-  template <typename VALUETYPE>
-  void tile_fparam_aparam(std::vector<VALUETYPE> &out_param,
-                          const int &nframes,
-                          const int &dparam,
-                          const std::vector<VALUETYPE> &param) const {
-    if (param.size() == dparam) {
-      out_param.resize(static_cast<size_t>(nframes) * dparam);
-      for (int ii = 0; ii < nframes; ++ii) {
-        std::copy(param.begin(), param.end(),
-                  out_param.begin() + static_cast<std::ptrdiff_t>(ii) * dparam);
-      }
-    } else if (param.size() == static_cast<size_t>(nframes) * dparam) {
-      out_param = param;
-    }
-  }
 };
 
-/**
- * @brief Deep Potential model deviation.
- **/
-class DeepPotModelDevi {
+class DeepSpin : public DeepBaseModel {
  public:
   /**
-   * @brief DP model deviation constructor without initialization.
+   * @brief DP constructor without initialization.
    **/
-  DeepPotModelDevi() : dp(nullptr) {};
-  ~DeepPotModelDevi() { DP_DeleteDeepPotModelDevi(dp); };
+  DeepSpin() : dp(nullptr) {};
+  ~DeepSpin() {
+    // the base destructor will be called
+  };
   /**
-   * @brief DP model deviation constructor with initialization.
-   * @param[in] models The names of the frozen model file.
+   * @brief DP constructor with initialization.
+   * @param[in] model The name of the frozen model file.
+   * @param[in] gpu_rank The GPU rank.
+   * @param[in] file_content The content of the frozen model file.
    **/
-  DeepPotModelDevi(const std::vector<std::string> &models) : dp(nullptr) {
+  DeepSpin(const std::string &model,
+           const int &gpu_rank = 0,
+           const std::string &file_content = "")
+      : dp(nullptr) {
     try {
-      init(models);
+      init(model, gpu_rank, file_content);
     } catch (...) {
       // Clean up and rethrow, as the destructor will not be called
       if (dp) {
-        DP_DeleteDeepPotModelDevi(dp);
+        DP_DeleteDeepSpin(dp);
       }
       throw;
     }
   };
   /**
-   * @brief Initialize the DP model deviation.
+   * @brief Initialize the DP.
    * @param[in] model The name of the frozen model file.
    * @param[in] gpu_rank The GPU rank.
    * @param[in] file_content The content of the frozen model file.
    **/
-  void init(const std::vector<std::string> &models,
+  void init(const std::string &model,
             const int &gpu_rank = 0,
-            const std::vector<std::string> &file_content =
-                std::vector<std::string>()) {
+            const std::string &file_content = "") {
     if (dp) {
       std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                    "nothing at the second call of initializer"
                 << std::endl;
       return;
     }
-    std::vector<const char *> cstrings;
-    cstrings.reserve(models.size());
-    for (std::string const &str : models) {
-      cstrings.push_back(str.data());
-    }
-
-    std::vector<const char *> c_file_contents;
-    std::vector<int> size_file_contents;
-    c_file_contents.reserve(file_content.size());
-    size_file_contents.reserve(file_content.size());
-    for (std::string const &str : file_content) {
-      c_file_contents.push_back(str.data());
-      size_file_contents.push_back(str.size());
-    }
-
-    dp = DP_NewDeepPotModelDeviWithParam(
-        cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
-        c_file_contents.size(), size_file_contents.data());
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-    numb_models = models.size();
-    dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
-    daparam = DP_DeepPotModelDeviGetDimAParam(dp);
-    aparam_nall = DP_DeepPotModelDeviIsAParamNAll(dp);
+    dp = DP_NewDeepSpinWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
+                                  file_content.size());
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    dfparam = DP_DeepBaseModelGetDimFParam((DP_DeepBaseModel *)dp);
+    daparam = DP_DeepBaseModelGetDimAParam((DP_DeepBaseModel *)dp);
+    aparam_nall = DP_DeepBaseModelIsAParamNAll((DP_DeepBaseModel *)dp);
+    dpbase = (DP_DeepBaseModel *)dp;
   };
 
+  // support spin
   /**
-   * @brief Evaluate the energy, force and virial by using this DP model
-   *deviation.
+   * @brief Evaluate the energy, force, magnetic force and virial by using this
+   *DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
+   * @param[out] force_mag The magnetic force on each atom.
    * @param[out] virial The virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9 (PBC) or empty (no PBC).
@@ -1704,36 +1498,37 @@ class DeepPotModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @warning Natoms should not be zero when computing multiple frames.
    **/
-  template <typename VALUETYPE>
-  void compute(
-      std::vector<double> &ener,
-      std::vector<std::vector<VALUETYPE>> &force,
-      std::vector<std::vector<VALUETYPE>> &virial,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_spin(
+      ENERGYVTYPE &ener,
+      std::vector<VALUETYPE> &force,
+      std::vector<VALUETYPE> &force_mag,
+      std::vector<VALUETYPE> &virial,
       const std::vector<VALUETYPE> &coord,
+      const std::vector<VALUETYPE> &spin,
       const std::vector<int> &atype,
       const std::vector<VALUETYPE> &box,
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = 1;
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *spin_ = &spin[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
-
-    // memory will be continuous for std::vector but not
-    // std::vector<std::vector>
-    std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
-                                      natoms * 3);
-    std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    double *ener_ = &energy_flat[0];
-    VALUETYPE *force_ = &force_flat[0];
-    VALUETYPE *virial_ = &virial_flat[0];
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    VALUETYPE *force_ = &force[0];
+    VALUETYPE *force_mag_ = &force_mag[0];
+    VALUETYPE *virial_ = &virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
@@ -1741,37 +1536,25 @@ class DeepPotModelDevi {
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
-    _DP_DeepPotModelDeviCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_,
-                                           fparam__, aparam__, ener_, force_,
-                                           virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-
-    // reshape
-    ener.resize(numb_models);
-    force.resize(numb_models);
-    virial.resize(numb_models);
-    for (int i = 0; i < numb_models; i++) {
-      ener[i] = energy_flat[i];
-      force[i].resize(static_cast<size_t>(natoms) * 3);
-      virial[i].resize(9);
-      for (int j = 0; j < natoms * 3; j++) {
-        force[i][j] = force_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < 9; j++) {
-        virial[i][j] = virial_flat[i * 9 + j];
-      }
-    }
+    _DP_DeepPotComputeSP<VALUETYPE>(dp, nframes, natoms, coord_, spin_, atype_,
+                                    box_, fparam__, aparam__, ener_, force_,
+                                    force_mag_, virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
+
   /**
-   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
-   *by using this DP model deviation.
+   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
+   *and atomic virial by using this DP with spin input.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
+   * @param[out] force_mag The magnetic force on each atom.
    * @param[out] virial The virial.
    * @param[out] atom_energy The atomic energy.
    * @param[out] atom_virial The atomic virial.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *nframes x natoms x 3.
+   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
+   *be of size nframes x natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
    * @param[in] box The cell of the region. The array should be of size nframes
    *x 9 (PBC) or empty (no PBC).
@@ -1783,42 +1566,44 @@ class DeepPotModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @warning Natoms should not be zero when computing multiple frames.
    **/
-  template <typename VALUETYPE>
-  void compute(
-      std::vector<double> &ener,
-      std::vector<std::vector<VALUETYPE>> &force,
-      std::vector<std::vector<VALUETYPE>> &virial,
-      std::vector<std::vector<VALUETYPE>> &atom_energy,
-      std::vector<std::vector<VALUETYPE>> &atom_virial,
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_spin(
+      ENERGYVTYPE &ener,
+      std::vector<VALUETYPE> &force,
+      std::vector<VALUETYPE> &force_mag,
+      std::vector<VALUETYPE> &virial,
+      std::vector<VALUETYPE> &atom_energy,
+      std::vector<VALUETYPE> &atom_virial,
       const std::vector<VALUETYPE> &coord,
+      const std::vector<VALUETYPE> &spin,
       const std::vector<int> &atype,
       const std::vector<VALUETYPE> &box,
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = 1;
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *spin_ = &spin[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
 
-    std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
-                                      natoms * 3);
-    std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
-                                            natoms);
-    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
-                                            natoms * 9);
-    double *ener_ = &energy_flat[0];
-    VALUETYPE *force_ = &force_flat[0];
-    VALUETYPE *virial_ = &virial_flat[0];
-    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
-    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
+    VALUETYPE *force_ = &force[0];
+    VALUETYPE *force_mag_ = &force_mag[0];
+    VALUETYPE *virial_ = &virial[0];
+    VALUETYPE *atomic_ener_ = &atom_energy[0];
+    VALUETYPE *atomic_virial_ = &atom_virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, natoms, fparam, aparam);
     tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
@@ -1826,131 +1611,19 @@ class DeepPotModelDevi {
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
 
-    _DP_DeepPotModelDeviCompute<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, fparam__, aparam__, ener_, force_,
-        virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-
-    // reshape
-    ener.resize(numb_models);
-    force.resize(numb_models);
-    virial.resize(numb_models);
-    atom_energy.resize(numb_models);
-    atom_virial.resize(numb_models);
-    for (int i = 0; i < numb_models; i++) {
-      ener[i] = energy_flat[i];
-      force[i].resize(static_cast<size_t>(natoms) * 3);
-      virial[i].resize(9);
-      atom_energy[i].resize(natoms);
-      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
-      for (int j = 0; j < natoms * 3; j++) {
-        force[i][j] = force_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < 9; j++) {
-        virial[i][j] = virial_flat[i * 9 + j];
-      }
-      for (int j = 0; j < natoms; j++) {
-        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
-      }
-      for (int j = 0; j < natoms * 9; j++) {
-        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
-      }
-    }
+    _DP_DeepPotComputeSP<VALUETYPE>(
+        dp, nframes, natoms, coord_, spin_, atype_, box_, fparam__, aparam__,
+        ener_, force_, force_mag_, virial_, atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
 
-  /**
-   * @brief Evaluate the energy, force and virial by using this DP model
-   *deviation.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] virial The virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9 (PBC) or empty (no PBC).
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] nlist The neighbor list.
-   * @param[in] ago Update the internal neighbour list if ago is 0.
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   **/
-  template <typename VALUETYPE>
-  void compute(
-      std::vector<double> &ener,
-      std::vector<std::vector<VALUETYPE>> &force,
-      std::vector<std::vector<VALUETYPE>> &virial,
-      const std::vector<VALUETYPE> &coord,
-      const std::vector<int> &atype,
-      const std::vector<VALUETYPE> &box,
-      const int nghost,
-      const InputNlist &lmp_list,
-      const int &ago,
-      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = 1;
-    assert(natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == 9);
-    }
-    const VALUETYPE *coord_ = &coord[0];
-    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
-    const int *atype_ = &atype[0];
-
-    // memory will be continuous for std::vector but not
-    // std::vector<std::vector>
-    std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
-                                      natoms * 3);
-    std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    double *ener_ = &energy_flat[0];
-    VALUETYPE *force_ = &force_flat[0];
-    VALUETYPE *virial_ = &virial_flat[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
-                           fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes,
-                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
-                       aparam);
-    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-
-    _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
-        aparam__, ener_, force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-
-    // reshape
-    ener.resize(numb_models);
-    force.resize(numb_models);
-    virial.resize(numb_models);
-    for (int i = 0; i < numb_models; i++) {
-      ener[i] = energy_flat[i];
-      force[i].resize(static_cast<size_t>(natoms) * 3);
-      virial[i].resize(9);
-      for (int j = 0; j < natoms * 3; j++) {
-        force[i][j] = force_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < 9; j++) {
-        virial[i][j] = virial_flat[i * 9 + j];
-      }
-    }
-  };
   // support spin
-  template <typename VALUETYPE>
+  template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute_spin(
-      std::vector<double> &ener,
-      std::vector<std::vector<VALUETYPE>> &force,
-      std::vector<std::vector<VALUETYPE>> &force_mag,
-      std::vector<std::vector<VALUETYPE>> &virial,
+      ENERGYVTYPE &ener,
+      std::vector<VALUETYPE> &force,
+      std::vector<VALUETYPE> &force_mag,
+      std::vector<VALUETYPE> &virial,
       const std::vector<VALUETYPE> &coord,
       const std::vector<VALUETYPE> &spin,
       const std::vector<int> &atype,
@@ -1961,26 +1634,22 @@ class DeepPotModelDevi {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = 1;
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
     const VALUETYPE *spin_ = &spin[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
-    // memory will be continous for std::vector but not std::vector<std::vector>
-    std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
-                                      natoms * 3);
-    std::vector<VALUETYPE> force_mag_flat(static_cast<size_t>(numb_models) *
-                                          natoms * 3);
-    std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    double *ener_ = &energy_flat[0];
-    VALUETYPE *force_ = &force_flat[0];
-    VALUETYPE *force_mag_ = &force_mag_flat[0];
-    VALUETYPE *virial_ = &virial_flat[0];
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    VALUETYPE *force_ = &force[0];
+    VALUETYPE *force_mag_ = &force_mag[0];
+    VALUETYPE *virial_ = &virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
                            fparam, aparam);
@@ -1990,145 +1659,22 @@ class DeepPotModelDevi {
                        aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    _DP_DeepPotModelDeviComputeNListSP<VALUETYPE>(
-        dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, force_mag_, virial_, nullptr,
-        nullptr);
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-    // reshape
-    ener.resize(numb_models);
-    force.resize(numb_models);
-    force_mag.resize(numb_models);
-    virial.resize(numb_models);
-    for (int i = 0; i < numb_models; i++) {
-      ener[i] = energy_flat[i];
-      force[i].resize(static_cast<size_t>(natoms) * 3);
-      force_mag[i].resize(static_cast<size_t>(natoms) * 3);
-      virial[i].resize(9);
-      for (int j = 0; j < natoms * 3; j++) {
-        force[i][j] = force_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < natoms * 3; j++) {
-        force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < 9; j++) {
-        virial[i][j] = virial_flat[i * 9 + j];
-      }
-    }
+    _DP_DeepPotComputeNListSP<VALUETYPE>(dp, nframes, natoms, coord_, spin_,
+                                         atype_, box_, nghost, lmp_list.nl, ago,
+                                         fparam__, aparam__, ener_, force_,
+                                         force_mag_, virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
-  /**
-   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
-   *by using this DP model deviation.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] virial The virial.
-   * @param[out] atom_energy The atomic energy.
-   * @param[out] atom_virial The atomic virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9 (PBC) or empty (no PBC).
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] nlist The neighbor list.
-   * @param[in] ago Update the internal neighbour list if ago is 0.
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   **/
-  template <typename VALUETYPE>
-  void compute(
-      std::vector<double> &ener,
-      std::vector<std::vector<VALUETYPE>> &force,
-      std::vector<std::vector<VALUETYPE>> &virial,
-      std::vector<std::vector<VALUETYPE>> &atom_energy,
-      std::vector<std::vector<VALUETYPE>> &atom_virial,
-      const std::vector<VALUETYPE> &coord,
-      const std::vector<int> &atype,
-      const std::vector<VALUETYPE> &box,
-      const int nghost,
-      const InputNlist &lmp_list,
-      const int &ago,
-      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = 1;
-    assert(natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == 9);
-    }
-    const VALUETYPE *coord_ = &coord[0];
-    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
-    const int *atype_ = &atype[0];
 
-    std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
-                                      natoms * 3);
-    std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
-                                            natoms);
-    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
-                                            natoms * 9);
-    double *ener_ = &energy_flat[0];
-    VALUETYPE *force_ = &force_flat[0];
-    VALUETYPE *virial_ = &virial_flat[0];
-    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
-    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
-                           fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes,
-                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
-                       aparam);
-    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-
-    _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
-        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
-        aparam__, ener_, force_, virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-
-    // reshape
-    ener.resize(numb_models);
-    force.resize(numb_models);
-    virial.resize(numb_models);
-    atom_energy.resize(numb_models);
-    atom_virial.resize(numb_models);
-    for (int i = 0; i < numb_models; i++) {
-      ener[i] = energy_flat[i];
-      force[i].resize(static_cast<size_t>(natoms) * 3);
-      virial[i].resize(9);
-      atom_energy[i].resize(natoms);
-      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
-      for (int j = 0; j < natoms * 3; j++) {
-        force[i][j] = force_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < 9; j++) {
-        virial[i][j] = virial_flat[i * 9 + j];
-      }
-      for (int j = 0; j < natoms; j++) {
-        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
-      }
-      for (int j = 0; j < natoms * 9; j++) {
-        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
-      }
-    }
-  };
   // support spin
-  template <typename VALUETYPE>
+  template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute_spin(
-      std::vector<double> &ener,
-      std::vector<std::vector<VALUETYPE>> &force,
-      std::vector<std::vector<VALUETYPE>> &force_mag,
-      std::vector<std::vector<VALUETYPE>> &virial,
-      std::vector<std::vector<VALUETYPE>> &atom_energy,
-      std::vector<std::vector<VALUETYPE>> &atom_virial,
+      ENERGYVTYPE &ener,
+      std::vector<VALUETYPE> &force,
+      std::vector<VALUETYPE> &force_mag,
+      std::vector<VALUETYPE> &virial,
+      std::vector<VALUETYPE> &atom_energy,
+      std::vector<VALUETYPE> &atom_virial,
       const std::vector<VALUETYPE> &coord,
       const std::vector<VALUETYPE> &spin,
       const std::vector<int> &atype,
@@ -2139,31 +1685,26 @@ class DeepPotModelDevi {
       const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
       const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
-    unsigned int nframes = 1;
-    assert(natoms * 3 == coord.size());
+    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
+    assert(nframes * natoms * 3 == coord.size());
     if (!box.empty()) {
-      assert(box.size() == 9);
+      assert(box.size() == nframes * 9);
     }
     const VALUETYPE *coord_ = &coord[0];
     const VALUETYPE *spin_ = &spin[0];
     const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
     const int *atype_ = &atype[0];
-    std::vector<double> energy_flat(numb_models);
-    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
-                                      natoms * 3);
-    std::vector<VALUETYPE> force_mag_flat(static_cast<size_t>(numb_models) *
-                                          natoms * 3);
-    std::vector<VALUETYPE> virial_flat(numb_models * 9);
-    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
-                                            natoms);
-    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
-                                            natoms * 9);
-    double *ener_ = &energy_flat[0];
-    VALUETYPE *force_ = &force_flat[0];
-    VALUETYPE *force_mag_ = &force_mag_flat[0];
-    VALUETYPE *virial_ = &virial_flat[0];
-    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
-    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    double *ener_ = _DP_Get_Energy_Pointer(ener, nframes);
+    force.resize(static_cast<size_t>(nframes) * natoms * 3);
+    force_mag.resize(static_cast<size_t>(nframes) * natoms * 3);
+    virial.resize(static_cast<size_t>(nframes) * 9);
+    atom_energy.resize(static_cast<size_t>(nframes) * natoms);
+    atom_virial.resize(static_cast<size_t>(nframes) * natoms * 9);
+    VALUETYPE *force_ = &force[0];
+    VALUETYPE *force_mag_ = &force_mag[0];
+    VALUETYPE *virial_ = &virial[0];
+    VALUETYPE *atomic_ener_ = &atom_energy[0];
+    VALUETYPE *atomic_virial_ = &atom_virial[0];
     std::vector<VALUETYPE> fparam_, aparam_;
     validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
                            fparam, aparam);
@@ -2173,72 +1714,58 @@ class DeepPotModelDevi {
                        aparam);
     const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-    _DP_DeepPotModelDeviComputeNListSP<VALUETYPE>(
-        dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, force_mag_, virial_, atomic_ener_,
-        atomic_virial_);
-    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
-    // reshape
-    ener.resize(numb_models);
-    force.resize(numb_models);
-    force_mag.resize(numb_models);
-    virial.resize(numb_models);
-    atom_energy.resize(numb_models);
-    atom_virial.resize(numb_models);
-    for (int i = 0; i < numb_models; i++) {
-      ener[i] = energy_flat[i];
-      force[i].resize(static_cast<size_t>(natoms) * 3);
-      force_mag[i].resize(static_cast<size_t>(natoms) * 3);
-      virial[i].resize(9);
-      atom_energy[i].resize(natoms);
-      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
-      for (int j = 0; j < natoms * 3; j++) {
-        force[i][j] = force_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < natoms * 3; j++) {
-        force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
-      }
-      for (int j = 0; j < 9; j++) {
-        virial[i][j] = virial_flat[i * 9 + j];
-      }
-      for (int j = 0; j < natoms; j++) {
-        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
-      }
-      for (int j = 0; j < natoms * 9; j++) {
-        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
-      }
-    }
+    _DP_DeepPotComputeNListSP<VALUETYPE>(
+        dp, nframes, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl,
+        ago, fparam__, aparam__, ener_, force_, force_mag_, virial_,
+        atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
   };
+
+ private:
+  DP_DeepSpin *dp;
+};
+
+/**
+ * @brief Deep Potential base model deviation.
+ **/
+class DeepBaseModelDevi {
+ public:
+  /**
+   * @brief DP model deviation constructor without initialization.
+   **/
+  DeepBaseModelDevi() : dpbase(nullptr) {};
+  ~DeepBaseModelDevi() { DP_DeleteDeepBaseModelDevi(dpbase); };
+
   /**
    * @brief Get the cutoff radius.
    * @return The cutoff radius.
    **/
   double cutoff() const {
-    assert(dp);
-    return DP_DeepPotModelDeviGetCutoff(dp);
+    assert(dpbase);
+    return DP_DeepBaseModelDeviGetCutoff(dpbase);
   };
   /**
    * @brief Get the number of types.
    * @return The number of types.
    **/
   int numb_types() const {
-    assert(dp);
-    return DP_DeepPotModelDeviGetNumbTypes(dp);
+    assert(dpbase);
+    return DP_DeepBaseModelDeviGetNumbTypes(dpbase);
   };
   /**
    * @brief Get the number of types with spin.
    * @return The number of types with spin.
    **/
   int numb_types_spin() const {
-    assert(dp);
-    return DP_DeepPotModelDeviGetNumbTypesSpin(dp);
+    assert(dpbase);
+    return DP_DeepBaseModelDeviGetNumbTypesSpin(dpbase);
   };
   /**
    * @brief Get the dimension of the frame parameter.
    * @return The dimension of the frame parameter.
    **/
   int dim_fparam() const {
-    assert(dp);
+    assert(dpbase);
     return dfparam;
   }
   /**
@@ -2246,7 +1773,7 @@ class DeepPotModelDevi {
    * @return The dimension of the atomic parameter.
    **/
   int dim_aparam() const {
-    assert(dp);
+    assert(dpbase);
     return daparam;
   }
   /**
@@ -2365,8 +1892,8 @@ class DeepPotModelDevi {
     compute_relative_std(std, avg, eps, 3);
   };
 
- private:
-  DP_DeepPotModelDevi *dp;
+ protected:
+  DP_DeepBaseModelDevi *dpbase;
   int numb_models;
   int dfparam;
   int daparam;
@@ -2405,6 +1932,836 @@ class DeepPotModelDevi {
       out_param = param;
     }
   }
+};
+
+/**
+ * @brief Deep Potential model deviation.
+ **/
+class DeepPotModelDevi : public DeepBaseModelDevi {
+ public:
+  /**
+   * @brief DP model deviation constructor without initialization.
+   **/
+  DeepPotModelDevi() : dp(nullptr) {};
+  ~DeepPotModelDevi() {
+    // the base destructor will be called
+  };
+  /**
+   * @brief DP model deviation constructor with initialization.
+   * @param[in] models The names of the frozen model file.
+   **/
+  DeepPotModelDevi(const std::vector<std::string> &models) : dp(nullptr) {
+    try {
+      init(models);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDeepPotModelDevi(dp);
+      }
+      throw;
+    }
+  };
+  /**
+   * @brief Initialize the DP model deviation.
+   * @param[in] model The name of the frozen model file.
+   * @param[in] gpu_rank The GPU rank.
+   * @param[in] file_content The content of the frozen model file.
+   **/
+  void init(const std::vector<std::string> &models,
+            const int &gpu_rank = 0,
+            const std::vector<std::string> &file_content =
+                std::vector<std::string>()) {
+    if (dp) {
+      std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
+                   "nothing at the second call of initializer"
+                << std::endl;
+      return;
+    }
+    std::vector<const char *> cstrings;
+    cstrings.reserve(models.size());
+    for (std::string const &str : models) {
+      cstrings.push_back(str.data());
+    }
+
+    std::vector<const char *> c_file_contents;
+    std::vector<int> size_file_contents;
+    c_file_contents.reserve(file_content.size());
+    size_file_contents.reserve(file_content.size());
+    for (std::string const &str : file_content) {
+      c_file_contents.push_back(str.data());
+      size_file_contents.push_back(str.size());
+    }
+
+    dp = DP_NewDeepPotModelDeviWithParam(
+        cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
+        c_file_contents.size(), size_file_contents.data());
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    numb_models = models.size();
+    dfparam = DP_DeepBaseModelDeviGetDimFParam((DP_DeepBaseModelDevi *)dp);
+    daparam = DP_DeepBaseModelDeviGetDimAParam((DP_DeepBaseModelDevi *)dp);
+    aparam_nall = DP_DeepBaseModelDeviIsAParamNAll((DP_DeepBaseModelDevi *)dp);
+    dpbase = (DP_DeepBaseModelDevi *)dp;
+  };
+
+  /**
+   * @brief Evaluate the energy, force and virial by using this DP model
+   *deviation.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9 (PBC) or empty (no PBC).
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE>
+  void compute(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+
+    // memory will be continuous for std::vector but not
+    // std::vector<std::vector>
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, natoms, fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+
+    _DP_DeepPotModelDeviCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_,
+                                           fparam__, aparam__, ener_, force_,
+                                           virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+    }
+  };
+  /**
+   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
+   *by using this DP model deviation.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[out] atom_energy The atomic energy.
+   * @param[out] atom_virial The atomic virial.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9 (PBC) or empty (no PBC).
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE>
+  void compute(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      std::vector<std::vector<VALUETYPE>> &atom_energy,
+      std::vector<std::vector<VALUETYPE>> &atom_virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
+                                            natoms);
+    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
+                                            natoms * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
+    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, natoms, fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+
+    _DP_DeepPotModelDeviCompute<VALUETYPE>(
+        dp, natoms, coord_, atype_, box_, fparam__, aparam__, ener_, force_,
+        virial_, atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    virial.resize(numb_models);
+    atom_energy.resize(numb_models);
+    atom_virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      atom_energy[i].resize(natoms);
+      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+      for (int j = 0; j < natoms; j++) {
+        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
+      }
+      for (int j = 0; j < natoms * 9; j++) {
+        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
+    }
+  };
+
+  /**
+   * @brief Evaluate the energy, force and virial by using this DP model
+   *deviation.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9 (PBC) or empty (no PBC).
+   * @param[in] nghost The number of ghost atoms.
+   * @param[in] nlist The neighbor list.
+   * @param[in] ago Update the internal neighbour list if ago is 0.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE>
+  void compute(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+
+    // memory will be continuous for std::vector but not
+    // std::vector<std::vector>
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+
+    _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
+        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
+        aparam__, ener_, force_, virial_, nullptr, nullptr);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+    }
+  };
+  // support spin
+  template <typename VALUETYPE>
+  void compute_spin(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &force_mag,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<VALUETYPE> &spin,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *spin_ = &spin[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+    // memory will be continous for std::vector but not std::vector<std::vector>
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> force_mag_flat(static_cast<size_t>(numb_models) *
+                                          natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *force_mag_ = &force_mag_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    _DP_DeepPotModelDeviComputeNListSP<VALUETYPE>(
+        dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
+        fparam__, aparam__, ener_, force_, force_mag_, virial_, nullptr,
+        nullptr);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    force_mag.resize(numb_models);
+    virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      force_mag[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < natoms * 3; j++) {
+        force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+    }
+  };
+  /**
+   * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
+   *by using this DP model deviation.
+   * @param[out] ener The system energy.
+   * @param[out] force The force on each atom.
+   * @param[out] virial The virial.
+   * @param[out] atom_energy The atomic energy.
+   * @param[out] atom_virial The atomic virial.
+   * @param[in] coord The coordinates of atoms. The array should be of size
+   *nframes x natoms x 3.
+   * @param[in] atype The atom types. The list should contain natoms ints.
+   * @param[in] box The cell of the region. The array should be of size nframes
+   *x 9 (PBC) or empty (no PBC).
+   * @param[in] nghost The number of ghost atoms.
+   * @param[in] nlist The neighbor list.
+   * @param[in] ago Update the internal neighbour list if ago is 0.
+   * @param[in] fparam The frame parameter. The array can be of size :
+   * nframes x dim_fparam.
+   * dim_fparam. Then all frames are assumed to be provided with the same
+   *fparam.
+   * @param[in] aparam The atomic parameter The array can be of size :
+   * nframes x natoms x dim_aparam.
+   * natoms x dim_aparam. Then all frames are assumed to be provided with the
+   *same aparam.
+   **/
+  template <typename VALUETYPE>
+  void compute(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      std::vector<std::vector<VALUETYPE>> &atom_energy,
+      std::vector<std::vector<VALUETYPE>> &atom_virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
+                                            natoms);
+    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
+                                            natoms * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
+    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+
+    _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
+        dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
+        aparam__, ener_, force_, virial_, atomic_ener_, atomic_virial_);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    virial.resize(numb_models);
+    atom_energy.resize(numb_models);
+    atom_virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      atom_energy[i].resize(natoms);
+      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+      for (int j = 0; j < natoms; j++) {
+        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
+      }
+      for (int j = 0; j < natoms * 9; j++) {
+        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
+    }
+  };
+  // support spin
+  template <typename VALUETYPE>
+  void compute_spin(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &force_mag,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      std::vector<std::vector<VALUETYPE>> &atom_energy,
+      std::vector<std::vector<VALUETYPE>> &atom_virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<VALUETYPE> &spin,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *spin_ = &spin[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> force_mag_flat(static_cast<size_t>(numb_models) *
+                                          natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
+                                            natoms);
+    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
+                                            natoms * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *force_mag_ = &force_mag_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
+    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    _DP_DeepPotModelDeviComputeNListSP<VALUETYPE>(
+        dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
+        fparam__, aparam__, ener_, force_, force_mag_, virial_, atomic_ener_,
+        atomic_virial_);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    force_mag.resize(numb_models);
+    virial.resize(numb_models);
+    atom_energy.resize(numb_models);
+    atom_virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      force_mag[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      atom_energy[i].resize(natoms);
+      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < natoms * 3; j++) {
+        force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+      for (int j = 0; j < natoms; j++) {
+        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
+      }
+      for (int j = 0; j < natoms * 9; j++) {
+        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
+    }
+  };
+
+ private:
+  DP_DeepPotModelDevi *dp;
+};
+
+class DeepSpinModelDevi : public DeepBaseModelDevi {
+ public:
+  /**
+   * @brief DP model deviation constructor without initialization.
+   **/
+  DeepSpinModelDevi() : dp(nullptr) {};
+  ~DeepSpinModelDevi() {
+    // the base destructor will be called
+  };
+  /**
+   * @brief DP model deviation constructor with initialization.
+   * @param[in] models The names of the frozen model file.
+   **/
+  DeepSpinModelDevi(const std::vector<std::string> &models) : dp(nullptr) {
+    try {
+      init(models);
+    } catch (...) {
+      // Clean up and rethrow, as the destructor will not be called
+      if (dp) {
+        DP_DeleteDeepSpinModelDevi(dp);
+      }
+      throw;
+    }
+  };
+  /**
+   * @brief Initialize the DP model deviation.
+   * @param[in] model The name of the frozen model file.
+   * @param[in] gpu_rank The GPU rank.
+   * @param[in] file_content The content of the frozen model file.
+   **/
+  void init(const std::vector<std::string> &models,
+            const int &gpu_rank = 0,
+            const std::vector<std::string> &file_content =
+                std::vector<std::string>()) {
+    if (dp) {
+      std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
+                   "nothing at the second call of initializer"
+                << std::endl;
+      return;
+    }
+    std::vector<const char *> cstrings;
+    cstrings.reserve(models.size());
+    for (std::string const &str : models) {
+      cstrings.push_back(str.data());
+    }
+
+    std::vector<const char *> c_file_contents;
+    std::vector<int> size_file_contents;
+    c_file_contents.reserve(file_content.size());
+    size_file_contents.reserve(file_content.size());
+    for (std::string const &str : file_content) {
+      c_file_contents.push_back(str.data());
+      size_file_contents.push_back(str.size());
+    }
+
+    dp = DP_NewDeepSpinModelDeviWithParam(
+        cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
+        c_file_contents.size(), size_file_contents.data());
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    numb_models = models.size();
+    dfparam = DP_DeepBaseModelDeviGetDimFParam((DP_DeepBaseModelDevi *)dp);
+    daparam = DP_DeepBaseModelDeviGetDimAParam((DP_DeepBaseModelDevi *)dp);
+    aparam_nall = DP_DeepBaseModelDeviIsAParamNAll((DP_DeepBaseModelDevi *)dp);
+    dpbase = (DP_DeepBaseModelDevi *)dp;
+  };
+  // support spin
+  template <typename VALUETYPE>
+  void compute_spin(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &force_mag,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<VALUETYPE> &spin,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *spin_ = &spin[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+    // memory will be continous for std::vector but not std::vector<std::vector>
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> force_mag_flat(static_cast<size_t>(numb_models) *
+                                          natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *force_mag_ = &force_mag_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    _DP_DeepPotModelDeviComputeNListSP<VALUETYPE>(
+        dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
+        fparam__, aparam__, ener_, force_, force_mag_, virial_, nullptr,
+        nullptr);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    force_mag.resize(numb_models);
+    virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      force_mag[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < natoms * 3; j++) {
+        force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+    }
+  };
+
+  // support spin
+  template <typename VALUETYPE>
+  void compute_spin(
+      std::vector<double> &ener,
+      std::vector<std::vector<VALUETYPE>> &force,
+      std::vector<std::vector<VALUETYPE>> &force_mag,
+      std::vector<std::vector<VALUETYPE>> &virial,
+      std::vector<std::vector<VALUETYPE>> &atom_energy,
+      std::vector<std::vector<VALUETYPE>> &atom_virial,
+      const std::vector<VALUETYPE> &coord,
+      const std::vector<VALUETYPE> &spin,
+      const std::vector<int> &atype,
+      const std::vector<VALUETYPE> &box,
+      const int nghost,
+      const InputNlist &lmp_list,
+      const int &ago,
+      const std::vector<VALUETYPE> &fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE> &aparam = std::vector<VALUETYPE>()) {
+    unsigned int natoms = atype.size();
+    unsigned int nframes = 1;
+    assert(natoms * 3 == coord.size());
+    if (!box.empty()) {
+      assert(box.size() == 9);
+    }
+    const VALUETYPE *coord_ = &coord[0];
+    const VALUETYPE *spin_ = &spin[0];
+    const VALUETYPE *box_ = !box.empty() ? &box[0] : nullptr;
+    const int *atype_ = &atype[0];
+    std::vector<double> energy_flat(numb_models);
+    std::vector<VALUETYPE> force_flat(static_cast<size_t>(numb_models) *
+                                      natoms * 3);
+    std::vector<VALUETYPE> force_mag_flat(static_cast<size_t>(numb_models) *
+                                          natoms * 3);
+    std::vector<VALUETYPE> virial_flat(numb_models * 9);
+    std::vector<VALUETYPE> atom_energy_flat(static_cast<size_t>(numb_models) *
+                                            natoms);
+    std::vector<VALUETYPE> atom_virial_flat(static_cast<size_t>(numb_models) *
+                                            natoms * 9);
+    double *ener_ = &energy_flat[0];
+    VALUETYPE *force_ = &force_flat[0];
+    VALUETYPE *force_mag_ = &force_mag_flat[0];
+    VALUETYPE *virial_ = &virial_flat[0];
+    VALUETYPE *atomic_ener_ = &atom_energy_flat[0];
+    VALUETYPE *atomic_virial_ = &atom_virial_flat[0];
+    std::vector<VALUETYPE> fparam_, aparam_;
+    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
+                           fparam, aparam);
+    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
+    tile_fparam_aparam(aparam_, nframes,
+                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
+                       aparam);
+    const VALUETYPE *fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
+    const VALUETYPE *aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    _DP_DeepPotModelDeviComputeNListSP<VALUETYPE>(
+        dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
+        fparam__, aparam__, ener_, force_, force_mag_, virial_, atomic_ener_,
+        atomic_virial_);
+    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    // reshape
+    ener.resize(numb_models);
+    force.resize(numb_models);
+    force_mag.resize(numb_models);
+    virial.resize(numb_models);
+    atom_energy.resize(numb_models);
+    atom_virial.resize(numb_models);
+    for (int i = 0; i < numb_models; i++) {
+      ener[i] = energy_flat[i];
+      force[i].resize(static_cast<size_t>(natoms) * 3);
+      force_mag[i].resize(static_cast<size_t>(natoms) * 3);
+      virial[i].resize(9);
+      atom_energy[i].resize(natoms);
+      atom_virial[i].resize(static_cast<size_t>(natoms) * 9);
+      for (int j = 0; j < natoms * 3; j++) {
+        force[i][j] = force_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < natoms * 3; j++) {
+        force_mag[i][j] = force_mag_flat[i * natoms * 3 + j];
+      }
+      for (int j = 0; j < 9; j++) {
+        virial[i][j] = virial_flat[i * 9 + j];
+      }
+      for (int j = 0; j < natoms; j++) {
+        atom_energy[i][j] = atom_energy_flat[i * natoms + j];
+      }
+      for (int j = 0; j < natoms * 9; j++) {
+        atom_virial[i][j] = atom_virial_flat[i * natoms * 9 + j];
+      }
+    }
+  };
+
+ private:
+  DP_DeepSpinModelDevi *dp;
 };
 
 /**

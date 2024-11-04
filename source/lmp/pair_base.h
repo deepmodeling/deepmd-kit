@@ -9,9 +9,9 @@
 #include "pair.h"
 #ifdef DP_USE_CXX_API
 #ifdef LMPPLUGIN
-#include "DeepPot.h"
+#include "DeepBaseModel.h"
 #else
-#include "deepmd/DeepPot.h"
+#include "deepmd/DeepBaseModel.h"
 #endif
 namespace deepmd_compat = deepmd;
 #else
@@ -30,10 +30,12 @@ namespace deepmd_compat = deepmd::hpp;
 namespace LAMMPS_NS {
 class PairDeepMDBase : public Pair {
  public:
-  PairDeepMDBase(class LAMMPS *, const char *);
+  PairDeepMDBase(class LAMMPS *,
+                 const char *,
+                 deepmd_compat::DeepBaseModel &,
+                 deepmd_compat::DeepBaseModelDevi &);
   ~PairDeepMDBase() override;
   void *extract(const char *, int &) override;
-  void settings(int, char **) override;
   void coeff(int, char **) override;
   void init_style() override;
   void write_restart(FILE *) override;
@@ -50,8 +52,8 @@ class PairDeepMDBase : public Pair {
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
 
  protected:
-  deepmd_compat::DeepPot deep_pot;
-  deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
+  deepmd_compat::DeepBaseModel deep_base;
+  deepmd_compat::DeepBaseModelDevi deep_base_model_devi;
   virtual void allocate();
   double **scale;
   unsigned numb_models;
@@ -59,7 +61,6 @@ class PairDeepMDBase : public Pair {
   int numb_types;
   int numb_types_spin;
   std::vector<std::vector<double> > all_force;
-  std::vector<std::vector<double> > all_force_mag;
   std::ofstream fp;
   int out_freq;
   std::string out_file;

@@ -2,7 +2,9 @@
 #include <string>
 
 #include "DataModifier.h"
+#include "DeepBaseModel.h"
 #include "DeepPot.h"
+#include "DeepSpin.h"
 #include "DeepTensor.h"
 #include "neighbor_list.h"
 
@@ -33,26 +35,54 @@ struct DP_Nlist {
   std::string exception;
 };
 
-struct DP_DeepPot {
-  DP_DeepPot();
-  DP_DeepPot(deepmd::DeepPot& dp);
+struct DP_DeepBaseModel {
+  DP_DeepBaseModel();
+  DP_DeepBaseModel(deepmd::DeepBaseModel& dpbase);
 
-  deepmd::DeepPot dp;
+  deepmd::DeepBaseModel dpbase;
   std::string exception;
   int dfparam;
   int daparam;
   bool aparam_nall;
 };
 
-struct DP_DeepPotModelDevi {
-  DP_DeepPotModelDevi();
-  DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp);
+struct DP_DeepBaseModelDevi {
+  DP_DeepBaseModelDevi();
+  DP_DeepBaseModelDevi(deepmd::DeepBaseModelDevi& dpbase);
 
-  deepmd::DeepPotModelDevi dp;
+  deepmd::DeepBaseModelDevi dpbase;
   std::string exception;
   int dfparam;
   int daparam;
   bool aparam_nall;
+};
+
+struct DP_DeepPot : DP_DeepBaseModel {
+  DP_DeepPot();
+  DP_DeepPot(deepmd::DeepPot& dp);
+
+  deepmd::DeepPot dp;
+};
+
+struct DP_DeepPotModelDevi : DP_DeepBaseModelDevi {
+  DP_DeepPotModelDevi();
+  DP_DeepPotModelDevi(deepmd::DeepPotModelDevi& dp);
+
+  deepmd::DeepPotModelDevi dp;
+};
+
+struct DP_DeepSpin : DP_DeepBaseModel {
+  DP_DeepSpin();
+  DP_DeepSpin(deepmd::DeepSpin& dp);
+
+  deepmd::DeepSpin dp;
+};
+
+struct DP_DeepSpinModelDevi : DP_DeepBaseModelDevi {
+  DP_DeepSpinModelDevi();
+  DP_DeepSpinModelDevi(deepmd::DeepSpinModelDevi& dp);
+
+  deepmd::DeepSpinModelDevi dp;
 };
 
 struct DP_DeepTensor {

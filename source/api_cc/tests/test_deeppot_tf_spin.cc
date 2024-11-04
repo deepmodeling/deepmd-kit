@@ -9,7 +9,7 @@
 #include <fstream>
 #include <vector>
 
-#include "DeepPot.h"
+#include "DeepSpin.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -37,7 +37,7 @@ class TestInferDeepPotSpin : public ::testing::Test {
   int natoms;
   double expected_tot_e;
 
-  deepmd::DeepPot dp;
+  deepmd::DeepSpin dp;
 
   void SetUp() override {
     std::string file_name = "../../tests/infer/deepspin_nlist.pbtxt";
@@ -71,7 +71,7 @@ TYPED_TEST(TestInferDeepPotSpin, cpu_build_nlist) {
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  deepmd::DeepPot& dp = this->dp;
+  deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
   dp.compute_spin(ener, force, force_mag, virial, coord, spin, atype, box);
@@ -95,7 +95,7 @@ TYPED_TEST(TestInferDeepPotSpin, cpu_build_nlist_atomic) {
   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
   int& natoms = this->natoms;
   double& expected_tot_e = this->expected_tot_e;
-  deepmd::DeepPot& dp = this->dp;
+  deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
   dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
