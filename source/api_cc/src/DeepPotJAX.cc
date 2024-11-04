@@ -281,6 +281,9 @@ deepmd::DeepPotJAX::~DeepPotJAX() {
     TF_DeleteStatus(status);
     TFE_DeleteContext(ctx);
     TFE_DeleteContextOptions(ctx_opts);
+    for (size_t i = 0; i < func_vector.size(); i++) {
+      TF_DeleteFunction(func_vector[i]);
+    }
   }
 }
 
@@ -417,9 +420,12 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                         fwd_map.size(), nall_real);
 
   // cleanup input_list, etc
-  for (int i = 0; i < 6; i++) {
+  for (size_t i = 0; i < 6; i++) {
     TFE_DeleteTensorHandle(input_list[i]);
     TF_DeleteTensor(data_tensor[i]);
+  }
+  for (size_t i = 0; i < nretvals; i++) {
+    TFE_DeleteTensorHandle(retvals[i]);
   }
   TFE_DeleteOp(op);
 }
