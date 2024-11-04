@@ -7,6 +7,7 @@
 #include "AtomMap.h"
 #include "common.h"
 #ifdef BUILD_TENSORFLOW
+#include "DeepPotJAX.h"
 #include "DeepPotTF.h"
 #endif
 #ifdef BUILD_PYTORCH
@@ -41,6 +42,9 @@ void DeepPot::init(const std::string& model,
     backend = deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     backend = deepmd::DPBackend::TensorFlow;
+  } else if (model.length() >= 11 &&
+             model.substr(model.length() - 11) == ".savedmodel") {
+    backend = deepmd::DPBackend::JAX;
   } else {
     throw deepmd::deepmd_exception("Unsupported model file format");
   }
@@ -58,6 +62,14 @@ void DeepPot::init(const std::string& model,
 #endif
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
+  } else if (deepmd::DPBackend::JAX == backend) {
+#ifdef BUILD_TENSORFLOW
+    dp = std::make_shared<deepmd::DeepPotJAX>(model, gpu_rank, file_content);
+#else
+    throw deepmd::deepmd_exception(
+        "TensorFlow backend is not built, which is used to load JAX2TF "
+        "SavedModels");
+#endif
   } else {
     throw deepmd::deepmd_exception("Unknown file type");
   }

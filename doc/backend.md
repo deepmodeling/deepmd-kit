@@ -30,7 +30,8 @@ While `.pth` and `.pt` are the same in the PyTorch package, they have different 
 
 [JAX](https://jax.readthedocs.io/) 0.4.33 (which requires Python 3.10 or above) or above is required.
 Both `.xlo` and `.jax` are customized format extensions defined in DeePMD-kit, since JAX has no convention for file extensions.
-Currently, this backend is developed actively, and has no support for training and the C++ interface.
+Only the `.savedmodel` format supports C++ inference, which needs the TensorFlow C++ interface.
+Currently, this backend is developed actively, and has no support for training.
 
 ### DP {{ dpmodel_icon }}
 
