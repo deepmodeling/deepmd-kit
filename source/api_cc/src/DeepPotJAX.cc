@@ -174,7 +174,7 @@ template <typename T>
 inline TFE_TensorHandle* add_input(TFE_Op* op,
                                    const std::vector<T>& data,
                                    const std::vector<int64_t>& data_shape,
-                                   TF_Tensor* data_tensor,
+                                   TF_Tensor*& data_tensor,
                                    TF_Status* status) {
   data_tensor = create_tensor(data, data_shape);
   TFE_TensorHandle* handle = TFE_NewTensorHandle(data_tensor, status);
