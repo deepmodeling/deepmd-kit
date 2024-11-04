@@ -74,7 +74,7 @@ class FixDPLR : public Fix {
   std::vector<double> efield;
   std::vector<double> efield_fsum, efield_fsum_all;
   int efield_force_flag;
-  void get_valid_pairs(std::vector<std::pair<int, int> > &pairs);
+  void get_valid_pairs(std::vector<std::pair<int, int> > &pairs, int setup);
   int varflag;
   char *xstr, *ystr, *zstr;
   int xvar, yvar, zvar, xstyle, ystyle, zstyle;
