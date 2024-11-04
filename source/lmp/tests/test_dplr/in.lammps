@@ -1,0 +1,22 @@
+units si
+boundary p p p
+atom_style full
+neighbor 2.0e-11 bin
+neigh_modify every 1 delay 0 check no exclude type 1 3
+read_data data.si
+timestep 5e-16
+fix 1 all nve
+pair_style deepmd lrmodel.pb
+pair_coeff * *
+
+bond_style zero
+bond_coeff *
+special_bonds lj/coul 1 1 1 angle no
+kspace_style pppm/dplr 1e-5
+kspace_modify gewald 4e9 diff ik mesh 10 10 10
+fix 0 all dplr model lrmodel.pb type_associate 1 3 bond_type 1
+
+dump 1 all custom 1 01.xyz id type x y z fx fy fz
+dump_modify 1 sort id
+
+run 1

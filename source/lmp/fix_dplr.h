@@ -44,6 +44,7 @@ class FixDPLR : public Fix {
   void setup(int) override;
   void setup_pre_exchange() override;
   void setup_pre_force(int) override;
+  void setup_post_neighbor() override;
   void min_setup(int) override;
   void pre_exchange() override;
   void pre_force(int) override;

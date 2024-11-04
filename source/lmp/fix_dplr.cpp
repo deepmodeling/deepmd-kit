@@ -236,6 +236,7 @@ int FixDPLR::setmask() {
   mask |= THERMO_ENERGY;
 #endif
   mask |= PRE_EXCHANGE;
+  mask |= POST_NEIGHBOR;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
   mask |= MIN_PRE_EXCHANGE;
@@ -309,6 +310,14 @@ void FixDPLR::init() {
     varflag = CONSTANT;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::setup_post_neighbor() {
+
+}
+
+/* ---------------------------------------------------------------------- */
 
 void FixDPLR::setup_pre_exchange() {
   printf("FixDPLR::setup_pre_exchange\n");
