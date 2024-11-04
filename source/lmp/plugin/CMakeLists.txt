@@ -74,7 +74,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_precompile_headers(${libname} PUBLIC [["deepmd.hpp"]])
     remove_definitions(-D_GLIBCXX_USE_CXX11_ABI=${OP_CXX_ABI})
     if("$ENV{CIBUILDWHEEL}" STREQUAL "1" OR "$ENV{LMP_CXX11_ABI_0}" STREQUAL
-                                           "1")
+                                            "1")
       add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
     endif()
   else()
@@ -93,7 +93,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
   endif()
   if(CMAKE_SYSTEM_NAME STREQUAL Darwin)
     set_target_properties(${libname} PROPERTIES LINK_FLAGS
-                                               "-Wl,-undefined,dynamic_lookup")
+                                                "-Wl,-undefined,dynamic_lookup")
   else()
     set_target_properties(
       ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}"
