@@ -179,7 +179,7 @@ class IOTest:
                 self.atype,
                 fparam=fparam,
                 aparam=aparam,
-                do_atomic_virial=True,
+                atomic=True,
             )
             rets.append(ret)
         for ret in rets[1:]:
