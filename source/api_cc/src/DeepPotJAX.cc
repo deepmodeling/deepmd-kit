@@ -174,8 +174,9 @@ template <typename T>
 inline TFE_TensorHandle* add_input(TFE_Op* op,
                                    const std::vector<T>& data,
                                    const std::vector<int64_t>& data_shape,
+                                   TF_Tensor*& data_tensor,
                                    TF_Status* status) {
-  TF_Tensor* data_tensor = create_tensor(data, data_shape);
+  data_tensor = create_tensor(data, data_shape);
   TFE_TensorHandle* handle = TFE_NewTensorHandle(data_tensor, status);
   check_status(status);
 
@@ -280,6 +281,9 @@ deepmd::DeepPotJAX::~DeepPotJAX() {
     TF_DeleteStatus(status);
     TFE_DeleteContext(ctx);
     TFE_DeleteContextOptions(ctx_opts);
+    for (size_t i = 0; i < func_vector.size(); i++) {
+      TF_DeleteFunction(func_vector[i]);
+    }
   }
 }
 
@@ -326,12 +330,14 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                      device, status);
   }
   std::vector<TFE_TensorHandle*> input_list(6);
+  std::vector<TF_Tensor*> data_tensor(6);
   // coord
   std::vector<int64_t> coord_shape = {nframes, nall_real, 3};
-  input_list[0] = add_input(op, coord_double, coord_shape, status);
+  input_list[0] =
+      add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
   std::vector<int64_t> atype_shape = {nframes, nall_real};
-  input_list[1] = add_input(op, atype, atype_shape, status);
+  input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
   // nlist
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list);
@@ -354,17 +360,19 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                 << std::endl;
     }
   }
-  input_list[2] = add_input(op, nlist, nlist_shape, status);
+  input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
   std::vector<int64_t> mapping_shape = {nframes, nall_real};
   std::vector<int64_t> mapping(nframes * nall_real, -1);
-  input_list[3] = add_input(op, mapping, mapping_shape, status);
+  input_list[3] = add_input(op, mapping, mapping_shape, data_tensor[3], status);
   // fparam
   std::vector<int64_t> fparam_shape = {nframes, dfparam};
-  input_list[4] = add_input(op, fparam_double, fparam_shape, status);
+  input_list[4] =
+      add_input(op, fparam_double, fparam_shape, data_tensor[4], status);
   // aparam
   std::vector<int64_t> aparam_shape = {nframes, nloc_real, daparam};
-  input_list[5] = add_input(op, aparam_double, aparam_shape, status);
+  input_list[5] =
+      add_input(op, aparam_double, aparam_shape, data_tensor[5], status);
   // execute the function
   int nretvals = 6;
   TFE_TensorHandle* retvals[nretvals];
@@ -412,8 +420,12 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                         fwd_map.size(), nall_real);
 
   // cleanup input_list, etc
-  for (int i = 0; i < 6; i++) {
+  for (size_t i = 0; i < 6; i++) {
     TFE_DeleteTensorHandle(input_list[i]);
+    TF_DeleteTensor(data_tensor[i]);
+  }
+  for (size_t i = 0; i < nretvals; i++) {
+    TFE_DeleteTensorHandle(retvals[i]);
   }
   TFE_DeleteOp(op);
 }

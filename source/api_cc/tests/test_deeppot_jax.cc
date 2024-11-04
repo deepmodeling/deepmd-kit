@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // skip this test for memory sanitizer, need more work to fix
-#ifndef ENABLE_SANITIZE
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/stat.h>
@@ -432,4 +431,3 @@ TYPED_TEST(TestInferDeepPotAJAX, print_summary) {
   deepmd::DeepPot& dp = this->dp;
   dp.print_summary("");
 }
-#endif  // ENABLE_SANITIZE
