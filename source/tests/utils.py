@@ -8,3 +8,4 @@ else:
 
 # see https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/store-information-in-variables#default-environment-variables
 CI = os.environ.get("CI") == "true"
+DP_TEST_TF2_ONLY = os.environ.get("DP_TEST_TF2_ONLY") == "1"

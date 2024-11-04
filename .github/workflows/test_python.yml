@@ -53,6 +53,12 @@ jobs:
     - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
+    - name: Test TF2 eager mode
+      run: pytest --cov=deepmd source/tests/consistent/io/test_io.py --durations=0
+      env:
+        NUM_WORKERS: 0
+        DP_TEST_TF2_ONLY: 1
+      if: matrix.group == 1
     - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations
       uses: actions/upload-artifact@v4

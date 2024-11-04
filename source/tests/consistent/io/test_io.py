@@ -23,6 +23,7 @@ from deepmd.infer.deep_eval import (
 
 from ...utils import (
     CI,
+    DP_TEST_TF2_ONLY,
     TEST_DEVICE,
 )
 
@@ -72,6 +73,7 @@ class IOTest:
                 shutil.rmtree(ii)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
+    @unittest.skipIf(DP_TEST_TF2_ONLY, "Conflict with TF2 eager mode.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
@@ -141,12 +143,11 @@ class IOTest:
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
         for backend_name, suffix_idx in (
-            ("tensorflow", 0),
+            # unfortunately, jax2tf cannot work with tf v1 behaviors
+            ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
             ("jax", 0),
-            # unfortunately, jax2tf cannot work with tf v1 behaviors
-            # ("jax", 2),
         ):
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
