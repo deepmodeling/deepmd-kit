@@ -14,7 +14,7 @@
 #include "test_utils.h"
 
 template <class VALUETYPE>
-class TestInferDeepPotSpin : public ::testing::Test {
+class TestInferDeepSpin : public ::testing::Test {
  protected:
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
@@ -58,9 +58,9 @@ class TestInferDeepPotSpin : public ::testing::Test {
   void TearDown() override { remove("deepspin_nlist.pb"); };
 };
 
-TYPED_TEST_SUITE(TestInferDeepPotSpin, ValueTypes);
+TYPED_TEST_SUITE(TestInferDeepSpin, ValueTypes);
 
-TYPED_TEST(TestInferDeepPotSpin, cpu_build_nlist) {
+TYPED_TEST(TestInferDeepSpin, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
   const std::vector<VALUETYPE>& spin = this->spin;
@@ -84,7 +84,7 @@ TYPED_TEST(TestInferDeepPotSpin, cpu_build_nlist) {
   }
 }
 
-TYPED_TEST(TestInferDeepPotSpin, cpu_build_nlist_atomic) {
+TYPED_TEST(TestInferDeepSpin, cpu_build_nlist_atomic) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
   const std::vector<VALUETYPE>& spin = this->spin;

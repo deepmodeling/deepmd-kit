@@ -55,12 +55,14 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc) {
   plugin.style = "compute";
   plugin.name = "deeptensor/atom";
   plugin.info = "compute deeptensor/atom " STR_GIT_SUMM;
+  plugin.author = "Han Wang";
   plugin.creator.v2 = (lammpsplugin_factory2 *)&computedeepmdtensoratom;
   (*register_plugin)(&plugin, lmp);
 
   plugin.style = "fix";
   plugin.name = "dplr";
   plugin.info = "fix dplr " STR_GIT_SUMM;
+  plugin.author = "Han Wang";
   plugin.creator.v2 = (lammpsplugin_factory2 *)&fixdplr;
   (*register_plugin)(&plugin, lmp);
 
@@ -69,6 +71,7 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc) {
   plugin.style = "kspace";
   plugin.name = "pppm/dplr";
   plugin.info = "kspace pppm/dplr " STR_GIT_SUMM;
+  plugin.author = "Han Wang";
   plugin.creator.v1 = (lammpsplugin_factory1 *)&pppmdplr;
   (*register_plugin)(&plugin, lmp);
 #endif

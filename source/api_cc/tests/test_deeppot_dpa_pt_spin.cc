@@ -18,7 +18,7 @@
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-1)
 
 template <class VALUETYPE>
-class TestInferDeepPotDpaPtSpin : public ::testing::Test {
+class TestInferDeepSpinDpaPt : public ::testing::Test {
  protected:
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
@@ -107,9 +107,9 @@ class TestInferDeepPotDpaPtSpin : public ::testing::Test {
   void TearDown() override {};
 };
 
-TYPED_TEST_SUITE(TestInferDeepPotDpaPtSpin, ValueTypes);
+TYPED_TEST_SUITE(TestInferDeepSpinDpaPt, ValueTypes);
 
-TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist) {
+TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
   const std::vector<VALUETYPE>& spin = this->spin;
@@ -141,7 +141,7 @@ TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist) {
   // }
 }
 
-TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist_atomic) {
+TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
   const std::vector<VALUETYPE>& spin = this->spin;
@@ -183,7 +183,7 @@ TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist_atomic) {
 }
 
 // template <class VALUETYPE>
-// class TestInferDeepPotDpaPtSpinNopbc : public ::testing::Test {
+// class TestInferDeepSpinDpaPtNopbc : public ::testing::Test {
 //  protected:
 //   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
 //                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
@@ -259,9 +259,9 @@ TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist_atomic) {
 //   void TearDown() override {};
 // };
 
-// TYPED_TEST_SUITE(TestInferDeepPotDpaPtSpinNopbc, ValueTypes);
+// TYPED_TEST_SUITE(TestInferDeepSpinDpaPtNopbc, ValueTypes);
 
-// TYPED_TEST(TestInferDeepPotDpaPtSpinNopbc, cpu_build_nlist) {
+// TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist) {
 //   using VALUETYPE = TypeParam;
 //   const std::vector<VALUETYPE>& coord = this->coord;
 //   const std::vector<VALUETYPE>& spin = this->spin;
@@ -293,7 +293,7 @@ TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist_atomic) {
 //   // }
 // }
 
-// TYPED_TEST(TestInferDeepPotDpaPtSpinNopbc, cpu_build_nlist_atomic) {
+// TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_build_nlist_atomic) {
 //   using VALUETYPE = TypeParam;
 //   const std::vector<VALUETYPE>& coord = this->coord;
 //   const std::vector<VALUETYPE>& spin = this->spin;
@@ -334,7 +334,7 @@ TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist_atomic) {
 //   // }
 // }
 
-// TYPED_TEST(TestInferDeepPotDpaPtSpinNopbc, cpu_lmp_nlist) {
+// TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist) {
 //   using VALUETYPE = TypeParam;
 //   const std::vector<VALUETYPE>& coord = this->coord;
 //   const std::vector<VALUETYPE>& spin = this->spin;
@@ -375,7 +375,7 @@ TYPED_TEST(TestInferDeepPotDpaPtSpin, cpu_build_nlist_atomic) {
 //   // }
 // }
 
-// TYPED_TEST(TestInferDeepPotDpaPtSpinNopbc, cpu_lmp_nlist_atomic) {
+// TYPED_TEST(TestInferDeepSpinDpaPtNopbc, cpu_lmp_nlist_atomic) {
 //   using VALUETYPE = TypeParam;
 //   const std::vector<VALUETYPE>& coord = this->coord;
 //   const std::vector<VALUETYPE>& spin = this->spin;

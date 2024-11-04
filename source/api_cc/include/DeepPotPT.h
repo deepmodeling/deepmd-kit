@@ -76,46 +76,6 @@ class DeepPotPT : public DeepPotBase {
                const bool atomic);
 
   /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
-   *and atomic virial by using this DP with spin input.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] force_mag The magnetic force on each atom.
-   * @param[out] virial The virial.
-   * @param[out] atom_energy The atomic energy.
-   * @param[out] atom_virial The atomic virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
-   *be of size nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9.
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   * @param[in] atomic Whether to compute the atomic energy and virial.
-   **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam,
-               const std::vector<VALUETYPE>& aparam,
-               const bool atomic);
-  /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
    * @param[out] ener The system energy.
@@ -157,52 +117,6 @@ class DeepPotPT : public DeepPotBase {
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
 
-  /**
-   * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
-   *and atomic virial by using this DP with spin input.
-   * @param[out] ener The system energy.
-   * @param[out] force The force on each atom.
-   * @param[out] force_mag The magnetic force on each atom.
-   * @param[out] virial The virial.
-   * @param[out] atom_energy The atomic energy.
-   * @param[out] atom_virial The atomic virial.
-   * @param[in] coord The coordinates of atoms. The array should be of size
-   *nframes x natoms x 3.
-   * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should
-   *be of size nframes x natoms x 3.
-   * @param[in] atype The atom types. The list should contain natoms ints.
-   * @param[in] box The cell of the region. The array should be of size nframes
-   *x 9.
-   * @param[in] nghost The number of ghost atoms.
-   * @param[in] lmp_list The input neighbour list.
-   * @param[in] ago Update the internal neighbour list if ago is 0.
-   * @param[in] fparam The frame parameter. The array can be of size :
-   * nframes x dim_fparam.
-   * dim_fparam. Then all frames are assumed to be provided with the same
-   *fparam.
-   * @param[in] aparam The atomic parameter The array can be of size :
-   * nframes x natoms x dim_aparam.
-   * natoms x dim_aparam. Then all frames are assumed to be provided with the
-   *same aparam.
-   * @param[in] atomic Whether to compute the atomic energy and virial.
-   **/
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& force_mag,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<VALUETYPE>& spin,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam,
-               const std::vector<VALUETYPE>& aparam,
-               const bool atomic);
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -358,32 +272,6 @@ class DeepPotPT : public DeepPotBase {
                 const bool atomic);
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
-                std::vector<double>& force_mag,
-                std::vector<double>& virial,
-                std::vector<double>& atom_energy,
-                std::vector<double>& atom_virial,
-                const std::vector<double>& coord,
-                const std::vector<double>& spin,
-                const std::vector<int>& atype,
-                const std::vector<double>& box,
-                const std::vector<double>& fparam,
-                const std::vector<double>& aparam,
-                const bool atomic);
-  void computew(std::vector<double>& ener,
-                std::vector<float>& force,
-                std::vector<float>& force_mag,
-                std::vector<float>& virial,
-                std::vector<float>& atom_energy,
-                std::vector<float>& atom_virial,
-                const std::vector<float>& coord,
-                const std::vector<float>& spin,
-                const std::vector<int>& atype,
-                const std::vector<float>& box,
-                const std::vector<float>& fparam,
-                const std::vector<float>& aparam,
-                const bool atomic);
-  void computew(std::vector<double>& ener,
-                std::vector<double>& force,
                 std::vector<double>& virial,
                 std::vector<double>& atom_energy,
                 std::vector<double>& atom_virial,
@@ -402,38 +290,6 @@ class DeepPotPT : public DeepPotBase {
                 std::vector<float>& atom_energy,
                 std::vector<float>& atom_virial,
                 const std::vector<float>& coord,
-                const std::vector<int>& atype,
-                const std::vector<float>& box,
-                const int nghost,
-                const InputNlist& inlist,
-                const int& ago,
-                const std::vector<float>& fparam,
-                const std::vector<float>& aparam,
-                const bool atomic);
-  void computew(std::vector<double>& ener,
-                std::vector<double>& force,
-                std::vector<double>& force_mag,
-                std::vector<double>& virial,
-                std::vector<double>& atom_energy,
-                std::vector<double>& atom_virial,
-                const std::vector<double>& coord,
-                const std::vector<double>& spin,
-                const std::vector<int>& atype,
-                const std::vector<double>& box,
-                const int nghost,
-                const InputNlist& inlist,
-                const int& ago,
-                const std::vector<double>& fparam,
-                const std::vector<double>& aparam,
-                const bool atomic);
-  void computew(std::vector<double>& ener,
-                std::vector<float>& force,
-                std::vector<float>& force_mag,
-                std::vector<float>& virial,
-                std::vector<float>& atom_energy,
-                std::vector<float>& atom_virial,
-                const std::vector<float>& coord,
-                const std::vector<float>& spin,
                 const std::vector<int>& atype,
                 const std::vector<float>& box,
                 const int nghost,
