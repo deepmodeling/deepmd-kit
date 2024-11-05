@@ -338,14 +338,18 @@ void FixDPLR::setup_post_neighbor() {
   }
   int triclinic;
   triclinic = domain->triclinic;
-  if (triclinic) domain->x2lamda(atom->nlocal);
+  if (triclinic) {
+    domain->x2lamda(atom->nlocal);
+  }
   domain->pbc();
   domain->reset_box();
   comm->setup();
   neighbor->setup_bins();
   comm->exchange();
   comm->borders();
-  if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
+  if (triclinic) {
+    domain->lamda2x(atom->nlocal + atom->nghost);
+  }
 
   neighbor->build(1);
 }
