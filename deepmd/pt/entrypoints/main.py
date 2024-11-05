@@ -349,10 +349,14 @@ def train(
     # save min_nbor_dist
     if min_nbor_dist is not None:
         if not multi_task:
-            trainer.model.min_nbor_dist = min_nbor_dist
+            trainer.model.min_nbor_dist = torch.tensor(
+                min_nbor_dist, dtype=torch.float64, device=DEVICE
+            )
         else:
             for model_item in min_nbor_dist:
-                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
+                trainer.model[model_item].min_nbor_dist = torch.tensor(
+                    min_nbor_dist[model_item], dtype=torch.float64, device=DEVICE
+                )
     trainer.run()
 
 
