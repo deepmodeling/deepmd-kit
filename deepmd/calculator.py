@@ -87,7 +87,7 @@ class DP(Calculator):
         **kwargs,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
-        self.dp = DeepPot(str(Path(model).resolve()), neighbor_list=neighbor_list)
+        self.dp = DeepPot(str(Path(model).resolve()), neighbor_list=neighbor_list, **kwargs)
         if type_dict:
             self.type_dict = type_dict
         else:
