@@ -444,6 +444,7 @@ select = [
 
 [tool.uv.sources]
 mpich = { index = "mpi4py" }
+openmpi = { index = "mpi4py" }
 
 [[tool.uv.index]]
 name = "mpi4py"
