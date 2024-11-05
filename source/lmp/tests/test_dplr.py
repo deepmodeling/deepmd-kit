@@ -21,6 +21,7 @@ pb_file = Path(__file__).parent / "lrmodel.pb"
 dipole_pbtxt_file = Path(__file__).parent / "lrdipole.pbtxt"
 dipole_pb_file = Path(__file__).parent / "lrdipole.pb"
 data_file = Path(__file__).parent / "data.lmp"
+data_file2 = Path(__file__).parent / "data.lmp2"
 data_file_si = Path(__file__).parent / "data.si"
 data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 
@@ -241,6 +242,7 @@ expected_f_min_step1 = np.array(
 )
 
 box = np.array([0, 20, 0, 20, 0, 20, 0, 0, 0])
+box2 = np.array([0, 20, 0, 3.2575, 0, 20, 0, 0, 0])
 coord = np.array(
     [
         [1.25545000, 1.27562200, 0.98873000],
@@ -273,6 +275,9 @@ def setup_module():
         box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
     )
     write_lmp_data_full(
+        box2, coord, mol_list, type_OH, charge, data_file2, bond_list, mass_list
+    )
+    write_lmp_data_full(
         box, coord, mol_list, type_HO, charge, data_type_map_file, bond_list, mass_list
     )
     write_lmp_data_full(
@@ -289,6 +294,7 @@ def setup_module():
 
 def teardown_module():
     os.remove(data_file)
+    os.remove(data_file2)
     os.remove(data_type_map_file)
     os.remove(data_file_si)
 
@@ -321,6 +327,13 @@ def _lammps(data_file, exclude_type="1 3", units="metal") -> PyLammps:
 @pytest.fixture
 def lammps():
     lmp = _lammps(data_file=data_file)
+    yield lmp
+    lmp.close()
+
+
+@pytest.fixture
+def lammps2():
+    lmp = _lammps(data_file=data_file2)
     yield lmp
     lmp.close()
 
@@ -404,6 +417,18 @@ def test_pair_deepmd_lr(lammps):
             )
     lammps.run(1)
 
+def test_pair_deepmd_lr_run0(lammps2):
+    lammps2.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps2.pair_coeff("* *")
+    lammps2.bond_style("zero")
+    lammps2.bond_coeff("*")
+    lammps2.special_bonds("lj/coul 1 1 1 angle no")
+    lammps2.kspace_style("pppm/dplr 1e-5")
+    lammps2.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
+    lammps2.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
+    lammps2.fix_modify("0 virial yes")
+    lammps2.run(0)
+    lammps2.run(0)
 
 def test_pair_deepmd_lr_efield_constant(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
