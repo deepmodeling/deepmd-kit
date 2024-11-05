@@ -13,7 +13,7 @@ from deepmd.pt.infer.deep_eval import (
 )
 
 # from deepmd.tf.entrypoints.compress import compress
-from source.tests.pt.common import (
+from .common import (
     j_loader,
     run_dp,
     tests_path,
@@ -573,3 +573,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(av0, av1, default_places)
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+
+if __name__ == "__main__":
+    unittest.main()
