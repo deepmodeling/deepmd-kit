@@ -360,15 +360,11 @@ void FixDPLR::setup_pre_exchange() {}
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::setup_pre_force(int vflag) { 
-  pre_force(vflag); 
-}
+void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::setup(int vflag) {
-  post_force(vflag);
-}
+void FixDPLR::setup(int vflag) { post_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
