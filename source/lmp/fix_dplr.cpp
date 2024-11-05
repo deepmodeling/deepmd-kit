@@ -248,20 +248,6 @@ int FixDPLR::setmask() {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::init() {
-  // double **xx = atom->x;
-  // double **vv = atom->v;
-  // int nlocal = atom->nlocal;
-  // for (int ii = 0; ii < nlocal; ++ii){
-  //   cout << xx[ii][0] << " "
-  // 	 << xx[ii][1] << " "
-  // 	 << xx[ii][2] << "   "
-  // 	 << vv[ii][0] << " "
-  // 	 << vv[ii][1] << " "
-  // 	 << vv[ii][2] << " "
-  // 	 << endl;
-  // }
-  // check variables
-
   if (xstr) {
     xvar = input->variable->find(xstr);
     if (xvar < 0) {
