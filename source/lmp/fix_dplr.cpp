@@ -248,6 +248,10 @@ int FixDPLR::setmask() {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::init() {
+  if (atom->map_style == Atom::MAP_NONE) {
+    error->all(FLERR, "Fix dplr requires an atom map, see atom_modify");
+  }
+
   if (xstr) {
     xvar = input->variable->find(xstr);
     if (xvar < 0) {
