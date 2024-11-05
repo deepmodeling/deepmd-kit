@@ -417,6 +417,7 @@ def test_pair_deepmd_lr(lammps):
             )
     lammps.run(1)
 
+
 def test_pair_deepmd_lr_run0(lammps2):
     lammps2.pair_style(f"deepmd {pb_file.resolve()}")
     lammps2.pair_coeff("* *")
@@ -429,6 +430,7 @@ def test_pair_deepmd_lr_run0(lammps2):
     lammps2.fix_modify("0 virial yes")
     lammps2.run(0)
     lammps2.run(0)
+
 
 def test_pair_deepmd_lr_efield_constant(lammps):
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
