@@ -845,7 +845,7 @@ class DeepBaseModel {
    * @brief DP Base Model constructor without initialization.
    **/
   DeepBaseModel() : dpbase(nullptr) {};
-  virtual ~DeepBaseModel() {};
+  virtual ~DeepBaseModel() { DP_DeleteDeepBaseModel(dpbase); };
 
   /**
    * @brief Get the cutoff radius.
@@ -955,10 +955,7 @@ class DeepPot : public DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepPot() : dp(nullptr) {};
-  ~DeepPot() {
-    DP_DeleteDeepPot(dp);
-    dpbase = nullptr;
-  };
+  ~DeepPot() {};
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1429,10 +1426,7 @@ class DeepSpin : public DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepSpin() : dp(nullptr) {};
-  ~DeepSpin() {
-    DP_DeleteDeepSpin(dp);
-    dpbase = nullptr;
-  };
+  ~DeepSpin() {};
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1736,7 +1730,7 @@ class DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepBaseModelDevi() : dpbase(nullptr) {};
-  virtual ~DeepBaseModelDevi() {};
+  virtual ~DeepBaseModelDevi() { DP_DeleteDeepBaseModelDevi(dpbase); };
 
   /**
    * @brief Get the cutoff radius.
@@ -1945,10 +1939,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepPotModelDevi() : dp(nullptr) {};
-  ~DeepPotModelDevi() {
-    DP_DeleteDeepPotModelDevi(dp);
-    dpbase = nullptr;
-  };
+  ~DeepPotModelDevi() {};
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.
@@ -2541,10 +2532,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepSpinModelDevi() : dp(nullptr) {};
-  ~DeepSpinModelDevi() {
-    DP_DeleteDeepSpinModelDevi(dp);
-    dpbase = nullptr;
-  };
+  ~DeepSpinModelDevi() {};
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.

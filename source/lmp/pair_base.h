@@ -34,7 +34,7 @@ class PairDeepMDBase : public Pair {
                  const char *,
                  deepmd_compat::DeepBaseModel &,
                  deepmd_compat::DeepBaseModelDevi &);
-  ~PairDeepMDBase() override;
+  virtual ~PairDeepMDBase() override;
   void *extract(const char *, int &) override;
   void coeff(int, char **) override;
   void init_style() override;

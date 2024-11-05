@@ -38,6 +38,7 @@ struct DP_Nlist {
 struct DP_DeepBaseModel {
   DP_DeepBaseModel();
   DP_DeepBaseModel(deepmd::DeepBaseModel& dpbase);
+  virtual ~DP_DeepBaseModel() {};
 
   deepmd::DeepBaseModel dpbase;
   std::string exception;
@@ -49,6 +50,7 @@ struct DP_DeepBaseModel {
 struct DP_DeepBaseModelDevi {
   DP_DeepBaseModelDevi();
   DP_DeepBaseModelDevi(deepmd::DeepBaseModelDevi& dpbase);
+  virtual ~DP_DeepBaseModelDevi() {};
 
   deepmd::DeepBaseModelDevi dpbase;
   std::string exception;
