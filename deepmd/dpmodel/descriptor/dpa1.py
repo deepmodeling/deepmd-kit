@@ -27,6 +27,9 @@ from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
 )
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_vector_norm,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -943,7 +946,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise NotImplementedError
 
-        normed = xp.linalg.vector_norm(
+        normed = safe_for_vector_norm(
             xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4], axis=-1, keepdims=True
         )
         input_r = xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4] / xp.maximum(
