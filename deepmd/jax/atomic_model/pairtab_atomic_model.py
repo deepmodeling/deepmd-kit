@@ -4,34 +4,31 @@ from typing import (
     Optional,
 )
 
-from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
+from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+    PairTabAtomicModel as PairTabAtomicModelDP,
+)
 from deepmd.jax.atomic_model.base_atomic_model import (
     base_atomic_model_set_attr,
 )
 from deepmd.jax.common import (
+    ArrayAPIVariable,
     flax_module,
-)
-from deepmd.jax.descriptor.base_descriptor import (
-    BaseDescriptor,
+    to_jax_array,
 )
 from deepmd.jax.env import (
     jax,
     jnp,
 )
-from deepmd.jax.fitting.base_fitting import (
-    BaseFitting,
-)
 
 
 @flax_module
-class DPAtomicModel(DPAtomicModelDP):
-    base_descriptor_cls = BaseDescriptor
-    """The base descriptor class."""
-    base_fitting_cls = BaseFitting
-    """The base fitting class."""
-
+class PairTabAtomicModel(PairTabAtomicModelDP):
     def __setattr__(self, name: str, value: Any) -> None:
         value = base_atomic_model_set_attr(name, value)
+        if name in {"tab_info", "tab_data"}:
+            value = to_jax_array(value)
+            if value is not None:
+                value = ArrayAPIVariable(value)
         return super().__setattr__(name, value)
 
     def forward_common_atomic(

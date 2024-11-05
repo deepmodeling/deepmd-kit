@@ -11,6 +11,9 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
 )
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils import (
     NetworkCollection,
 )
@@ -146,8 +149,8 @@ class DescrptSeAttenV2(DescrptDPA1):
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
-                "davg": obj["davg"],
-                "dstd": obj["dstd"],
+                "davg": to_numpy_array(obj["davg"]),
+                "dstd": to_numpy_array(obj["dstd"]),
             },
             ## to be updated when the options are supported.
             "trainable": self.trainable,
