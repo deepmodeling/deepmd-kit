@@ -1033,6 +1033,8 @@ class Trainer:
                 log.info(
                     f"The profiling trace have been saved to: {self.profiling_file}"
                 )
+
+    def delete_dataloader(self):
         if self.multi_task:
             for model_key in self.model_keys:
                 del (

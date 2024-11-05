@@ -35,6 +35,7 @@ class DPTrainTest:
         # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
+        trainer.delete_dataloader()
         state_dict_trained = trainer.wrapper.model.state_dict()
 
         # test fine-tuning using same input
@@ -100,6 +101,11 @@ class DPTrainTest:
         trainer_finetune.run()
         trainer_finetune_empty.run()
         trainer_finetune_random.run()
+
+        # delete dataloader to stop buffer fetching
+        trainer_finetune.delete_dataloader()
+        trainer_finetune_empty.delete_dataloader()
+        trainer_finetune_random.delete_dataloader()
 
     def test_trainable(self):
         fix_params = deepcopy(self.config)
