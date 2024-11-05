@@ -338,14 +338,18 @@ void FixDPLR::setup_post_neighbor() {
   }
   int triclinic;
   triclinic = domain->triclinic;
-  if (triclinic) domain->x2lamda(atom->nlocal);
+  if (triclinic) {
+    domain->x2lamda(atom->nlocal);
+  }
   domain->pbc();
   domain->reset_box();
   comm->setup();
   neighbor->setup_bins();
   comm->exchange();
   comm->borders();
-  if (triclinic) domain->lamda2x(atom->nlocal+atom->nghost);
+  if (triclinic) {
+    domain->lamda2x(atom->nlocal + atom->nghost);
+  }
 
   neighbor->build(1);
 }
@@ -356,19 +360,21 @@ void FixDPLR::setup_pre_exchange() {}
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::setup_pre_force(int vflag) { 
-  pre_force(vflag); 
+void FixDPLR::setup_pre_force(int vflag) {
+  pre_force(vflag);
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
   printf("nlocal = %d nghost = %d nall = %d\n", nlocal, nghost, nall);
-  printf("end of setup_pre_force\n"); 
+  printf("end of setup_pre_force\n");
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::setup(int vflag) { post_force(vflag); printf("end of setup\n"); 
-printf("nlocal = %d\n", atom->nlocal);
+void FixDPLR::setup(int vflag) {
+  post_force(vflag);
+  printf("end of setup\n");
+  printf("nlocal = %d\n", atom->nlocal);
 }
 
 /* ---------------------------------------------------------------------- */
