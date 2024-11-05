@@ -86,7 +86,7 @@ extern void DP_NlistSetMask(DP_Nlist* nl, int mask);
  * @since API version 24
  *
  **/
-extern void DP_NlistSetMask(DP_Nlist* nl, int* mapping);
+extern void DP_NlistSetMapping(DP_Nlist* nl, int* mapping);
 
 /**
  * @brief Delete a neighbor list.
