@@ -4,34 +4,28 @@ from typing import (
     Optional,
 )
 
-from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
-from deepmd.jax.atomic_model.base_atomic_model import (
-    base_atomic_model_set_attr,
+from deepmd.dpmodel.model.dp_zbl_model import DPZBLModel as DPZBLModelDP
+from deepmd.jax.atomic_model.linear_atomic_model import (
+    DPZBLLinearEnergyAtomicModel,
 )
 from deepmd.jax.common import (
     flax_module,
 )
-from deepmd.jax.descriptor.base_descriptor import (
-    BaseDescriptor,
-)
 from deepmd.jax.env import (
-    jax,
     jnp,
 )
-from deepmd.jax.fitting.base_fitting import (
-    BaseFitting,
+from deepmd.jax.model.base_model import (
+    BaseModel,
+    forward_common_atomic,
 )
 
 
+@BaseModel.register("zbl")
 @flax_module
-class DPAtomicModel(DPAtomicModelDP):
-    base_descriptor_cls = BaseDescriptor
-    """The base descriptor class."""
-    base_fitting_cls = BaseFitting
-    """The base fitting class."""
-
+class DPZBLModel(DPZBLModelDP):
     def __setattr__(self, name: str, value: Any) -> None:
-        value = base_atomic_model_set_attr(name, value)
+        if name == "atomic_model":
+            value = DPZBLLinearEnergyAtomicModel.deserialize(value.serialize())
         return super().__setattr__(name, value)
 
     def forward_common_atomic(
@@ -42,12 +36,15 @@ class DPAtomicModel(DPAtomicModelDP):
         mapping: Optional[jnp.ndarray] = None,
         fparam: Optional[jnp.ndarray] = None,
         aparam: Optional[jnp.ndarray] = None,
-    ) -> dict[str, jnp.ndarray]:
-        return super().forward_common_atomic(
+        do_atomic_virial: bool = False,
+    ):
+        return forward_common_atomic(
+            self,
             extended_coord,
             extended_atype,
-            jax.lax.stop_gradient(nlist),
+            nlist,
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
         )

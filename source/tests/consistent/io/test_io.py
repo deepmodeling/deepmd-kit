@@ -23,6 +23,7 @@ from deepmd.infer.deep_eval import (
 
 from ...utils import (
     CI,
+    DP_TEST_TF2_ONLY,
     TEST_DEVICE,
 )
 
@@ -72,6 +73,7 @@ class IOTest:
                 shutil.rmtree(ii)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
+    @unittest.skipIf(DP_TEST_TF2_ONLY, "Conflict with TF2 eager mode.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
@@ -140,13 +142,21 @@ class IOTest:
         nframes = self.atype.shape[0]
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
-        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
+        for backend_name, suffix_idx in (
+            # unfortunately, jax2tf cannot work with tf v1 behaviors
+            ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
+            ("pytorch", 0),
+            ("dpmodel", 0),
+            ("jax", 0),
+        ):
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
-            self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
-            deep_eval = DeepEval(prefix + backend.suffixes[0])
+            self.save_data_to_model(
+                prefix + backend.suffixes[suffix_idx], reference_data
+            )
+            deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:
@@ -161,6 +171,15 @@ class IOTest:
                 self.atype,
                 fparam=fparam,
                 aparam=aparam,
+            )
+            rets.append(ret)
+            ret = deep_eval.eval(
+                self.coords,
+                self.box,
+                self.atype,
+                fparam=fparam,
+                aparam=aparam,
+                atomic=True,
             )
             rets.append(ret)
         for ret in rets[1:]:

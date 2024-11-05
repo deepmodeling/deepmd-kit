@@ -18,7 +18,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
-        self.min_nbor_dist = None
+        self.register_buffer("min_nbor_dist", None)
 
     def compute_or_load_stat(
         self,
@@ -50,7 +50,9 @@ class BaseModel(torch.nn.Module, make_base_model()):
     @torch.jit.export
     def get_min_nbor_dist(self) -> Optional[float]:
         """Get the minimum distance between two atoms."""
-        return self.min_nbor_dist
+        if self.min_nbor_dist is None:
+            return None
+        return self.min_nbor_dist.item()
 
     @torch.jit.export
     def get_ntypes(self):

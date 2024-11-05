@@ -51,7 +51,13 @@ class ModelTest:
             {},
             suffix=suffix,
         )
-        return [ret["energy"], ret["atom_ener"], ret["force"], ret["virial"]], {
+        return [
+            ret["energy"],
+            ret["atom_ener"],
+            ret["force"],
+            ret["virial"],
+            ret["atom_virial"],
+        ], {
             t_coord: coords,
             t_type: atype,
             t_natoms: natoms,
@@ -69,6 +75,7 @@ class ModelTest:
                 numpy_to_torch(coords),
                 numpy_to_torch(atype),
                 box=numpy_to_torch(box),
+                do_atomic_virial=True,
             ).items()
         }
 
@@ -83,5 +90,6 @@ class ModelTest:
                 numpy_to_jax(coords),
                 numpy_to_jax(atype),
                 box=numpy_to_jax(box),
+                do_atomic_virial=True,
             ).items()
         }

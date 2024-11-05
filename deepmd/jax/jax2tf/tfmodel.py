@@ -4,6 +4,9 @@ from typing import (
     Optional,
 )
 
+import jax.experimental.jax2tf as jax2tf
+import tensorflow as tf
+
 from deepmd.dpmodel.model.make_model import (
     model_call_from_call_lower,
 )
@@ -13,11 +16,7 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.jax.env import (
-    jax_export,
     jnp,
-)
-from deepmd.jax.model.base_model import (
-    BaseModel,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -41,39 +40,37 @@ OUTPUT_DEFS = {
 }
 
 
-class HLO(BaseModel):
+def decode_list_of_bytes(list_of_bytes: list[bytes]) -> list[str]:
+    """Decode a list of bytes to a list of strings."""
+    return [x.decode() for x in list_of_bytes]
+
+
+class TFModelWrapper(tf.Module):
     def __init__(
         self,
-        stablehlo,
-        stablehlo_atomic_virial,
-        model_def_script,
-        type_map,
-        rcut,
-        dim_fparam,
-        dim_aparam,
-        sel_type,
-        is_aparam_nall,
-        model_output_type,
-        mixed_types,
-        min_nbor_dist,
-        sel,
+        model,
     ) -> None:
-        self._call_lower = jax_export.deserialize(stablehlo).call
-        self._call_lower_atomic_virial = jax_export.deserialize(
-            stablehlo_atomic_virial
-        ).call
-        self.stablehlo = stablehlo
-        self.type_map = type_map
-        self.rcut = rcut
-        self.dim_fparam = dim_fparam
-        self.dim_aparam = dim_aparam
-        self.sel_type = sel_type
-        self._is_aparam_nall = is_aparam_nall
-        self._model_output_type = model_output_type
-        self._mixed_types = mixed_types
-        self.min_nbor_dist = min_nbor_dist
-        self.sel = sel
-        self.model_def_script = model_def_script
+        self.model = tf.saved_model.load(model)
+        self._call_lower = jax2tf.call_tf(self.model.call_lower)
+        self._call_lower_atomic_virial = jax2tf.call_tf(
+            self.model.call_lower_atomic_virial
+        )
+        self.type_map = decode_list_of_bytes(self.model.get_type_map().numpy().tolist())
+        self.rcut = self.model.get_rcut().numpy().item()
+        self.dim_fparam = self.model.get_dim_fparam().numpy().item()
+        self.dim_aparam = self.model.get_dim_aparam().numpy().item()
+        self.sel_type = self.model.get_sel_type().numpy().tolist()
+        self._is_aparam_nall = self.model.is_aparam_nall().numpy().item()
+        self._model_output_type = decode_list_of_bytes(
+            self.model.model_output_type().numpy().tolist()
+        )
+        self._mixed_types = self.model.mixed_types().numpy().item()
+        if hasattr(self.model, "get_min_nbor_dist"):
+            self.min_nbor_dist = self.model.get_min_nbor_dist().numpy().item()
+        else:
+            self.min_nbor_dist = None
+        self.sel = self.model.get_sel().numpy().tolist()
+        self.model_def_script = self.model.get_model_def_script().numpy().decode()
 
     def __call__(
         self,
@@ -105,7 +102,7 @@ class HLO(BaseModel):
         Returns
         -------
         ret_dict
-            The result dict of type dict[str,np.ndarray].
+            The result dict of type dict[str,jnp.ndarray].
             The keys are defined by the `ModelOutputDef`.
 
         """
@@ -141,7 +138,7 @@ class HLO(BaseModel):
         Returns
         -------
         ret_dict
-            The result dict of type dict[str,np.ndarray].
+            The result dict of type dict[str,jnp.ndarray].
             The keys are defined by the `ModelOutputDef`.
 
         """
@@ -178,6 +175,16 @@ class HLO(BaseModel):
             call_lower = self._call_lower_atomic_virial
         else:
             call_lower = self._call_lower
+        # Attempt to convert a value (None) with an unsupported type (<class 'NoneType'>) to a Tensor.
+        if fparam is None:
+            fparam = jnp.empty(
+                (extended_coord.shape[0], self.get_dim_fparam()), dtype=jnp.float64
+            )
+        if aparam is None:
+            aparam = jnp.empty(
+                (extended_coord.shape[0], nlist.shape[1], self.get_dim_aparam()),
+                dtype=jnp.float64,
+            )
         return call_lower(
             extended_coord,
             extended_atype,
@@ -234,7 +241,7 @@ class HLO(BaseModel):
         raise NotImplementedError("Not implemented")
 
     @classmethod
-    def deserialize(cls, data: dict) -> "BaseModel":
+    def deserialize(cls, data: dict) -> "TFModelWrapper":
         """Deserialize the model.
 
         Parameters
@@ -259,7 +266,7 @@ class HLO(BaseModel):
 
     def get_nnei(self) -> int:
         """Returns the total number of selected neighboring atoms in the cut-off radius."""
-        return self.nsel
+        return self.get_nsel()
 
     def get_sel(self) -> list[int]:
         return self.sel
@@ -299,7 +306,7 @@ class HLO(BaseModel):
         raise NotImplementedError("Not implemented")
 
     @classmethod
-    def get_model(cls, model_params: dict) -> "BaseModel":
+    def get_model(cls, model_params: dict) -> "TFModelWrapper":
         """Get the model by the parameters.
 
         By default, all the parameters are directly passed to the constructor.
