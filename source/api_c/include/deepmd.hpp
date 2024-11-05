@@ -845,7 +845,7 @@ class DeepBaseModel {
    * @brief DP Base Model constructor without initialization.
    **/
   DeepBaseModel() : dpbase(nullptr) {};
-  ~DeepBaseModel() { DP_DeleteDeepBaseModel(dpbase); };
+  virtual ~DeepBaseModel() {};
 
   /**
    * @brief Get the cutoff radius.
@@ -956,7 +956,8 @@ class DeepPot : public DeepBaseModel {
    **/
   DeepPot() : dp(nullptr) {};
   ~DeepPot() {
-    // the base destructor will be called
+    DP_DeleteDeepPot(dp);
+    dpbase = nullptr;
   };
   /**
    * @brief DP constructor with initialization.
@@ -1429,7 +1430,8 @@ class DeepSpin : public DeepBaseModel {
    **/
   DeepSpin() : dp(nullptr) {};
   ~DeepSpin() {
-    // the base destructor will be called
+    DP_DeleteDeepSpin(dp);
+    dpbase = nullptr;
   };
   /**
    * @brief DP constructor with initialization.
@@ -1734,7 +1736,7 @@ class DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepBaseModelDevi() : dpbase(nullptr) {};
-  ~DeepBaseModelDevi() { DP_DeleteDeepBaseModelDevi(dpbase); };
+  virtual ~DeepBaseModelDevi() {};
 
   /**
    * @brief Get the cutoff radius.
@@ -1944,7 +1946,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   DeepPotModelDevi() : dp(nullptr) {};
   ~DeepPotModelDevi() {
-    // the base destructor will be called
+    DP_DeleteDeepPotModelDevi(dp);
+    dpbase = nullptr;
   };
   /**
    * @brief DP model deviation constructor with initialization.
@@ -2539,7 +2542,8 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    **/
   DeepSpinModelDevi() : dp(nullptr) {};
   ~DeepSpinModelDevi() {
-    // the base destructor will be called
+    DP_DeleteDeepSpinModelDevi(dp);
+    dpbase = nullptr;
   };
   /**
    * @brief DP model deviation constructor with initialization.
