@@ -352,8 +352,8 @@ inline void DP_DeepSpinCompute_variant(DP_DeepSpin* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, fm, v, ae, av;
 
-  DP_REQUIRES_OK(dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_,
-                                         atype_, cell_, fparam_, aparam_));
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, fm, v, ae, av, coord_, spin_, atype_,
+                                    cell_, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -549,8 +549,8 @@ inline void DP_DeepSpinComputeNList_variant(DP_DeepSpin* dp,
   std::vector<double> e;
   std::vector<VALUETYPE> f, fm, v, ae, av;
   DP_REQUIRES_OK(
-      dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_,
-                              nghost, nlist->nl, ago, fparam_, aparam_));
+      dp, dp->dp.compute(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_,
+                         nghost, nlist->nl, ago, fparam_, aparam_));
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
     std::copy(e.begin(), e.end(), energy);
@@ -956,13 +956,13 @@ void DP_DeepSpinModelDeviComputeNList_variant(DP_DeepSpinModelDevi* dp,
   std::vector<double> e;
   std::vector<std::vector<VALUETYPE>> f, fm, v, ae, av;
   if (atomic_energy || atomic_virial) {
-    DP_REQUIRES_OK(dp, dp->dp.compute_spin(e, f, fm, v, ae, av, coord_, spin_,
-                                           atype_, cell_, nghost, nlist->nl,
-                                           ago, fparam_, aparam_));
+    DP_REQUIRES_OK(
+        dp, dp->dp.compute(e, f, fm, v, ae, av, coord_, spin_, atype_, cell_,
+                           nghost, nlist->nl, ago, fparam_, aparam_));
   } else {
     DP_REQUIRES_OK(
-        dp, dp->dp.compute_spin(e, f, fm, v, coord_, spin_, atype_, cell_,
-                                nghost, nlist->nl, ago, fparam_, aparam_));
+        dp, dp->dp.compute(e, f, fm, v, coord_, spin_, atype_, cell_, nghost,
+                           nlist->nl, ago, fparam_, aparam_));
   }
   // 2D vector to 2D array, flatten first
   if (energy) {

@@ -1497,7 +1497,7 @@ class DeepSpin : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
+  void compute(
       ENERGYVTYPE &ener,
       std::vector<VALUETYPE> &force,
       std::vector<VALUETYPE> &force_mag,
@@ -1565,7 +1565,7 @@ class DeepSpin : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
+  void compute(
       ENERGYVTYPE &ener,
       std::vector<VALUETYPE> &force,
       std::vector<VALUETYPE> &force_mag,
@@ -1615,7 +1615,7 @@ class DeepSpin : public DeepBaseModel {
 
   // support spin
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
+  void compute(
       ENERGYVTYPE &ener,
       std::vector<VALUETYPE> &force,
       std::vector<VALUETYPE> &force_mag,
@@ -1664,7 +1664,7 @@ class DeepSpin : public DeepBaseModel {
 
   // support spin
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute_spin(
+  void compute(
       ENERGYVTYPE &ener,
       std::vector<VALUETYPE> &force,
       std::vector<VALUETYPE> &force_mag,
@@ -2430,7 +2430,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
   };
   // support spin
   template <typename VALUETYPE>
-  void compute_spin(
+  void compute(
       std::vector<double> &ener,
       std::vector<std::vector<VALUETYPE>> &force,
       std::vector<std::vector<VALUETYPE>> &force_mag,
@@ -2503,7 +2503,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
 
   // support spin
   template <typename VALUETYPE>
-  void compute_spin(
+  void compute(
       std::vector<double> &ener,
       std::vector<std::vector<VALUETYPE>> &force,
       std::vector<std::vector<VALUETYPE>> &force_mag,

@@ -496,9 +496,9 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_spin.compute_spin(dener, dforce, dforce_mag, dvirial, dcoord,
-                                 dspin, dtype, dbox, nghost, lmp_list, ago,
-                                 fparam, daparam);
+          deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
+                            dtype, dbox, nghost, lmp_list, ago, fparam,
+                            daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -508,9 +508,9 @@ void PairDeepSpin::compute(int eflag, int vflag) {
         vector<double> deatom(nall * 1, 0);
         vector<double> dvatom(nall * 9, 0);
         try {
-          deep_spin.compute_spin(dener, dforce, dforce_mag, dvirial, deatom,
-                                 dvatom, dcoord, dspin, dtype, dbox, nghost,
-                                 lmp_list, ago, fparam, daparam);
+          deep_spin.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
+                            dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
+                            fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
@@ -560,15 +560,15 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       vector<vector<double>> all_atom_virial;
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_spin_model_devi.compute_spin(
-              all_energy, all_force, all_force_mag, all_virial, dcoord, dspin,
-              dtype, dbox, nghost, lmp_list, ago, fparam, daparam);
+          deep_spin_model_devi.compute(all_energy, all_force, all_force_mag,
+                                       all_virial, dcoord, dspin, dtype, dbox,
+                                       nghost, lmp_list, ago, fparam, daparam);
         } catch (deepmd_compat::deepmd_exception &e) {
           error->one(FLERR, e.what());
         }
       } else {
         try {
-          deep_spin_model_devi.compute_spin(
+          deep_spin_model_devi.compute(
               all_energy, all_force, all_force_mag, all_virial, all_atom_energy,
               all_atom_virial, dcoord, dspin, dtype, dbox, nghost, lmp_list,
               ago, fparam, daparam);
@@ -767,8 +767,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
   } else {
     if (numb_models == 1) {
       try {
-        deep_spin.compute_spin(dener, dforce, dforce_mag, dvirial, dcoord,
-                               dspin, dtype, dbox);
+        deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
+                          dtype, dbox);
       } catch (deepmd_compat::deepmd_exception &e) {
         error->one(FLERR, e.what());
       }

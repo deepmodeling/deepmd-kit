@@ -74,7 +74,7 @@ TYPED_TEST(TestInferDeepSpin, cpu_build_nlist) {
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
-  dp.compute_spin(ener, force, force_mag, virial, coord, spin, atype, box);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box);
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
@@ -98,8 +98,8 @@ TYPED_TEST(TestInferDeepSpin, cpu_build_nlist_atomic) {
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
-  dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
-                  spin, atype, box);
+  dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord, spin,
+             atype, box);
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
   // EXPECT_EQ(atom_ener.size(), natoms);

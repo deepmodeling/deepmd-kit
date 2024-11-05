@@ -125,7 +125,7 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist) {
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial;
-  dp.compute_spin(ener, force, force_mag, virial, coord, spin, atype, box);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box);
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
@@ -157,8 +157,8 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
   deepmd::DeepSpin& dp = this->dp;
   double ener;
   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
-  dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
-                  spin, atype, box);
+  dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord, spin,
+             atype, box);
 
   EXPECT_EQ(force.size(), natoms * 3);
   EXPECT_EQ(force_mag.size(), natoms * 3);
@@ -277,7 +277,7 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 //   deepmd::DeepPot& dp = this->dp;
 //   double ener;
 //   std::vector<VALUETYPE> force, force_mag, virial;
-//   dp.compute_spin(ener, force, force_mag, virial, coord, spin, atype, box);
+//   dp.compute(ener, force, force_mag, virial, coord, spin, atype, box);
 
 //   EXPECT_EQ(force.size(), natoms * 3);
 //   EXPECT_EQ(force_mag.size(), natoms * 3);
@@ -309,7 +309,7 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 //   deepmd::DeepPot& dp = this->dp;
 //   double ener;
 //   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
-//   dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
+//   dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
 //   spin, atype, box);
 
 //   EXPECT_EQ(force.size(), natoms * 3);
@@ -358,7 +358,7 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 //   std::vector<int*> firstneigh(natoms);
 //   deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
 //   convert_nlist(inlist, nlist_data);
-//   dp.compute_spin(ener, force, force_mag, virial, coord, spin, atype, box, 0,
+//   dp.compute(ener, force, force_mag, virial, coord, spin, atype, box, 0,
 //   inlist, 0);
 
 //   EXPECT_EQ(force.size(), natoms * 3);
@@ -399,7 +399,7 @@ TYPED_TEST(TestInferDeepSpinDpaPt, cpu_build_nlist_atomic) {
 //   std::vector<int*> firstneigh(natoms);
 //   deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
 //   convert_nlist(inlist, nlist_data);
-//   dp.compute_spin(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
+//   dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
 //   spin, atype, box, 0,
 //              inlist, 0);
 
