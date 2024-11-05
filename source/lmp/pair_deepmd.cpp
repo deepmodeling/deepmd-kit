@@ -523,7 +523,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
 
   // mapping (for DPA-2 JAX)
   std::vector<int> mapping_vec(nall, -1);
-  if (comm->nproc == 1 && atom->map_style != Atom::MAP_NONE) {
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
     for (size_t ii = 0; ii < nall; ++ii) {
       mapping_vec[ii] = atom->map(atom->tag[ii]);
     }
@@ -572,7 +572,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
         commdata_->recvproc, &world);
     lmp_list.set_mask(NEIGHMASK);
-    if (comm->nproc == 1 && atom->map_style != Atom::MAP_NONE) {
+    if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
       lmp_list.set_mapping(mapping_vec.data());
     }
     deepmd_compat::InputNlist extend_lmp_list;
@@ -585,7 +585,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           deepmd_compat::InputNlist(extend_inum, &extend_ilist[0],
                                     &extend_numneigh[0], &extend_firstneigh[0]);
       extend_lmp_list.set_mask(NEIGHMASK);
-      if (comm->nproc == 1 && atom->map_style != Atom::MAP_NONE) {
+      if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
         extend_lmp_list.set_mapping(mapping_vec.data());
       }
     }
