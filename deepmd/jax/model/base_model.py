@@ -152,4 +152,6 @@ def forward_common_atomic(
                     avr, [0, def_ndim + 1, *range(1, def_ndim + 1), def_ndim + 2]
                 )
                 model_predict[kk_derv_c] = extended_virial
+                # [nf, *def, 9]
+                model_predict[kk_derv_c + "_redu"] = jnp.sum(extended_virial, axis=1)
     return model_predict
