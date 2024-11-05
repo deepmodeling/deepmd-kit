@@ -316,10 +316,6 @@ void FixDPLR::init() {
 void FixDPLR::setup_post_neighbor() {
   double **x = atom->x;
   double **v = atom->v;
-  int *type = atom->type;
-  int nlocal = atom->nlocal;
-  int nghost = atom->nghost;
-  int nall = nlocal + nghost;
 
   vector<pair<int, int> > valid_pairs;
   get_valid_pairs(valid_pairs, 1);
