@@ -1,7 +1,7 @@
-# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
+# Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
 ## DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation
@@ -104,17 +104,17 @@ An example of the DPA-1 descriptor is provided as follows
 	}
 ```
 
-- The {ref}`type <model/descriptor/type>` of the descriptor is set to `"se_atten"`, which will use DPA-1 structures.
-- {ref}`rcut <model/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts.
-- **{ref}`sel <model/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly affects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
-- The {ref}`neuron <model/descriptor[se_atten]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
-- The {ref}`axis_neuron <model/descriptor[se_atten]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
-- If the option {ref}`resnet_dt <model/descriptor[se_atten]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
-- {ref}`seed <model/descriptor[se_atten]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
-- {ref}`attn <model/descriptor[se_atten]/attn>` sets the length of a hidden vector during scale-dot attention computation.
-- {ref}`attn_layer <model/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
-- {ref}`attn_mask <model/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
-- {ref}`attn_dotr <model/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
+- The {ref}`type <model[standard]/descriptor/type>` of the descriptor is set to `"se_atten"`, which will use DPA-1 structures.
+- {ref}`rcut <model[standard]/descriptor[se_atten]/rcut>` is the cut-off radius for neighbor searching, and the {ref}`rcut_smth <model[standard]/descriptor[se_atten]/rcut_smth>` gives where the smoothing starts.
+- **{ref}`sel <model[standard]/descriptor[se_atten]/sel>`** gives the maximum possible number of neighbors in the cut-off radius. It is an int. Note that this number highly affects the efficiency of training, which we usually use less than 200. (We use 120 for training 56 elements in [OC2M dataset](https://github.com/Open-Catalyst-Project/ocp/blob/main/DATASET.md))
+- The {ref}`neuron <model[standard]/descriptor[se_atten]/neuron>` specifies the size of the embedding net. From left to right the members denote the sizes of each hidden layer from the input end to the output end, respectively. If the outer layer is twice the size of the inner layer, then the inner layer is copied and concatenated, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
+- The {ref}`axis_neuron <model[standard]/descriptor[se_atten]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
+- If the option {ref}`resnet_dt <model[standard]/descriptor[se_atten]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
+- {ref}`seed <model[standard]/descriptor[se_atten]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
+- {ref}`attn <model[standard]/descriptor[se_atten]/attn>` sets the length of a hidden vector during scale-dot attention computation.
+- {ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` sets the number of layers in attention mechanism.
+- {ref}`attn_mask <model[standard]/descriptor[se_atten]/attn_mask>` determines whether to mask the diagonal in the attention weights and False is recommended.
+- {ref}`attn_dotr <model[standard]/descriptor[se_atten]/attn_dotr>` determines whether to dot the relative coordinates on the attention weights as a gated scheme, True is recommended.
 
 ### Descriptor `"se_atten_v2"`
 
@@ -138,7 +138,7 @@ You can use descriptor `"se_atten_v2"` and do not need to set `tebd_input_mode` 
 
 Practical evidence demonstrates that `"se_atten_v2"` offers better and more stable performance compared to `"se_atten"`.
 
-Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model/descriptor[se_atten_v2]/attn_layer>` set to 0.
+Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` set to 0.
 
 ### Fitting `"ener"`
 

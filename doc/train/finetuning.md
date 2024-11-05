@@ -36,7 +36,7 @@ The elements in the training dataset must be contained in the pre-trained datase
 
 The finetune procedure will inherit the model structures in `pretrained.pb`,
 and thus it will ignore the model parameters in `input.json`,
-such as {ref}`descriptor <model/descriptor>`, {ref}`fitting_net <model/fitting_net>`,
+such as {ref}`descriptor <model[standard]/descriptor>`, {ref}`fitting_net <model[standard]/fitting_net>`,
 {ref}`type_embedding <model/type_embedding>` and {ref}`type_map <model/type_map>`.
 However, you can still set the `trainable` parameters in each part of `input.json` to control the training procedure.
 
@@ -106,7 +106,7 @@ $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHO
 ```
 
 :::{note}
-One can check the available model branches in multi-task pre-trained model by refering to the documentation of the pre-trained model or by using the following command:
+One can check the available model branches in multi-task pre-trained model by referring to the documentation of the pre-trained model or by using the following command:
 
 ```bash
 $ dp --pt show multitask_pretrained.pt model-branch

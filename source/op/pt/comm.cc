@@ -87,16 +87,18 @@ class Border : public torch::autograd::Function<Border> {
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
     int cuda_aware = 1;
-    int me;
+    int me = 0;
     MPI_Comm world;
     int world_size = 0;
-    unpack_communicator(communicator_tensor, world);
-    MPI_Comm_rank(world, &me);
-    MPI_Comm_size(world, &world_size);
+    if (mpi_init) {
+      unpack_communicator(communicator_tensor, world);
+      MPI_Comm_rank(world, &me);
+      MPI_Comm_size(world, &world_size);
+    }
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (world_size != 1) {
+    if (world_size >= 1) {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
@@ -120,11 +122,15 @@ class Border : public torch::autograd::Function<Border> {
     for (int iswap = 0; iswap < nswap; ++iswap) {
       int nrecv = recvnum[iswap];
       int nsend = sendnum[iswap];
-      torch::Tensor isendlist =
-          torch::from_blob(sendlist[iswap], {nsend}, int32_options)
-              .to(recv_g1_tensor.device());
-      torch::Tensor send_g1_tensor = recv_g1_tensor.index_select(0, isendlist);
-      FPTYPE* send_g1 = send_g1_tensor.data_ptr<FPTYPE>();
+      torch::Tensor isendlist;
+      torch::Tensor send_g1_tensor;
+      FPTYPE* send_g1;
+      if (nsend != 0) {
+        isendlist = torch::from_blob(sendlist[iswap], {nsend}, int32_options)
+                        .to(recv_g1_tensor.device());
+        send_g1_tensor = recv_g1_tensor.index_select(0, isendlist);
+        send_g1 = send_g1_tensor.data_ptr<FPTYPE>();
+      }
 #ifdef USE_MPI
       if (sendproc[iswap] != me) {
         if (nrecv) {
@@ -207,15 +213,17 @@ class Border : public torch::autograd::Function<Border> {
     MPI_Initialized(&mpi_init);
     int world_size = 0;
     int cuda_aware = 1;
+    int me = 0;
     MPI_Comm world;
-    unpack_communicator(communicator_tensor, world);
-    int me;
-    MPI_Comm_rank(world, &me);
-    MPI_Comm_size(world, &world_size);
+    if (mpi_init) {
+      unpack_communicator(communicator_tensor, world);
+      MPI_Comm_rank(world, &me);
+      MPI_Comm_size(world, &world_size);
+    }
     MPI_Datatype mpi_type = get_mpi_type<FPTYPE>();
     MPI_Request request;
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (world_size != 1) {
+    if (world_size >= 1) {
       int version, subversion;
       MPI_Get_version(&version, &subversion);
       if (version >= 4) {
@@ -248,17 +256,20 @@ class Border : public torch::autograd::Function<Border> {
     int nlocal = nlocal_tensor.item<int>();
     int nghost = nghost_tensor.item<int>();
     int ntotal = nlocal + nghost;
-
-    torch::Tensor send_g1_tensor = d_local_g1_tensor;
-
-    int max_recvnum = sendnum_tensor.max().item<int>();
-    auto options = torch::TensorOptions()
-                       .dtype(d_local_g1_tensor.dtype())
-                       .device(d_local_g1_tensor.device());
-    torch::Tensor recv_g1_tensor =
-        torch::empty({max_recvnum, tensor_size}, options);
-    FPTYPE* recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>();
-    FPTYPE* send_g1 = send_g1_tensor.data_ptr<FPTYPE>() + ntotal * tensor_size;
+    torch::Tensor send_g1_tensor;
+    torch::Tensor recv_g1_tensor;
+    FPTYPE* recv_g1;
+    FPTYPE* send_g1;
+    if (nswap != 0) {
+      send_g1_tensor = d_local_g1_tensor;
+      int max_recvnum = sendnum_tensor.max().item<int>();
+      auto options = torch::TensorOptions()
+                         .dtype(d_local_g1_tensor.dtype())
+                         .device(d_local_g1_tensor.device());
+      recv_g1_tensor = torch::empty({max_recvnum, tensor_size}, options);
+      recv_g1 = recv_g1_tensor.data_ptr<FPTYPE>();
+      send_g1 = send_g1_tensor.data_ptr<FPTYPE>() + ntotal * tensor_size;
+    }
 
     int end = ntotal;
     auto int32_options = torch::TensorOptions().dtype(torch::kInt32);

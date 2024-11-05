@@ -7,7 +7,7 @@ import numpy as np
 
 
 def weighted_average(errors: list[dict[str, tuple[float, float]]]) -> dict:
-    """Compute wighted average of prediction errors (MAE or RMSE) for model.
+    """Compute weighted average of prediction errors (MAE or RMSE) for model.
 
     Parameters
     ----------

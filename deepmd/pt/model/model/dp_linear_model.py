@@ -30,7 +30,7 @@ DPLinearModel_ = make_model(LinearEnergyAtomicModel)
 
 @BaseModel.register("linear_ener")
 class LinearEnergyModel(DPLinearModel_):
-    model_type = "ener"
+    model_type = "linear_ener"
 
     def __init__(
         self,
@@ -140,7 +140,7 @@ class LinearEnergyModel(DPLinearModel_):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

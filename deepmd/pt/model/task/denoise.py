@@ -39,7 +39,7 @@ class DenoiseNet(Fitting):
         - ntypes: Element count.
         - embedding_width: Embedding width per atom.
         - neuron: Number of neurons in each hidden layers of the fitting net.
-        - bias_atom_e: Average enery per atom for each element.
+        - bias_atom_e: Average energy per atom for each element.
         - resnet_dt: Using time-step in the ResNet construction.
         """
         super().__init__()

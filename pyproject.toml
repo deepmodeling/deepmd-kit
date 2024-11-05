@@ -89,7 +89,7 @@ test = [
 ]
 docs = [
     "sphinx>=3.1.1",
-    "sphinx_rtd_theme>=1.0.0rc1",
+    "sphinx-book-theme",
     "myst-nb>=1.0.0rc0",
     "myst-parser>=0.19.2",
     "sphinx-design",
@@ -97,7 +97,7 @@ docs = [
     "exhale>=0.3.7",
     "numpydoc",
     "ase",
-    "deepmodeling-sphinx>=0.1.0",
+    "deepmodeling-sphinx>=0.3.0",
     "dargs>=0.3.4",
     "sphinx-argparse<0.5.0",
     "pygments-lammps",
@@ -105,6 +105,7 @@ docs = [
     "sphinx-autoapi>=3.0.0",
     "sphinxcontrib-programoutput",
     "sphinxcontrib-moderncmakedomain",
+    "sphinx-remove-toctrees",
 ]
 lmp = [
     "lammps~=2024.8.29.1.0",
@@ -132,16 +133,31 @@ cu12 = [
     "nvidia-curand-cu12",
     "nvidia-cusolver-cu12",
     "nvidia-cusparse-cu12",
-    "nvidia-cudnn-cu12<9",
+    "nvidia-cudnn-cu12",
     "nvidia-cuda-nvcc-cu12",
 ]
 jax = [
+    # below is a funny workaround for
+    # https://github.com/astral-sh/uv/issues/8601
     'jax>=0.4.33;python_version>="3.10"',
-    'flax>=0.8.0;python_version>="3.10"',
+    'jax>=0.4.33;python_version>="3.10"',
+    'flax>=0.10.0;python_version>="3.10"',
+    'flax>=0.10.0;python_version>="3.10"',
+    'orbax-checkpoint;python_version>="3.10"',
+    'orbax-checkpoint;python_version>="3.10"',
+    # The pinning of ml_dtypes may conflict with TF
+    # 'jax-ai-stack;python_version>="3.10"',
 ]
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
+
+[dependency-groups]
+dev = [
+  "pre-commit",
+  "cmake",
+  "mpich",
+]
 
 [tool.setuptools_scm]
 
@@ -276,8 +292,6 @@ PATH = "/usr/lib64/mpich/bin:$PATH"
 UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 # trick to find the correction version of mpich
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
-# PT 2.4.0 requires cudnn 9, incompatible with TF with cudnn 8
-PYTORCH_VERSION = "2.3.1"
 
 [tool.cibuildwheel.windows]
 test-extras = ["cpu", "torch"]
@@ -318,14 +332,14 @@ legacy_tox_ini = """
 # be silenced
 
 # W504 - line break after binary operator - there is conflict between W503 and W504 in
-# some lintners. One recomends line bread after and one before binary operator so we
-# swith W504 off and recomend this coding style:
+# some lintners. One recommends line bread after and one before binary operator so we
+# switch W504 off and recommend this coding style:
 # a = (b +     -> instead of -> a = (b
 #      c)                            + c)
 [tool.autopep8]
 ignore = "W504"
 
-# D413 - Missing blank line after last section - makes no sense only adds empy lines in
+# D413 - Missing blank line after last section - makes no sense only adds empty lines in
 # docstrings
 # D416 - Section name should end with a colon - only applicable to RST type docstrings,
 # we are using numpy style
@@ -402,6 +416,7 @@ banned-module-level-imports = [
 # Also ignore `E402` in all `__init__.py` files.
 "deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253"]
+"deepmd/jax/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
 "source/tests/universal/pt/**" = ["TID253"]
@@ -419,3 +434,19 @@ plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
 load-plugins = "deepmd_checker"
 disable = "all"
 enable = "E8001,E8002"
+
+[tool.flake8]
+select = [
+    "TOR0",
+    "TOR1",
+    "TOR2",
+]
+
+[tool.uv.sources]
+mpich = { index = "mpi4py" }
+openmpi = { index = "mpi4py" }
+
+[[tool.uv.index]]
+name = "mpi4py"
+url = "https://pypi.anaconda.org/mpi4py/simple"
+explicit = true

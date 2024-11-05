@@ -70,7 +70,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         for ii in range(1, self.numb_descrpt):
             assert (
                 self.descrpt_list[ii].get_ntypes() == self.descrpt_list[0].get_ntypes()
-            ), f"number of atom types in {ii}th descrptor does not match others"
+            ), f"number of atom types in {ii}th descriptor does not match others"
         # if hybrid sel is larger than sub sel, the nlist needs to be cut for each type
         self.nlist_cut_idx: list[torch.Tensor] = []
         if self.mixed_types() and not all(
@@ -168,7 +168,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -223,6 +223,38 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             mean_list.append(mean_item)
             stddev_list.append(stddev_item)
         return mean_list, stddev_list
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        for descrpt in self.descrpt_list:
+            descrpt.enable_compression(
+                min_nbor_dist,
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            )
 
     def forward(
         self,
@@ -308,7 +340,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

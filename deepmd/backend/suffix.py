@@ -23,7 +23,7 @@ def format_model_suffix(
     """Check and format the suffixes of a filename.
 
     When preferred_backend is not given, this method checks the suffix of the filename
-    is within the suffixes of the any backends (with the given feature) and doesn't do formating.
+    is within the suffixes of the any backends (with the given feature) and doesn't do formatting.
     When preferred_backend is given, strict_prefer must be given.
     If strict_prefer is True and the suffix is not within the suffixes of the preferred backend,
     or strict_prefer is False and the suffix is not within the suffixes of the any backend with the given feature,

@@ -11,9 +11,9 @@ keeping other sections the same as the normal energy model's input script.
 Note that when adding spin into the model, there will be some implicit modifications automatically done by the program:
 
 - In the TensorFlow backend, the `se_e2_a` descriptor will treat those atom types with spin as new (virtual) types,
-  and duplicate their corresponding selected numbers of neighbors ({ref}`sel <model/descriptor[se_e2_a]/sel>`) from their real atom types.
+  and duplicate their corresponding selected numbers of neighbors ({ref}`sel <model[standard]/descriptor[se_e2_a]/sel>`) from their real atom types.
 - In the PyTorch backend, if spin settings are added, all the types (with or without spin) will have their virtual types.
-  The `se_e2_a` descriptor will thus double the {ref}`sel <model/descriptor[se_e2_a]/sel>` list,
+  The `se_e2_a` descriptor will thus double the {ref}`sel <model[standard]/descriptor[se_e2_a]/sel>` list,
   while in other descriptors with mixed types (such as `dpa1` or `dpa2`), the sel number will not be changed for clarity.
   If you are using descriptors with mixed types, to achieve better performance,
   you should manually extend your sel number (maybe double) depending on the balance between performance and efficiency.
@@ -145,7 +145,7 @@ We list the details about spin system data format in TensorFlow backend:
 
 ### Spin data format in PyTorch/DP
 
-In the PyTorch backend, spin and magnetic forces are listed in seperate files, and the data format may contain the following files:
+In the PyTorch backend, spin and magnetic forces are listed in separate files, and the data format may contain the following files:
 
 ```
 type.raw

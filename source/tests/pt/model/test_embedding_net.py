@@ -181,7 +181,7 @@ class TestSeA(unittest.TestCase):
                 key = gen_key(worb=m[2], depth=int(m[1]) + 1, elemid=int(m[0]))
                 var = dp_vars[key]
                 with torch.no_grad():
-                    # Keep parameter value consistency between 2 implentations
+                    # Keep parameter value consistency between 2 implementations
                     param.data.copy_(torch.from_numpy(var))
 
         pt_coord = self.torch_batch["coord"].to(env.DEVICE)

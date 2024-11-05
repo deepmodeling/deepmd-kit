@@ -58,6 +58,7 @@ else:
     ("float64", "float32"),  # precision
     (True, False),  # mixed_types
     (0, 1),  # numb_fparam
+    (0, 1),  # numb_aparam
     (10, 20),  # numb_dos
 )
 class TestDOS(CommonTest, FittingTest, unittest.TestCase):
@@ -68,6 +69,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return {
@@ -75,6 +77,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             "resnet_dt": resnet_dt,
             "precision": precision,
             "numb_fparam": numb_fparam,
+            "numb_aparam": numb_aparam,
             "seed": 20240217,
             "numb_dos": numb_dos,
         }
@@ -86,6 +89,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return CommonTest.skip_pt
@@ -115,14 +119,18 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
         # inconsistent if not sorted
         self.atype.sort()
         self.fparam = -np.ones((1,), dtype=GLOBAL_NP_FLOAT_PRECISION)
+        self.aparam = np.zeros_like(
+            self.atype, dtype=GLOBAL_NP_FLOAT_PRECISION
+        ).reshape(-1, 1)
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return {
@@ -137,6 +145,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return self.build_tf_fitting(
@@ -145,6 +154,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             self.natoms,
             self.atype,
             self.fparam if numb_fparam else None,
+            self.aparam if numb_aparam else None,
             suffix,
         )
 
@@ -154,6 +164,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return (
@@ -162,6 +173,9 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
                 fparam=torch.from_numpy(self.fparam).to(device=PT_DEVICE)
                 if numb_fparam
+                else None,
+                aparam=torch.from_numpy(self.aparam).to(device=PT_DEVICE)
+                if numb_aparam
                 else None,
             )["dos"]
             .detach()
@@ -175,12 +189,14 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return dp_obj(
             self.inputs,
             self.atype.reshape(1, -1),
             fparam=self.fparam if numb_fparam else None,
+            aparam=self.aparam if numb_aparam else None,
         )["dos"]
 
     def eval_jax(self, jax_obj: Any) -> Any:
@@ -189,6 +205,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return np.asarray(
@@ -196,6 +213,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
                 jnp.asarray(self.inputs),
                 jnp.asarray(self.atype.reshape(1, -1)),
                 fparam=jnp.asarray(self.fparam) if numb_fparam else None,
+                aparam=jnp.asarray(self.aparam) if numb_aparam else None,
             )["dos"]
         )
 
@@ -206,6 +224,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         return np.asarray(
@@ -213,6 +232,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
                 array_api_strict.asarray(self.inputs),
                 array_api_strict.asarray(self.atype.reshape(1, -1)),
                 fparam=array_api_strict.asarray(self.fparam) if numb_fparam else None,
+                aparam=array_api_strict.asarray(self.aparam) if numb_aparam else None,
             )["dos"]
         )
 
@@ -230,6 +250,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         if precision == "float64":
@@ -247,6 +268,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
             precision,
             mixed_types,
             numb_fparam,
+            numb_aparam,
             numb_dos,
         ) = self.param
         if precision == "float64":

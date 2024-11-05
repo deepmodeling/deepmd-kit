@@ -98,6 +98,34 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                     vars.append(kk)
             return vars
 
+        def enable_compression(
+            self,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Call atomic_model enable_compression().
+
+            Parameters
+            ----------
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            self.atomic_model.enable_compression(
+                self.get_min_nbor_dist(),
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            )
+
         # cannot use the name forward. torch script does not work
         def forward_common(
             self,
@@ -221,7 +249,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x (nall x 3)
+                coordinates in extended region. nf x (nall x 3)
             extended_atype
                 atomic type in extended region. nf x nall
             nlist
@@ -362,7 +390,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             the `nlist` is pad with -1.
 
             3. If the number of neighbors in the `nlist` is larger than sum(self.sel),
-            the nearest sum(sel) neighbors will be preseved.
+            the nearest sum(sel) neighbors will be preserved.
 
             Known limitations:
 
@@ -372,7 +400,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x nall x 3
+                coordinates in extended region. nf x nall x 3
             extended_atype
                 atomic type in extended region. nf x nall
             nlist
@@ -383,7 +411,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Returns
             -------
             formated_nlist
-                the formated nlist.
+                the formatted nlist.
 
             """
             mixed_types = self.mixed_types()

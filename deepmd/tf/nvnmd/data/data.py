@@ -118,7 +118,7 @@ jdata_config_v0 = {
     "end": "",
 }
 
-# change the configuration accordng to the max_nnei
+# change the configuration according to the max_nnei
 jdata_config_v0_ni128 = jdata_config_v0.copy()
 jdata_config_v0_ni256 = jdata_config_v0.copy()
 jdata_config_v0_ni256["ctrl"] = {
@@ -250,7 +250,7 @@ jdata_config_v1 = {
     "end": "",
 }
 
-# change the configuration accordng to the max_nnei
+# change the configuration according to the max_nnei
 jdata_config_v1_ni128 = jdata_config_v1.copy()
 jdata_config_v1_ni256 = jdata_config_v1.copy()
 jdata_config_v1_ni256["ctrl"] = {

@@ -42,7 +42,7 @@ class TestModel(tf.test.TestCase):
         rcut = jdata["model"]["rcut"]
 
         def pair_pot(r: float):
-            # LJ, as exmaple
+            # LJ, as example
             return 4 * (1 / r**12 - 1 / r**6)
 
         dx = 1e-4

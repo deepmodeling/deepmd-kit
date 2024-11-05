@@ -1,7 +1,7 @@
-# Fit energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
+# Fit energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
@@ -79,7 +79,7 @@ Benefiting from the relative force loss, small forces can be fitted more accurat
 
 ## The fitting network
 
-The construction of the fitting net is given by section {ref}`fitting_net <model/fitting_net>`
+The construction of the fitting net is given by section {ref}`fitting_net <model[standard]/fitting_net>`
 
 ```json
 	"fitting_net" : {
@@ -89,9 +89,9 @@ The construction of the fitting net is given by section {ref}`fitting_net <model
 	},
 ```
 
-- {ref}`neuron <model/fitting_net[ener]/neuron>` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
-- If the option {ref}`resnet_dt <model/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
-- {ref}`seed <model/fitting_net[ener]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
+- {ref}`neuron <model[standard]/fitting_net[ener]/neuron>` specifies the size of the fitting net. If two neighboring layers are of the same size, then a [ResNet architecture](https://arxiv.org/abs/1512.03385) is built between them.
+- If the option {ref}`resnet_dt <model[standard]/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
+- {ref}`seed <model[standard]/fitting_net[ener]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
 ## Loss
 

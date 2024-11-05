@@ -6,6 +6,7 @@ from typing import (
     Optional,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.common import (
@@ -21,7 +22,7 @@ from deepmd.utils.neighbor_stat import NeighborStat as BaseNeighborStat
 
 
 class NeighborStatOP(NativeOP):
-    """Class for getting neighbor statics data information.
+    """Class for getting neighbor statistics data information.
 
     Parameters
     ----------
@@ -68,42 +69,42 @@ class NeighborStatOP(NativeOP):
         np.ndarray
             The maximal number of neighbors
         """
+        xp = array_api_compat.array_namespace(coord, atype)
         nframes = coord.shape[0]
-        coord = coord.reshape(nframes, -1, 3)
+        coord = xp.reshape(coord, (nframes, -1, 3))
         nloc = coord.shape[1]
-        coord = coord.reshape(nframes, nloc * 3)
+        coord = xp.reshape(coord, (nframes, nloc * 3))
         extend_coord, extend_atype, _ = extend_coord_with_ghosts(
             coord, atype, cell, self.rcut
         )
 
-        coord1 = extend_coord.reshape(nframes, -1)
+        coord1 = xp.reshape(extend_coord, (nframes, -1))
         nall = coord1.shape[1] // 3
         coord0 = coord1[:, : nloc * 3]
         diff = (
-            coord1.reshape([nframes, -1, 3])[:, None, :, :]
-            - coord0.reshape([nframes, -1, 3])[:, :, None, :]
+            xp.reshape(coord1, [nframes, -1, 3])[:, None, :, :]
+            - xp.reshape(coord0, [nframes, -1, 3])[:, :, None, :]
         )
         assert list(diff.shape) == [nframes, nloc, nall, 3]
         # remove the diagonal elements
-        mask = np.eye(nloc, nall, dtype=bool)
-        diff[:, mask] = np.inf
-        rr2 = np.sum(np.square(diff), axis=-1)
-        min_rr2 = np.min(rr2, axis=-1)
+        mask = xp.eye(nloc, nall, dtype=xp.bool)
+        mask = xp.tile(mask[None, :, :, None], (nframes, 1, 1, 3))
+        diff = xp.where(mask, xp.full_like(diff, xp.inf), diff)
+        rr2 = xp.sum(xp.square(diff), axis=-1)
+        min_rr2 = xp.min(rr2, axis=-1)
         # count the number of neighbors
         if not self.mixed_types:
             mask = rr2 < self.rcut**2
-            nnei = np.zeros((nframes, nloc, self.ntypes), dtype=int)
+            nneis = []
             for ii in range(self.ntypes):
-                nnei[:, :, ii] = np.sum(
-                    mask & (extend_atype == ii)[:, None, :], axis=-1
-                )
+                nneis.append(xp.sum(mask & (extend_atype == ii)[:, None, :], axis=-1))
+            nnei = xp.stack(nneis, axis=-1)
         else:
             mask = rr2 < self.rcut**2
             # virtual type (<0) are not counted
-            nnei = np.sum(mask & (extend_atype >= 0)[:, None, :], axis=-1).reshape(
-                nframes, nloc, 1
-            )
-        max_nnei = np.max(nnei, axis=1)
+            nnei = xp.sum(mask & (extend_atype >= 0)[:, None, :], axis=-1)
+            nnei = xp.reshape(nnei, (nframes, nloc, 1))
+        max_nnei = xp.max(nnei, axis=1)
         return min_rr2, max_nnei
 
 

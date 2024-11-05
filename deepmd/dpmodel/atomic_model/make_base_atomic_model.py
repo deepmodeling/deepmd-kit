@@ -148,11 +148,36 @@ def make_base_atomic_model(
         ) -> None:
             pass
 
+        def enable_compression(
+            self,
+            min_nbor_dist: float,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Call descriptor enable_compression().
+
+            Parameters
+            ----------
+            min_nbor_dist
+                The nearest distance between atoms
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            raise NotImplementedError("This atomi model doesn't support compression!")
+
         def make_atom_mask(
             self,
             atype: t_tensor,
         ) -> t_tensor:
-            """The atoms with type < 0 are treated as virutal atoms,
+            """The atoms with type < 0 are treated as virtual atoms,
             which serves as place-holders for multi-frame calculations
             with different number of atoms in different frames.
 
@@ -164,7 +189,7 @@ def make_base_atomic_model(
             Returns
             -------
             mask
-                True for real atoms and False for virutal atoms.
+                True for real atoms and False for virtual atoms.
 
             """
             # supposed to be supported by all backends

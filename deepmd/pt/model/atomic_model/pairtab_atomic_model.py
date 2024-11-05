@@ -59,7 +59,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     rcond : float, optional
         The condition number for the regression of atomic energy.
     atom_ener
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descrptor should be set.
+        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
 
     """
 
@@ -74,8 +74,8 @@ class PairTabAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
-        self.rcut = rcut
-        self.tab = self._set_pairtab(tab_file, rcut)
+        self.rcut = float(rcut)
+        self.tab = self._set_pairtab(tab_file, self.rcut)
 
         self.type_map = type_map
         self.ntypes = len(type_map)
@@ -104,7 +104,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         )
 
         # self.model_type = "ener"
-        # self.model_version = MODEL_VERSION ## this shoud be in the parent class
+        # self.model_version = MODEL_VERSION ## this should be in the parent class
 
         if isinstance(sel, int):
             self.sel = sel
@@ -269,9 +269,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         # i_type : (nframes, nloc), this is atype.
         # j_type : (nframes, nloc, nnei)
         j_type = extended_atype[
-            torch.arange(extended_atype.size(0), device=extended_coord.device)[  # pylint: disable=no-explicit-dtype
-                :, None, None
-            ],
+            torch.arange(
+                extended_atype.size(0),
+                device=extended_coord.device,
+                dtype=torch.int64,
+            )[:, None, None],
             masked_nlist,
         ]
 

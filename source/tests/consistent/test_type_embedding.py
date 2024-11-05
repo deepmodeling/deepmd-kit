@@ -82,7 +82,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
@@ -90,7 +90,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        # implict argument not input by users
+        # implicit argument not input by users
         return {
             "ntypes": self.ntypes,
             "padding": padding,

@@ -243,7 +243,7 @@ class NeighborStatOp : public OpKernel {
       } else if (nei_mode == -1) {
         ::build_nlist(d_nlist_a, d_nlist_r, d_coord3, -1, rcut, NULL);
       } else {
-        throw deepmd::deepmd_exception("unknow neighbor mode");
+        throw deepmd::deepmd_exception("unknown neighbor mode");
       }
 
       int MAX_NNEI = 0;

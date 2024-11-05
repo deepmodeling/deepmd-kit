@@ -22,7 +22,7 @@ def _MatmulFlt2fixNvnmdGrad(op, grad):
     else:
         x_T = tf.transpose(x)
         w_T = tf.transpose(w)
-    # calcualte
+    # calculate
     # dx = tf.matmul(grad, w_T)
     # dw = tf.matmul(x_T, grad)
     dx = op_module.matmul_flt_nvnmd(grad, w_T, 1, 1)
