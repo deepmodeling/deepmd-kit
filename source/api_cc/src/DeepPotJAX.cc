@@ -380,6 +380,13 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   // mapping; for now, set it to -1, assume it is not used
   std::vector<int64_t> mapping_shape = {nframes, nall_real};
   std::vector<int64_t> mapping(nframes * nall_real, -1);
+  // pass mapping if it is given in the neighbor list
+  if (lmp_list.mapping) {
+    // assume nframes is 1
+    for (size_t ii = 0; ii < nloc_real; ii++) {
+      mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+    }
+  }
   input_list[3] = add_input(op, mapping, mapping_shape, data_tensor[3], status);
   // fparam
   std::vector<int64_t> fparam_shape = {nframes, dfparam};
