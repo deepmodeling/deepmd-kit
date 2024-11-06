@@ -486,9 +486,7 @@ def test_min_dplr(lammps):
     lammps.special_bonds("lj/coul 1 1 1 angle no")
     lammps.kspace_style("pppm/dplr 1e-5")
     lammps.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
-    lammps.fix(
-        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1"
-    )
+    lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
     lammps.fix_modify("0 virial yes")
     lammps.min_style("cg")
     lammps.minimize("0 1.0e-6 2 2")
