@@ -74,7 +74,7 @@ def model_call_from_call_lower(
     nframes, nloc = atype_shape[0], atype_shape[1]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
-    if tf.shape(bb)[-1] == 0:
+    if tf.shape(bb)[-1] != 0:
         coord_normalized = normalize_coord(
             cc.reshape(nframes, nloc, 3),
             bb.reshape(nframes, 3, 3),
