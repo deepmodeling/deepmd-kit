@@ -45,6 +45,8 @@ class DP(Calculator):
         will infer this information from model, by default None
     neighbor_list : ase.neighborlist.NeighborList, optional
         The neighbor list object. If None, then build the native neighbor list.
+    head : Union[str, None], optional
+        a specific model branch choosing from pretrained model, by default None
 
     Examples
     --------
