@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
-    Optional,
 )
 
 import tensorflow as tf
@@ -29,8 +28,8 @@ def model_call_from_call_lower(
             tnp.ndarray,
             tnp.ndarray,
             tnp.ndarray,
-            Optional[tnp.ndarray],
-            Optional[tnp.ndarray],
+            tnp.ndarray,
+            tnp.ndarray,
             bool,
         ],
         dict[str, tnp.ndarray],
@@ -41,9 +40,9 @@ def model_call_from_call_lower(
     model_output_def: ModelOutputDef,
     coord: tnp.ndarray,
     atype: tnp.ndarray,
-    box: Optional[tnp.ndarray] = None,
-    fparam: Optional[tnp.ndarray] = None,
-    aparam: Optional[tnp.ndarray] = None,
+    box: tnp.ndarray = None,
+    fparam: tnp.ndarray = None,
+    aparam: tnp.ndarray = None,
     do_atomic_virial: bool = False,
 ):
     """Return model prediction from lower interface.

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
     Union,
 )
 
@@ -149,7 +148,7 @@ def tf_outer(a, b):
 def extend_coord_with_ghosts(
     coord: tnp.ndarray,
     atype: tnp.ndarray,
-    cell: Optional[tnp.ndarray],
+    cell: tnp.ndarray,
     rcut: float,
 ):
     """Extend the coordinates of the atoms by appending peridoc images.
@@ -193,9 +192,9 @@ def extend_coord_with_ghosts(
         to_face = to_face_distance(cell)
         nbuff = tf.cast(tnp.ceil(rcut / to_face), tnp.int64)
         nbuff = tnp.max(nbuff, axis=0)
-        xi = tf.range(nbuff[0], nbuff[0] + 1, 1, dtype=tnp.int64)
-        yi = tf.range(nbuff[1], nbuff[1] + 1, 1, dtype=tnp.int64)
-        zi = tf.range(nbuff[2], nbuff[2] + 1, 1, dtype=tnp.int64)
+        xi = tf.range(-nbuff[0], nbuff[0] + 1, 1, dtype=tnp.int64)
+        yi = tf.range(-nbuff[1], nbuff[1] + 1, 1, dtype=tnp.int64)
+        zi = tf.range(-nbuff[2], nbuff[2] + 1, 1, dtype=tnp.int64)
         xyz = tf_outer(xi, tnp.asarray([1, 0, 0]))[:, tnp.newaxis, tnp.newaxis, :]
         xyz = xyz + tf_outer(yi, tnp.asarray([0, 1, 0]))[tnp.newaxis, :, tnp.newaxis, :]
         xyz = xyz + tf_outer(zi, tnp.asarray([0, 0, 1]))[tnp.newaxis, tnp.newaxis, :, :]
