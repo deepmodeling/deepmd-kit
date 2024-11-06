@@ -335,6 +335,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     jax_class = EnergyModelJAX
+    pd_class = EnergyModelPD
     args = model_args()
 
     def get_reference_backend(self):
