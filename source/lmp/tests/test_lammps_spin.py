@@ -24,8 +24,8 @@ pbtxt_file = (
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deepspin_nlist-2.pbtxt"
 )
-pb_file = Path(__file__).parent / "graph.pb"
-pb_file2 = Path(__file__).parent / "graph2.pb"
+pb_file = Path(__file__).parent / "deepspin_nlist.pb"
+pb_file2 = Path(__file__).parent / "deepspin_nlist-2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
 data_file_si = Path(__file__).parent / "data.si"
