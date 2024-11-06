@@ -49,7 +49,8 @@ else:
 if INSTALLED_PD:
     from deepmd.pd.model.model import get_model as get_model_pd
     from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
-
+    from deepmd.pd.utils.utils import to_numpy_array as paddle_to_numpy
+    from deepmd.pd.utils.utils import to_paddle_tensor as numpy_to_paddle
 else:
     EnergyModelPD = None
 from deepmd.utils.argcheck import (
@@ -232,6 +233,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pd(self, pt_obj: Any) -> Any:
+        return self.eval_pd_model(
+            pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
@@ -268,11 +278,11 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             )
         elif backend is self.RefBackend.PD:
             return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                ret["atom_virial"].ravel(),
+                ret["energy"].flatten(),
+                ret["atom_energy"].flatten(),
+                ret["force"].flatten(),
+                ret["virial"].flatten(),
+                ret["atom_virial"].flatten(),
             )
         raise ValueError(f"Unknown backend: {backend}")
 
@@ -338,6 +348,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.JAX
         if not self.skip_dp:
             return self.RefBackend.DP
+        if not self.skip_pd:
+            return self.RefBackend.PD
         raise ValueError("No available reference")
 
     @property
@@ -358,6 +370,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             return get_model_pt(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
+        elif cls is EnergyModelPD:
+            return get_model_pd(data)
         return cls(**data, **self.additional_data)
 
     def setUp(self):
@@ -452,6 +466,18 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             ).items()
         }
 
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return {
+            kk: paddle_to_numpy(vv)
+            for kk, vv in pd_obj.forward_lower(
+                numpy_to_paddle(self.extended_coord),
+                numpy_to_paddle(self.extended_atype),
+                numpy_to_paddle(self.nlist),
+                numpy_to_paddle(self.mapping),
+                do_atomic_virial=True,
+            ).items()
+        }
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
@@ -477,5 +503,13 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 ret["energy_derv_r"].ravel(),
                 ret["energy_derv_c_redu"].ravel(),
                 ret["energy_derv_c"].ravel(),
+            )
+        elif backend is self.RefBackend.PD:
+            return (
+                ret["energy"].flatten(),
+                ret["atom_energy"].flatten(),
+                ret["extended_force"].flatten(),
+                ret["virial"].flatten(),
+                ret["extended_virial"].flatten(),
             )
         raise ValueError(f"Unknown backend: {backend}")
