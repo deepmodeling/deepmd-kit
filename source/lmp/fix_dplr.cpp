@@ -307,7 +307,7 @@ void FixDPLR::setup_post_neighbor() {
   double **x = atom->x;
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs, 1);
+  get_valid_pairs(valid_pairs, true);
 
   for (int ii = 0; ii < valid_pairs.size(); ++ii) {
     int idx0 = valid_pairs[ii].first;
@@ -357,7 +357,7 @@ void FixDPLR::min_setup(int vflag) { setup(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, int setup) {
+void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
   pairs.clear();
 
   int nlocal = atom->nlocal;
@@ -444,7 +444,7 @@ void FixDPLR::pre_exchange() {
   int nall = nlocal + nghost;
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs, 0);
+  get_valid_pairs(valid_pairs, false);
 
   for (int ii = 0; ii < valid_pairs.size(); ++ii) {
     int idx0 = valid_pairs[ii].first;
@@ -545,7 +545,7 @@ void FixDPLR::pre_force(int vflag) {
   // vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs, 0);
+  get_valid_pairs(valid_pairs, false);
 
   int odim = dpt.output_dim();
   assert(odim == 3);
@@ -668,7 +668,7 @@ void FixDPLR::post_force(int vflag) {
                                      list->firstneigh);
   // bonded pairs
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs, 0);
+  get_valid_pairs(valid_pairs, false);
   // output vects
   vector<FLOAT_PREC> dfcorr, dvcorr;
   // compute
