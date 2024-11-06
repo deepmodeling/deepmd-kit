@@ -8,16 +8,22 @@ import numpy as np
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.pt.infer.deep_eval import (
+from deepmd.infer.deep_eval import (
     DeepEval,
 )
 
 # from deepmd.tf.entrypoints.compress import compress
-from .common import (
+from source.tests.pt.common import (
     j_loader,
     run_dp,
     tests_path,
 )
+
+# from .common import (
+#     j_loader,
+#     run_dp,
+#     tests_path,
+# )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
@@ -39,7 +45,7 @@ def _init_models():
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["training"]["training_data"]["systems"] = data_file
-    jdata["training"]["validation_data"]["systems"] = data_file
+    # jdata["training"]["validation_data"]["systems"] = data_file
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
@@ -62,7 +68,7 @@ def _init_models_exclude_types():
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
     jdata["training"]["training_data"]["systems"] = data_file
-    jdata["training"]["validation_data"]["systems"] = data_file
+    # jdata["training"]["validation_data"]["systems"] = data_file
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
@@ -424,7 +430,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         ff0 = water0.get_forces()
         ee1 = water1.get_potential_energy()
         ff1 = water1.get_forces()
-        nframes = 1
+        # nframes = 1
         np.testing.assert_almost_equal(ff0, ff1, default_places)
         np.testing.assert_almost_equal(ee0, ee1, default_places)
 
