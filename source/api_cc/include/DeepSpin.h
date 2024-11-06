@@ -11,13 +11,13 @@ namespace deepmd {
 /**
  * @brief Deep Potential.
  **/
-class DeepSpinBase : public DeepBaseModelBase {
+class DeepSpinBackend : public DeepBaseModelBackend {
  public:
   /**
    * @brief DP constructor without initialization.
    **/
-  DeepSpinBase() {};
-  virtual ~DeepSpinBase() {};
+  DeepSpinBackend() {};
+  virtual ~DeepSpinBackend() {};
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -25,9 +25,9 @@ class DeepSpinBase : public DeepBaseModelBase {
    * @param[in] file_content The content of the model file. If it is not empty,
    *DP will read from the string instead of the file.
    **/
-  DeepSpinBase(const std::string& model,
-               const int& gpu_rank = 0,
-               const std::string& file_content = "");
+  DeepSpinBackend(const std::string& model,
+                  const int& gpu_rank = 0,
+                  const std::string& file_content = "");
   /**
    * @brief Initialize the DP.
    * @param[in] model The name of the frozen model file.
@@ -415,7 +415,7 @@ class DeepSpin : public DeepBaseModel {
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
  protected:
-  std::shared_ptr<deepmd::DeepSpinBase> dp;
+  std::shared_ptr<deepmd::DeepSpinBackend> dp;
 };
 
 class DeepSpinModelDevi : public DeepBaseModelDevi {

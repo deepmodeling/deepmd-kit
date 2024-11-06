@@ -10,7 +10,7 @@ namespace deepmd {
 /**
  * @brief PyTorch implementation for Deep Potential.
  **/
-class DeepSpinPT : public DeepSpinBase {
+class DeepSpinPT : public DeepSpinBackend {
  public:
   /**
    * @brief DP constructor without initialization.

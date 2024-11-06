@@ -10,13 +10,13 @@ namespace deepmd {
 /**
  * @brief Deep Potential Base Model.
  **/
-class DeepBaseModelBase {
+class DeepBaseModelBackend {
  public:
   /**
    * @brief DP constructor without initialization.
    **/
-  DeepBaseModelBase() {};
-  virtual ~DeepBaseModelBase() {};
+  DeepBaseModelBackend() {};
+  virtual ~DeepBaseModelBackend() {};
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -24,9 +24,9 @@ class DeepBaseModelBase {
    * @param[in] file_content The content of the model file. If it is not empty,
    *DP will read from the string instead of the file.
    **/
-  DeepBaseModelBase(const std::string& model,
-                    const int& gpu_rank = 0,
-                    const std::string& file_content = "");
+  DeepBaseModelBackend(const std::string& model,
+                       const int& gpu_rank = 0,
+                       const std::string& file_content = "");
   /**
    * @brief Initialize the DP.
    * @param[in] model The name of the frozen model file.
@@ -144,7 +144,7 @@ class DeepBaseModel {
 
  protected:
   bool inited;
-  std::shared_ptr<deepmd::DeepBaseModelBase> dpbase;
+  std::shared_ptr<deepmd::DeepBaseModelBackend> dpbase;
 };
 
 class DeepBaseModelDevi {

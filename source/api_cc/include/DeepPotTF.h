@@ -10,7 +10,7 @@ namespace deepmd {
 /**
  * @brief TensorFlow implementation for Deep Potential.
  **/
-class DeepPotTF : public DeepPotBase {
+class DeepPotTF : public DeepPotBackend {
  public:
   /**
    * @brief DP constructor without initialization.
