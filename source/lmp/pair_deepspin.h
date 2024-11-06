@@ -40,11 +40,12 @@ namespace LAMMPS_NS {
 class CommBrickDeepSpin : public CommBrick {
   friend class PairDeepSpin;
 };
-class PairDeepSpin : public PairDeepMDBase {
+class PairDeepSpin : public PairDeepBaseModel {
  public:
   PairDeepSpin(class LAMMPS *);
   ~PairDeepSpin() override;
   void settings(int, char **) override;
+  void coeff(int, char **) override;
   void compute(int, int) override;
   int pack_reverse_comm(int, int, double *) override;
   void unpack_reverse_comm(int, int *, double *) override;

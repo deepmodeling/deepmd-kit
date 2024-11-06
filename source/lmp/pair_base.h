@@ -28,15 +28,14 @@ namespace deepmd_compat = deepmd::hpp;
 #define FLOAT_PREC double
 
 namespace LAMMPS_NS {
-class PairDeepMDBase : public Pair {
+class PairDeepBaseModel : public Pair {
  public:
-  PairDeepMDBase(class LAMMPS *,
-                 const char *,
-                 deepmd_compat::DeepBaseModel &,
-                 deepmd_compat::DeepBaseModelDevi &);
-  virtual ~PairDeepMDBase() override;
+  PairDeepBaseModel(class LAMMPS *,
+                    const char *,
+                    deepmd_compat::DeepBaseModel &,
+                    deepmd_compat::DeepBaseModelDevi &);
+  virtual ~PairDeepBaseModel() override;
   void *extract(const char *, int &) override;
-  void coeff(int, char **) override;
   void init_style() override;
   void write_restart(FILE *) override;
   void read_restart(FILE *) override;

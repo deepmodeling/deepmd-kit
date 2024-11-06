@@ -845,7 +845,7 @@ class DeepBaseModel {
    * @brief DP Base Model constructor without initialization.
    **/
   DeepBaseModel() : dpbase(nullptr) {};
-  virtual ~DeepBaseModel() { DP_DeleteDeepBaseModel(dpbase); };
+  virtual ~DeepBaseModel() {};
 
   /**
    * @brief Get the cutoff radius.
@@ -955,7 +955,7 @@ class DeepPot : public DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepPot() : dp(nullptr) {};
-  ~DeepPot() {};
+  ~DeepPot() { DP_DeleteDeepPot(dp); };
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1426,7 +1426,7 @@ class DeepSpin : public DeepBaseModel {
    * @brief DP constructor without initialization.
    **/
   DeepSpin() : dp(nullptr) {};
-  ~DeepSpin() {};
+  ~DeepSpin() { DP_DeleteDeepSpin(dp); };
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -1730,7 +1730,7 @@ class DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepBaseModelDevi() : dpbase(nullptr) {};
-  virtual ~DeepBaseModelDevi() { DP_DeleteDeepBaseModelDevi(dpbase); };
+  virtual ~DeepBaseModelDevi() {};
 
   /**
    * @brief Get the cutoff radius.
@@ -1939,7 +1939,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepPotModelDevi() : dp(nullptr) {};
-  ~DeepPotModelDevi() {};
+  ~DeepPotModelDevi() { DP_DeleteDeepPotModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.
@@ -2371,7 +2371,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
    * @brief DP model deviation constructor without initialization.
    **/
   DeepSpinModelDevi() : dp(nullptr) {};
-  ~DeepSpinModelDevi() {};
+  ~DeepSpinModelDevi() { DP_DeleteDeepSpinModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.

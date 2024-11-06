@@ -51,7 +51,7 @@ static int stringCmp(const void *a, const void *b) {
   return sum;
 }
 
-int PairDeepMDBase::get_node_rank() {
+int PairDeepBaseModel::get_node_rank() {
   char host_name[MPI_MAX_PROCESSOR_NAME];
   memset(host_name, '\0', sizeof(char) * MPI_MAX_PROCESSOR_NAME);
   char(*host_names)[MPI_MAX_PROCESSOR_NAME];
@@ -98,7 +98,7 @@ int PairDeepMDBase::get_node_rank() {
   return looprank;
 }
 
-std::string PairDeepMDBase::get_file_content(const std::string &model) {
+std::string PairDeepBaseModel::get_file_content(const std::string &model) {
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;
@@ -121,7 +121,7 @@ std::string PairDeepMDBase::get_file_content(const std::string &model) {
   return file_content;
 }
 
-std::vector<std::string> PairDeepMDBase::get_file_content(
+std::vector<std::string> PairDeepBaseModel::get_file_content(
     const std::vector<std::string> &models) {
   std::vector<std::string> file_contents(models.size());
   for (unsigned ii = 0; ii < models.size(); ++ii) {
@@ -130,7 +130,7 @@ std::vector<std::string> PairDeepMDBase::get_file_content(
   return file_contents;
 }
 
-void PairDeepMDBase::make_fparam_from_compute(vector<double> &fparam) {
+void PairDeepBaseModel::make_fparam_from_compute(vector<double> &fparam) {
   assert(do_compute_fparam);
 
   int icompute = modify->find_compute(compute_fparam_id);
@@ -159,7 +159,7 @@ void PairDeepMDBase::make_fparam_from_compute(vector<double> &fparam) {
   }
 }
 
-void PairDeepMDBase::make_aparam_from_compute(vector<double> &aparam) {
+void PairDeepBaseModel::make_aparam_from_compute(vector<double> &aparam) {
   assert(do_compute_aparam);
 
   int icompute = modify->find_compute(compute_aparam_id);
@@ -189,7 +189,7 @@ void PairDeepMDBase::make_aparam_from_compute(vector<double> &aparam) {
 }
 
 #ifdef USE_TTM
-void PairDeepMDBase::make_ttm_fparam(vector<double> &fparam) {
+void PairDeepBaseModel::make_ttm_fparam(vector<double> &fparam) {
   assert(do_ttm);
   // get ttm_fix
   const FixTTMDP *ttm_fix = NULL;
@@ -230,7 +230,7 @@ void PairDeepMDBase::make_ttm_fparam(vector<double> &fparam) {
 #endif
 
 #ifdef USE_TTM
-void PairDeepMDBase::make_ttm_aparam(vector<double> &daparam) {
+void PairDeepBaseModel::make_ttm_aparam(vector<double> &daparam) {
   assert(do_ttm);
   // get ttm_fix
   const FixTTMDP *ttm_fix = NULL;
@@ -275,14 +275,15 @@ void PairDeepMDBase::make_ttm_aparam(vector<double> &daparam) {
 }
 #endif
 
-void PairDeepMDBase::cum_sum(std::map<int, int> &sum, std::map<int, int> &vec) {
+void PairDeepBaseModel::cum_sum(std::map<int, int> &sum,
+                                std::map<int, int> &vec) {
   sum[0] = 0;
   for (int ii = 1; ii < vec.size(); ++ii) {
     sum[ii] = sum[ii - 1] + vec[ii - 1];
   }
 }
 
-PairDeepMDBase::PairDeepMDBase(
+PairDeepBaseModel::PairDeepBaseModel(
     LAMMPS *lmp,
     const char *cite_user_package,
     deepmd_compat::DeepBaseModel &deep_model,
@@ -343,7 +344,7 @@ PairDeepMDBase::PairDeepMDBase(
   print_summary("  ");
 }
 
-void PairDeepMDBase::print_summary(const string pre) const {
+void PairDeepBaseModel::print_summary(const string pre) const {
   if (comm->me == 0) {
     // capture cout to a string, then call LAMMPS's utils::logmesg
     // https://stackoverflow.com/a/4043813/9567349
@@ -368,7 +369,7 @@ void PairDeepMDBase::print_summary(const string pre) const {
   }
 }
 
-PairDeepMDBase::~PairDeepMDBase() {
+PairDeepBaseModel::~PairDeepBaseModel() {
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
@@ -376,7 +377,7 @@ PairDeepMDBase::~PairDeepMDBase() {
   }
 }
 
-void PairDeepMDBase::allocate() {
+void PairDeepBaseModel::allocate() {
   allocated = 1;
   int n = atom->ntypes;
 
@@ -404,106 +405,13 @@ void PairDeepMDBase::allocate() {
   }
 }
 
-void PairDeepMDBase::read_restart(FILE *) { is_restart = true; }
+void PairDeepBaseModel::read_restart(FILE *) { is_restart = true; }
 
-void PairDeepMDBase::write_restart(FILE *) {
+void PairDeepBaseModel::write_restart(FILE *) {
   // pass
 }
 
-/* ----------------------------------------------------------------------
-   set coeffs for one or more type pairs
-------------------------------------------------------------------------- */
-
-void PairDeepMDBase::coeff(int narg, char **arg) {
-  if (!allocated) {
-    allocate();
-  }
-
-  int n = atom->ntypes;
-  int ilo, ihi, jlo, jhi;
-  ilo = 0;
-  jlo = 0;
-  ihi = n;
-  jhi = n;
-  if (narg >= 2) {
-    utils::bounds(FLERR, arg[0], 1, atom->ntypes, ilo, ihi, error);
-    utils::bounds(FLERR, arg[1], 1, atom->ntypes, jlo, jhi, error);
-    if (ilo != 1 || jlo != 1 || ihi != n || jhi != n) {
-      error->all(FLERR,
-                 "deepmd requires that the scale should be set to all atom "
-                 "types, i.e. pair_coeff * *.");
-    }
-  }
-  if (narg <= 2) {
-    type_idx_map.resize(n);
-    for (int ii = 0; ii < n; ++ii) {
-      type_idx_map[ii] = ii;
-    }
-  } else {
-    int iarg = 2;
-
-    // type_map is a list of strings with undetermined length
-    // note: although we have numb_types from the model, we do not require
-    // the number of types in the system matches that in the model
-    std::vector<std::string> type_map;
-    std::string type_map_str;
-    deep_base.get_type_map(type_map_str);
-    // convert the string to a vector of strings
-    std::istringstream iss(type_map_str);
-    std::string type_name;
-    while (iss >> type_name) {
-      type_map.push_back(type_name);
-    }
-
-    type_idx_map.clear();
-    type_names.clear();
-    while (iarg < narg) {
-      std::string type_name = arg[iarg];
-      type_names.push_back(type_name);
-      bool found_element = false;
-      for (int ii = 0; ii < type_map.size(); ++ii) {
-        if (type_map[ii] == type_name) {
-          type_idx_map.push_back(ii);
-          found_element = true;
-          break;
-        }
-      }
-      if (!found_element && "NULL" == type_name) {
-        type_idx_map.push_back(type_map.size());  // ghost type
-        found_element = true;
-      }
-      if (!found_element) {
-        error->all(FLERR, "pair_coeff: element " + type_name +
-                              " not found in the model");
-      }
-      iarg += 1;
-    }
-    numb_types = type_idx_map.size();
-    if (numb_types < n) {
-      type_idx_map.resize(n);
-      for (int ii = numb_types; ii < n; ++ii) {
-        type_idx_map[ii] = -1;
-      }
-    }
-  }
-  for (int i = ilo; i <= ihi; i++) {
-    for (int j = MAX(jlo, i); j <= jhi; j++) {
-      setflag[i][j] = 1;
-      scale[i][j] = 1.0;
-      if (i > numb_types || j > numb_types) {
-        char warning_msg[1024];
-        sprintf(warning_msg,
-                "Interaction between types %d and %d is set with deepmd, but "
-                "will be ignored.\n Deepmd model has only %d types, it only "
-                "computes the mulitbody interaction of types: 1-%d.",
-                i, j, numb_types, numb_types);
-        error->warning(FLERR, warning_msg);
-      }
-    }
-  }
-}
-
-void PairDeepMDBase::init_style() {
+void PairDeepBaseModel::init_style() {
 #if LAMMPS_VERSION_NUMBER >= 20220324
   neighbor->add_request(this, NeighConst::REQ_FULL);
 #else
@@ -527,7 +435,7 @@ void PairDeepMDBase::init_style() {
   }
 }
 
-double PairDeepMDBase::init_one(int i, int j) {
+double PairDeepBaseModel::init_one(int i, int j) {
   if (i > numb_types || j > numb_types) {
     char warning_msg[1024];
     sprintf(warning_msg,
@@ -546,7 +454,7 @@ double PairDeepMDBase::init_one(int i, int j) {
   return cutoff;
 }
 
-void *PairDeepMDBase::extract(const char *str, int &dim) {
+void *PairDeepBaseModel::extract(const char *str, int &dim) {
   if (strcmp(str, "cut_coul") == 0) {
     dim = 0;
     return (void *)&cutoff;
