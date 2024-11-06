@@ -1131,7 +1131,7 @@ void DP_DeepSpinModelDeviComputeNListf2(DP_DeepSpinModelDevi* dp,
 
 // Deep Base Model methods
 /**
- * @brief Get the type map of a DP.
+ * @brief Get the cutoff of a DP.
  * @param[in] dpbase The DP to use.
  * @return The cutoff radius.
  */
@@ -1241,6 +1241,232 @@ int DP_DeepBaseModelDeviGetNumbTypesSpin(DP_DeepBaseModelDevi* dpbase);
  * @return const char* error message.
  */
 const char* DP_DeepBaseModelDeviCheckOK(DP_DeepBaseModelDevi* dpbase);
+
+// DeepPot methods for c_api
+/**
+ * @brief Get the cutoff of a DP.
+ * @param[in] dp The DP to use.
+ * @return The cutoff radius.
+ */
+double DP_DeepPotGetCutoff(DP_DeepPot* dp);
+
+/**
+ * @brief Get the number of types of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types of the DP.
+ */
+int DP_DeepPotGetNumbTypes(DP_DeepPot* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types with spin of the DP.
+ */
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp);
+
+/**
+ * @brief Get the dimension of frame parameters of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of frame parameters of the DP.
+ */
+int DP_DeepPotGetDimFParam(DP_DeepPot* dp);
+
+/**
+ * @brief Get the dimension of atomic parameters of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of atomic parameters of the DP.
+ */
+int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
+
+/**
+ * @brief Check whether the atomic dimension of atomic parameters is nall
+ * instead of nloc.
+ *
+ * @param[in] dp The DP to use.
+ * @return true the atomic dimension of atomic parameters is nall
+ * @return false the atomic dimension of atomic parameters is nloc
+ */
+bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp);
+
+/**
+ * @brief Get the type map of a DP.
+ * @param[in] dp The DP to use.
+ * @return The type map of the DP.
+ */
+const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp);
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepPotCheckOK(DP_DeepPot* dp);
+
+/**
+ * @brief Get the dimension of frame parameters of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of frame parameters of the DP Model Deviation.
+ */
+int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp);
+/**
+ * @brief Get the dimension of atomic parameters of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of atomic parameters of the DP Model Deviation.
+ */
+int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Check whether the atomic dimension of atomic parameters is nall
+ * instead of nloc.
+ *
+ * @param[in] dp The DP Model Deviation to use.
+ * @return true the atomic dimension of atomic parameters is nall
+ * @return false the atomic dimension of atomic parameters is nloc
+ */
+bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the type map of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The cutoff radius.
+ */
+double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the number of types of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types of the DP model deviation.
+ */
+int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types with spin of the DP model deviation.
+ */
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP model deviation to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
+
+// DeepSpin methods for c_api
+/**
+ * @brief Get the cutoff of a DP.
+ * @param[in] dp The DP to use.
+ * @return The cutoff radius.
+ */
+double DP_DeepSpinGetCutoff(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the number of types of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types of the DP.
+ */
+int DP_DeepSpinGetNumbTypes(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP.
+ * @param[in] dp The DP to use.
+ * @return The number of types with spin of the DP.
+ */
+int DP_DeepSpinGetNumbTypesSpin(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the dimension of frame parameters of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of frame parameters of the DP.
+ */
+int DP_DeepSpinGetDimFParam(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the dimension of atomic parameters of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of atomic parameters of the DP.
+ */
+int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
+
+/**
+ * @brief Check whether the atomic dimension of atomic parameters is nall
+ * instead of nloc.
+ *
+ * @param[in] dp The DP to use.
+ * @return true the atomic dimension of atomic parameters is nall
+ * @return false the atomic dimension of atomic parameters is nloc
+ */
+bool DP_DeepSpinIsAParamNAll(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the type map of a DP.
+ * @param[in] dp The DP to use.
+ * @return The type map of the DP.
+ */
+const char* DP_DeepSpinGetTypeMap(DP_DeepSpin* dp);
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepSpinCheckOK(DP_DeepSpin* dp);
+
+/**
+ * @brief Get the dimension of frame parameters of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of frame parameters of the DP Model Deviation.
+ */
+int DP_DeepSpinModelDeviGetDimFParam(DP_DeepSpinModelDevi* dp);
+/**
+ * @brief Get the dimension of atomic parameters of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of atomic parameters of the DP Model Deviation.
+ */
+int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Check whether the atomic dimension of atomic parameters is nall
+ * instead of nloc.
+ *
+ * @param[in] dp The DP Model Deviation to use.
+ * @return true the atomic dimension of atomic parameters is nall
+ * @return false the atomic dimension of atomic parameters is nloc
+ */
+bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Get the type map of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The cutoff radius.
+ */
+double DP_DeepSpinModelDeviGetCutoff(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Get the number of types of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types of the DP model deviation.
+ */
+int DP_DeepSpinModelDeviGetNumbTypes(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Get the number of types with spin of a DP model deviation.
+ * @param[in] dp The DP model deviation to use.
+ * @return The number of types with spin of the DP model deviation.
+ */
+int DP_DeepSpinModelDeviGetNumbTypesSpin(DP_DeepSpinModelDevi* dp);
+
+/**
+ * @brief Check if there is any exceptions throw.
+ *
+ * @param dp The DP model deviation to use.
+ * @return const char* error message.
+ */
+const char* DP_DeepSpinModelDeviCheckOK(DP_DeepSpinModelDevi* dp);
 
 /**
  * @brief The deep tensor.

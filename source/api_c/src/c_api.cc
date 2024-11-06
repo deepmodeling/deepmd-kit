@@ -1638,41 +1638,6 @@ void DP_DeepPotComputeMixedTypef(DP_DeepPot* dp,
       virial, atomic_energy, atomic_virial);
 }
 
-// base model methods
-const char* DP_DeepBaseModelGetTypeMap(DP_DeepBaseModel* dpbase) {
-  std::string type_map;
-  dpbase->dpbase.get_type_map(type_map);
-  return string_to_char(type_map);
-}
-
-double DP_DeepBaseModelGetCutoff(DP_DeepBaseModel* dpbase) {
-  return dpbase->dpbase.cutoff();
-}
-
-int DP_DeepBaseModelGetNumbTypes(DP_DeepBaseModel* dpbase) {
-  return dpbase->dpbase.numb_types();
-}
-
-int DP_DeepBaseModelGetNumbTypesSpin(DP_DeepBaseModel* dpbase) {
-  return dpbase->dpbase.numb_types_spin();
-}
-
-int DP_DeepBaseModelGetDimFParam(DP_DeepBaseModel* dpbase) {
-  return dpbase->dfparam;
-}
-
-int DP_DeepBaseModelGetDimAParam(DP_DeepBaseModel* dpbase) {
-  return dpbase->daparam;
-}
-
-bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase) {
-  return dpbase->aparam_nall;
-}
-
-const char* DP_DeepBaseModelCheckOK(DP_DeepBaseModel* dpbase) {
-  return string_to_char(dpbase->exception);
-}
-
 void DP_DeepPotModelDeviCompute(DP_DeepPotModelDevi* dp,
                                 const int natoms,
                                 const double* coord,
@@ -1903,7 +1868,41 @@ void DP_DeepSpinModelDeviComputeNListf2(DP_DeepSpinModelDevi* dp,
       aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial);
 }
 
-// base model
+// base model methods
+const char* DP_DeepBaseModelGetTypeMap(DP_DeepBaseModel* dpbase) {
+  std::string type_map;
+  dpbase->dpbase.get_type_map(type_map);
+  return string_to_char(type_map);
+}
+
+double DP_DeepBaseModelGetCutoff(DP_DeepBaseModel* dpbase) {
+  return dpbase->dpbase.cutoff();
+}
+
+int DP_DeepBaseModelGetNumbTypes(DP_DeepBaseModel* dpbase) {
+  return dpbase->dpbase.numb_types();
+}
+
+int DP_DeepBaseModelGetNumbTypesSpin(DP_DeepBaseModel* dpbase) {
+  return dpbase->dpbase.numb_types_spin();
+}
+
+int DP_DeepBaseModelGetDimFParam(DP_DeepBaseModel* dpbase) {
+  return dpbase->dfparam;
+}
+
+int DP_DeepBaseModelGetDimAParam(DP_DeepBaseModel* dpbase) {
+  return dpbase->daparam;
+}
+
+bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase) {
+  return dpbase->aparam_nall;
+}
+
+const char* DP_DeepBaseModelCheckOK(DP_DeepBaseModel* dpbase) {
+  return string_to_char(dpbase->exception);
+}
+
 double DP_DeepBaseModelDeviGetCutoff(DP_DeepBaseModelDevi* dpbase) {
   return dpbase->dpbase.cutoff();
 }
@@ -1930,6 +1929,138 @@ bool DP_DeepBaseModelDeviIsAParamNAll(DP_DeepBaseModelDevi* dpbase) {
 
 const char* DP_DeepBaseModelDeviCheckOK(DP_DeepBaseModelDevi* dpbase) {
   return string_to_char(dpbase->exception);
+}
+
+// DeepPot methods
+const char* DP_DeepPotGetTypeMap(DP_DeepPot* dp) {
+  return DP_DeepBaseModelGetTypeMap(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+double DP_DeepPotGetCutoff(DP_DeepPot* dp) {
+  return DP_DeepBaseModelGetCutoff(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepPotGetNumbTypes(DP_DeepPot* dp) {
+  return DP_DeepBaseModelGetNumbTypes(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepPotGetNumbTypesSpin(DP_DeepPot* dp) {
+  return DP_DeepBaseModelGetNumbTypesSpin(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepPotGetDimFParam(DP_DeepPot* dp) {
+  return DP_DeepBaseModelGetDimFParam(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepPotGetDimAParam(DP_DeepPot* dp) {
+  return DP_DeepBaseModelGetDimAParam(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp) {
+  return DP_DeepBaseModelIsAParamNAll(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
+  return DP_DeepBaseModelCheckOK(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+double DP_DeepPotModelDeviGetCutoff(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetCutoff(static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepPotModelDeviGetNumbTypes(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetNumbTypes(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepPotModelDeviGetNumbTypesSpin(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetNumbTypesSpin(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetDimFParam(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetDimAParam(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviIsAParamNAll(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviCheckOK(static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+// DeepSpin methods
+const char* DP_DeepSpinGetTypeMap(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelGetTypeMap(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+double DP_DeepSpinGetCutoff(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelGetCutoff(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepSpinGetNumbTypes(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelGetNumbTypes(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepSpinGetNumbTypesSpin(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelGetNumbTypesSpin(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepSpinGetDimFParam(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelGetDimFParam(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelGetDimAParam(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+bool DP_DeepSpinIsAParamNAll(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelIsAParamNAll(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+const char* DP_DeepSpinCheckOK(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelCheckOK(static_cast<DP_DeepBaseModel*>(dp));
+}
+
+double DP_DeepSpinModelDeviGetCutoff(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetCutoff(static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepSpinModelDeviGetNumbTypes(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetNumbTypes(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepSpinModelDeviGetNumbTypesSpin(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetNumbTypesSpin(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepSpinModelDeviGetDimFParam(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetDimFParam(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviGetDimAParam(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviIsAParamNAll(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+const char* DP_DeepSpinModelDeviCheckOK(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviCheckOK(static_cast<DP_DeepBaseModelDevi*>(dp));
 }
 
 void DP_DeepTensorComputeTensor(DP_DeepTensor* dt,
