@@ -65,14 +65,6 @@
       "batch_size": "auto",
       "_comment7": "that's all"
     },
-    "validation_data": {
-      "systems": [
-        "model_compression/data"
-      ],
-      "batch_size": 1,
-      "numb_btch": 3,
-      "_comment8": "that's all"
-    },
     "numb_steps": 1,
     "seed": 10,
     "disp_file": "lcurve.out",
