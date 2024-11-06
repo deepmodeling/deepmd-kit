@@ -383,7 +383,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   // pass mapping if it is given in the neighbor list
   if (lmp_list.mapping) {
     // assume nframes is 1
-    for (size_t ii = 0; ii < nloc_real; ii++) {
+    for (size_t ii = 0; ii < nall_real; ii++) {
       mapping[ii] = lmp_list.mapping[fwd_map[ii]];
     }
   }
