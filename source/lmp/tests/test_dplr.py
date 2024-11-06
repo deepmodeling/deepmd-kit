@@ -414,7 +414,7 @@ def test_pair_deepmd_lr_efield_constant(lammps):
     lammps.bond_coeff("*")
     lammps.special_bonds("lj/coul 1 1 1 angle no")
     lammps.fix(
-        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 1 pair_deepmd_index 0"
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 1"
     )
     lammps.fix_modify("0 energy yes virial yes")
     lammps.run(0)
@@ -450,7 +450,7 @@ def test_pair_deepmd_lr_efield_variable(lammps):
     lammps.bond_coeff("*")
     lammps.special_bonds("lj/coul 1 1 1 angle no")
     lammps.fix(
-        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 v_EFIELD_Z pair_deepmd_index 0"
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 efield 0 0 v_EFIELD_Z"
     )
     lammps.fix_modify("0 energy yes virial yes")
     lammps.run(0)
@@ -487,7 +487,7 @@ def test_min_dplr(lammps):
     lammps.kspace_style("pppm/dplr 1e-5")
     lammps.kspace_modify(f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}")
     lammps.fix(
-        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 pair_deepmd_index 0"
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1"
     )
     lammps.fix_modify("0 virial yes")
     lammps.min_style("cg")
@@ -515,7 +515,7 @@ def test_pair_deepmd_lr_type_map(lammps_type_map):
         f"gewald {beta:.2f} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
     )
     lammps_type_map.fix(
-        f"0 all dplr model {pb_file.resolve()} type_associate 2 3 bond_type 1 pair_deepmd_index 0"
+        f"0 all dplr model {pb_file.resolve()} type_associate 2 3 bond_type 1"
     )
     lammps_type_map.fix_modify("0 virial yes")
     lammps_type_map.run(0)
@@ -545,7 +545,7 @@ def test_pair_deepmd_lr_si(lammps_si):
         f"gewald {beta / constants.dist_metal2si:.6e} diff ik mesh {mesh:d} {mesh:d} {mesh:d}"
     )
     lammps_si.fix(
-        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1 pair_deepmd_index 0"
+        f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1"
     )
     lammps_si.fix_modify("0 virial yes")
     lammps_si.run(0)
