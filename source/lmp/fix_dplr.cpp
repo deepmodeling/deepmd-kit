@@ -30,6 +30,7 @@ static bool is_key(const string &input) {
   keys.push_back("type_associate");
   keys.push_back("bond_type");
   keys.push_back("efield");
+  keys.push_back("pair_deepmd_index");
   for (int ii = 0; ii < keys.size(); ++ii) {
     if (input == keys[ii]) {
       return true;
