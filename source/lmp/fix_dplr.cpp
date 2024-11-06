@@ -424,7 +424,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
         error->all(FLERR, str);
       }
     }
-    if (!(idx0 < nlocal && idx1 < nlocal) && setup == 0) {
+    if (!(idx0 < nlocal && idx1 < nlocal) && (!is_setup)) {
       error->all(FLERR,
                  "find a bonded pair that is not on the same processor, "
                  "something should not happen");
