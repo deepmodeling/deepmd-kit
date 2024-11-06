@@ -7,6 +7,7 @@ from deepmd.pt.model.model import (
     get_model,
 )
 
+
 def enable_compression(
     input_file: str,
     output: str,

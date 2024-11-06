@@ -9,6 +9,7 @@ from typing import (
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -502,10 +503,11 @@ class DescrptBlockSeA(DescriptorBlock):
 
         # add for compression
         self.compress = False
-        self.lower = {}
-        self.upper = {}
-        self.table_data = {}
-        self.table_config = []
+        self.compress_params = nn.ParameterDict()
+        # self.lower = {}
+        # self.upper = {}
+        # self.table_data = {}
+        # self.table_config = []
 
         ndim = 1 if self.type_one_side else 2
         filter_layers = NetworkCollection(
@@ -672,11 +674,25 @@ class DescrptBlockSeA(DescriptorBlock):
         lower,
         upper,
     ) -> None:
+        # lower: dict[str, int]
+        # upper: dict[str, int]
+        # table_data: dict[str, torch.Tensor]
+        # table_config: list[Union[int, float]]
         self.compress = True
-        self.table_data = table_data
-        self.table_config = table_config
-        self.lower = lower
-        self.upper = upper
+        for key, tensor in table_data.items():
+            self.compress_params["table_data_" + key] = nn.Parameter(tensor)
+        for key, value in lower.items():
+            self.compress_params["lower_" + key] = nn.Parameter(
+                torch.tensor(value, dtype=self.prec)  # pylint: disable=no-explicit-device
+            )
+        for key, value in upper.items():
+            self.compress_params["upper_" + key] = nn.Parameter(
+                torch.tensor(value, dtype=self.prec)  # pylint: disable=no-explicit-device
+            )
+        for idx, value in enumerate(table_config):
+            self.compress_params[f"table_config_{idx}"] = nn.Parameter(
+                torch.tensor(value, dtype=self.prec)  # pylint: disable=no-explicit-device
+            )
 
     def forward(
         self,
@@ -755,16 +771,39 @@ class DescrptBlockSeA(DescriptorBlock):
                     net = "filter_-1_net_" + str(ii)
                 else:
                     net = "filter_" + str(ti) + "_net_" + str(ii)
+                # info = [
+                #     self.lower[net],
+                #     self.upper[net],
+                #     self.upper[net] * self.table_config[0],
+                #     self.table_config[1],
+                #     self.table_config[2],
+                #     self.table_config[3],
+                # ]
                 info = [
-                    self.lower[net],
-                    self.upper[net],
-                    self.upper[net] * self.table_config[0],
-                    self.table_config[1],
-                    self.table_config[2],
-                    self.table_config[3],
+                    self.compress_params["lower_" + net].item()
+                    if "lower_" + net in self.compress_params
+                    else 0,
+                    self.compress_params["upper_" + net].item()
+                    if "upper_" + net in self.compress_params
+                    else 0,
+                    self.compress_params.get("upper_" + net, torch.tensor(0)).item()  # pylint: disable=no-explicit-dtype, no-explicit-device
+                    * self.compress_params.get(
+                        "table_config_0",
+                        torch.tensor(0),  # pylint: disable=no-explicit-dtype, no-explicit-device
+                    ).item(),
+                    self.compress_params.get("table_config_1", torch.tensor(0)).item(),  # pylint: disable=no-explicit-dtype, no-explicit-device
+                    self.compress_params.get("table_config_2", torch.tensor(0)).item(),  # pylint: disable=no-explicit-dtype, no-explicit-device
+                    self.compress_params.get("table_config_3", torch.tensor(0)).item(),  # pylint: disable=no-explicit-dtype, no-explicit-device
                 ]
                 ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
-                tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
+                # tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
+                tensor_data = (
+                    self.compress_params.get("table_data_" + net, torch.tensor(0))  # pylint: disable=no-explicit-dtype, no-explicit-device
+                    .to(ss.device)
+                    .to(dtype=self.prec)
+                )
+                # for idx, element in enumerate(info):
+                #     print(f"Element info[{idx}] - , Value: {element}")
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
                     tensor_data.contiguous(),
                     torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
