@@ -7,9 +7,6 @@ from typing import (
 import jax.experimental.jax2tf as jax2tf
 import tensorflow as tf
 
-from deepmd.dpmodel.model.make_model import (
-    model_call_from_call_lower,
-)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     ModelOutputDef,
@@ -55,6 +52,8 @@ class TFModelWrapper(tf.Module):
         self._call_lower_atomic_virial = jax2tf.call_tf(
             self.model.call_lower_atomic_virial
         )
+        self._call = jax2tf.call_tf(self.model.call)
+        self._call_atomic_virial = jax2tf.call_tf(self.model.call_atomic_virial)
         self.type_map = decode_list_of_bytes(self.model.get_type_map().numpy().tolist())
         self.rcut = self.model.get_rcut().numpy().item()
         self.dim_fparam = self.model.get_dim_fparam().numpy().item()
@@ -142,18 +141,28 @@ class TFModelWrapper(tf.Module):
             The keys are defined by the `ModelOutputDef`.
 
         """
-        return model_call_from_call_lower(
-            call_lower=self.call_lower,
-            rcut=self.get_rcut(),
-            sel=self.get_sel(),
-            mixed_types=self.mixed_types(),
-            model_output_def=self.model_output_def(),
-            coord=coord,
-            atype=atype,
-            box=box,
-            fparam=fparam,
-            aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
+        if do_atomic_virial:
+            call = self._call_atomic_virial
+        else:
+            call = self._call
+        # Attempt to convert a value (None) with an unsupported type (<class 'NoneType'>) to a Tensor.
+        if box is None:
+            box = jnp.empty((coord.shape[0], 0, 0), dtype=jnp.float64)
+        if fparam is None:
+            fparam = jnp.empty(
+                (coord.shape[0], self.get_dim_fparam()), dtype=jnp.float64
+            )
+        if aparam is None:
+            aparam = jnp.empty(
+                (coord.shape[0], coord.shape[1], self.get_dim_aparam()),
+                dtype=jnp.float64,
+            )
+        return call(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
         )
 
     def model_output_def(self):

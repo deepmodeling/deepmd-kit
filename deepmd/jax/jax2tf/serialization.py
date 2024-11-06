@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from typing import (
+    Optional,
+)
 
 import tensorflow as tf
+import tensorflow.experimental.numpy as tnp
 from jax.experimental import (
     jax2tf,
 )
 
+from deepmd.jax.jax2tf.make_model import (
+    model_call_from_call_lower,
+)
 from deepmd.jax.model.base_model import (
     BaseModel,
 )
@@ -28,7 +35,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
         tf_model = tf.Module()
 
-        def exported_whether_do_atomic_virial(do_atomic_virial):
+        def exported_whether_do_atomic_virial(do_atomic_virial, has_ghost_atoms):
             def call_lower_with_fixed_do_atomic_virial(
                 coord, atype, nlist, mapping, fparam, aparam
             ):
@@ -42,13 +49,20 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                     do_atomic_virial=do_atomic_virial,
                 )
 
+            # nghost >= 1 is assumed if there is
+            # other workaround does not work, such as
+            # nall; nloc + nghost - 1
+            if has_ghost_atoms:
+                nghost = "nghost"
+            else:
+                nghost = "0"
             return jax2tf.convert(
                 call_lower_with_fixed_do_atomic_virial,
                 polymorphic_shapes=[
-                    "(nf, nloc + nghost, 3)",
-                    "(nf, nloc + nghost)",
+                    f"(nf, nloc + {nghost}, 3)",
+                    f"(nf, nloc + {nghost})",
                     f"(nf, nloc, {model.get_nnei()})",
-                    "(nf, nloc + nghost)",
+                    f"(nf, nloc + {nghost})",
                     f"(nf, {model.get_dim_fparam()})",
                     f"(nf, nloc, {model.get_dim_aparam()})",
                 ],
@@ -71,8 +85,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         def call_lower_without_atomic_virial(
             coord, atype, nlist, mapping, fparam, aparam
         ):
-            return exported_whether_do_atomic_virial(do_atomic_virial=False)(
-                coord, atype, nlist, mapping, fparam, aparam
+            return tf.cond(
+                tf.shape(coord)[1] == tf.shape(nlist)[1],
+                lambda: exported_whether_do_atomic_virial(
+                    do_atomic_virial=False, has_ghost_atoms=False
+                )(coord, atype, nlist, mapping, fparam, aparam),
+                lambda: exported_whether_do_atomic_virial(
+                    do_atomic_virial=False, has_ghost_atoms=True
+                )(coord, atype, nlist, mapping, fparam, aparam),
             )
 
         tf_model.call_lower = call_lower_without_atomic_virial
@@ -89,11 +109,115 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             ],
         )
         def call_lower_with_atomic_virial(coord, atype, nlist, mapping, fparam, aparam):
-            return exported_whether_do_atomic_virial(do_atomic_virial=True)(
-                coord, atype, nlist, mapping, fparam, aparam
+            return tf.cond(
+                tf.shape(coord)[1] == tf.shape(nlist)[1],
+                lambda: exported_whether_do_atomic_virial(
+                    do_atomic_virial=True, has_ghost_atoms=False
+                )(coord, atype, nlist, mapping, fparam, aparam),
+                lambda: exported_whether_do_atomic_virial(
+                    do_atomic_virial=True, has_ghost_atoms=True
+                )(coord, atype, nlist, mapping, fparam, aparam),
             )
 
         tf_model.call_lower_atomic_virial = call_lower_with_atomic_virial
+
+        def make_call_whether_do_atomic_virial(do_atomic_virial: bool):
+            if do_atomic_virial:
+                call_lower = call_lower_with_atomic_virial
+            else:
+                call_lower = call_lower_without_atomic_virial
+
+            def call(
+                coord: tnp.ndarray,
+                atype: tnp.ndarray,
+                box: Optional[tnp.ndarray] = None,
+                fparam: Optional[tnp.ndarray] = None,
+                aparam: Optional[tnp.ndarray] = None,
+            ):
+                """Return model prediction.
+
+                Parameters
+                ----------
+                coord
+                    The coordinates of the atoms.
+                    shape: nf x (nloc x 3)
+                atype
+                    The type of atoms. shape: nf x nloc
+                box
+                    The simulation box. shape: nf x 9
+                fparam
+                    frame parameter. nf x ndf
+                aparam
+                    atomic parameter. nf x nloc x nda
+
+                Returns
+                -------
+                ret_dict
+                    The result dict of type dict[str,jnp.ndarray].
+                    The keys are defined by the `ModelOutputDef`.
+
+                """
+                return model_call_from_call_lower(
+                    call_lower=call_lower,
+                    rcut=model.get_rcut(),
+                    sel=model.get_sel(),
+                    mixed_types=model.mixed_types(),
+                    model_output_def=model.model_output_def(),
+                    coord=coord,
+                    atype=atype,
+                    box=box,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+
+            return call
+
+        @tf.function(
+            autograph=True,
+            input_signature=[
+                tf.TensorSpec([None, None, 3], tf.float64),
+                tf.TensorSpec([None, None], tf.int32),
+                tf.TensorSpec([None, None, None], tf.float64),
+                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+            ],
+        )
+        def call_with_atomic_virial(
+            coord: tnp.ndarray,
+            atype: tnp.ndarray,
+            box: tnp.ndarray,
+            fparam: tnp.ndarray,
+            aparam: tnp.ndarray,
+        ):
+            return make_call_whether_do_atomic_virial(do_atomic_virial=True)(
+                coord, atype, box, fparam, aparam
+            )
+
+        tf_model.call_atomic_virial = call_with_atomic_virial
+
+        @tf.function(
+            autograph=True,
+            input_signature=[
+                tf.TensorSpec([None, None, 3], tf.float64),
+                tf.TensorSpec([None, None], tf.int32),
+                tf.TensorSpec([None, None, None], tf.float64),
+                tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+                tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+            ],
+        )
+        def call_without_atomic_virial(
+            coord: tnp.ndarray,
+            atype: tnp.ndarray,
+            box: tnp.ndarray,
+            fparam: tnp.ndarray,
+            aparam: tnp.ndarray,
+        ):
+            return make_call_whether_do_atomic_virial(do_atomic_virial=False)(
+                coord, atype, box, fparam, aparam
+            )
+
+        tf_model.call = call_without_atomic_virial
 
         # set functions to export other attributes
         @tf.function
