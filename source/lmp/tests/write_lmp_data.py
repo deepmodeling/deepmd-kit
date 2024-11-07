@@ -75,8 +75,8 @@ def write_lmp_data_spin(box, coord, spin, type_list, file_name):
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     sp_norm = np.linalg.norm(spin, axis=1, keepdims=True)
-    sp_norm = np.where(sp_norm == 0, 1, sp_norm)
-    sp_unit = spin / sp_norm
+    sp_unit = spin / np.where(sp_norm == 0, 1, sp_norm)
+    sp_unit = np.where(sp_norm == 0, 1, sp_unit)
     with open(file_name, "w") as f:
         f.write(comment_lmp_data + "\n")
         f.write("%d atoms\n" % (natom))
