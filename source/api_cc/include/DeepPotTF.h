@@ -294,7 +294,6 @@ class DeepPotTF : public DeepPotBackend {
   bool inited;
   template <class VT>
   VT get_scalar(const std::string& name) const;
-
   double rcut;
   int dtype;
   double cell_size;

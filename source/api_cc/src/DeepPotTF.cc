@@ -962,7 +962,6 @@ void DeepPotTF::computew(std::vector<double>& ener,
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
           fparam, aparam, atomic);
 }
-
 void DeepPotTF::computew(std::vector<double>& ener,
                          std::vector<double>& force,
                          std::vector<double>& virial,
@@ -997,7 +996,6 @@ void DeepPotTF::computew(std::vector<double>& ener,
   compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
           nghost, inlist, ago, fparam, aparam, atomic);
 }
-
 void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<double>& force,
                                     std::vector<double>& virial,
@@ -1028,5 +1026,4 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
                      coord, atype, box, fparam, aparam, atomic);
 }
-
 #endif
