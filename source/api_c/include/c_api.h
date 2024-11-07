@@ -10,9 +10,9 @@ extern "C" {
 /** @file */
 
 /** C API version. Bumped whenever the API is changed.
- * @since API version 23
+ * @since API version 22
  */
-#define DP_C_API_VERSION 23
+#define DP_C_API_VERSION 24
 
 /**
  * @brief Neighbor list.
