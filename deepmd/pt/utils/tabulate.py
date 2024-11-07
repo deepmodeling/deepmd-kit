@@ -429,7 +429,7 @@ class DPTabulate(BaseTabulate):
 def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
     if functype == 1:
         return 1 - y * y
-    
+
     elif functype == 2:
         var = torch.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
         return (
@@ -437,28 +437,29 @@ def grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
             + 0.5 * var
             + 0.5
         )
-    
+
     elif functype == 3:
         return torch.where(xbar > 0, torch.ones_like(xbar), torch.zeros_like(xbar))
-    
+
     elif functype == 4:
-        return torch.where((xbar > 0) & (xbar < 6), torch.ones_like(xbar), torch.zeros_like(xbar))
-    
+        return torch.where(
+            (xbar > 0) & (xbar < 6), torch.ones_like(xbar), torch.zeros_like(xbar)
+        )
+
     elif functype == 5:
         return 1.0 - 1.0 / (1.0 + torch.exp(xbar))
-    
+
     elif functype == 6:
         return y * (1 - y)
-    
+
     else:
         raise ValueError(f"Unsupported function type: {functype}")
-
 
 
 def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
     if functype == 1:
         return -2 * y * (1 - y * y)
-    
+
     elif functype == 2:
         var1 = torch.tanh(SQRT_2_PI * (xbar + GGELU * xbar**3))
         var2 = SQRT_2_PI * (1 - var1**2) * (3 * GGELU * xbar**2 + 1)
@@ -467,20 +468,19 @@ def grad_grad(xbar: torch.Tensor, y: torch.Tensor, functype: int):
             - SQRT_2_PI * xbar * var2 * (3 * GGELU * xbar**2 + 1) * var1
             + var2
         )
-    
+
     elif functype in [3, 4]:
         return torch.zeros_like(xbar)
-    
+
     elif functype == 5:
         exp_xbar = torch.exp(xbar)
         return exp_xbar / ((1 + exp_xbar) * (1 + exp_xbar))
-    
+
     elif functype == 6:
         return y * (1 - y) * (1 - 2 * y)
-    
+
     else:
         return -torch.ones_like(xbar)
-
 
 
 def unaggregated_dy_dx_s(
@@ -497,8 +497,8 @@ def unaggregated_dy_dx_s(
         raise ValueError("Dim of input xbar should be 2")
 
     grad_xbar_y = grad(xbar, y, functype)
-    
-    w = torch.flatten(w)[:y.shape[1]].repeat(y.shape[0], 1)
+
+    w = torch.flatten(w)[: y.shape[1]].repeat(y.shape[0], 1)
 
     dy_dx = grad_xbar_y * w
 
@@ -527,7 +527,7 @@ def unaggregated_dy2_dx_s(
 
     grad_grad_result = grad_grad(xbar, y, functype)
 
-    w_flattened = torch.flatten(w)[:y.shape[1]].repeat(y.shape[0], 1)
+    w_flattened = torch.flatten(w)[: y.shape[1]].repeat(y.shape[0], 1)
 
     dy2_dx = grad_grad_result * w_flattened * w_flattened
 
@@ -556,7 +556,7 @@ def unaggregated_dy_dx(
 
     grad_ybar_z = grad(ybar, z, functype)
 
-    dy_dx = dy_dx.view(-1)[:(length * size)].view(length, size)
+    dy_dx = dy_dx.view(-1)[: (length * size)].view(length, size)
 
     accumulator = dy_dx @ w
 
@@ -597,18 +597,20 @@ def unaggregated_dy2_dx(
     grad_ybar_z = grad(ybar, z, functype)
     grad_grad_ybar_z = grad_grad(ybar, z, functype)
 
-    dy2_dx = dy2_dx.view(-1)[:(length * size)].view(length, size)
-    dy_dx = dy_dx.view(-1)[:(length * size)].view(length, size)
+    dy2_dx = dy2_dx.view(-1)[: (length * size)].view(length, size)
+    dy_dx = dy_dx.view(-1)[: (length * size)].view(length, size)
 
     accumulator1 = dy2_dx @ w
     accumulator2 = dy_dx @ w
 
-    dz_drou = grad_ybar_z * accumulator1 + grad_grad_ybar_z * accumulator2 * accumulator2
+    dz_drou = (
+        grad_ybar_z * accumulator1 + grad_grad_ybar_z * accumulator2 * accumulator2
+    )
 
     if width == size:
         dz_drou += dy2_dx
     if width == 2 * size:
         dy2_dx = torch.cat((dy2_dx, dy2_dx), dim=1)
         dz_drou += dy2_dx
-    
+
     return dz_drou

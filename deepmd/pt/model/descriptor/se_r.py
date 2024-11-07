@@ -79,7 +79,6 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_r"):
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")
 class DescrptSeR(BaseDescriptor, torch.nn.Module):
-
     def __init__(
         self,
         rcut,
@@ -150,7 +149,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
-        
+
         # add for compression
         self.compress = False
         self.compress_info = nn.ParameterList(
@@ -414,9 +413,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
             self.compress_data[ii] = tensor_data_ii
             self.compress_info[ii] = info_ii
-        
-        self.compress = True
 
+        self.compress = True
 
     def forward(
         self,

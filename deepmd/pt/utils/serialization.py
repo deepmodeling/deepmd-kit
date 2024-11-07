@@ -76,6 +76,10 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     # JIT will happy in this way...
     model.model_def_script = json.dumps(data["model_def_script"])
     if "min_nbor_dist" in data.get("@variables", {}):
-        model.min_nbor_dist = torch.tensor(float(data["@variables"]["min_nbor_dist"]), dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
+        model.min_nbor_dist = torch.tensor(
+            float(data["@variables"]["min_nbor_dist"]),
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
+        )
     model = torch.jit.script(model)
     torch.jit.save(model, model_file)

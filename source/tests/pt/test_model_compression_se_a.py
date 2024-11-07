@@ -18,7 +18,6 @@ from .common import (
     tests_path,
 )
 
-
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
 else:

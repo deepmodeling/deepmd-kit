@@ -568,7 +568,7 @@ class DescrptBlockSeT(DescriptorBlock):
         self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
-        
+
         # add for compression
         self.compress = False
         self.compress_info = nn.ParameterList(

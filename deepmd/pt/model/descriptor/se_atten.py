@@ -71,7 +71,6 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_atten"):
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(DescriptorBlock):
-
     def __init__(
         self,
         rcut: float,
@@ -274,14 +273,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.compress = False
         self.is_sorted = False
         self.compress_info = nn.ParameterList(
-            [
-                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
-            ]
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
         )
         self.compress_data = nn.ParameterList(
-            [
-                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
-            ]
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
         )
 
     def get_rcut(self) -> float:
