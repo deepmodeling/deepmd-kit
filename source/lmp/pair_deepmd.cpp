@@ -121,7 +121,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
   int newton_pair = force->newton_pair;
 
   if (atom->sp_flag) {
-    throw std::runtime_error(
+    error->all(FLERR,
         "Pair style 'deepmd' does not support spin atoms, please use pair "
         "style 'deepspin' instead.");
   }
@@ -850,7 +850,7 @@ int PairDeepMD::pack_reverse_comm(int n, int first, double *buf) {
   m = 0;
   last = first + n;
   if (atom->sp_flag) {
-    throw std::runtime_error(
+    error->all(FLERR,
         "Pair style 'deepmd' does not support spin atoms, please use pair "
         "style 'deepspin' instead.");
   } else {
@@ -872,7 +872,7 @@ void PairDeepMD::unpack_reverse_comm(int n, int *list, double *buf) {
 
   m = 0;
   if (atom->sp_flag) {
-    throw std::runtime_error(
+    error->all(FLERR,
         "Pair style 'deepmd' does not support spin atoms, please use pair "
         "style 'deepspin' instead.");
   } else {

@@ -99,6 +99,12 @@ const char* DP_NlistCheckOK(DP_Nlist* dp);
  **/
 typedef struct DP_DeepBaseModel DP_DeepBaseModel;
 
+/**
+ * @brief Delete a Deep Potential Base Model.
+ *
+ * @param dp Deep Potential Base Model to delete.
+ * @since API version 24
+ */
 extern void DP_DeleteDeepBaseModel(DP_DeepBaseModel* dp);
 
 /**
@@ -106,6 +112,12 @@ extern void DP_DeleteDeepBaseModel(DP_DeepBaseModel* dp);
  **/
 typedef struct DP_DeepBaseModelDevi DP_DeepBaseModelDevi;
 
+/**
+ * @brief Delete a Deep Potential Base Model Deviation.
+ *
+ * @param dp Deep Potential Base Model Deviation to delete.
+ * @since API version 24
+ */
 extern void DP_DeleteDeepBaseModelDevi(DP_DeepBaseModelDevi* dp);
 
 /**
@@ -155,14 +167,16 @@ extern DP_DeepPot* DP_NewDeepPotWithParam2(const char* c_model,
 extern void DP_DeleteDeepPot(DP_DeepPot* dp);
 
 /**
- * @brief The deep potential spin.
+ * @brief The deep potential spin model.
+ * @since API version 24
  **/
 typedef struct DP_DeepSpin DP_DeepSpin;
 
 /**
  * @brief DP constructor with initialization.
  * @param[in] c_model The name of the frozen model file.
- * @returns A pointer to the deep potential.
+ * @returns A pointer to the deep potential spin model.
+ * @since API version 24
  **/
 extern DP_DeepSpin* DP_NewDeepSpin(const char* c_model);
 
@@ -173,7 +187,8 @@ extern DP_DeepSpin* DP_NewDeepSpin(const char* c_model);
  * @param gpu_rank The rank of the GPU.
  * @param c_file_content The content of the model file.
  * @param size_file_content The size of the model file.
- * @return DP_DeepSpin* A pointer to the deep potential.
+ * @return DP_DeepSpin* A pointer to the deep potential spin model.
+ * @since API version 24
  */
 extern DP_DeepSpin* DP_NewDeepSpinWithParam2(const char* c_model,
                                              const int gpu_rank,
@@ -181,9 +196,10 @@ extern DP_DeepSpin* DP_NewDeepSpinWithParam2(const char* c_model,
                                              const int size_file_content);
 
 /**
- * @brief Delete a Deep Potential.
+ * @brief Delete a Deep Potential Spin Model.
  *
- * @param dp Deep Potential to delete.
+ * @param dp Deep Potential Spin Model to delete.
+ * @since API version 24
  */
 extern void DP_DeleteDeepSpin(DP_DeepSpin* dp);
 
@@ -340,7 +356,7 @@ extern void DP_DeepPotComputeNListf(DP_DeepPot* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
@@ -366,10 +382,10 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
                                double* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force, magnetic force and virial by using a DP
- *with spin input. (double version)
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP 
+ * spin model. (double version)
  * @version 2
- * @param[in] dp The DP to use.
+ * @param[in] dp The DP spin model to use.
  * @param[in] nframes The number of frames.
  * @param[in] natoms The number of atoms.
  * @param[in] coord The coordinates of atoms. The array should be of size natoms
@@ -382,10 +398,11 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag The magnetic force on each atom.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
  *natoms.
@@ -393,6 +410,7 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
  *natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
+ * @since API version 24
  **/
 extern void DP_DeepSpinCompute2(DP_DeepSpin* dp,
                                 const int nframes,
@@ -424,7 +442,7 @@ extern void DP_DeepSpinCompute2(DP_DeepSpin* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
@@ -451,7 +469,7 @@ extern void DP_DeepPotComputef2(DP_DeepPot* dp,
 
 /**
  * @brief Evaluate the energy, force, magnetic force and virial by using a DP
- *with spin input. (float version)
+ * spin model. (float version)
  * @version 2
  * @param[in] dp The DP to use.
  * @param[in] nframes The number of frames.
@@ -466,10 +484,11 @@ extern void DP_DeepPotComputef2(DP_DeepPot* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag The magnetic force on each atom.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
  *natoms.
@@ -477,6 +496,7 @@ extern void DP_DeepPotComputef2(DP_DeepPot* dp,
  *natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
+ * @since API version 24
  **/
 extern void DP_DeepSpinComputef2(DP_DeepSpin* dp,
                                  const int nframes,
@@ -512,7 +532,7 @@ extern void DP_DeepSpinComputef2(DP_DeepSpin* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
@@ -540,6 +560,40 @@ extern void DP_DeepPotComputeNList2(DP_DeepPot* dp,
                                     double* atomic_energy,
                                     double* atomic_virial);
 
+/**
+ * @brief Evaluate the energy, force and virial by using a DP spin model 
+ * with the neighbor list. (double version)
+ * @version 2
+ * @param[in] dp The DP spin model to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be
+ *of size nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ * natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 24
+ **/
 extern void DP_DeepSpinComputeNList2(DP_DeepSpin* dp,
                                      const int nframes,
                                      const int natoms,
@@ -577,7 +631,7 @@ extern void DP_DeepSpinComputeNList2(DP_DeepSpin* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
@@ -605,6 +659,40 @@ extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
                                      float* atomic_energy,
                                      float* atomic_virial);
 
+/**
+ * @brief Evaluate the energy, force and virial by using a DP spin model 
+ * with the neighbor list. (float version)
+ * @version 2
+ * @param[in] dp The DP spin model to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be
+ *of size nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ * natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 24
+ **/
 extern void DP_DeepSpinComputeNListf2(DP_DeepSpin* dp,
                                       const int nframes,
                                       const int natoms,
@@ -639,7 +727,7 @@ extern void DP_DeepSpinComputeNListf2(DP_DeepSpin* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
@@ -678,7 +766,7 @@ extern void DP_DeepPotComputeMixedType(DP_DeepPot* dp,
  * @param[in] fparam The frame parameters. The array can be of size nframes x
  *dim_fparam.
  * @param[in] aparam The atom parameters. The array can be of size nframes x
- *dim_aparam.
+ * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
@@ -744,6 +832,7 @@ extern void DP_DeleteDeepPotModelDevi(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief The deep potential spin model deviation.
+ * @since API version 24
  **/
 typedef struct DP_DeepSpinModelDevi DP_DeepSpinModelDevi;
 
@@ -751,6 +840,7 @@ typedef struct DP_DeepSpinModelDevi DP_DeepSpinModelDevi;
  * @brief DP spin model deviation constructor with initialization.
  * @param[in] c_models The array of the name of the frozen model file.
  * @param[in] nmodels The number of models.
+ * @since API version 24
  **/
 extern DP_DeepSpinModelDevi* DP_NewDeepSpinModelDevi(const char** c_models,
                                                      int n_models);
@@ -766,6 +856,7 @@ extern DP_DeepSpinModelDevi* DP_NewDeepSpinModelDevi(const char** c_models,
  * @param[in] size_file_contents The sizes of the contents of the model file.
  * @return DP_DeepSpinModelDevi* A pointer to the deep potential model
  * deviation.
+ * @since API version 24
  */
 extern DP_DeepSpinModelDevi* DP_NewDeepSpinModelDeviWithParam(
     const char** c_model,
@@ -779,6 +870,7 @@ extern DP_DeepSpinModelDevi* DP_NewDeepSpinModelDeviWithParam(
  * @brief Delete a Deep Potential Spin Model Deviation.
  *
  * @param dp Deep Potential Spin Model to delete.
+ * @since API version 24
  */
 extern void DP_DeleteDeepSpinModelDevi(DP_DeepSpinModelDevi* dp);
 
@@ -1045,6 +1137,39 @@ void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
                                       double* atomic_energy,
                                       double* atomic_virial);
 
+/**
+ * @brief Evaluate the energy, force and virial by using a DP spin model deviation
+ * with neighbor list. (double version)
+ * @version 2
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be
+ *of size nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
 void DP_DeepSpinModelDeviComputeNList2(DP_DeepSpinModelDevi* dp,
                                        const int nframes,
                                        const int natoms,
@@ -1110,6 +1235,39 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
                                        float* atomic_energy,
                                        float* atomic_virial);
 
+/**
+ * @brief Evaluate the energy, force and virial by using a DP spin model deviation
+ * with neighbor list. (float version)
+ * @version 2
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be
+ *of size nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ **/
 void DP_DeepSpinModelDeviComputeNListf2(DP_DeepSpinModelDevi* dp,
                                         const int nframes,
                                         const int natoms,
@@ -1134,6 +1292,7 @@ void DP_DeepSpinModelDeviComputeNListf2(DP_DeepSpinModelDevi* dp,
  * @brief Get the cutoff of a DP.
  * @param[in] dpbase The DP to use.
  * @return The cutoff radius.
+ * @since API version 24
  */
 double DP_DeepBaseModelGetCutoff(DP_DeepBaseModel* dpbase);
 
@@ -1141,6 +1300,7 @@ double DP_DeepBaseModelGetCutoff(DP_DeepBaseModel* dpbase);
  * @brief Get the number of types of a DP.
  * @param[in] dpbase The DP to use.
  * @return The number of types of the DP.
+ * @since API version 24
  */
 int DP_DeepBaseModelGetNumbTypes(DP_DeepBaseModel* dpbase);
 
@@ -1148,6 +1308,7 @@ int DP_DeepBaseModelGetNumbTypes(DP_DeepBaseModel* dpbase);
  * @brief Get the number of types with spin of a DP.
  * @param[in] dpbase The DP to use.
  * @return The number of types with spin of the DP.
+ * @since API version 24
  */
 int DP_DeepBaseModelGetNumbTypesSpin(DP_DeepBaseModel* dpbase);
 
@@ -1155,6 +1316,7 @@ int DP_DeepBaseModelGetNumbTypesSpin(DP_DeepBaseModel* dpbase);
  * @brief Get the dimension of frame parameters of a DP.
  * @param[in] dpbase The DP to use.
  * @return The dimension of frame parameters of the DP.
+ * @since API version 24
  */
 int DP_DeepBaseModelGetDimFParam(DP_DeepBaseModel* dpbase);
 
@@ -1162,6 +1324,7 @@ int DP_DeepBaseModelGetDimFParam(DP_DeepBaseModel* dpbase);
  * @brief Get the dimension of atomic parameters of a DP.
  * @param[in] dpbase The DP to use.
  * @return The dimension of atomic parameters of the DP.
+ * @since API version 24
  */
 int DP_DeepBaseModelGetDimAParam(DP_DeepBaseModel* dpbase);
 
@@ -1172,6 +1335,7 @@ int DP_DeepBaseModelGetDimAParam(DP_DeepBaseModel* dpbase);
  * @param[in] dpbase The DP to use.
  * @return true the atomic dimension of atomic parameters is nall
  * @return false the atomic dimension of atomic parameters is nloc
+ * @since API version 24
  */
 bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase);
 
@@ -1179,6 +1343,7 @@ bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase);
  * @brief Get the type map of a DP.
  * @param[in] dpbase The DP to use.
  * @return The type map of the DP.
+ * @since API version 24
  */
 const char* DP_DeepBaseModelGetTypeMap(DP_DeepBaseModel* dpbase);
 
@@ -1187,6 +1352,7 @@ const char* DP_DeepBaseModelGetTypeMap(DP_DeepBaseModel* dpbase);
  *
  * @param dpbase The DP to use.
  * @return const char* error message.
+ * @since API version 24
  */
 const char* DP_DeepBaseModelCheckOK(DP_DeepBaseModel* dpbase);
 
@@ -1194,12 +1360,14 @@ const char* DP_DeepBaseModelCheckOK(DP_DeepBaseModel* dpbase);
  * @brief Get the dimension of frame parameters of a DP Model Deviation.
  * @param[in] dpbase The DP Model Deviation to use.
  * @return The dimension of frame parameters of the DP Model Deviation.
+ * @since API version 24
  */
 int DP_DeepBaseModelDeviGetDimFParam(DP_DeepBaseModelDevi* dpbase);
 /**
  * @brief Get the dimension of atomic parameters of a DP Model Deviation.
  * @param[in] dpbase The DP Model Deviation to use.
  * @return The dimension of atomic parameters of the DP Model Deviation.
+ * @since API version 24
  */
 int DP_DeepBaseModelDeviGetDimAParam(DP_DeepBaseModelDevi* dpbase);
 
@@ -1210,6 +1378,7 @@ int DP_DeepBaseModelDeviGetDimAParam(DP_DeepBaseModelDevi* dpbase);
  * @param[in] dpbase The DP Model Deviation to use.
  * @return true the atomic dimension of atomic parameters is nall
  * @return false the atomic dimension of atomic parameters is nloc
+ * @since API version 24
  */
 bool DP_DeepBaseModelDeviIsAParamNAll(DP_DeepBaseModelDevi* dpbase);
 
@@ -1217,6 +1386,7 @@ bool DP_DeepBaseModelDeviIsAParamNAll(DP_DeepBaseModelDevi* dpbase);
  * @brief Get the type map of a DP model deviation.
  * @param[in] dpbase The DP model deviation to use.
  * @return The cutoff radius.
+ * @since API version 24
  */
 double DP_DeepBaseModelDeviGetCutoff(DP_DeepBaseModelDevi* dpbase);
 
@@ -1224,6 +1394,7 @@ double DP_DeepBaseModelDeviGetCutoff(DP_DeepBaseModelDevi* dpbase);
  * @brief Get the number of types of a DP model deviation.
  * @param[in] dpbase The DP model deviation to use.
  * @return The number of types of the DP model deviation.
+ * @since API version 24
  */
 int DP_DeepBaseModelDeviGetNumbTypes(DP_DeepBaseModelDevi* dpbase);
 
@@ -1231,6 +1402,7 @@ int DP_DeepBaseModelDeviGetNumbTypes(DP_DeepBaseModelDevi* dpbase);
  * @brief Get the number of types with spin of a DP model deviation.
  * @param[in] dpbase The DP model deviation to use.
  * @return The number of types with spin of the DP model deviation.
+ * @since API version 24
  */
 int DP_DeepBaseModelDeviGetNumbTypesSpin(DP_DeepBaseModelDevi* dpbase);
 
@@ -1239,6 +1411,7 @@ int DP_DeepBaseModelDeviGetNumbTypesSpin(DP_DeepBaseModelDevi* dpbase);
  *
  * @param dpbase The DP model deviation to use.
  * @return const char* error message.
+ * @since API version 24
  */
 const char* DP_DeepBaseModelDeviCheckOK(DP_DeepBaseModelDevi* dpbase);
 
@@ -1357,37 +1530,42 @@ const char* DP_DeepPotModelDeviCheckOK(DP_DeepPotModelDevi* dp);
 
 // DeepSpin methods for c_api
 /**
- * @brief Get the cutoff of a DP.
- * @param[in] dp The DP to use.
+ * @brief Get the cutoff of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
  * @return The cutoff radius.
+ * @since API version 24
  */
 double DP_DeepSpinGetCutoff(DP_DeepSpin* dp);
 
 /**
- * @brief Get the number of types of a DP.
- * @param[in] dp The DP to use.
- * @return The number of types of the DP.
+ * @brief Get the number of types of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
+ * @return The number of types of the DP Spin Model.
+ * @since API version 24
  */
 int DP_DeepSpinGetNumbTypes(DP_DeepSpin* dp);
 
 /**
- * @brief Get the number of types with spin of a DP.
- * @param[in] dp The DP to use.
- * @return The number of types with spin of the DP.
+ * @brief Get the number of types with spin of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
+ * @return The number of types with spin of the DP Spin Model.
+ * @since API version 24
  */
 int DP_DeepSpinGetNumbTypesSpin(DP_DeepSpin* dp);
 
 /**
- * @brief Get the dimension of frame parameters of a DP.
- * @param[in] dp The DP to use.
- * @return The dimension of frame parameters of the DP.
+ * @brief Get the dimension of frame parameters of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
+ * @return The dimension of frame parameters of the DP Spin Model.
+ * @since API version 24
  */
 int DP_DeepSpinGetDimFParam(DP_DeepSpin* dp);
 
 /**
- * @brief Get the dimension of atomic parameters of a DP.
- * @param[in] dp The DP to use.
- * @return The dimension of atomic parameters of the DP.
+ * @brief Get the dimension of atomic parameters of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
+ * @return The dimension of atomic parameters of the DP Spin Model.
+ * @since API version 24
  */
 int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
 
@@ -1395,37 +1573,42 @@ int DP_DeepSpinGetDimAParam(DP_DeepSpin* dp);
  * @brief Check whether the atomic dimension of atomic parameters is nall
  * instead of nloc.
  *
- * @param[in] dp The DP to use.
+ * @param[in] dp The DP Spin Model to use.
  * @return true the atomic dimension of atomic parameters is nall
  * @return false the atomic dimension of atomic parameters is nloc
+ * @since API version 24
  */
 bool DP_DeepSpinIsAParamNAll(DP_DeepSpin* dp);
 
 /**
- * @brief Get the type map of a DP.
- * @param[in] dp The DP to use.
- * @return The type map of the DP.
+ * @brief Get the type map of a DP Spin Model.
+ * @param[in] dp The DP Spin Model to use.
+ * @return The type map of the DP Spin Model.
+ * @since API version 24
  */
 const char* DP_DeepSpinGetTypeMap(DP_DeepSpin* dp);
 
 /**
  * @brief Check if there is any exceptions throw.
  *
- * @param dp The DP to use.
+ * @param dp The DP Spin Model to use.
  * @return const char* error message.
+ * @since API version 24
  */
 const char* DP_DeepSpinCheckOK(DP_DeepSpin* dp);
 
 /**
- * @brief Get the dimension of frame parameters of a DP Model Deviation.
- * @param[in] dp The DP Model Deviation to use.
- * @return The dimension of frame parameters of the DP Model Deviation.
+ * @brief Get the dimension of frame parameters of a DP Spin Model Deviation.
+ * @param[in] dp The DP Spin Model Deviation to use.
+ * @return The dimension of frame parameters of the DP Spin Model Deviation.
+ * @since API version 24
  */
 int DP_DeepSpinModelDeviGetDimFParam(DP_DeepSpinModelDevi* dp);
 /**
- * @brief Get the dimension of atomic parameters of a DP Model Deviation.
- * @param[in] dp The DP Model Deviation to use.
- * @return The dimension of atomic parameters of the DP Model Deviation.
+ * @brief Get the dimension of atomic parameters of a DP Spin Model Deviation.
+ * @param[in] dp The DP Spin Model Deviation to use.
+ * @return The dimension of atomic parameters of the DP Spin Model Deviation.
+ * @since API version 24
  */
 int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp);
 
@@ -1433,9 +1616,10 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp);
  * @brief Check whether the atomic dimension of atomic parameters is nall
  * instead of nloc.
  *
- * @param[in] dp The DP Model Deviation to use.
+ * @param[in] dp The DP Spin Model Deviation to use.
  * @return true the atomic dimension of atomic parameters is nall
  * @return false the atomic dimension of atomic parameters is nloc
+ * @since API version 24
  */
 bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp);
 
@@ -1443,6 +1627,7 @@ bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp);
  * @brief Get the type map of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The cutoff radius.
+ * @since API version 24
  */
 double DP_DeepSpinModelDeviGetCutoff(DP_DeepSpinModelDevi* dp);
 
@@ -1450,6 +1635,7 @@ double DP_DeepSpinModelDeviGetCutoff(DP_DeepSpinModelDevi* dp);
  * @brief Get the number of types of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The number of types of the DP model deviation.
+ * @since API version 24
  */
 int DP_DeepSpinModelDeviGetNumbTypes(DP_DeepSpinModelDevi* dp);
 
@@ -1457,6 +1643,7 @@ int DP_DeepSpinModelDeviGetNumbTypes(DP_DeepSpinModelDevi* dp);
  * @brief Get the number of types with spin of a DP model deviation.
  * @param[in] dp The DP model deviation to use.
  * @return The number of types with spin of the DP model deviation.
+ * @since API version 24
  */
 int DP_DeepSpinModelDeviGetNumbTypesSpin(DP_DeepSpinModelDevi* dp);
 
@@ -1465,6 +1652,7 @@ int DP_DeepSpinModelDeviGetNumbTypesSpin(DP_DeepSpinModelDevi* dp);
  *
  * @param dp The DP model deviation to use.
  * @return const char* error message.
+ * @since API version 24
  */
 const char* DP_DeepSpinModelDeviCheckOK(DP_DeepSpinModelDevi* dp);
 
