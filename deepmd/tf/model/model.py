@@ -808,6 +808,10 @@ class StandardModel(Model):
         check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        # pass descriptor type embedding to model
+        if descriptor.explicit_ntypes:
+            type_embedding = descriptor.type_embedding
+            fitting.dim_descrpt -= type_embedding.neuron[-1]
         # BEGINE not supported keys
         data.pop("atom_exclude_types")
         data.pop("pair_exclude_types")
@@ -818,6 +822,7 @@ class StandardModel(Model):
         return cls(
             descriptor=descriptor,
             fitting_net=fitting,
+            type_embedding=type_embedding,
             **data,
         )
 
@@ -835,7 +840,8 @@ class StandardModel(Model):
             Name suffix to identify this descriptor
         """
         if self.typeebd is not None:
-            raise NotImplementedError("type embedding is not supported")
+            self.descrpt.type_embedding = self.typeebd
+            self.fitting.tebd_dim = self.typeebd.neuron[-1]
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
 

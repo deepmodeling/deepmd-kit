@@ -327,6 +327,9 @@ class TypeEmbedNet:
             layer_idx = int(m[1]) - 1
             weight_name = m[0]
             if weight_name == "idt":
+                if value == 0.0:
+                    # ignore 0.0 set by deserialize
+                    continue
                 value = value.ravel()
             embedding_net[layer_idx][weight_name] = value
 
