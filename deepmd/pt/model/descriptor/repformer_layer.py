@@ -1421,9 +1421,9 @@ class RepformerLayer(torch.nn.Module):
         loc_attn = data.pop("loc_attn", None)
         g1_self_mlp = data.pop("g1_self_mlp", None)
         variables = data.pop("@variables", {})
-        g1_residual = variables.pop("g1_residual", data.pop("g1_residual", []))
-        g2_residual = variables.pop("g2_residual", data.pop("g2_residual", []))
-        h2_residual = variables.pop("h2_residual", data.pop("h2_residual", []))
+        g1_residual = variables.get("g1_residual", data.pop("g1_residual", []))
+        g2_residual = variables.get("g2_residual", data.pop("g2_residual", []))
+        h2_residual = variables.get("h2_residual", data.pop("h2_residual", []))
 
         obj = cls(**data)
         obj.linear1 = MLPLayer.deserialize(linear1)
