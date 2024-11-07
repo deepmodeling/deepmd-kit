@@ -183,7 +183,7 @@ TEST_F(TestInferDeepPotA, numb_types_spin) {
 }
 
 TEST_F(TestInferDeepPotA, type_map) {
-  const char* type_map = DP_DeepPotGetTypeMap((dp);
+  const char* type_map = DP_DeepPotGetTypeMap(dp);
   char expected_type_map[] = "O H";
   EXPECT_EQ(strcmp(type_map, expected_type_map), 0);
   DP_DeleteChar(type_map);
