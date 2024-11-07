@@ -287,8 +287,6 @@ class DeepPotTF : public DeepPotBackend {
                            const std::vector<float>& aparam,
                            const bool atomic);
 
-  void cum_sum(std::map<int, int>&, std::map<int, int>&);
-
  private:
   tensorflow::Session* session;
   int num_intra_nthreads, num_inter_nthreads;
@@ -296,8 +294,6 @@ class DeepPotTF : public DeepPotBackend {
   bool inited;
   template <class VT>
   VT get_scalar(const std::string& name) const;
-  template <class VT>
-  void get_vector(std::vector<VT>& vec, const std::string& name) const;
 
   double rcut;
   int dtype;
@@ -306,17 +302,6 @@ class DeepPotTF : public DeepPotBackend {
   std::string model_version;
   int ntypes;
   int ntypes_spin;
-  int extend_inum;
-  std::vector<int> extend_ilist;
-  std::vector<int> extend_numneigh;
-  std::vector<std::vector<int>> extend_neigh;
-  std::vector<int*> extend_firstneigh;
-  // std::vector<double> extend_dcoord;
-  std::vector<int> extend_dtype;
-  int extend_nghost;
-  // for spin systems, search new index of atoms by their old index
-  std::map<int, int> new_idx_map;
-  std::map<int, int> old_idx_map;
   int dfparam;
   int daparam;
   bool aparam_nall;

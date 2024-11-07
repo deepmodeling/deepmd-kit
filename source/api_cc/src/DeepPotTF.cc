@@ -511,12 +511,6 @@ VT DeepPotTF::get_scalar(const std::string& name) const {
   return session_get_scalar<VT>(session, name);
 }
 
-template <class VT>
-void DeepPotTF::get_vector(std::vector<VT>& vec,
-                           const std::string& name) const {
-  session_get_vector<VT>(vec, session, name);
-}
-
 template <typename VALUETYPE>
 void DeepPotTF::validate_fparam_aparam(
     const int& nframes,
@@ -1033,13 +1027,6 @@ void DeepPotTF::computew_mixed_type(std::vector<double>& ener,
                                     const bool atomic) {
   compute_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
                      coord, atype, box, fparam, aparam, atomic);
-}
-
-void DeepPotTF::cum_sum(std::map<int, int>& sum, std::map<int, int>& vec) {
-  sum[0] = 0;
-  for (int ii = 1; ii < vec.size(); ++ii) {
-    sum[ii] = sum[ii - 1] + vec[ii - 1];
-  }
 }
 
 #endif
