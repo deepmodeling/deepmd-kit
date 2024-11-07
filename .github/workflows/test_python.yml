@@ -58,7 +58,7 @@ jobs:
       env:
         NUM_WORKERS: 0
     - name: Test TF2 eager mode
-      run: pytest --cov=deepmd source/tests/consistent/io/test_io.py --durations=0
+      run: pytest --cov=deepmd source/tests/consistent/io/test_io.py source/tests/jax/jax2tf --durations=0
       env:
         NUM_WORKERS: 0
         DP_TEST_TF2_ONLY: 1
