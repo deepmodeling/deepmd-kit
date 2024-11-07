@@ -501,9 +501,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
   double **sp = atom->sp;
   double **fm = atom->fm;
   if (atom->sp_flag) {
-    std::cout << "Pair style 'deepmd' does not support spin atoms, please use "
-                 "pair style 'deepspin' instead."
-              << std::endl;
+    throw std::runtime_error(
+        "Pair style 'deepmd' does not support spin atoms, please use pair "
+        "style 'deepspin' instead.");
   }
 
   vector<int> dtype(nall);
@@ -871,9 +871,9 @@ int PairDeepMD::pack_reverse_comm(int n, int first, double *buf) {
   m = 0;
   last = first + n;
   if (atom->sp_flag) {
-    std::cout << "Pair style 'deepmd' does not support spin atoms, please use "
-                 "pair style 'deepspin' instead."
-              << std::endl;
+    throw std::runtime_error(
+        "Pair style 'deepmd' does not support spin atoms, please use pair "
+        "style 'deepspin' instead.");
   } else {
     for (i = first; i < last; i++) {
       for (int dd = 0; dd < numb_models; ++dd) {
@@ -893,9 +893,9 @@ void PairDeepMD::unpack_reverse_comm(int n, int *list, double *buf) {
 
   m = 0;
   if (atom->sp_flag) {
-    std::cout << "Pair style 'deepmd' does not support spin atoms, please use "
-                 "pair style 'deepspin' instead."
-              << std::endl;
+    throw std::runtime_error(
+        "Pair style 'deepmd' does not support spin atoms, please use pair "
+        "style 'deepspin' instead.");
   } else {
     for (i = 0; i < n; i++) {
       j = list[i];
