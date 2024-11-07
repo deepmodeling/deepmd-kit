@@ -133,7 +133,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       }
     }
   } else {
-    error->all(FLERR,
+    error->all(
+        FLERR,
         "Pair style 'deepspin' only supports spin atoms, please use pair style "
         "'deepmd' instead.");
   }
@@ -891,7 +892,8 @@ int PairDeepSpin::pack_reverse_comm(int n, int first, double *buf) {
   m = 0;
   last = first + n;
   if (!atom->sp_flag) {
-    error->all(FLERR,
+    error->all(
+        FLERR,
         "Pair style 'deepspin' only supports spin atoms, please use pair style "
         "'deepmd' instead.");
   } else {
@@ -916,7 +918,8 @@ void PairDeepSpin::unpack_reverse_comm(int n, int *list, double *buf) {
 
   m = 0;
   if (!atom->sp_flag) {
-    error->all(FLERR,
+    error->all(
+        FLERR,
         "Pair style 'deepspin' only supports spin atoms, please use pair style "
         "'deepmd' instead.");
   } else {

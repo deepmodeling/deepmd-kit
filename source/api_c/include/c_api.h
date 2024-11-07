@@ -382,7 +382,7 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
                                double* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force, magnetic force and virial by using a DP 
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
  * spin model. (double version)
  * @version 2
  * @param[in] dp The DP spin model to use.
@@ -401,7 +401,7 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
  * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
  * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
@@ -487,7 +487,7 @@ extern void DP_DeepPotComputef2(DP_DeepPot* dp,
  * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
  * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
@@ -561,7 +561,7 @@ extern void DP_DeepPotComputeNList2(DP_DeepPot* dp,
                                     double* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model 
+ * @brief Evaluate the energy, force and virial by using a DP spin model
  * with the neighbor list. (double version)
  * @version 2
  * @param[in] dp The DP spin model to use.
@@ -583,7 +583,7 @@ extern void DP_DeepPotComputeNList2(DP_DeepPot* dp,
  * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
  * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
@@ -660,7 +660,7 @@ extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
                                      float* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model 
+ * @brief Evaluate the energy, force and virial by using a DP spin model
  * with the neighbor list. (float version)
  * @version 2
  * @param[in] dp The DP spin model to use.
@@ -682,7 +682,7 @@ extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
  * natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
  * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
@@ -1138,8 +1138,8 @@ void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
                                       double* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model deviation
- * with neighbor list. (double version)
+ * @brief Evaluate the energy, force and virial by using a DP spin model
+ *deviation with neighbor list. (double version)
  * @version 2
  * @param[in] dp The DP model deviation to use.
  * @param[in] nframes The number of frames. Only support 1 for now.
@@ -1160,7 +1160,7 @@ void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
  *natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
  * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
@@ -1236,8 +1236,8 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
                                        float* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model deviation
- * with neighbor list. (float version)
+ * @brief Evaluate the energy, force and virial by using a DP spin model
+ *deviation with neighbor list. (float version)
  * @version 2
  * @param[in] dp The DP model deviation to use.
  * @param[in] nframes The number of frames. Only support 1 for now.
@@ -1258,7 +1258,7 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
  *natoms x dim_aparam.
  * @param[out] energy Output energy.
  * @param[out] force Output force. The array should be of size natoms x 3.
- * @param[out] force_mag Output magnetic force on each atom. The array should be 
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
  * of size natoms x 3.
  * @param[out] virial Output virial. The array should be of size 9.
  * @param[out] atomic_energy Output atomic energy. The array should be of size
