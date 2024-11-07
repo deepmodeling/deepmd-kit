@@ -12,18 +12,12 @@ from deepmd.infer.deep_eval import (
     DeepEval,
 )
 
-# from deepmd.tf.entrypoints.compress import compress
 from .common import (
     j_loader,
     run_dp,
     tests_path,
 )
 
-# from .common import (
-#     j_loader,
-#     run_dp,
-#     tests_path,
-# )
 
 if GLOBAL_NP_FLOAT_PRECISION == np.float32:
     default_places = 4
@@ -45,7 +39,6 @@ def _init_models():
     INPUT = str(tests_path / "input.json")
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["training"]["training_data"]["systems"] = data_file
-    # jdata["training"]["validation_data"]["systems"] = data_file
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
@@ -68,7 +61,6 @@ def _init_models_exclude_types():
     jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
     jdata["model"]["descriptor"]["exclude_types"] = [[0, 1]]
     jdata["training"]["training_data"]["systems"] = data_file
-    # jdata["training"]["validation_data"]["systems"] = data_file
     with open(INPUT, "w") as fp:
         json.dump(jdata, fp, indent=4)
 
