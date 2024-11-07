@@ -236,7 +236,8 @@ int FixDPLR::setmask() {
   // THERMO_ENERGY removed in lammps/lammps#2560
   mask |= THERMO_ENERGY;
 #endif
-  mask |= POST_INTEGRATE;
+  mask |= PRE_EXCHANGE;
+  mask |= POST_NEIGHBOR;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
   mask |= MIN_PRE_EXCHANGE;
@@ -248,19 +249,9 @@ int FixDPLR::setmask() {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::init() {
-  // double **xx = atom->x;
-  // double **vv = atom->v;
-  // int nlocal = atom->nlocal;
-  // for (int ii = 0; ii < nlocal; ++ii){
-  //   cout << xx[ii][0] << " "
-  // 	 << xx[ii][1] << " "
-  // 	 << xx[ii][2] << "   "
-  // 	 << vv[ii][0] << " "
-  // 	 << vv[ii][1] << " "
-  // 	 << vv[ii][2] << " "
-  // 	 << endl;
-  // }
-  // check variables
+  if (atom->map_style == Atom::MAP_NONE) {
+    error->all(FLERR, "Fix dplr requires an atom map, see atom_modify");
+  }
 
   if (xstr) {
     xvar = input->variable->find(xstr);
@@ -313,17 +304,53 @@ void FixDPLR::init() {
 
 /* ---------------------------------------------------------------------- */
 
+void FixDPLR::setup_post_neighbor() {
+  double **x = atom->x;
+
+  vector<pair<int, int> > valid_pairs;
+  get_valid_pairs(valid_pairs, true);
+
+  for (int ii = 0; ii < valid_pairs.size(); ++ii) {
+    int idx0 = valid_pairs[ii].first;
+    int idx1 = valid_pairs[ii].second;
+    int idx0_local = atom->map(atom->tag[idx0]);
+    int idx1_local = atom->map(atom->tag[idx1]);
+
+    for (int dd = 0; dd < 3; ++dd) {
+      x[idx1][dd] = x[idx0][dd];
+      x[idx0_local][dd] = x[idx0][dd];
+      x[idx1_local][dd] = x[idx0][dd];
+    }
+  }
+  int triclinic;
+  triclinic = domain->triclinic;
+  if (triclinic) {
+    domain->x2lamda(atom->nlocal);
+  }
+  domain->pbc();
+  domain->reset_box();
+  comm->setup();
+  neighbor->setup_bins();
+  comm->exchange();
+  comm->borders();
+  if (triclinic) {
+    domain->lamda2x(atom->nlocal + atom->nghost);
+  }
+
+  neighbor->build(1);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::setup_pre_exchange() {}
+
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::setup(int vflag) {
-  // if (strstr(update->integrate_style,"verlet"))
-  post_force(vflag);
-  // else {
-  //   error->all(FLERR, "respa is not supported by this fix");
-  // }
-}
+void FixDPLR::setup(int vflag) { post_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
@@ -331,7 +358,7 @@ void FixDPLR::min_setup(int vflag) { setup(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
+void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
   pairs.clear();
 
   int nlocal = atom->nlocal;
@@ -398,7 +425,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
         error->all(FLERR, str);
       }
     }
-    if (!(idx0 < nlocal && idx1 < nlocal)) {
+    if (!(idx0 < nlocal && idx1 < nlocal) && (!is_setup)) {
       error->all(FLERR,
                  "find a bonded pair that is not on the same processor, "
                  "something should not happen");
@@ -409,7 +436,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::post_integrate() {
+void FixDPLR::pre_exchange() {
   double **x = atom->x;
   double **v = atom->v;
   int *type = atom->type;
@@ -418,7 +445,7 @@ void FixDPLR::post_integrate() {
   int nall = nlocal + nghost;
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs);
+  get_valid_pairs(valid_pairs, false);
 
   for (int ii = 0; ii < valid_pairs.size(); ++ii) {
     int idx0 = valid_pairs[ii].first;
@@ -519,7 +546,7 @@ void FixDPLR::pre_force(int vflag) {
   // vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs);
+  get_valid_pairs(valid_pairs, false);
 
   int odim = dpt.output_dim();
   assert(odim == 3);
@@ -642,7 +669,7 @@ void FixDPLR::post_force(int vflag) {
                                      list->firstneigh);
   // bonded pairs
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs);
+  get_valid_pairs(valid_pairs, false);
   // output vects
   vector<FLOAT_PREC> dfcorr, dvcorr;
   // compute
@@ -728,7 +755,7 @@ void FixDPLR::post_force(int vflag) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::min_pre_exchange() { post_integrate(); }
+void FixDPLR::min_pre_exchange() { pre_exchange(); }
 
 /* ---------------------------------------------------------------------- */
 
