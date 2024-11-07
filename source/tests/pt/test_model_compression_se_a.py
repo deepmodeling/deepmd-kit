@@ -13,7 +13,7 @@ from deepmd.infer.deep_eval import (
 )
 
 # from deepmd.tf.entrypoints.compress import compress
-from source.tests.pt.common import (
+from .common import (
     j_loader,
     run_dp,
     tests_path,
