@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import gc
 import shutil
 import unittest
 from pathlib import (
@@ -108,6 +109,9 @@ class IOTest:
                     data.pop(kk, None)
                     reference_data.pop(kk, None)
                 np.testing.assert_equal(data, reference_data)
+                # try to resolve OOM issue in the CI
+                del data, reference_data
+                gc.collect()
 
     def test_deep_eval(self):
         self.coords = np.array(
@@ -200,6 +204,8 @@ class IOTest:
                 atomic=True,
             )
             rets_nopbc.append(ret)
+            del deep_eval
+            gc.collect()
         for ret in rets[1:]:
             for vv1, vv2 in zip(rets[0], ret):
                 if np.isnan(vv2).all():
