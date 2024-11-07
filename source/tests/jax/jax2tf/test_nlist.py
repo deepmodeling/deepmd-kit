@@ -1,17 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
+import pytest
 
-from deepmd.jax.jax2tf.nlist import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
-)
-from deepmd.jax.jax2tf.region import (
-    inter2phys,
+from ...utils import (
+    DP_TEST_TF2_ONLY,
 )
 
-dtype = tnp.float64
+pytest.mark.skipif(
+    not DP_TEST_TF2_ONLY, reason="TF2 conflicts with TF1", allow_module_level=True
+)
+
+
+if DP_TEST_TF2_ONLY:
+    import tensorflow as tf
+    import tensorflow.experimental.numpy as tnp
+
+    from deepmd.jax.jax2tf.nlist import (
+        build_neighbor_list,
+        extend_coord_with_ghosts,
+    )
+    from deepmd.jax.jax2tf.region import (
+        inter2phys,
+    )
+
+    dtype = tnp.float64
 
 
 class TestNeighList(tf.test.TestCase):
