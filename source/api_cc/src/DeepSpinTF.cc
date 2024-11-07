@@ -735,15 +735,11 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
   int nframes = nall > 0 ? (dcoord_.size() / nall / 3) : 1;
   int nloc = nall - nghost;
 
-  std::vector<VALUETYPE> virtual_len;
-  std::vector<VALUETYPE> spin_norm;
   std::vector<VALUETYPE> extend_dcoord;
-  get_vector<VALUETYPE>(virtual_len, "spin_attr/virtual_len");
-  get_vector<VALUETYPE>(spin_norm, "spin_attr/spin_norm");
   extend(extend_inum, extend_ilist, extend_numneigh, extend_neigh,
          extend_firstneigh, extend_dcoord, extend_dtype, extend_nghost,
          new_idx_map, old_idx_map, lmp_list, dcoord_, datype_, nghost, dspin_,
-         ntypes, ntypes_spin, virtual_len, spin_norm);
+         ntypes, ntypes_spin);
   InputNlist extend_lmp_list(extend_inum, &extend_ilist[0], &extend_numneigh[0],
                              &extend_firstneigh[0]);
   std::vector<VALUETYPE> fparam;
@@ -1008,15 +1004,22 @@ void DeepSpinTF::extend(int& extend_inum,
                         const int nghost,
                         const std::vector<VALUETYPE>& spin,
                         const int numb_types,
-                        const int numb_types_spin,
-                        const std::vector<VALUETYPE>& virtual_len,
-                        const std::vector<VALUETYPE>& spin_norm) {
+                        const int numb_types_spin) {
   extend_ilist.clear();
   extend_numneigh.clear();
   extend_neigh.clear();
   extend_firstneigh.clear();
   extend_dcoord.clear();
   extend_atype.clear();
+  if (dtype == tensorflow::DT_DOUBLE) {
+    get_vector<double>(virtual_len, "spin_attr/virtual_len");
+    get_vector<double>(spin_norm, "spin_attr/spin_norm");
+  } else {
+    std::vector<float> virtual_len;
+    std::vector<float> spin_norm;
+    get_vector<float>(virtual_len, "spin_attr/virtual_len");
+    get_vector<float>(spin_norm, "spin_attr/spin_norm");
+  }
 
   int nall = dcoord.size() / 3;
   int nloc = nall - nghost;
@@ -1178,9 +1181,7 @@ template void DeepSpinTF::extend<double>(
     const int nghost,
     const std::vector<double>& spin,
     const int numb_types,
-    const int numb_types_spin,
-    const std::vector<double>& virtual_len,
-    const std::vector<double>& spin_norm);
+    const int numb_types_spin);
 
 template void DeepSpinTF::extend<float>(
     int& extend_inum,
@@ -1199,9 +1200,7 @@ template void DeepSpinTF::extend<float>(
     const int nghost,
     const std::vector<float>& spin,
     const int numb_types,
-    const int numb_types_spin,
-    const std::vector<float>& virtual_len,
-    const std::vector<float>& spin_norm);
+    const int numb_types_spin);
 
 template <typename VALUETYPE>
 void DeepSpinTF::extend_nlist(std::vector<VALUETYPE>& extend_dcoord,

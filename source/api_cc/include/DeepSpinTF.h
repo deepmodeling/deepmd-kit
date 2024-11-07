@@ -254,9 +254,7 @@ class DeepSpinTF : public DeepSpinBackend {
               const int nghost,
               const std::vector<VALUETYPE>& spin,
               const int numb_types,
-              const int numb_types_spin,
-              const std::vector<VALUETYPE>& virtual_len,
-              const std::vector<VALUETYPE>& spin_norm);
+              const int numb_types_spin);
 
   template <typename VALUETYPE>
   void extend_nlist(std::vector<VALUETYPE>& extend_dcoord,

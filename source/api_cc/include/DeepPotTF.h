@@ -306,8 +306,6 @@ class DeepPotTF : public DeepPotBackend {
   std::string model_version;
   int ntypes;
   int ntypes_spin;
-  std::vector<double> virtual_len;
-  std::vector<double> spin_norm;
   int extend_inum;
   std::vector<int> extend_ilist;
   std::vector<int> extend_numneigh;
