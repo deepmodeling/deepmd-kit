@@ -59,8 +59,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
                 ii = ii.copy()
-                ii["type_map"] = type_map
-                ii["ntypes"] = ntypes
+                # only pass if not already set
+                ii.setdefault("type_map", type_map)
+                ii.setdefault("ntypes", ntypes)
                 formatted_descript_list.append(BaseDescriptor(**ii))
             else:
                 raise NotImplementedError
