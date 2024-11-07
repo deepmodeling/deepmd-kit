@@ -52,23 +52,48 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         call_lower = model.call_lower
 
         nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
-        exported = jax_export.export(jax.jit(call_lower))(
-            jax.ShapeDtypeStruct((nf, nloc + nghost, 3), jnp.float64),  # extended_coord
-            jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),  # extended_atype
-            jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
-            jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),  # mapping
-            jax.ShapeDtypeStruct((nf, model.get_dim_fparam()), jnp.float64)
-            if model.get_dim_fparam()
-            else None,  # fparam
-            jax.ShapeDtypeStruct((nf, nloc, model.get_dim_aparam()), jnp.float64)
-            if model.get_dim_aparam()
-            else None,  # aparam
-            False,  # do_atomic_virial
+
+        def exported_whether_do_atomic_virial(do_atomic_virial):
+            def call_lower_with_fixed_do_atomic_virial(
+                coord, atype, nlist, mapping, fparam, aparam
+            ):
+                return call_lower(
+                    coord,
+                    atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+
+            return jax_export.export(jax.jit(call_lower_with_fixed_do_atomic_virial))(
+                jax.ShapeDtypeStruct(
+                    (nf, nloc + nghost, 3), jnp.float64
+                ),  # extended_coord
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int32),  # extended_atype
+                jax.ShapeDtypeStruct((nf, nloc, model.get_nnei()), jnp.int64),  # nlist
+                jax.ShapeDtypeStruct((nf, nloc + nghost), jnp.int64),  # mapping
+                jax.ShapeDtypeStruct((nf, model.get_dim_fparam()), jnp.float64)
+                if model.get_dim_fparam()
+                else None,  # fparam
+                jax.ShapeDtypeStruct((nf, nloc, model.get_dim_aparam()), jnp.float64)
+                if model.get_dim_aparam()
+                else None,  # aparam
+            )
+
+        exported = exported_whether_do_atomic_virial(do_atomic_virial=False)
+        exported_atomic_virial = exported_whether_do_atomic_virial(
+            do_atomic_virial=True
         )
         serialized: bytearray = exported.serialize()
+        serialized_atomic_virial = exported_atomic_virial.serialize()
         data = data.copy()
         data.setdefault("@variables", {})
         data["@variables"]["stablehlo"] = np.void(serialized)
+        data["@variables"]["stablehlo_atomic_virial"] = np.void(
+            serialized_atomic_virial
+        )
         data["constants"] = {
             "type_map": model.get_type_map(),
             "rcut": model.get_rcut(),
@@ -82,8 +107,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             "sel": model.get_sel(),
         }
         save_dp_model(filename=model_file, model_dict=data)
+    elif model_file.endswith(".savedmodel"):
+        from deepmd.jax.jax2tf.serialization import (
+            deserialize_to_file as deserialize_to_savedmodel,
+        )
+
+        return deserialize_to_savedmodel(model_file, data)
     else:
-        raise ValueError("JAX backend only supports converting .jax directory")
+        raise ValueError("Unsupported file extension")
 
 
 def serialize_from_file(model_file: str) -> dict:

@@ -91,17 +91,67 @@ def forward_common_atomic(
                 assert vdef.r_differentiable
                 # avr: [nf, *def, nall, 3, 3]
                 avr = jnp.einsum("f...ai,faj->f...aij", ff, extended_coord)
+                # the correction sums to zero, which does not contribute to global virial
+                if do_atomic_virial:
+
+                    def eval_ce(
+                        cc_ext,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                        *,
+                        _kk=kk,
+                        _atom_axis=atom_axis - 1,
+                    ):
+                        # atomic_ret[_kk]: [nf, nloc, *def]
+                        atomic_ret = self.atomic_model.forward_common_atomic(
+                            cc_ext[None, ...],
+                            extended_atype[None, ...],
+                            nlist[None, ...],
+                            mapping=mapping[None, ...] if mapping is not None else None,
+                            fparam=fparam[None, ...] if fparam is not None else None,
+                            aparam=aparam[None, ...] if aparam is not None else None,
+                        )
+                        nloc = nlist.shape[0]
+                        cc_loc = jax.lax.stop_gradient(cc_ext)[:nloc, ...]
+                        cc_loc = jnp.reshape(cc_loc, [nloc, *[1] * def_ndim, 3])
+                        # [*def, 3]
+                        return jnp.sum(
+                            atomic_ret[_kk][0, ..., None] * cc_loc, axis=_atom_axis
+                        )
+
+                    # extended_virial_corr: [nf, *def, 3, nall, 3]
+                    extended_virial_corr = jax.vmap(jax.jacrev(eval_ce, argnums=0))(
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        fparam,
+                        aparam,
+                    )
+                    # move the first 3 to the last
+                    # [nf, *def, nall, 3, 3]
+                    extended_virial_corr = jnp.transpose(
+                        extended_virial_corr,
+                        [
+                            0,
+                            *range(1, def_ndim + 1),
+                            def_ndim + 2,
+                            def_ndim + 3,
+                            def_ndim + 1,
+                        ],
+                    )
+                    avr += extended_virial_corr
+                # to [...,3,3] -> [...,9]
                 # avr: [nf, *def, nall, 9]
                 avr = jnp.reshape(avr, [*ff.shape[:-1], 9])
                 # extended_virial: [nf, nall, *def, 9]
                 extended_virial = jnp.transpose(
                     avr, [0, def_ndim + 1, *range(1, def_ndim + 1), def_ndim + 2]
                 )
-
-                # the correction sums to zero, which does not contribute to global virial
-                # cannot jit
-                # if do_atomic_virial:
-                #     raise NotImplementedError("Atomic virial is not implemented yet.")
-                # to [...,3,3] -> [...,9]
                 model_predict[kk_derv_c] = extended_virial
+                # [nf, *def, 9]
+                model_predict[kk_derv_c + "_redu"] = jnp.sum(extended_virial, axis=1)
     return model_predict

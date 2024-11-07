@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import math
 from typing import (
     Any,
     Callable,
@@ -26,6 +27,9 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
+)
+from deepmd.dpmodel.utils.safe_gradient import (
+    safe_for_vector_norm,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -849,7 +853,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
     ):
         xp = array_api_compat.array_namespace(ss)
         nfnl, nnei = ss.shape[0:2]
-        shape2 = xp.prod(xp.asarray(ss.shape[2:]))
+        shape2 = math.prod(ss.shape[2:])
         ss = xp.reshape(ss, (nfnl, nnei, shape2))
         # nfnl x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
@@ -863,7 +867,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         assert self.embeddings_strip is not None
         xp = array_api_compat.array_namespace(ss)
         nfnl, nnei = ss.shape[0:2]
-        shape2 = xp.prod(xp.asarray(ss.shape[2:]))
+        shape2 = math.prod(ss.shape[2:])
         ss = xp.reshape(ss, (nfnl, nnei, shape2))
         # nfnl x nnei x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
@@ -943,7 +947,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         else:
             raise NotImplementedError
 
-        normed = xp.linalg.vector_norm(
+        normed = safe_for_vector_norm(
             xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4], axis=-1, keepdims=True
         )
         input_r = xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4] / xp.maximum(
