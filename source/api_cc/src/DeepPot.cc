@@ -65,7 +65,6 @@ void DeepPot::init(const std::string& model,
   dpbase = dp;  // make sure the base funtions work
 }
 
-// no nlist, no atomic : nframe
 template <typename VALUETYPE>
 void DeepPot::compute(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
@@ -131,9 +130,7 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
                                       const std::vector<float>& dbox,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam);
-// above: no nlist, no atomic : nframe * precision
 
-// nlist, no atomic : nframe
 template <typename VALUETYPE>
 void DeepPot::compute(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
@@ -169,7 +166,7 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
   dp->computew(dener, dforce_, dvirial, datom_energy_, datom_virial_, dcoord_,
                datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__, false);
 }
-// nlist, no atomic : nframe * precision
+
 template void DeepPot::compute<double>(ENERGYTYPE& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dvirial,
@@ -218,7 +215,6 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam_);
 
-// no nlist, atomic : nframe
 template <typename VALUETYPE>
 void DeepPot::compute(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
@@ -293,9 +289,7 @@ template void DeepPot::compute<float>(std::vector<ENERGYTYPE>& dener,
                                       const std::vector<float>& dbox,
                                       const std::vector<float>& fparam,
                                       const std::vector<float>& aparam);
-// above: no nlist, atomic : nframe * precision
 
-// nlist, atomic : nframe
 template <typename VALUETYPE>
 void DeepPot::compute(ENERGYTYPE& dener,
                       std::vector<VALUETYPE>& dforce_,
@@ -333,7 +327,6 @@ void DeepPot::compute(std::vector<ENERGYTYPE>& dener,
                datype_, dbox, nghost, lmp_list, ago, fparam_, aparam__, true);
 }
 
-// nlist, atomic : nframe * precision
 template void DeepPot::compute<double>(ENERGYTYPE& dener,
                                        std::vector<double>& dforce_,
                                        std::vector<double>& dvirial,
@@ -595,7 +588,6 @@ void DeepPotModelDevi::init(const std::vector<std::string>& models,
   inited = true;
 }
 
-// no nlist, no atomic
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                std::vector<std::vector<VALUETYPE>>& all_force,
@@ -618,7 +610,6 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   }
 }
 
-// no nlist, no atomic: precision
 template void DeepPotModelDevi::compute<double>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<double>>& all_force,
@@ -639,7 +630,6 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
-// no nlist, atomic
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(
     std::vector<ENERGYTYPE>& all_energy,
@@ -666,7 +656,7 @@ void DeepPotModelDevi::compute(
                      dbox, fparam, aparam_);
   }
 }
-// no nlist, atomic: precision
+
 template void DeepPotModelDevi::compute<double>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<double>>& all_force,
@@ -691,7 +681,6 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
-// nlist, no atomic
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                std::vector<std::vector<VALUETYPE>>& all_force,
@@ -715,7 +704,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                      datype_, dbox, nghost, lmp_list, ago, fparam, aparam_);
   }
 }
-// nlist, no atomic: precision
+
 template void DeepPotModelDevi::compute<double>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<double>>& all_force,
@@ -742,7 +731,6 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
 
-// nlist, atomic
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(
     std::vector<ENERGYTYPE>& all_energy,
@@ -773,7 +761,6 @@ void DeepPotModelDevi::compute(
   }
 }
 
-// nlist, atomic : precision
 template void DeepPotModelDevi::compute<double>(
     std::vector<ENERGYTYPE>& all_energy,
     std::vector<std::vector<double>>& all_force,

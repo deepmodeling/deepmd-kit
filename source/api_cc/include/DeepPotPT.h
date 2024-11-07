@@ -74,7 +74,6 @@ class DeepPotPT : public DeepPotBackend {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
-
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -116,7 +115,6 @@ class DeepPotPT : public DeepPotBackend {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
-
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.

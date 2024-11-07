@@ -88,7 +88,6 @@ class DeepPotBackend : public DeepBaseModelBackend {
                         const std::vector<float>& aparam,
                         const bool atomic) = 0;
   /** @} */
-
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -271,7 +270,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
-
   /**
    * @brief Evaluate the energy, force and virial by using this DP.
    * @param[out] ener The system energy.
@@ -320,7 +318,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
-
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -423,7 +420,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
-
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
    *by using this DP.
@@ -656,7 +652,6 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
-
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using these DP models.

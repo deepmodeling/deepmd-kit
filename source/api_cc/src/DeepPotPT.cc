@@ -311,7 +311,6 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
     const bool atomic);
-
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
                         std::vector<VALUETYPE>& force,
@@ -433,7 +432,6 @@ template void DeepPotPT::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
     const bool atomic);
-
 void DeepPotPT::get_type_map(std::string& type_map) {
   auto ret = module.run_method("get_type_map").toList();
   for (const torch::IValue& element : ret) {
@@ -513,7 +511,6 @@ void DeepPotPT::computew(std::vector<double>& ener,
             nghost, inlist, ago, fparam, aparam, atomic);
   });
 }
-
 void DeepPotPT::computew_mixed_type(std::vector<double>& ener,
                                     std::vector<double>& force,
                                     std::vector<double>& virial,
