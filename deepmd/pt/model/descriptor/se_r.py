@@ -7,6 +7,7 @@ from typing import (
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
@@ -78,10 +79,6 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_r"):
 @BaseDescriptor.register("se_e2_r")
 @BaseDescriptor.register("se_r")
 class DescrptSeR(BaseDescriptor, torch.nn.Module):
-    lower: dict[str, int]
-    upper: dict[str, int]
-    table_data: dict[str, torch.Tensor]
-    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -117,12 +114,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
-        # add for compression
-        self.compress = False
-        self.lower = {}
-        self.upper = {}
-        self.table_data = {}
-        self.table_config = []
 
         self.sel = sel
         self.sec = torch.tensor(
@@ -159,6 +150,21 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
+        
+        # add for compression
+        self.compress = False
+        self.compress_info = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -380,17 +386,37 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             data["exclude_types"],
             ActivationFn(data["activation_function"]),
         )
-        self.table_config = [
+        table_config = [
             table_extrapolate,
             table_stride_1,
             table_stride_2,
             check_frequency,
         ]
-        self.lower, self.upper = self.table.build(
+        lower, upper = self.table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
-        self.table_data = self.table.data
+        table_data = self.table.data
+
+        for ii, ll in enumerate(self.filter_layers.networks):
+            net = "filter_-1_net_" + str(ii)
+            info_ii = torch.as_tensor(
+                [
+                    lower[net],
+                    upper[net],
+                    upper[net] * table_config[0],
+                    table_config[1],
+                    table_config[2],
+                    table_config[3],
+                ],
+                dtype=self.prec,
+                device="cpu",
+            )
+            tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+            self.compress_data[ii] = tensor_data_ii
+            self.compress_info[ii] = info_ii
+        
         self.compress = True
+
 
     def forward(
         self,
@@ -460,7 +486,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         # nfnl x nnei
         exclude_mask = self.emask(nlist, atype_ext).view(nfnl, self.nnei)
         xyz_scatter_total = []
-        for ii, ll in enumerate(self.filter_layers.networks):
+        for ii, (ll, compress_data_ii, compress_info_ii) in enumerate(
+            zip(self.filter_layers.networks, self.compress_data, self.compress_info)
+        ):
             # nfnl x nt
             mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
             # nfnl x nt x 1
@@ -479,8 +507,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
                 ]
                 tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
-                    tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
+                    compress_data_ii.contiguous(),
+                    compress_info_ii.cpu().contiguous(),
                     ss,
                     self.filter_neuron[-1],
                 )[0]

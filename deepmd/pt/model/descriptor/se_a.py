@@ -438,10 +438,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
-    lower: dict[str, int]
-    upper: dict[str, int]
-    table_data: dict[str, torch.Tensor]
-    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -681,8 +677,6 @@ class DescrptBlockSeA(DescriptorBlock):
         lower: dict[str, int],
         upper: dict[str, int],
     ) -> None:
-        self.compress = True
-
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             if self.type_one_side:
                 ii = embedding_idx
@@ -710,6 +704,7 @@ class DescrptBlockSeA(DescriptorBlock):
             tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
             self.compress_data[embedding_idx] = tensor_data_ii
             self.compress_info[embedding_idx] = info_ii
+        self.compress = True
 
     def forward(
         self,

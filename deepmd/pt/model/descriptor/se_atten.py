@@ -71,10 +71,6 @@ if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_atten"):
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(DescriptorBlock):
-    lower: dict[str, int]
-    upper: dict[str, int]
-    table_data: dict[str, torch.Tensor]
-    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -202,14 +198,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
             ln_eps = 1e-5
         self.ln_eps = ln_eps
 
-        # add for compression
-        self.compress = False
-        self.is_sorted = False
-        self.lower = {}
-        self.upper = {}
-        self.table_data = {}
-        self.table_config = []
-
         if isinstance(sel, int):
             sel = [sel]
 
@@ -281,6 +269,20 @@ class DescrptBlockSeAtten(DescriptorBlock):
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
+
+        # add for compression
+        self.compress = False
+        self.is_sorted = False
+        self.compress_info = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -431,11 +433,21 @@ class DescrptBlockSeAtten(DescriptorBlock):
         lower,
         upper,
     ) -> None:
+        net = "filter_net"
+        self.compress_info[0] = torch.as_tensor(
+            [
+                lower[net],
+                upper[net],
+                upper[net] * table_config[0],
+                table_config[1],
+                table_config[2],
+                table_config[3],
+            ],
+            dtype=self.prec,
+            device="cpu",
+        )
+        self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
         self.compress = True
-        self.table_data = table_data
-        self.table_config = table_config
-        self.lower = lower
-        self.upper = upper
 
     def forward(
         self,
@@ -544,15 +556,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
             xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         elif self.tebd_input_mode in ["strip"]:
             if self.compress:
-                net = "filter_net"
-                info = [
-                    self.lower[net],
-                    self.upper[net],
-                    self.upper[net] * self.table_config[0],
-                    self.table_config[1],
-                    self.table_config[2],
-                    self.table_config[3],
-                ]
                 ss = ss.reshape(-1, 1)
                 # nfnl x nnei x ng
                 # gg_s = self.filter_layers.networks[0](ss)
@@ -569,14 +572,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
                     gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
                 # nfnl x nnei x ng
                 # gg = gg_s * gg_t + gg_s
-                tensor_data = self.table_data[net].to(gg_t.device).to(dtype=self.prec)
-                info_tensor = torch.tensor(info, dtype=self.prec, device="cpu")
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 # Convert all tensors to the required precision at once
                 ss, rr, gg_t = (t.to(self.prec) for t in (ss, rr, gg_t))
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
-                    tensor_data.contiguous(),
-                    info_tensor.contiguous(),
+                    self.compress_data[0].contiguous(),
+                    self.compress_info[0].cpu().contiguous(),
                     ss.contiguous(),
                     rr.contiguous(),
                     gg_t.contiguous(),
