@@ -120,10 +120,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
   int nall = nlocal + nghost;
   int newton_pair = force->newton_pair;
 
-  vector<double> dspin(nall * 3, 0.);
-  vector<double> dfm(nall * 3, 0.);
-  double **sp = atom->sp;
-  double **fm = atom->fm;
   if (atom->sp_flag) {
     throw std::runtime_error(
         "Pair style 'deepmd' does not support spin atoms, please use pair "
@@ -342,8 +338,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
         vector<double> std_f;
         vector<double> tmp_avg_f;
-        vector<double> std_fm;
-        vector<double> tmp_avg_fm;
         deep_pot_model_devi.compute_avg(tmp_avg_f, all_force);
         deep_pot_model_devi.compute_std_f(std_f, tmp_avg_f, all_force);
         if (out_rel == 1) {
@@ -352,7 +346,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
         double min = numeric_limits<double>::max(), max = 0, avg = 0;
         ana_st(max, min, avg, std_f, nlocal);
         double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
-        double all_fm_min = 0, all_fm_max = 0, all_fm_avg = 0;
         MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
         MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
         MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
@@ -409,7 +402,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
              << " " << setw(18) << all_f_avg;
         }
         if (out_each == 1) {
-          // need support for spin atomic force.
           vector<double> std_f_all(atom->natoms);
           // Gather std_f and tags
           tagint *tag = atom->tag;
