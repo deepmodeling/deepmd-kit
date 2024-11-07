@@ -68,7 +68,7 @@ def norm_decomp(
     if p == 2 or p == 2.0:
         # clip for negative indexing, or 1/(0^(k-1)) will cause inf in backward
         return (x * x).sum(axis=axis, keepdim=keepdim).clip(1e-12) ** 0.5
-    return (x.abs()**p).sum(axis=axis, keepdim=keepdim) ** (1 / p)
+    return (x.abs() ** p).sum(axis=axis, keepdim=keepdim) ** (1 / p)
 
 
 def take_along_axis_decomp(
