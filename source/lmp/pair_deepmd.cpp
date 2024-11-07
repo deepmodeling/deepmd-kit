@@ -200,6 +200,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
         commdata_->recvproc, &world);
+    lmp_list.set_mask(NEIGHMASK);
     deepmd_compat::InputNlist extend_lmp_list;
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix

@@ -8,6 +8,7 @@
 #include "AtomMap.h"
 #include "common.h"
 #include "device.h"
+#include "neigh_list.h"
 
 using namespace tensorflow;
 using namespace deepmd;
@@ -742,6 +743,7 @@ void DeepSpinTF::compute(ENERGYVTYPE& dener,
          ntypes, ntypes_spin);
   InputNlist extend_lmp_list(extend_inum, &extend_ilist[0], &extend_numneigh[0],
                              &extend_firstneigh[0]);
+  extend_lmp_list.set_mask(NEIGHMASK);
   std::vector<VALUETYPE> fparam;
   std::vector<VALUETYPE> aparam_;
   validate_fparam_aparam(nframes, (aparam_nall ? nall : nloc), fparam_,
