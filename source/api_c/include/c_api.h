@@ -96,6 +96,7 @@ const char* DP_NlistCheckOK(DP_Nlist* dp);
 
 /**
  * @brief The deep potential base model.
+ * @since API version 24
  **/
 typedef struct DP_DeepBaseModel DP_DeepBaseModel;
 
@@ -109,6 +110,7 @@ extern void DP_DeleteDeepBaseModel(DP_DeepBaseModel* dp);
 
 /**
  * @brief The deep potential base model deviation.
+ * @since API version 24
  **/
 typedef struct DP_DeepBaseModelDevi DP_DeepBaseModelDevi;
 
@@ -561,8 +563,8 @@ extern void DP_DeepPotComputeNList2(DP_DeepPot* dp,
                                     double* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model
- * with the neighbor list. (double version)
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model with the neighbor list. (double version)
  * @version 2
  * @param[in] dp The DP spin model to use.
  * @param[in] nframes The number of frames.
@@ -660,8 +662,8 @@ extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
                                      float* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model
- * with the neighbor list. (float version)
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model with the neighbor list. (float version)
  * @version 2
  * @param[in] dp The DP spin model to use.
  * @param[in] nframes The number of frames.
@@ -1138,8 +1140,8 @@ void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
                                       double* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model
- *deviation with neighbor list. (double version)
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model deviation with neighbor list. (double version)
  * @version 2
  * @param[in] dp The DP model deviation to use.
  * @param[in] nframes The number of frames. Only support 1 for now.
@@ -1236,8 +1238,8 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
                                        float* atomic_virial);
 
 /**
- * @brief Evaluate the energy, force and virial by using a DP spin model
- *deviation with neighbor list. (float version)
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ *spin model deviation with neighbor list. (float version)
  * @version 2
  * @param[in] dp The DP model deviation to use.
  * @param[in] nframes The number of frames. Only support 1 for now.

@@ -1722,26 +1722,6 @@ void DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,
       force, virial, atomic_energy, atomic_virial);
 }
 
-void DP_DeepSpinModelDeviComputeNListSP(DP_DeepSpinModelDevi* dp,
-                                        const int natoms,
-                                        const double* coord,
-                                        const double* spin,
-                                        const int* atype,
-                                        const double* cell,
-                                        const int nghost,
-                                        const DP_Nlist* nlist,
-                                        const int ago,
-                                        double* energy,
-                                        double* force,
-                                        double* force_mag,
-                                        double* virial,
-                                        double* atomic_energy,
-                                        double* atomic_virial) {
-  DP_DeepSpinModelDeviComputeNList_variant<double>(
-      dp, 1, natoms, coord, spin, atype, cell, nghost, nlist, ago, NULL, NULL,
-      energy, force, force_mag, virial, atomic_energy, atomic_virial);
-}
-
 void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
                                       const int natoms,
                                       const float* coord,
@@ -1758,26 +1738,6 @@ void DP_DeepPotModelDeviComputeNListf(DP_DeepPotModelDevi* dp,
   DP_DeepPotModelDeviComputeNList_variant<float>(
       dp, 1, natoms, coord, atype, cell, nghost, nlist, ago, NULL, NULL, energy,
       force, virial, atomic_energy, atomic_virial);
-}
-
-void DP_DeepSpinModelDeviComputeNListfSP(DP_DeepSpinModelDevi* dp,
-                                         const int natoms,
-                                         const float* coord,
-                                         const float* spin,
-                                         const int* atype,
-                                         const float* cell,
-                                         const int nghost,
-                                         const DP_Nlist* nlist,
-                                         const int ago,
-                                         double* energy,
-                                         float* force,
-                                         float* force_mag,
-                                         float* virial,
-                                         float* atomic_energy,
-                                         float* atomic_virial) {
-  DP_DeepSpinModelDeviComputeNList_variant<float>(
-      dp, 1, natoms, coord, spin, atype, cell, nghost, nlist, ago, NULL, NULL,
-      energy, force, force_mag, virial, atomic_energy, atomic_virial);
 }
 
 void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
