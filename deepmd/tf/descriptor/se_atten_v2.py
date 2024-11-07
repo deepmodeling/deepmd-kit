@@ -130,6 +130,9 @@ class DescrptSeAttenV2(DescrptSeAtten):
         Model
             The deserialized model
         """
+        raise RuntimeError(
+            "The implementation for smooth_type_embedding is inconsistent with other backends"
+        )
         if cls is not DescrptSeAttenV2:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()

@@ -1866,6 +1866,10 @@ class DescrptSeAtten(DescrptSeA):
         if cls is not DescrptSeAtten:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
+        if data["smooth_type_embedding"]:
+            raise RuntimeError(
+                "The implementation for smooth_type_embedding is inconsistent with other backends"
+            )
         check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
@@ -1920,6 +1924,10 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
+        if self.smooth:
+            raise RuntimeError(
+                "The implementation for smooth_type_embedding is inconsistent with other backends"
+            )
         # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
         if self.stripped_type_embedding and self.type_one_side:
             raise NotImplementedError(
