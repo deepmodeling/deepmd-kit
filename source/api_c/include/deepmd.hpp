@@ -993,10 +993,10 @@ class DeepPot : public DeepBaseModel {
     }
     dp = DP_NewDeepPotWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
                                  file_content.size());
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
-    dfparam = DP_DeepBaseModelGetDimFParam((DP_DeepBaseModel *)dp);
-    daparam = DP_DeepBaseModelGetDimAParam((DP_DeepBaseModel *)dp);
-    aparam_nall = DP_DeepBaseModelIsAParamNAll((DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    dfparam = DP_DeepPotGetDimFParam(dp);
+    daparam = DP_DeepPotGetDimAParam(dp);
+    aparam_nall = DP_DeepPotIsAParamNAll(dp);
     dpbase = (DP_DeepBaseModel *)dp;
   };
 
@@ -1054,7 +1054,7 @@ class DeepPot : public DeepBaseModel {
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
                                   nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -1120,7 +1120,7 @@ class DeepPot : public DeepBaseModel {
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
                                   atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
   /**
@@ -1187,7 +1187,7 @@ class DeepPot : public DeepBaseModel {
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -1263,7 +1263,7 @@ class DeepPot : public DeepBaseModel {
                                        box_, nghost, lmp_list.nl, ago, fparam__,
                                        aparam__, ener_, force_, virial_,
                                        atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Evaluate the energy, force and virial by using this DP with the
@@ -1320,7 +1320,7 @@ class DeepPot : public DeepBaseModel {
     _DP_DeepPotComputeMixedType<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
                                            box_, fparam__, aparam__, ener_,
                                            force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -1386,7 +1386,7 @@ class DeepPot : public DeepBaseModel {
     _DP_DeepPotComputeMixedType<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, fparam__, aparam__, ener_,
         force_, virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
  private:
@@ -1437,10 +1437,10 @@ class DeepSpin : public DeepBaseModel {
     }
     dp = DP_NewDeepSpinWithParam2(model.c_str(), gpu_rank, file_content.c_str(),
                                   file_content.size());
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
-    dfparam = DP_DeepBaseModelGetDimFParam((DP_DeepBaseModel *)dp);
-    daparam = DP_DeepBaseModelGetDimAParam((DP_DeepBaseModel *)dp);
-    aparam_nall = DP_DeepBaseModelIsAParamNAll((DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
+    dfparam = DP_DeepSpinGetDimFParam(dp);
+    daparam = DP_DeepSpinGetDimAParam(dp);
+    aparam_nall = DP_DeepSpinIsAParamNAll(dp);
     dpbase = (DP_DeepBaseModel *)dp;
   };
 
@@ -1507,7 +1507,7 @@ class DeepSpin : public DeepBaseModel {
     _DP_DeepSpinCompute<VALUETYPE>(dp, nframes, natoms, coord_, spin_, atype_,
                                    box_, fparam__, aparam__, ener_, force_,
                                    force_mag_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   };
 
   /**
@@ -1582,7 +1582,7 @@ class DeepSpin : public DeepBaseModel {
     _DP_DeepSpinCompute<VALUETYPE>(
         dp, nframes, natoms, coord_, spin_, atype_, box_, fparam__, aparam__,
         ener_, force_, force_mag_, virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   };
 
   /**
@@ -1657,7 +1657,7 @@ class DeepSpin : public DeepBaseModel {
                                         atype_, box_, nghost, lmp_list.nl, ago,
                                         fparam__, aparam__, ener_, force_,
                                         force_mag_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   };
 
   /**
@@ -1740,7 +1740,7 @@ class DeepSpin : public DeepBaseModel {
         dp, nframes, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl,
         ago, fparam__, aparam__, ener_, force_, force_mag_, virial_,
         atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelCheckOK, (DP_DeepBaseModel *)dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   };
 
  private:
@@ -2015,11 +2015,11 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     dp = DP_NewDeepPotModelDeviWithParam(
         cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
         c_file_contents.size(), size_file_contents.data());
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
     numb_models = models.size();
-    dfparam = DP_DeepBaseModelDeviGetDimFParam((DP_DeepBaseModelDevi *)dp);
-    daparam = DP_DeepBaseModelDeviGetDimAParam((DP_DeepBaseModelDevi *)dp);
-    aparam_nall = DP_DeepBaseModelDeviIsAParamNAll((DP_DeepBaseModelDevi *)dp);
+    dfparam = DP_DeepPotModelDeviGetDimFParam(dp);
+    daparam = DP_DeepPotModelDeviGetDimAParam(dp);
+    aparam_nall = DP_DeepPotModelDeviIsAParamNAll(dp);
     dpbase = (DP_DeepBaseModelDevi *)dp;
   };
 
@@ -2082,7 +2082,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     _DP_DeepPotModelDeviCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_,
                                            fparam__, aparam__, ener_, force_,
                                            virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
     ener.resize(numb_models);
@@ -2167,7 +2167,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     _DP_DeepPotModelDeviCompute<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, fparam__, aparam__, ener_, force_,
         virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
     ener.resize(numb_models);
@@ -2264,7 +2264,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
         aparam__, ener_, force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
     ener.resize(numb_models);
@@ -2358,7 +2358,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
         aparam__, ener_, force_, virial_, atomic_ener_, atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
 
     // reshape
     ener.resize(numb_models);
@@ -2447,11 +2447,11 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
     dp = DP_NewDeepSpinModelDeviWithParam(
         cstrings.data(), cstrings.size(), gpu_rank, c_file_contents.data(),
         c_file_contents.size(), size_file_contents.data());
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
     numb_models = models.size();
-    dfparam = DP_DeepBaseModelDeviGetDimFParam((DP_DeepBaseModelDevi *)dp);
-    daparam = DP_DeepBaseModelDeviGetDimAParam((DP_DeepBaseModelDevi *)dp);
-    aparam_nall = DP_DeepBaseModelDeviIsAParamNAll((DP_DeepBaseModelDevi *)dp);
+    dfparam = DP_DeepSpinModelDeviGetDimFParam(dp);
+    daparam = DP_DeepSpinModelDeviGetDimAParam(dp);
+    aparam_nall = DP_DeepSpinModelDeviIsAParamNAll(dp);
     dpbase = (DP_DeepBaseModelDevi *)dp;
   };
   /**
@@ -2529,7 +2529,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
         dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
         fparam__, aparam__, ener_, force_, force_mag_, virial_, nullptr,
         nullptr);
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
     // reshape
     ener.resize(numb_models);
     force.resize(numb_models);
@@ -2636,7 +2636,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
         dp, natoms, coord_, spin_, atype_, box_, nghost, lmp_list.nl, ago,
         fparam__, aparam__, ener_, force_, force_mag_, virial_, atomic_ener_,
         atomic_virial_);
-    DP_CHECK_OK(DP_DeepBaseModelDeviCheckOK, (DP_DeepBaseModelDevi *)dp);
+    DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
     // reshape
     ener.resize(numb_models);
     force.resize(numb_models);
