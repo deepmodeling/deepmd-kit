@@ -574,8 +574,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
-               std::vector<std::vector<VALUETYPE>>& all_force,
-               std::vector<std::vector<VALUETYPE>>& all_virial,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
@@ -607,10 +607,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
-               std::vector<std::vector<VALUETYPE>>& all_force,
-               std::vector<std::vector<VALUETYPE>>& all_virial,
-               std::vector<std::vector<VALUETYPE>>& all_atom_energy,
-               std::vector<std::vector<VALUETYPE>>& all_atom_virial,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
+               std::vector<std::vector<VALUETYPE> >& all_atom_energy,
+               std::vector<std::vector<VALUETYPE> >& all_atom_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
@@ -642,8 +642,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
-               std::vector<std::vector<VALUETYPE>>& all_force,
-               std::vector<std::vector<VALUETYPE>>& all_virial,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
@@ -680,10 +680,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
-               std::vector<std::vector<VALUETYPE>>& all_force,
-               std::vector<std::vector<VALUETYPE>>& all_virial,
-               std::vector<std::vector<VALUETYPE>>& all_atom_energy,
-               std::vector<std::vector<VALUETYPE>>& all_atom_virial,
+               std::vector<std::vector<VALUETYPE> >& all_force,
+               std::vector<std::vector<VALUETYPE> >& all_virial,
+               std::vector<std::vector<VALUETYPE> >& all_atom_energy,
+               std::vector<std::vector<VALUETYPE> >& all_atom_virial,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
