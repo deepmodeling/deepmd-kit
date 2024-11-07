@@ -18,13 +18,12 @@ from write_lmp_data import (
     write_lmp_data_spin,
 )
 
-pbtxt_file = (
-    Path(__file__).parent.parent.parent / "tests" / "infer" / "deepspin_nlist.pbtxt"
-)
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deepspin_nlist-2.pbtxt"
 )
-pb_file = Path(__file__).parent / "deepspin_nlist.pb"
+pb_file = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa_spin.pth"
+)
 pb_file2 = Path(__file__).parent / "deepspin_nlist-2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
@@ -33,21 +32,21 @@ data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
 expected_ae = np.array(
-    [-7.313160384523243, -7.312173646552338, -2.8984477845267067, -2.8984477845267067]
+    [-5.452114789070532, -5.480146653237549, -5.196470063744647, -5.196470063744647]
 )
 expected_e = np.sum(expected_ae)
 expected_f = np.array(
     [
-        [0.0277100137316238, -0.0116082489956803, -0.0211484273275705],
-        [-0.0277100137316238, 0.0116082489956803, 0.0211484273275705],
-        [0.0097588349924651, 0.0091168063745397, -0.0133541952528469],
-        [-0.0097588349924651, -0.0091168063745397, 0.0133541952528469],
+        [0.1005891161568464, -0.0421386837954357, -0.1035159238420185],
+        [-0.1005891161568464, 0.0421386837954357, 0.1035159238420185],
+        [-0.0874023630887424, -0.0816522076223778, 0.1196032337003844],
+        [0.0874023630887424, 0.0816522076223778, -0.1196032337003844],
     ]
 )
 expected_fm = np.array(
     [
-        [0.0058990325687816, -0.0024712163463815, 0.0296682261295907],
-        [-0.0060028470719556, 0.0025147062058193, 0.0321884178873188],
+        [0.0248296941890119, -0.0104016286467482, 0.0166496777995534],
+        [-0.0407454346265244, 0.0170690334246251, 0.0337262181162752],
         [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
         [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
     ]
@@ -90,9 +89,7 @@ spin = np.array(
 )
 type_NiO = np.array([1, 1, 2, 2])
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
+
 sp.check_output(
     f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
 )
@@ -225,7 +222,6 @@ def test_pair_deepmd_mpi(balance_args: list):
                 md_file,
                 f.name,
                 *balance_args,
-                "--nopbc",
             ]
         )
         arr = np.loadtxt(f.name, ndmin=1)
