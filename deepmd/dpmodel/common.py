@@ -105,6 +105,10 @@ def to_numpy_array(x: Any) -> Optional[np.ndarray]:
     """
     if x is None:
         return None
+    if x.device == "cpu":
+        # dlpack needs the device to be the same
+        return np.from_dlpack(x)
+    # asarray is not within Array API standard, so may fail
     return np.asarray(x)
 
 
