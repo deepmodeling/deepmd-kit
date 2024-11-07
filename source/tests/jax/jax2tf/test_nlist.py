@@ -20,11 +20,10 @@ if DP_TEST_TF2_ONLY:
     dtype = tnp.float64
 
 
-pytest.mark.skipif(
-    not DP_TEST_TF2_ONLY, reason="TF2 conflicts with TF1", allow_module_level=True
+@pytest.mark.skipif(
+    not DP_TEST_TF2_ONLY,
+    reason="TF2 conflicts with TF1",
 )
-
-
 class TestNeighList(tf.test.TestCase):
     def setUp(self):
         self.nf = 3

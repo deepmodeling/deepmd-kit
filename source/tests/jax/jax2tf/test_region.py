@@ -18,11 +18,11 @@ if DP_TEST_TF2_ONLY:
         to_face_distance,
     )
 
-pytest.mark.skipif(
-    not DP_TEST_TF2_ONLY, reason="TF2 conflicts with TF1", allow_module_level=True
+
+@pytest.mark.skipif(
+    not DP_TEST_TF2_ONLY,
+    reason="TF2 conflicts with TF1",
 )
-
-
 class TestRegion(tf.test.TestCase):
     def setUp(self):
         self.cell = tnp.array(
