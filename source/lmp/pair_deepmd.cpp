@@ -299,24 +299,15 @@ void PairDeepMD::settings(int narg, char **arg) {
       if (!is_restart) {
         fp.open(out_file);
         fp << scientific;
-        if (!atom->sp_flag) {
-          fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
-             << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
-             << setw(18 + 1) << "max_devi_f" << setw(18 + 1) << "min_devi_f"
-             << setw(18 + 1) << "avg_devi_f";
-          if (out_each) {
-            // at this time, we don't know how many atoms
-            fp << setw(18 + 1) << "atm_devi_f(N)";
-          }
-          fp << endl;
-        } else {
-          fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
-             << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
-             << setw(18 + 1) << "max_devi_fr" << setw(18 + 1) << "min_devi_fr"
-             << setw(18 + 1) << "avg_devi_fr" << setw(18 + 1) << "max_devi_fm"
-             << setw(18 + 1) << "min_devi_fm" << setw(18 + 1) << "avg_devi_fm"
-             << endl;
+        fp << "#" << setw(12 - 1) << "step" << setw(18 + 1) << "max_devi_v"
+           << setw(18 + 1) << "min_devi_v" << setw(18 + 1) << "avg_devi_v"
+           << setw(18 + 1) << "max_devi_f" << setw(18 + 1) << "min_devi_f"
+           << setw(18 + 1) << "avg_devi_f";
+        if (out_each) {
+          // at this time, we don't know how many atoms
+          fp << setw(18 + 1) << "atm_devi_f(N)";
         }
+        fp << endl;
       } else {
         fp.open(out_file, std::ofstream::out | std::ofstream::app);
         fp << scientific;
@@ -368,12 +359,7 @@ void PairDeepMD::settings(int narg, char **arg) {
     }
   }
 
-  // comm_reverse = numb_models * 3;
-  if (atom->sp_flag) {
-    comm_reverse = numb_models * 3 * 2;
-  } else {
-    comm_reverse = numb_models * 3;
-  }
+  comm_reverse = numb_models * 3;
   all_force.resize(numb_models);
 }
 
