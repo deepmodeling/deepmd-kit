@@ -812,6 +812,8 @@ class StandardModel(Model):
         if descriptor.explicit_ntypes:
             type_embedding = descriptor.type_embedding
             fitting.dim_descrpt -= type_embedding.neuron[-1]
+        else:
+            type_embedding = None
         # BEGINE not supported keys
         data.pop("atom_exclude_types")
         data.pop("pair_exclude_types")
