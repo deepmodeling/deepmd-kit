@@ -105,12 +105,11 @@ def to_numpy_array(x: Any) -> Optional[np.ndarray]:
     """
     if x is None:
         return None
-    if hasattr(x, "__dlpack_device__") and x.__dlpack_device__()[0] == 1:
-        # CPU = 1, see https://data-apis.org/array-api/latest/API_specification/generated/array_api.array.__dlpack_device__.html#api-specification-generated-array-api-array-dlpack-device--page-root
-        # dlpack needs the device to be the same
-        return np.from_dlpack(x)
-    # asarray is not within Array API standard, so may fail
-    return np.asarray(x)
+    try:
+        # asarray is not within Array API standard, so may fail
+        return np.asarray(x)
+    except (ValueError, AttributeError):
+        return np.from_dlpack(x, copy=True)
 
 
 __all__ = [

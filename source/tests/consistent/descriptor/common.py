@@ -8,6 +8,9 @@ import numpy as np
 from deepmd.common import (
     make_default_mesh,
 )
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -157,7 +160,7 @@ class DescriptorTest:
             distinguish_types=(not mixed_types),
         )
         return [
-            np.asarray(x) if hasattr(x, "__array_namespace__") else x
+            to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
             for x in array_api_strict_obj(
                 ext_coords, ext_atype, nlist=nlist, mapping=mapping
             )
