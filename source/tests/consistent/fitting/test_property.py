@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.fitting.property_fitting import (
     PropertyFittingNet as PropertyFittingDP,
 )
@@ -236,7 +239,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             task_dim,
             intensive,
         ) = self.param
-        return np.asarray(
+        return to_numpy_array(
             array_api_strict_obj(
                 array_api_strict.asarray(self.inputs),
                 array_api_strict.asarray(self.atype.reshape(1, -1)),

@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnerFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -241,7 +244,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             (numb_aparam, use_aparam_as_mask),
             atom_ener,
         ) = self.param
-        return np.asarray(
+        return to_numpy_array(
             array_api_strict_obj(
                 array_api_strict.asarray(self.inputs),
                 array_api_strict.asarray(self.atype.reshape(1, -1)),
