@@ -1355,6 +1355,11 @@ template void DP_DipoleChargeModifierComputeNList_variant<float>(
  * @return const char*
  */
 const char* string_to_char(std::string& str) {
+  // Remove trailing spaces
+  str.erase(std::find_if(str.rbegin(), str.rend(),
+                         [](unsigned char ch) { return !std::isspace(ch); })
+                .base(),
+            str.end());
   // copy from string to char*
   const std::string::size_type size = str.size();
   // +1 for '\0'
