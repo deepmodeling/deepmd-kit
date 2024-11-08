@@ -2,6 +2,9 @@
 import functools
 import logging
 import time
+from contextlib import (
+    contextmanager,
+)
 from copy import (
     deepcopy,
 )
@@ -17,6 +20,9 @@ import paddle
 import paddle.distributed as dist
 from paddle.distributed import (
     fleet,
+)
+from paddle.framework import (
+    core,
 )
 from paddle.io import (
     DataLoader,
@@ -647,23 +653,15 @@ class Trainer:
             )
 
             writer = SummaryWriter(log_dir=self.tensorboard_log_dir)
-        if self.enable_profiler or self.profiling:
-            prof = paddle.profiler.profile(
-                schedule=paddle.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-                on_trace_ready=paddle.profiler.tensorboard_trace_handler(
-                    self.tensorboard_log_dir
-                )
-                if self.enable_profiler
-                else None,
-                record_shapes=True,
-                with_stack=True,
-            )
-            prof.start()
+        enable_profiling = self.enable_profiler or self.profiling
+        if enable_profiling:
+            core.nvprof_start()
+            core.nvprof_enable_record_event()
 
         def step(_step_id, task_key="Default"):
             # Paddle Profiler
-            if self.enable_profiler or self.profiling:
-                prof.step()
+            if enable_profiling:
+                core.nvprof_nvtx_push(f"Training step {_step_id}")
             self.wrapper.train()
             if isinstance(self.lr_exp, dict):
                 _lr = self.lr_exp[task_key]
@@ -685,19 +683,33 @@ class Trainer:
                     pref_lr = _lr.start_lr
                 else:
                     pref_lr = cur_lr
-                model_pred, loss, more_loss = self.wrapper(
-                    **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
-                )
-                loss.backward()
-                if self.gradient_max_norm > 0.0:
-                    grad_norm = paddle.nn.utils.clip_grad_norm_(
-                        self.wrapper.parameters(), self.gradient_max_norm
+                with nvprof_context(enable_profiling, "Forward pass"):
+                    model_pred, loss, more_loss = self.wrapper(
+                        **input_dict,
+                        cur_lr=pref_lr,
+                        label=label_dict,
+                        task_key=task_key,
                     )
+
+                with nvprof_context(enable_profiling, "Backward pass"):
+                    loss.backward()
+
+                if self.gradient_max_norm > 0.0:
+                    with nvprof_context(enable_profiling, "Gradient clip"):
+                        grad_norm = paddle.nn.utils.clip_grad_norm_(
+                            self.wrapper.parameters(), self.gradient_max_norm
+                        )
                     if not paddle.isfinite(grad_norm).all():
                         # check local gradnorm single GPU case, trigger NanDetector
                         raise FloatingPointError("gradients are Nan/Inf")
-                self.optimizer.step()
+
+                with nvprof_context(enable_profiling, "Adam update"):
+                    self.optimizer.step()
+
                 self.scheduler.step()
+
+                if enable_profiling:
+                    core.nvprof_nvtx_pop()
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -955,13 +967,12 @@ class Trainer:
             fout1.close()
         if self.enable_tensorboard:
             writer.close()
-        if self.enable_profiler or self.profiling:
-            prof.stop()
-            if self.profiling:
-                prof.export_chrome_trace(self.profiling_file)
-                log.info(
-                    f"The profiling trace have been saved to: {self.profiling_file}"
-                )
+        if enable_profiling:
+            core.nvprof_stop()
+            log.info(
+                "The nsys profiling trace have been saved to *.nsys-rep and *.sqlite "
+                "files, which can be viewd in NVIDIA Nsight Systems software"
+            )
 
     def save_model(self, save_path: Path, lr=0.0, step=0):
         module = (
@@ -1199,3 +1210,16 @@ def model_change_out_bias(
         f"to {to_numpy_array(new_bias).reshape(-1)!s}."
     )
     return _model
+
+
+@contextmanager
+def nvprof_context(enable_profiler: bool, name: str):
+    if enable_profiler:
+        core.nvprof_nvtx_push(name)
+
+    try:
+        yield
+
+    finally:
+        if enable_profiler:
+            core.nvprof_nvtx_pop()
