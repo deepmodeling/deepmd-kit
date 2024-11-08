@@ -80,16 +80,6 @@ class TestDecomp(unittest.TestCase):
             1e-7,
         )
 
-        # raw_output = raw_api(raw_input, raw_index, raw_values, axis=axis, reduce="mean")
-        # decomp_output = decomp_api(raw_input, axis, raw_index, src=raw_values, reduce="mean")
-
-        # np.testing.assert_allclose(
-        #     raw_output.numpy(),
-        #     decomp_output.numpy(),
-        #     1e-5,
-        #     1e-8,
-        # )
-
     def test_sec(self):
         shape = [10, 3]
         length = shape[0]
