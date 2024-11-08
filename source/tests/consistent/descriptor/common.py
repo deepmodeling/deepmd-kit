@@ -144,7 +144,6 @@ class DescriptorTest:
         box,
         mixed_types: bool = False,
     ) -> Any:
-        array_api_strict.set_array_api_strict_flags(api_version="2023.12")
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             array_api_strict.asarray(coords.reshape(1, -1, 3)),
             array_api_strict.asarray(atype.reshape(1, -1)),

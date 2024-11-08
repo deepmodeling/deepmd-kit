@@ -221,7 +221,6 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
-        array_api_strict.set_array_api_strict_flags(api_version="2023.12")
         (
             resnet_dt,
             precision,

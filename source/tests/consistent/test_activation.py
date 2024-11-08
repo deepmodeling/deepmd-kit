@@ -70,9 +70,6 @@ class TestActivationFunctionConsistent(unittest.TestCase):
     def test_arary_api_strict(self):
         import array_api_strict as xp
 
-        xp.set_array_api_strict_flags(
-            api_version=get_activation_fn_dp.array_api_version
-        )
         input = xp.asarray(self.random_input)
         test = get_activation_fn_dp(self.activation)(input)
         np.testing.assert_allclose(self.ref, np.array(test), atol=1e-10)
