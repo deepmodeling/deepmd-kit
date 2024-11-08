@@ -1057,6 +1057,14 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             True,
         )
         local_jdata_cpy["repinit"]["nsel"] = repinit_sel[0]
+        min_nbor_dist, repinit_three_body_sel = update_sel.update_one_sel(
+            train_data,
+            type_map,
+            local_jdata_cpy["repinit"]["three_body_rcut"],
+            local_jdata_cpy["repinit"]["three_body_sel"],
+            True,
+        )
+        local_jdata_cpy["repinit"]["three_body_sel"] = repinit_three_body_sel[0]
         min_nbor_dist, repformer_sel = update_sel.update_one_sel(
             train_data,
             type_map,
