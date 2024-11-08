@@ -8,10 +8,18 @@ from deepmd.env import (
 
 set_default_nthreads()
 inter_nthreads, intra_nthreads = get_default_nthreads()
-os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + (
-    f" intra_op_parallelism_threads={inter_nthreads}"
-    f" inter_op_parallelism_threads={inter_nthreads}"
-)
+if inter_nthreads > 0 and "inter_op_parallelism_threads=" not in os.environ.get(
+    "XLA_FLAGS", ""
+):
+    os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + (
+        f" inter_op_parallelism_threads={inter_nthreads}"
+    )
+if intra_nthreads > 0 and "intra_op_parallelism_threads=" not in os.environ.get(
+    "XLA_FLAGS", ""
+):
+    os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + (
+        f" intra_op_parallelism_threads={intra_nthreads}"
+    )
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import jax
