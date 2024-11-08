@@ -430,8 +430,8 @@ def main_parser() -> argparse.ArgumentParser:
             """\
         examples:
             dp compress
-            dp compress -i graph -o compressed
-            dp --pt compress -i frozen_model -o compressed_model
+            dp --tf compress -i frozen_model.pb -o compressed_model.pb
+            dp --pt compress -i frozen_model.pth -o compressed_model.pth
         """
         ),
     )
@@ -445,7 +445,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_compress.add_argument(
         "-o",
         "--output",
-        default="compressed_model",
+        default="frozen_model_compressed",
         type=str,
         help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
     )
