@@ -47,10 +47,6 @@ class TestSingleTaskModel(unittest.TestCase):
         trainer.run()
         run_dp("dp --pd freeze")
 
-    # @unittest.skip(
-    #     "Paddle do not support dp --pd show frozen models(.json and .pdiparams file), "
-    #     "will be supported in the future."
-    # )
     def test_checkpoint(self):
         INPUT = "model.pd"
         ATTRIBUTES = "type-map descriptor fitting-net"
@@ -87,10 +83,6 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    # @unittest.skip(
-    #     "Paddle do not support dp --pd show frozen models(.json and .pdiparams file), "
-    #     "will be supported in the future."
-    # )
     def test_checkpoint_error(self):
         INPUT = "model.pd"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
@@ -156,10 +148,6 @@ class TestMultiTaskModel(unittest.TestCase):
         trainer.run()
         run_dp("dp --pd freeze --head model_1")
 
-    # @unittest.skip(
-    #     "Paddle do not support dp --pd show frozen models(.json and .pdiparams file), "
-    #     "will be supported in the future."
-    # )
     def test_checkpoint(self):
         INPUT = "model.ckpt.pd"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"

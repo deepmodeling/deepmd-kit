@@ -67,7 +67,7 @@ def norm_decomp(
     """
     if p == 2 or p == 2.0:
         # clip for negative indexing, or 1/(0^(k-1)) will cause inf in backward
-        return (x * x).sum(axis=axis, keepdim=keepdim).clip(1e-12) ** 0.5
+        return (x * x).sum(axis=axis, keepdim=keepdim) ** 0.5
     return (x.abs() ** p).sum(axis=axis, keepdim=keepdim) ** (1 / p)
 
 
@@ -134,21 +134,20 @@ def scatter_reduce_decomp(
     """
     # reduce: "sum", "prod", "mean", "amax", "amin"
     if reduce == "sum":
-        input.put_along_axis_(indices=index, values=src, axis=axis, reduce="add")
-    elif reduce == "mean":
-        input.put_along_axis_(indices=index, values=src, axis=axis, reduce="add")
-        dst_div = paddle.ones_like(input).put_along_axis(
-            indices=index,
-            values=paddle.to_tensor(1.0, dtype=input.dtype),
-            axis=axis,
-            reduce="add",
+        output = input.put_along_axis(
+            indices=index, values=src, axis=axis, reduce="add"
         )
-        input = input / dst_div
+    elif reduce == "mean":
+        output = input.put_along_axis(
+            indices=index, values=src, axis=axis, reduce="mean"
+        )
     elif reduce == "prod":
-        input = input.put_along_axis(indices=index, values=src, axis=axis, reduce="mul")
+        output = input.put_along_axis(
+            indices=index, values=src, axis=axis, reduce="mul"
+        )
     else:
         raise NotImplementedError("only support mode in ['sum', 'prod', 'mean']!")
-    return input
+    return output
 
 
 def sec(length: int, size: int) -> list[int]:
@@ -235,7 +234,8 @@ def normalize_decomp(
     paddle.Tensor
         Computed output.
     """
-    return x / (norm(x, p=p, axis=axis, keepdim=True).clip(min=epsilon))
+    return paddle.nn.functional.normalize(x, p, axis, epsilon)
+    # return x / norm(x, p=p, axis=axis, keepdim=True)
 
 
 # alias for decomposed functions for convinience
