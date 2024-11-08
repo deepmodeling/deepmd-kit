@@ -12,9 +12,6 @@ from typing import (
 
 import paddle
 
-from deepmd.pd.model.network.network import (
-    TypeEmbedNet,
-)
 from deepmd.pd.utils import (
     env,
 )
@@ -182,14 +179,6 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
     @abstractmethod
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-
-
-def make_default_type_embedding(
-    ntypes,
-):
-    decomp = {}
-    decomp["tebd_dim"] = 8
-    return TypeEmbedNet(ntypes, decomp["tebd_dim"]), decomp
 
 
 def extend_descrpt_stat(des, type_map, des_with_stat=None):

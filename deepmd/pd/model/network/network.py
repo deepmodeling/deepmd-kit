@@ -4,13 +4,11 @@ from typing import (
     Union,
 )
 
-import numpy as np
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 
-from deepmd.pd.model.network import (
-    init,
+from deepmd.dpmodel.utils.type_embed import (
+    get_econf_tebd,
 )
 from deepmd.pd.model.network.mlp import (
     EmbeddingNet,
@@ -18,26 +16,14 @@ from deepmd.pd.model.network.mlp import (
 from deepmd.pd.utils import (
     env,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from typing import (
-        Final,
-    )
-except ImportError:
-    from paddle.jit import Final
-
-from deepmd.dpmodel.utils.type_embed import (
-    get_econf_tebd,
-)
 from deepmd.pd.utils.utils import (
-    ActivationFn,
     to_paddle_tensor,
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 
@@ -45,222 +31,6 @@ def Tensor(*shape):
     return paddle.empty(shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
         device=env.DEVICE
     )
-
-
-class SimpleLinear(nn.Layer):
-    use_timestep: Final[bool]
-
-    def __init__(
-        self,
-        num_in,
-        num_out,
-        bavg=0.0,
-        stddev=1.0,
-        use_timestep=False,
-        activate=None,
-        bias: bool = True,
-    ):
-        """Construct a linear layer.
-
-        Args:
-        - num_in: Width of input tensor.
-        - num_out: Width of output tensor.
-        - use_timestep: Apply time-step to weight.
-        - activate: type of activate func.
-        """
-        super().__init__()
-        self.num_in = num_in
-        self.num_out = num_out
-        self.use_timestep = use_timestep
-        self.activate = ActivationFn(activate)
-
-        self.matrix = self.create_parameter(
-            [num_in, num_out],
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-        )
-        init.normal_(self.matrix, std=stddev / np.sqrt(num_out + num_in))
-        if bias:
-            self.bias = self.create_parameter(
-                (1, num_out),
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-            )
-            init.normal_(self.bias, mean=bavg, std=stddev)
-        else:
-            self.bias = None
-        if self.use_timestep:
-            self.idt = self.create_parameter(
-                (1, num_out),
-                dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-            )
-            init.normal_(self.idt, mean=0.1, std=0.001)
-
-    def forward(self, inputs):
-        """Return X*W+b."""
-        xw = paddle.matmul(inputs, self.matrix)
-        hidden = xw + self.bias if self.bias is not None else xw
-        hidden = self.activate(hidden)
-        if self.use_timestep:
-            hidden = hidden * self.idt
-        return hidden
-
-
-class Linear(nn.Linear):
-    def __init__(
-        self,
-        d_in: int,
-        d_out: int,
-        bias: bool = True,
-        init: str = "default",
-    ):
-        super().__init__(
-            d_in,
-            d_out,
-            bias=bias,
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-            device=env.DEVICE,
-        )
-
-        self.use_bias = bias
-
-        if self.use_bias:
-            with paddle.no_grad():
-                self.bias.fill_(0)
-
-        if init == "default":
-            self._trunc_normal_init(1.0)
-        elif init == "relu":
-            self._trunc_normal_init(2.0)
-        elif init == "glorot":
-            self._glorot_uniform_init()
-        elif init == "gating":
-            self._zero_init(self.use_bias)
-        elif init == "normal":
-            self._normal_init()
-        elif init == "final":
-            self._zero_init(False)
-        else:
-            raise ValueError("Invalid init method.")
-
-    def _trunc_normal_init(self, scale=1.0):
-        # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
-        TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
-        _, fan_in = self.weight.shape
-        scale = scale / max(1, fan_in)
-        std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
-        init.trunc_normal_(self.weight, mean=0.0, std=std)
-
-    def _glorot_uniform_init(self):
-        init.xavier_uniform_(self.weight, gain=1)
-
-    def _zero_init(self, use_bias=True):
-        with paddle.no_grad():
-            self.weight.fill_(0.0)
-            if use_bias:
-                with paddle.no_grad():
-                    self.bias.fill_(1.0)
-
-    def _normal_init(self):
-        init.kaiming_normal_(self.weight, nonlinearity="linear")
-
-
-class NonLinearHead(nn.Layer):
-    def __init__(self, input_dim, out_dim, activation_fn, hidden=None):
-        super().__init__()
-        hidden = input_dim if not hidden else hidden
-        self.linear1 = SimpleLinear(input_dim, hidden, activate=activation_fn)
-        self.linear2 = SimpleLinear(hidden, out_dim)
-
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.linear2(x)
-        return x
-
-
-class MaskLMHead(nn.Layer):
-    """Head for masked language modeling."""
-
-    def __init__(self, embed_dim, output_dim, activation_fn, weight=None):
-        super().__init__()
-        self.dense = SimpleLinear(embed_dim, embed_dim)
-        self.activation_fn = ActivationFn(activation_fn)
-        self.layer_norm = nn.LayerNorm(embed_dim)
-
-        if weight is None:
-            weight = nn.Linear(embed_dim, output_dim, bias_attr=False).weight
-        self.weight = weight.T
-        self.bias = self.create_parameter(
-            [output_dim],
-            dtype=env.GLOBAL_PD_FLOAT_PRECISION,
-            default_initializer=nn.initializer.Constant(0),  # pylint: disable=no-explicit-dtype,no-explicit-device
-        )
-
-    def forward(
-        self, features, masked_tokens: Optional[paddle.Tensor] = None, **kwargs
-    ):
-        # Only project the masked tokens while training,
-        # saves both memory and computation
-        if masked_tokens is not None:
-            features = features[masked_tokens, :]
-
-        x = self.dense(features)
-        x = self.activation_fn(x)
-        x = self.layer_norm(x)
-        # project back to size of vocabulary with bias
-        x = F.linear(x, self.weight) + self.bias
-        return x
-
-
-class ResidualDeep(nn.Layer):
-    def __init__(
-        self, type_id, embedding_width, neuron, bias_atom_e, out_dim=1, resnet_dt=False
-    ):
-        """Construct a filter on the given element as neighbor.
-
-        Args:
-        - typei: Element ID.
-        - embedding_width: Embedding width per atom.
-        - neuron: Number of neurons in each hidden layers of the embedding net.
-        - resnet_dt: Using time-step in the ResNet construction.
-        """
-        super().__init__()
-        self.type_id = type_id
-        self.neuron = [embedding_width, *neuron]
-        self.out_dim = out_dim
-
-        deep_layers = []
-        for ii in range(1, len(self.neuron)):
-            one = SimpleLinear(
-                num_in=self.neuron[ii - 1],
-                num_out=self.neuron[ii],
-                use_timestep=(
-                    resnet_dt and ii > 1 and self.neuron[ii - 1] == self.neuron[ii]
-                ),
-                activate="tanh",
-            )
-            deep_layers.append(one)
-        self.deep_layers = nn.LayerList(deep_layers)
-        if not env.ENERGY_BIAS_TRAINABLE:
-            bias_atom_e = 0
-        self.final_layer = SimpleLinear(self.neuron[-1], self.out_dim, bias_atom_e)
-
-    def forward(self, inputs):
-        """Calculate decoded embedding for each atom.
-
-        Args:
-        - inputs: Embedding net output per atom. Its shape is [nframes*nloc, self.embedding_width].
-
-        Returns
-        -------
-        - `paddle.Tensor`: Output layer with shape [nframes*nloc, self.neuron[-1]].
-        """
-        outputs = inputs
-        for idx, linear in enumerate(self.deep_layers):
-            if idx > 0 and linear.num_in == linear.num_out:
-                outputs = outputs + linear(outputs)
-            else:
-                outputs = linear(outputs)
-        outputs = self.final_layer(outputs)
-        return outputs
 
 
 class TypeEmbedNet(nn.Layer):

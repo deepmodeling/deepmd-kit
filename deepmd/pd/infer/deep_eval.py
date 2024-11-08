@@ -26,9 +26,6 @@ from deepmd.infer.deep_pot import (
 from deepmd.pd.model.model import (
     get_model,
 )
-from deepmd.pd.model.network.network import (
-    TypeEmbedNetConsistent,
-)
 from deepmd.pd.train.wrapper import (
     ModelWrapper,
 )
@@ -434,81 +431,7 @@ class DeepEval(DeepEvalBackend):
         aparam: Optional[np.ndarray],
         request_defs: list[OutputVariableDef],
     ):
-        model = self.dp.to(DEVICE)
-
-        nframes = coords.shape[0]
-        if len(atom_types.shape) == 1:
-            natoms = len(atom_types)
-            atom_types = np.tile(atom_types, nframes).reshape([nframes, -1])
-        else:
-            natoms = len(atom_types[0])
-
-        coord_input = paddle.to_tensor(
-            coords.reshape([nframes, natoms, 3]),
-            dtype=GLOBAL_PD_FLOAT_PRECISION,
-            place=DEVICE,
-        )
-        type_input = paddle.to_tensor(atom_types, dtype=paddle.int64, place=DEVICE)
-        spin_input = paddle.to_tensor(
-            spins.reshape([nframes, natoms, 3]),
-            dtype=GLOBAL_PD_FLOAT_PRECISION,
-            place=DEVICE,
-        )
-        if cells is not None:
-            box_input = paddle.to_tensor(
-                cells.reshape([nframes, 3, 3]),
-                dtype=GLOBAL_PD_FLOAT_PRECISION,
-                place=DEVICE,
-            )
-        else:
-            box_input = None
-        if fparam is not None:
-            fparam_input = to_paddle_tensor(
-                fparam.reshape([nframes, self.get_dim_fparam()])
-            )
-        else:
-            fparam_input = None
-        if aparam is not None:
-            aparam_input = to_paddle_tensor(
-                aparam.reshape([nframes, natoms, self.get_dim_aparam()])
-            )
-        else:
-            aparam_input = None
-
-        do_atomic_virial = any(
-            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
-        )
-        batch_output = model(
-            coord_input,
-            type_input,
-            spin=spin_input,
-            box=box_input,
-            do_atomic_virial=do_atomic_virial,
-            fparam=fparam_input,
-            aparam=aparam_input,
-        )
-        if isinstance(batch_output, tuple):
-            batch_output = batch_output[0]
-
-        results = []
-        for odef in request_defs:
-            pd_name = self._OUTDEF_DP2BACKEND[odef.name]
-            if pd_name in batch_output:
-                shape = self._get_output_shape(odef, nframes, natoms)
-                out = batch_output[pd_name].reshape(shape).numpy()
-                results.append(out)
-            else:
-                shape = self._get_output_shape(odef, nframes, natoms)
-                results.append(
-                    np.full(
-                        np.abs(shape),
-                        np.nan,
-                        dtype=NP_PRECISION_DICT[
-                            RESERVED_PRECISON_DICT[GLOBAL_PD_FLOAT_PRECISION]
-                        ],
-                    )
-                )  # this is kinda hacky
-        return tuple(results)
+        raise NotImplementedError("_eval_model_spin is not supported yet.")
 
     def _get_output_shape(self, odef, nframes, natoms):
         if odef.category == OutputVariableCategory.DERV_C_REDU:
@@ -552,14 +475,7 @@ class DeepEval(DeepEvalBackend):
         deepmd.pd.model.network.network.TypeEmbedNetConsistent :
             The type embedding network.
         """
-        out = []
-        for mm in self.dp.model["Default"].modules():
-            if mm.original_name == TypeEmbedNetConsistent.__name__:
-                out.append(mm(DEVICE))
-        if not out:
-            raise KeyError("The model has no type embedding networks.")
-        typeebd = paddle.concat(out, axis=1)
-        return to_numpy_array(typeebd)
+        raise NotImplementedError("eval_typeebd is not supported yet.")
 
     def get_model_def_script(self) -> str:
         """Get model definition script."""

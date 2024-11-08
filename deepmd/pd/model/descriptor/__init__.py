@@ -4,7 +4,6 @@ from .base_descriptor import (
 )
 from .descriptor import (
     DescriptorBlock,
-    make_default_type_embedding,
 )
 from .env_mat import (
     prod_env_mat,
@@ -17,7 +16,6 @@ from .se_a import (
 __all__ = [
     "BaseDescriptor",
     "DescriptorBlock",
-    "make_default_type_embedding",
     "DescrptBlockSeA",
     "DescrptSeA",
     "prod_env_mat",

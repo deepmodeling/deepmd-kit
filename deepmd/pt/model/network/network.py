@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    Final,
     Optional,
     Union,
 )
@@ -8,28 +9,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint
 
+from deepmd.dpmodel.utils.type_embed import (
+    get_econf_tebd,
+)
 from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
 )
 from deepmd.pt.utils import (
     env,
-)
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
-
-try:
-    from typing import (
-        Final,
-    )
-except ImportError:
-    from torch.jit import Final
-
-import torch.utils.checkpoint
-
-from deepmd.dpmodel.utils.type_embed import (
-    get_econf_tebd,
 )
 from deepmd.pt.utils.utils import (
     ActivationFn,
@@ -37,6 +26,9 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
 )
 
 
