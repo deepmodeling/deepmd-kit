@@ -61,7 +61,7 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dy_tf_numpy = dy_tf.numpy()
-        dy_pt_numpy = dy_pt.detach().numpy()
+        dy_pt_numpy = dy_pt.detach().cpu().numpy()
 
         np.testing.assert_almost_equal(dy_tf_numpy, dy_pt_numpy, decimal=10)
 
@@ -82,7 +82,7 @@ class TestDPTabulate(unittest.TestCase):
         )
 
         dy2_tf_numpy = dy2_tf.numpy()
-        dy2_pt_numpy = dy2_pt.detach().numpy()
+        dy2_pt_numpy = dy2_pt.detach().cpu().numpy()
 
         np.testing.assert_almost_equal(dy2_tf_numpy, dy2_pt_numpy, decimal=10)
 
