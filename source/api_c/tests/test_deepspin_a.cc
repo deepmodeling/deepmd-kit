@@ -180,12 +180,12 @@ TEST_F(TestInferDeepSpinA, numb_types) {
 
 TEST_F(TestInferDeepSpinA, numb_types_spin) {
   int numb_types_spin = DP_DeepSpinGetNumbTypesSpin(dp);
-  EXPECT_EQ(numb_types_spin, 1);
+  EXPECT_EQ(numb_types_spin, 0);
 }
 
 TEST_F(TestInferDeepSpinA, type_map) {
   const char* type_map = DP_DeepSpinGetTypeMap(dp);
-  char expected_type_map[] = "O H";
+  char expected_type_map[] = "O H O_spin H_spin";
   EXPECT_EQ(strcmp(type_map, expected_type_map), 0);
   DP_DeleteChar(type_map);
 }
