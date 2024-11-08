@@ -6,6 +6,8 @@ from typing import (
     Union,
 )
 
+import numpy as np
+
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
 )
@@ -327,6 +329,9 @@ class TypeEmbedNet:
             layer_idx = int(m[1]) - 1
             weight_name = m[0]
             if weight_name == "idt":
+                if not isinstance(value, np.ndarray):
+                    # ignore 0.0 set by deserialize
+                    continue
                 value = value.ravel()
             embedding_net[layer_idx][weight_name] = value
 

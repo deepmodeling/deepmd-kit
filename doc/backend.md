@@ -65,7 +65,3 @@ For example, when the model filename ends with `.pb` (the ProtoBuf file), DeePMD
 ## Convert model files between backends
 
 If a model is supported by two backends, one can use [`dp convert-backend`](./cli.rst) to convert the model file between these two backends.
-
-:::{warning}
-Currently, only the `se_e2_a` model fully supports the backend conversion between TensorFlow {{ tensorflow_icon }} and PyTorch {{ pytorch_icon }}.
-:::
