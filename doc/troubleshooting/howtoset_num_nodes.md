@@ -80,6 +80,13 @@ See [Intel documentation](https://www.intel.com/content/www/us/en/developer/arti
 See [PyTorch documentation](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html) for detailed information.
 
 :::
+
+:::{tab-item} JAX {{ jax_icon }}
+
+There is no JAX documentation for how to limit threads.
+Seach issues and discussion in the [JAX repository](https://github.com/jax-ml/jax/) for more information.
+
+:::
 ::::
 
 ## Tune the performance

@@ -8,19 +8,19 @@ For build-time environment variables, see [Install from source code](./install/i
 
 :::{envvar} DP_INTER_OP_PARALLELISM_THREADS
 
-**Alias**: `TF_INTER_OP_PARALLELISM_THREADS`
+**Alias**: `TF_INTER_OP_PARALLELISM_THREADS`;
 **Default**: `0`
 
-Control parallelism within TensorFlow (when TensorFlow is built against Eigen) and PyTorch native OPs for CPU devices.
+Control parallelism within TensorFlow (when TensorFlow is built against Eigen), PyTorch, and JAX native OPs for CPU devices.
 See [How to control the parallelism of a job](./troubleshooting/howtoset_num_nodes.md) for details.
 :::
 
 :::{envvar} DP_INTRA_OP_PARALLELISM_THREADS
 
-**Alias**: `TF_INTRA_OP_PARALLELISM_THREADS`\*\*
+**Alias**: `TF_INTRA_OP_PARALLELISM_THREADS`;
 **Default**: `0`
 
-Control parallelism within TensorFlow (when TensorFlow is built against Eigen) and PyTorch native OPs.
+Control parallelism within TensorFlow (when TensorFlow is built against Eigen), PyTorch, and JAX native OPs.
 See [How to control the parallelism of a job](./troubleshooting/howtoset_num_nodes.md) for details.
 :::
 
