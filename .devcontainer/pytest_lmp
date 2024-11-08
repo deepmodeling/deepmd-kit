@@ -1,0 +1,9 @@
+#!/bin/bash
+SCRIPT_PATH=$(dirname $(realpath -s $0))/../..
+
+export CMAKE_PREFIX_PATH=${SCRIPT_PATH}/../libtorch
+TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+
+env LAMMPS_PLUGIN_PATH=${SCRIPT_PATH}/../dp/lib/deepmd_lmp \
+	LD_LIBRARY_PATH=${SCRIPT_PATH}/../dp/lib:${CMAKE_PREFIX_PATH}/lib:${TENSORFLOW_ROOT} \
+	python -m pytest "$@"

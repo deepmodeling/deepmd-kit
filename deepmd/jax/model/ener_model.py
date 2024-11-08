@@ -12,6 +12,7 @@ from deepmd.jax.common import (
     flax_module,
 )
 from deepmd.jax.env import (
+    jax,
     jnp,
 )
 from deepmd.jax.model.base_model import (
@@ -47,4 +48,19 @@ class EnergyModel(EnergyModelDP):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+        )
+
+    def format_nlist(
+        self,
+        extended_coord: jnp.ndarray,
+        extended_atype: jnp.ndarray,
+        nlist: jnp.ndarray,
+        extra_nlist_sort: bool = False,
+    ):
+        return EnergyModelDP.format_nlist(
+            self,
+            jax.lax.stop_gradient(extended_coord),
+            extended_atype,
+            nlist,
+            extra_nlist_sort=extra_nlist_sort,
         )
