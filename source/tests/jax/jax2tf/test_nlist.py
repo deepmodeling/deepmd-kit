@@ -2,13 +2,14 @@
 
 import pytest
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 from ...utils import (
     DP_TEST_TF2_ONLY,
 )
 
 if DP_TEST_TF2_ONLY:
+    import tensorflow.experimental.numpy as tnp
+
     from deepmd.jax.jax2tf.nlist import (
         build_neighbor_list,
         extend_coord_with_ghosts,

@@ -3,7 +3,6 @@
 
 import pytest
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 from ...seed import (
     GLOBAL_SEED,
@@ -13,6 +12,8 @@ from ...utils import (
 )
 
 if DP_TEST_TF2_ONLY:
+    import tensorflow.experimental.numpy as tnp
+
     from deepmd.jax.jax2tf.region import (
         inter2phys,
         to_face_distance,
