@@ -85,7 +85,8 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
-    'array-api-strict>=2;python_version>="3.9"',
+    # https://github.com/data-apis/array-api-strict/issues/85
+    'array-api-strict>=2,<2.1.1;python_version>="3.9"',
 ]
 docs = [
     "sphinx>=3.1.1",

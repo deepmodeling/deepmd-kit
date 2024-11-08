@@ -461,6 +461,8 @@ class DescrptHybrid(Descriptor):
         return local_jdata_cpy, min_nbor_dist
 
     def serialize(self, suffix: str = "") -> dict:
+        if hasattr(self, "type_embedding"):
+            raise NotImplementedError("hybrid + type embedding is not supported")
         return {
             "@class": "Descriptor",
             "type": "hybrid",
@@ -485,4 +487,8 @@ class DescrptHybrid(Descriptor):
                 for idx, ii in enumerate(data["list"])
             ],
         )
+        # search for type embedding
+        for ii in obj.descrpt_list:
+            if hasattr(ii, "type_embedding"):
+                raise NotImplementedError("hybrid + type embedding is not supported")
         return obj

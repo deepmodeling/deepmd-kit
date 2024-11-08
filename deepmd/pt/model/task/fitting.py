@@ -419,8 +419,8 @@ class GeneralFitting(Fitting):
 
         if nd != self.dim_descrpt:
             raise ValueError(
-                "get an input descriptor of dim {nd},"
-                "which is not consistent with {self.dim_descrpt}."
+                f"get an input descriptor of dim {nd},"
+                f"which is not consistent with {self.dim_descrpt}."
             )
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
