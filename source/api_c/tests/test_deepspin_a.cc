@@ -185,7 +185,7 @@ TEST_F(TestInferDeepSpinA, numb_types_spin) {
 
 TEST_F(TestInferDeepSpinA, type_map) {
   const char* type_map = DP_DeepSpinGetTypeMap(dp);
-  char expected_type_map[] = "O H O_spin H_spin";
+  char expected_type_map[] = "Ni O";
   EXPECT_EQ(strcmp(type_map, expected_type_map), 0);
   DP_DeleteChar(type_map);
 }
