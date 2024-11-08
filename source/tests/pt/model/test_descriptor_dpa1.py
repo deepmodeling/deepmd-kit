@@ -245,7 +245,11 @@ class TestDPA1(unittest.TestCase):
         des = DescrptBlockSeAtten(
             **dparams,
         ).to(env.DEVICE)
-        des.load_state_dict(torch.load(self.file_model_param, weights_only=True))
+        state_dict = torch.load(self.file_model_param, weights_only=True)
+        # this is an old state dict, modify manually
+        state_dict["compress_info.0"] = des.compress_info[0]
+        state_dict["compress_data.0"] = des.compress_data[0]
+        des.load_state_dict(state_dict)
         coord = self.coord
         atype = self.atype
         box = self.cell
@@ -371,5 +375,7 @@ def translate_se_atten_and_type_embd_dicts_to_dpa1(
         tk = "type_embedding." + kk
         record[all_keys.index(tk)] = True
         target_dict[tk] = type_embd_dict[kk]
+    record[all_keys.index("se_atten.compress_data.0")] = True
+    record[all_keys.index("se_atten.compress_info.0")] = True
     assert all(record)
     return target_dict
