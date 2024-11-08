@@ -378,7 +378,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         if self.compress:
             raise ValueError("Compression is already enabled.")
         data = self.serialize()
-        self.table = DPTabulate(
+        table = DPTabulate(
             self,
             data["neuron"],
             data["type_one_side"],
@@ -391,10 +391,10 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             table_stride_2,
             check_frequency,
         ]
-        lower, upper = self.table.build(
+        lower, upper = table.build(
             min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
         )
-        table_data = self.table.data
+        table_data = table.data
 
         for ii, ll in enumerate(self.filter_layers.networks):
             net = "filter_-1_net_" + str(ii)
@@ -494,16 +494,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             ss = ss * mm[:, :, None]
             if self.compress:
                 ss = ss.squeeze(-1)
-                net = "filter_-1_net_" + str(ii)
-                info = [
-                    self.lower[net],
-                    self.upper[net],
-                    self.upper[net] * self.table_config[0],
-                    self.table_config[1],
-                    self.table_config[2],
-                    self.table_config[3],
-                ]
-                tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
                     compress_data_ii.contiguous(),
                     compress_info_ii.cpu().contiguous(),
