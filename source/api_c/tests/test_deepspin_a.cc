@@ -203,62 +203,60 @@ class TestInferDeepSpinANoPBC : public ::testing::Test {
   int atype[6] = {0, 1, 1, 0, 1, 1};
   std::vector<double> expected_e = {-5.921669893870771, -5.1676693791758685,
                                     -5.205933794558385, -5.58688965168251,
-                                    -5.080322972018686, -5.08213772482076}
+                                    -5.080322972018686, -5.08213772482076};
+  std::vector<double> expected_f = {
+      -0.2929142244191496, 0.0801070990501456,  0.148216178514704,
+      0.2929142244191503,  -0.0801070990501454, -0.1482161785147037,
+      -0.2094984819251435, 0.0241594118950041,  -0.0215199116994508,
+      0.3068843038300324,  -0.001620530344866,  0.1508093841389746,
+      -0.0122719879278721, 0.0186341247897136,  -0.1137104245023705,
+      -0.0851138339770169, -0.0411730063398516, -0.0155790479371533};
+  std::vector<double> expected_fm = {-1.5298530476860008,
+                                     0.0071315024546899,
+                                     0.0650492472558729,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     -0.6212052813442365,
+                                     -0.2290265978320395,
+                                     -0.5101405083352206,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     0.,
+                                     0.};
+  int natoms;
+  double expected_tot_e;
+  // std::vector<double> expected_tot_v;
+
+  DP_DeepSpin* dp;
+
+  void SetUp() override {
+    dp = DP_NewDeepSpin("../../tests/infer/deeppot_dpa_spin.pth");
+
+    natoms = expected_e.size();
+    EXPECT_EQ(natoms * 3, expected_f.size());
+    EXPECT_EQ(natoms * 3, expected_fm.size());
+    // EXPECT_EQ(natoms * 9, expected_v.size());
+    expected_tot_e = 0.;
+    // expected_tot_v.resize(9);
+    // std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
+    for (int ii = 0; ii < natoms; ++ii) {
+      expected_tot_e += expected_e[ii];
+    }
+    // for (int ii = 0; ii < natoms; ++ii) {
+    //   for (int dd = 0; dd < 9; ++dd) {
+    //     expected_tot_v[dd] += expected_v[ii * 9 + dd];
+    //   }
+    // }
+  };
+
+  void TearDown() override { DP_DeleteDeepSpin(dp); };
 };
-std::vector<double> expected_f = {
-    -0.2929142244191496, 0.0801070990501456,  0.148216178514704,
-    0.2929142244191503,  -0.0801070990501454, -0.1482161785147037,
-    -0.2094984819251435, 0.0241594118950041,  -0.0215199116994508,
-    0.3068843038300324,  -0.001620530344866,  0.1508093841389746,
-    -0.0122719879278721, 0.0186341247897136,  -0.1137104245023705,
-    -0.0851138339770169, -0.0411730063398516, -0.0155790479371533};
-std::vector<double> expected_fm = {-1.5298530476860008,
-                                   0.0071315024546899,
-                                   0.0650492472558729,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   -0.6212052813442365,
-                                   -0.2290265978320395,
-                                   -0.5101405083352206,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   0.,
-                                   0.};
-int natoms;
-double expected_tot_e;
-// std::vector<double> expected_tot_v;
-
-DP_DeepSpin* dp;
-
-void SetUp() override {
-  dp = DP_NewDeepSpin("../../tests/infer/deeppot_dpa_spin.pth");
-
-  natoms = expected_e.size();
-  EXPECT_EQ(natoms * 3, expected_f.size());
-  EXPECT_EQ(natoms * 3, expected_fm.size());
-  // EXPECT_EQ(natoms * 9, expected_v.size());
-  expected_tot_e = 0.;
-  // expected_tot_v.resize(9);
-  // std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
-  for (int ii = 0; ii < natoms; ++ii) {
-    expected_tot_e += expected_e[ii];
-  }
-  // for (int ii = 0; ii < natoms; ++ii) {
-  //   for (int dd = 0; dd < 9; ++dd) {
-  //     expected_tot_v[dd] += expected_v[ii * 9 + dd];
-  //   }
-  // }
-};
-
-void TearDown() override { DP_DeleteDeepSpin(dp); };
-}
-;
 
 TEST_F(TestInferDeepSpinANoPBC, double_infer) {
   double* ener_ = new double;
