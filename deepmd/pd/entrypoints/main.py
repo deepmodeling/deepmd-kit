@@ -80,11 +80,6 @@ from deepmd.utils.path import (
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
-# from paddle.distributed.elastic.multiprocessing.errors import (
-#     record,
-# )
-
-
 log = logging.getLogger(__name__)
 
 
@@ -548,7 +543,6 @@ def change_bias(FLAGS):
     log.info(f"Saved model to {output_path}")
 
 
-# @record
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
