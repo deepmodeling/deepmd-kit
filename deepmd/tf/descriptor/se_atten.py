@@ -219,11 +219,11 @@ class DescrptSeAtten(DescrptSeA):
         if scaling_factor != 1.0:
             raise NotImplementedError("scaling_factor is not supported.")
         if not normalize:
-            raise NotImplementedError("normalize is not supported.")
+            raise NotImplementedError("Disabling normalize is not supported.")
         if temperature is not None:
             raise NotImplementedError("temperature is not supported.")
         if not concat_output_tebd:
-            raise NotImplementedError("concat_output_tebd is not supported.")
+            raise NotImplementedError("Disbaling concat_output_tebd is not supported.")
         if env_protection != 0.0:
             raise NotImplementedError("env_protection != 0.0 is not supported.")
         #  to keep consistent with default value in this backends
@@ -1866,7 +1866,11 @@ class DescrptSeAtten(DescrptSeA):
         if cls is not DescrptSeAtten:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        if data["smooth_type_embedding"]:
+            raise RuntimeError(
+                "The implementation for smooth_type_embedding is inconsistent with other backends"
+            )
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -1878,10 +1882,13 @@ class DescrptSeAtten(DescrptSeA):
         data.pop("env_mat")
         variables = data.pop("@variables")
         tebd_input_mode = data["tebd_input_mode"]
-        if tebd_input_mode in ["strip"]:
-            raise ValueError(
-                "Deserialization is unsupported for `tebd_input_mode='strip'` in the native model."
-            )
+        type_embedding = TypeEmbedNet.deserialize(
+            data.pop("type_embedding"), suffix=suffix
+        )
+        if "use_tebd_bias" not in data:
+            # v1 compatibility
+            data["use_tebd_bias"] = True
+        type_embedding.use_tebd_bias = data.pop("use_tebd_bias")
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables
@@ -1891,6 +1898,17 @@ class DescrptSeAtten(DescrptSeA):
         descriptor.dstd = variables["dstd"].reshape(
             descriptor.ntypes, descriptor.ndescrpt
         )
+        descriptor.type_embedding = type_embedding
+        if tebd_input_mode in ["strip"]:
+            type_one_side = data["type_one_side"]
+            two_side_embeeding_net_variables = cls.deserialize_network_strip(
+                data.pop("embeddings_strip"),
+                suffix=suffix,
+                type_one_side=type_one_side,
+            )
+            descriptor.two_side_embeeding_net_variables = (
+                two_side_embeeding_net_variables
+            )
         return descriptor
 
     def serialize(self, suffix: str = "") -> dict:
@@ -1906,10 +1924,9 @@ class DescrptSeAtten(DescrptSeA):
         dict
             The serialized data
         """
-        if self.stripped_type_embedding and type(self) is DescrptSeAtten:
-            # only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'
-            raise NotImplementedError(
-                "serialization is unsupported by the native model when tebd_input_mode=='strip'"
+        if self.smooth:
+            raise RuntimeError(
+                "The implementation for smooth_type_embedding is inconsistent with other backends"
             )
         # todo support serialization when tebd_input_mode=='strip' and type_one_side is True
         if self.stripped_type_embedding and self.type_one_side:
@@ -1927,10 +1944,18 @@ class DescrptSeAtten(DescrptSeA):
         assert self.davg is not None
         assert self.dstd is not None
 
+        tebd_dim = self.type_embedding.neuron[0]
+        if self.tebd_input_mode in ["concat"]:
+            if not self.type_one_side:
+                embd_input_dim = 1 + tebd_dim * 2
+            else:
+                embd_input_dim = 1 + tebd_dim
+        else:
+            embd_input_dim = 1
         data = {
             "@class": "Descriptor",
-            "type": "se_atten",
-            "@version": 1,
+            "type": "dpa1",
+            "@version": 2,
             "rcut": self.rcut_r,
             "rcut_smth": self.rcut_r_smth,
             "sel": self.sel_a,
@@ -1952,9 +1977,7 @@ class DescrptSeAtten(DescrptSeA):
             "embeddings": self.serialize_network(
                 ntypes=self.ntypes,
                 ndim=0,
-                in_dim=1
-                if not hasattr(self, "embd_input_dim")
-                else self.embd_input_dim,
+                in_dim=embd_input_dim,
                 neuron=self.filter_neuron,
                 activation_function=self.activation_function_name,
                 resnet_dt=self.filter_resnet_dt,
@@ -1986,17 +2009,23 @@ class DescrptSeAtten(DescrptSeA):
             "type_one_side": self.type_one_side,
             "spin": self.spin,
         }
+        data["type_embedding"] = self.type_embedding.serialize(suffix=suffix)
+        data["use_tebd_bias"] = self.type_embedding.use_tebd_bias
+        data["tebd_dim"] = tebd_dim
+        if len(self.type_embedding.neuron) > 1:
+            raise NotImplementedError(
+                "Only support single layer type embedding network"
+            )
         if self.tebd_input_mode in ["strip"]:
-            assert (
-                type(self) is not DescrptSeAtten
-            ), "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
+            # assert (
+            #     type(self) is not DescrptSeAtten
+            # ), "only DescrptDPA1Compat and DescrptSeAttenV2 can serialize when tebd_input_mode=='strip'"
             data.update(
                 {
                     "embeddings_strip": self.serialize_network_strip(
                         ntypes=self.ntypes,
                         ndim=0,
-                        in_dim=2
-                        * self.tebd_dim,  # only DescrptDPA1Compat has this attribute
+                        in_dim=2 * tebd_dim,
                         neuron=self.filter_neuron,
                         activation_function=self.activation_function_name,
                         resnet_dt=self.filter_resnet_dt,
@@ -2006,7 +2035,53 @@ class DescrptSeAtten(DescrptSeA):
                     )
                 }
             )
+        # default values
+        data.update(
+            {
+                "scaling_factor": 1.0,
+                "normalize": True,
+                "temperature": None,
+                "concat_output_tebd": True,
+                "use_econf_tebd": False,
+            }
+        )
+        data["attention_layers"] = self.update_attention_layers_serialize(
+            data["attention_layers"]
+        )
         return data
+
+    def update_attention_layers_serialize(self, data: dict):
+        """Update the serialized data to be consistent with other backend references."""
+        new_dict = {
+            "@class": "NeighborGatedAttention",
+            "@version": 1,
+            "scaling_factor": 1.0,
+            "normalize": True,
+            "temperature": None,
+        }
+        new_dict.update(data)
+        update_info = {
+            "nnei": self.nnei_a,
+            "embed_dim": self.filter_neuron[-1],
+            "hidden_dim": self.att_n,
+            "dotr": self.attn_dotr,
+            "do_mask": self.attn_mask,
+            "scaling_factor": 1.0,
+            "normalize": True,
+            "temperature": None,
+            "precision": self.filter_precision.name,
+        }
+        for layer_idx in range(self.attn_layer):
+            new_dict["attention_layers"][layer_idx].update(update_info)
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                update_info
+            )
+            new_dict["attention_layers"][layer_idx]["attention_layer"].update(
+                {
+                    "num_heads": 1,
+                }
+            )
+        return new_dict
 
 
 class DescrptDPA1Compat(DescrptSeAtten):
@@ -2433,17 +2508,11 @@ class DescrptDPA1Compat(DescrptSeAtten):
             {
                 "type": "dpa1",
                 "@version": 2,
-                "tebd_dim": self.tebd_dim,
                 "scaling_factor": self.scaling_factor,
                 "normalize": self.normalize,
                 "temperature": self.temperature,
                 "concat_output_tebd": self.concat_output_tebd,
                 "use_econf_tebd": self.use_econf_tebd,
-                "use_tebd_bias": self.use_tebd_bias,
-                "type_embedding": self.type_embedding.serialize(suffix),
             }
-        )
-        data["attention_layers"] = self.update_attention_layers_serialize(
-            data["attention_layers"]
         )
         return data

@@ -1295,7 +1295,7 @@ class RepformerLayer(torch.nn.Module):
         """
         data = {
             "@class": "RepformerLayer",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -1380,9 +1380,11 @@ class RepformerLayer(torch.nn.Module):
         if self.update_style == "res_residual":
             data.update(
                 {
-                    "g1_residual": [to_numpy_array(t) for t in self.g1_residual],
-                    "g2_residual": [to_numpy_array(t) for t in self.g2_residual],
-                    "h2_residual": [to_numpy_array(t) for t in self.h2_residual],
+                    "@variables": {
+                        "g1_residual": [to_numpy_array(t) for t in self.g1_residual],
+                        "g2_residual": [to_numpy_array(t) for t in self.g2_residual],
+                        "h2_residual": [to_numpy_array(t) for t in self.h2_residual],
+                    }
                 }
             )
         return data
@@ -1397,7 +1399,7 @@ class RepformerLayer(torch.nn.Module):
             The dict to deserialize from.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         linear1 = data.pop("linear1")
         update_chnnl_2 = data["update_chnnl_2"]
@@ -1418,9 +1420,10 @@ class RepformerLayer(torch.nn.Module):
         attn2_ev_apply = data.pop("attn2_ev_apply", None)
         loc_attn = data.pop("loc_attn", None)
         g1_self_mlp = data.pop("g1_self_mlp", None)
-        g1_residual = data.pop("g1_residual", [])
-        g2_residual = data.pop("g2_residual", [])
-        h2_residual = data.pop("h2_residual", [])
+        variables = data.pop("@variables", {})
+        g1_residual = variables.get("g1_residual", data.pop("g1_residual", []))
+        g2_residual = variables.get("g2_residual", data.pop("g2_residual", []))
+        h2_residual = variables.get("h2_residual", data.pop("h2_residual", []))
 
         obj = cls(**data)
         obj.linear1 = MLPLayer.deserialize(linear1)
