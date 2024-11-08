@@ -9,7 +9,6 @@ from deepmd.env import (
 set_default_nthreads()
 inter_nthreads, intra_nthreads = get_default_nthreads()
 os.environ["XLA_FLAGS"] = os.environ.get("XLA_FLAGS", "") + (
-    " --xla_cpu_multi_thread_eigen=false"
     f" intra_op_parallelism_threads={inter_nthreads}"
     f" inter_op_parallelism_threads={inter_nthreads}"
 )
