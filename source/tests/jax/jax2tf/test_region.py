@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
-import pytest
+import unittest
+
 import tensorflow as tf
 import tensorflow.experimental.numpy as tnp
 
@@ -19,7 +20,7 @@ if DP_TEST_TF2_ONLY:
     )
 
 
-@pytest.mark.skipif(
+@unittest.skipIf(
     not DP_TEST_TF2_ONLY,
     reason="TF2 conflicts with TF1",
 )
