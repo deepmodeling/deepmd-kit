@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from abc import (
     abstractmethod,
@@ -312,7 +311,7 @@ class GeneralFitting(Fitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
@@ -419,8 +418,8 @@ class GeneralFitting(Fitting):
 
         if nd != self.dim_descrpt:
             raise ValueError(
-                "get an input descriptor of dim {nd},"
-                "which is not consistent with {self.dim_descrpt}."
+                f"get an input descriptor of dim {nd},"
+                f"which is not consistent with {self.dim_descrpt}."
             )
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:

@@ -43,6 +43,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def __init__(
         self,
         list: list[Union[BaseDescriptor, dict[str, Any]]],
+        type_map: Optional[list[str]] = None,
+        ntypes: Optional[int] = None,  # to be compat with input
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -56,6 +58,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             if isinstance(ii, BaseDescriptor):
                 formatted_descript_list.append(ii)
             elif isinstance(ii, dict):
+                ii = ii.copy()
+                # only pass if not already set
+                ii.setdefault("type_map", type_map)
+                ii.setdefault("ntypes", ntypes)
                 formatted_descript_list.append(BaseDescriptor(**ii))
             else:
                 raise NotImplementedError

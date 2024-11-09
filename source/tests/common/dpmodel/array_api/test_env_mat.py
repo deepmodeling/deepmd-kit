@@ -14,7 +14,6 @@ from .utils import (
 
 class TestEnvMat(unittest.TestCase, ArrayAPITest):
     def test_compute_smooth_weight(self):
-        self.set_array_api_version(compute_smooth_weight)
         d = xp.arange(10, dtype=xp.float64)
         w = compute_smooth_weight(
             d,

@@ -4,6 +4,9 @@ from typing import (
     Optional,
 )
 
+from deepmd.tf.utils.type_embed import (
+    TypeEmbedNet,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -127,10 +130,13 @@ class DescrptSeAttenV2(DescrptSeAtten):
         Model
             The deserialized model
         """
+        raise RuntimeError(
+            "The implementation for smooth_type_embedding is inconsistent with other backends"
+        )
         if cls is not DescrptSeAttenV2:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -147,6 +153,13 @@ class DescrptSeAttenV2(DescrptSeAtten):
             suffix=suffix,
             type_one_side=type_one_side,
         )
+        type_embedding = TypeEmbedNet.deserialize(
+            data.pop("type_embedding"), suffix=suffix
+        )
+        if "use_tebd_bias" not in data:
+            # v1 compatibility
+            data["use_tebd_bias"] = True
+        type_embedding.use_tebd_bias = data.pop("use_tebd_bias")
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.attention_layer_variables = attention_layer_variables
@@ -157,6 +170,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         descriptor.dstd = variables["dstd"].reshape(
             descriptor.ntypes, descriptor.ndescrpt
         )
+        descriptor.type_embedding = type_embedding
         return descriptor
 
     def serialize(self, suffix: str = "") -> dict:

@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-import copy
 import logging
 from typing import (
     Callable,
@@ -331,7 +330,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     @classmethod
     def deserialize(cls, data: dict) -> "BaseAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         variables = data.pop("@variables", None)
         variables = (
             {"out_bias": None, "out_std": None} if variables is None else variables

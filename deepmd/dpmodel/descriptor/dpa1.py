@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import math
 from typing import (
     Any,
     Callable,
@@ -16,6 +17,9 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
@@ -547,8 +551,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
-                "davg": np.array(obj["davg"]),
-                "dstd": np.array(obj["dstd"]),
+                "davg": to_numpy_array(obj["davg"]),
+                "dstd": to_numpy_array(obj["dstd"]),
             },
             ## to be updated when the options are supported.
             "trainable": self.trainable,
@@ -852,7 +856,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
     ):
         xp = array_api_compat.array_namespace(ss)
         nfnl, nnei = ss.shape[0:2]
-        shape2 = xp.prod(xp.asarray(ss.shape[2:]))
+        shape2 = math.prod(ss.shape[2:])
         ss = xp.reshape(ss, (nfnl, nnei, shape2))
         # nfnl x nnei x ng
         gg = self.embeddings[embedding_idx].call(ss)
@@ -866,7 +870,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         assert self.embeddings_strip is not None
         xp = array_api_compat.array_namespace(ss)
         nfnl, nnei = ss.shape[0:2]
-        shape2 = xp.prod(xp.asarray(ss.shape[2:]))
+        shape2 = math.prod(ss.shape[2:])
         ss = xp.reshape(ss, (nfnl, nnei, shape2))
         # nfnl x nnei x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
@@ -1021,8 +1025,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
-                "davg": np.array(obj["davg"]),
-                "dstd": np.array(obj["dstd"]),
+                "davg": to_numpy_array(obj["davg"]),
+                "dstd": to_numpy_array(obj["dstd"]),
             },
         }
         if obj.tebd_input_mode in ["strip"]:
