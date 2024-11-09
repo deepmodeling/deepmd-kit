@@ -73,14 +73,12 @@ class IOTest:
                 shutil.rmtree(ii)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
-    @unittest.skipIf(DP_TEST_TF2_ONLY, "Conflict with TF2 eager mode.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
-            ("tensorflow", 0),
+            ("tensorflow", 0) if not DP_TEST_TF2_ONLY else ("jax", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
-            ("jax", 0),
         ):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
@@ -148,8 +146,10 @@ class IOTest:
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
-            ("jax", 0),
+            ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),
         ):
+            if backend_name is None:
+                continue
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue
