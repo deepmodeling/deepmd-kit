@@ -978,11 +978,8 @@ class Trainer:
         )
         module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
-        optim_state_dict = deepcopy(self.optimizer.state_dict())
-        for item in optim_state_dict["param_groups"]:
-            item["lr"] = float(item["lr"])
         paddle.save(
-            {"model": module.state_dict(), "optimizer": optim_state_dict},
+            {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
             str(save_path),
         )
         checkpoint_dir = save_path.parent

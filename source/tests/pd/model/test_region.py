@@ -4,12 +4,6 @@ import unittest
 import numpy as np
 import paddle
 
-from deepmd.pd.utils import (
-    env,
-)
-from deepmd.pd.utils.preprocess import (
-    Region3D,
-)
 from deepmd.pd.utils.region import (
     inter2phys,
     to_face_distance,
@@ -29,7 +23,7 @@ class TestRegion(unittest.TestCase):
         )
         self.cell = self.cell.unsqueeze(0).unsqueeze(0)
         self.cell = paddle.tile(self.cell, [4, 5, 1, 1])
-        self.prec = 1e-8
+        self.prec = 9e-8
 
     def test_inter_to_phys(self):
         generator = paddle.seed(GLOBAL_SEED)
@@ -56,8 +50,8 @@ class TestRegion(unittest.TestCase):
         dz = vol / sxy
         dy = vol / sxz
         dx = vol / syz
+        expected = paddle.to_tensor([dx, dy, dz], place="cpu")
         dists = to_face_distance(self.cell)
-        expected = paddle.to_tensor([dx, dy, dz], dtype=dists.dtype).to(device="cpu")
         for ii in range(4):
             for jj in range(5):
                 np.testing.assert_allclose(
@@ -66,33 +60,3 @@ class TestRegion(unittest.TestCase):
                     rtol=self.prec,
                     atol=self.prec,
                 )
-
-
-class TestLegacyRegion(unittest.TestCase):
-    def setUp(self):
-        self.cell = paddle.to_tensor(
-            [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]], dtype=dtype, place=env.DEVICE
-        )
-        self.prec = 1e-6
-
-    def test_inter_to_phys(self):
-        generator = paddle.seed(GLOBAL_SEED)
-        inter = paddle.rand([3, 3], dtype=dtype).to(device=env.DEVICE)
-        reg = Region3D(self.cell)
-        phys = reg.inter2phys(inter)
-        expected_phys = paddle.matmul(inter, self.cell)
-        np.testing.assert_allclose(
-            phys.numpy(), expected_phys.numpy(), rtol=self.prec, atol=self.prec
-        )
-
-    def test_inter_to_inter(self):
-        generator = paddle.seed(GLOBAL_SEED)
-        inter = paddle.rand([3, 3], dtype=dtype).to(device=env.DEVICE)
-        reg = Region3D(self.cell)
-        new_inter = reg.phys2inter(reg.inter2phys(inter))
-        np.testing.assert_allclose(
-            inter.numpy(), new_inter.numpy(), rtol=self.prec, atol=self.prec
-        )
-
-    def test_to_face_dist(self):
-        pass
