@@ -81,11 +81,8 @@ class ModelWrapper(paddle.nn.Layer):
                 if class_type_base == "descriptor":
                     base_class = self.model[model_key_base].get_descriptor()
                 elif "hybrid" in class_type_base:
-                    hybrid_index = int(class_type_base.split("_")[-1])
-                    base_class = (
-                        self.model[model_key_base]
-                        .get_descriptor()
-                        .descriptor_list[hybrid_index]
+                    raise NotImplementedError(
+                        "Hybrid descriptor is not implemented yet"
                     )
                 else:
                     raise RuntimeError(f"Unknown class_type {class_type_base}!")
@@ -102,11 +99,8 @@ class ModelWrapper(paddle.nn.Layer):
                     if class_type_link == "descriptor":
                         link_class = self.model[model_key_link].get_descriptor()
                     elif "hybrid" in class_type_link:
-                        hybrid_index = int(class_type_link.split("_")[-1])
-                        link_class = (
-                            self.model[model_key_link]
-                            .get_descriptor()
-                            .descriptor_list[hybrid_index]
+                        raise NotImplementedError(
+                            "Hybrid descriptor is not implemented yet"
                         )
                     else:
                         raise RuntimeError(f"Unknown class_type {class_type_link}!")

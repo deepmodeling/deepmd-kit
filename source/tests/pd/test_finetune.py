@@ -294,7 +294,6 @@ class FinetuneTest:
                 shutil.rmtree(f)
 
 
-@unittest.skip("Skip for not implemented yet")
 class TestEnergyModelSeA(FinetuneTest, unittest.TestCase):
     def setUp(self):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
