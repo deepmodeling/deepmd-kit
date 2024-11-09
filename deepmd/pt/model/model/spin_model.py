@@ -554,9 +554,9 @@ class SpinEnergyModel(SpinModel):
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            "atom_energy": deepcopy(out_def_data["energy"]),
-            "energy": deepcopy(out_def_data["energy_redu"]),
-            "mask_mag": deepcopy(out_def_data["mask_mag"]),
+            "atom_energy": out_def_data["energy"],
+            "energy": out_def_data["energy_redu"],
+            "mask_mag": out_def_data["mask_mag"],
         }
         if self.do_grad_r("energy"):
             output_def["force"] = deepcopy(out_def_data["energy_derv_r"])

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from abc import (
     ABC,
     abstractmethod,
@@ -804,7 +803,7 @@ class StandardModel(Model):
         Descriptor
             The deserialized descriptor
         """
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Optional,
     Union,
@@ -305,7 +304,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 2, 2)
         data.pop("@class", None)
         data.pop("type", None)
@@ -418,7 +417,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         models = [
             BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)

@@ -4,7 +4,6 @@
 See issue #2982 for more information.
 """
 
-import copy
 import itertools
 from typing import (
     Callable,
@@ -135,7 +134,7 @@ class NativeLayer(NativeOP):
         data : dict
             The dict to deserialize from.
         """
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         variables = data.pop("@variables")
@@ -404,7 +403,7 @@ class LayerNorm(NativeLayer):
         data : dict
             The dict to deserialize from.
         """
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class", None)
         variables = data.pop("@variables")
@@ -673,7 +672,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             data : dict
                 The dict to deserialize from.
             """
-            data = copy.deepcopy(data)
+            data = data.copy()
             check_version_compatibility(data.pop("@version", 1), 2, 1)
             data.pop("@class", None)
             layers = data.pop("layers")
@@ -778,7 +777,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             data : dict
                 The dict to deserialize from.
             """
-            data = copy.deepcopy(data)
+            data = data.copy()
             check_version_compatibility(data.pop("@version", 1), 1, 1)
             data.pop("@class", None)
             layers = data.pop("layers")
