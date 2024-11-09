@@ -310,6 +310,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         # set trainable
         for param in self.parameters():
             param.requires_grad = trainable
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -888,7 +889,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             The overflow check frequency
         """
         # do some checks before the mocel compression process
-        if self.repinit.compress:
+        if self.compress:
             raise ValueError("Compression is already enabled.")
         assert (
             not self.repinit.resnet_dt
