@@ -38,6 +38,9 @@ from deepmd.main import (
 from deepmd.pt.cxx_op import (
     ENABLE_CUSTOMIZED_OP,
 )
+from deepmd.pt.entrypoints.compress import (
+    enable_compression,
+)
 from deepmd.pt.infer import (
     inference,
 )
@@ -346,10 +349,14 @@ def train(
     # save min_nbor_dist
     if min_nbor_dist is not None:
         if not multi_task:
-            trainer.model.min_nbor_dist = min_nbor_dist
+            trainer.model.min_nbor_dist = torch.tensor(
+                min_nbor_dist, dtype=torch.float64, device=DEVICE
+            )
         else:
             for model_item in min_nbor_dist:
-                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
+                trainer.model[model_item].min_nbor_dist = torch.tensor(
+                    min_nbor_dist[model_item], dtype=torch.float64, device=DEVICE
+                )
     trainer.run()
 
 
@@ -548,6 +555,16 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             numb_batch=FLAGS.numb_batch,
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
+        )
+    elif FLAGS.command == "compress":
+        FLAGS.input = str(Path(FLAGS.input).with_suffix(".pth"))
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
+        enable_compression(
+            input_file=FLAGS.input,
+            output=FLAGS.output,
+            stride=FLAGS.step,
+            extrapolate=FLAGS.extrapolate,
+            check_frequency=FLAGS.frequency,
         )
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")

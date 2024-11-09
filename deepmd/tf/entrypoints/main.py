@@ -77,6 +77,12 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
     elif args.command == "transfer":
         transfer(**dict_args)
     elif args.command == "compress":
+        dict_args["input"] = format_model_suffix(
+            dict_args["input"], preferred_backend=args.backend, strict_prefer=True
+        )
+        dict_args["output"] = format_model_suffix(
+            dict_args["output"], preferred_backend=args.backend, strict_prefer=True
+        )
         compress(**dict_args)
     elif args.command == "convert-from":
         convert(**dict_args)

@@ -9,6 +9,7 @@ from typing import (
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -437,10 +438,6 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
-    lower: dict[str, int]
-    upper: dict[str, int]
-    table_data: dict[str, torch.Tensor]
-    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -500,13 +497,6 @@ class DescrptBlockSeA(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
 
-        # add for compression
-        self.compress = False
-        self.lower = {}
-        self.upper = {}
-        self.table_data = {}
-        self.table_config = []
-
         ndim = 1 if self.type_one_side else 2
         filter_layers = NetworkCollection(
             ndim=ndim, ntypes=len(sel), network_type="embedding_network"
@@ -528,6 +518,21 @@ class DescrptBlockSeA(DescriptorBlock):
         self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
+
+        # add for compression
+        self.compress = False
+        self.compress_info = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -667,16 +672,39 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def enable_compression(
         self,
-        table_data,
-        table_config,
-        lower,
-        upper,
+        table_data: dict[str, torch.Tensor],
+        table_config: list[Union[int, float]],
+        lower: dict[str, int],
+        upper: dict[str, int],
     ) -> None:
+        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+            if self.type_one_side:
+                ii = embedding_idx
+                ti = -1
+            else:
+                # ti: center atom type, ii: neighbor type...
+                ii = embedding_idx // self.ntypes
+                ti = embedding_idx % self.ntypes
+            if self.type_one_side:
+                net = "filter_-1_net_" + str(ii)
+            else:
+                net = "filter_" + str(ti) + "_net_" + str(ii)
+            info_ii = torch.as_tensor(
+                [
+                    lower[net],
+                    upper[net],
+                    upper[net] * table_config[0],
+                    table_config[1],
+                    table_config[2],
+                    table_config[3],
+                ],
+                dtype=self.prec,
+                device="cpu",
+            )
+            tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+            self.compress_data[embedding_idx] = tensor_data_ii
+            self.compress_info[embedding_idx] = info_ii
         self.compress = True
-        self.table_data = table_data
-        self.table_config = table_config
-        self.lower = lower
-        self.upper = upper
 
     def forward(
         self,
@@ -724,7 +752,9 @@ class DescrptBlockSeA(DescriptorBlock):
         )
         # nfnl x nnei
         exclude_mask = self.emask(nlist, extended_atype).view(nfnl, self.nnei)
-        for embedding_idx, ll in enumerate(self.filter_layers.networks):
+        for embedding_idx, (ll, compress_data_ii, compress_info_ii) in enumerate(
+            zip(self.filter_layers.networks, self.compress_data, self.compress_info)
+        ):
             if self.type_one_side:
                 ii = embedding_idx
                 ti = -1
@@ -751,23 +781,11 @@ class DescrptBlockSeA(DescriptorBlock):
             ss = rr[:, :, :1]
 
             if self.compress:
-                if self.type_one_side:
-                    net = "filter_-1_net_" + str(ii)
-                else:
-                    net = "filter_" + str(ti) + "_net_" + str(ii)
-                info = [
-                    self.lower[net],
-                    self.upper[net],
-                    self.upper[net] * self.table_config[0],
-                    self.table_config[1],
-                    self.table_config[2],
-                    self.table_config[3],
-                ]
                 ss = ss.reshape(-1, 1)  # xyz_scatter_tensor in tf
-                tensor_data = self.table_data[net].to(ss.device).to(dtype=self.prec)
+
                 gr = torch.ops.deepmd.tabulate_fusion_se_a(
-                    tensor_data.contiguous(),
-                    torch.tensor(info, dtype=self.prec, device="cpu").contiguous(),
+                    compress_data_ii.contiguous(),
+                    compress_info_ii.cpu().contiguous(),
                     ss.contiguous(),
                     rr.contiguous(),
                     self.filter_neuron[-1],
