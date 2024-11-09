@@ -91,8 +91,8 @@ class IOTest:
                     prefix + backend.suffixes[suffix_idx], reference_data
                 )
                 data = self.get_data_from_model(prefix + backend.suffixes[suffix_idx])
-                data = copy.deepcopy(data)
-                reference_data = copy.deepcopy(self.data)
+                data = data.copy()
+                reference_data = self.data.copy()
                 # some keys are not expected to be not the same
                 for kk in [
                     "backend",

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from abc import (
     abstractmethod,
@@ -312,7 +311,7 @@ class GeneralFitting(Fitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
