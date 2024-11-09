@@ -825,10 +825,14 @@ class Trainer:
                 train_time = current_time - self.t0
                 self.t0 = current_time
                 if self.rank == 0 and self.timing_in_training:
+                    eta = int(
+                        (self.num_steps - _step_id - 1) / self.disp_freq * train_time
+                    )
                     log.info(
                         format_training_message(
                             batch=display_step_id,
                             wall_time=train_time,
+                            eta=eta,
                         )
                     )
                 # the first training time is not accurate
