@@ -1,29 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
-import unittest
-
 import tensorflow as tf
 import tensorflow.experimental.numpy as tnp
 
-from ...seed import (
-    GLOBAL_SEED,
-)
-from ...utils import (
-    DP_TEST_TF2_ONLY,
+from deepmd.jax.jax2tf.region import (
+    inter2phys,
+    to_face_distance,
 )
 
-if DP_TEST_TF2_ONLY:
-    from deepmd.jax.jax2tf.region import (
-        inter2phys,
-        to_face_distance,
-    )
+GLOBAL_SEED = 20241109
 
 
-@unittest.skipIf(
-    not DP_TEST_TF2_ONLY,
-    reason="TF2 conflicts with TF1",
-)
 class TestRegion(tf.test.TestCase):
     def setUp(self):
         self.cell = tnp.array(
