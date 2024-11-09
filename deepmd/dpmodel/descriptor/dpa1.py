@@ -18,6 +18,9 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
     EnvMat,
@@ -548,8 +551,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
-                "davg": np.array(obj["davg"]),
-                "dstd": np.array(obj["dstd"]),
+                "davg": to_numpy_array(obj["davg"]),
+                "dstd": to_numpy_array(obj["dstd"]),
             },
             ## to be updated when the options are supported.
             "trainable": self.trainable,
@@ -1022,8 +1025,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             "exclude_types": obj.exclude_types,
             "env_protection": obj.env_protection,
             "@variables": {
-                "davg": np.array(obj["davg"]),
-                "dstd": np.array(obj["dstd"]),
+                "davg": to_numpy_array(obj["davg"]),
+                "dstd": to_numpy_array(obj["dstd"]),
             },
         }
         if obj.tebd_input_mode in ["strip"]:
