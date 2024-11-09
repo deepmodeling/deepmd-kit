@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -175,7 +178,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
-        return np.asarray(
+        return to_numpy_array(
             array_api_strict_obj(
                 array_api_strict.asarray(self.inputs),
                 array_api_strict.asarray(self.atype.reshape(1, -1)),

@@ -8,6 +8,7 @@ from typing import (
     Optional,
 )
 
+import array_api_compat
 import ml_dtypes
 import numpy as np
 
@@ -105,7 +106,14 @@ def to_numpy_array(x: Any) -> Optional[np.ndarray]:
     """
     if x is None:
         return None
-    return np.asarray(x)
+    try:
+        # asarray is not within Array API standard, so may fail
+        return np.asarray(x)
+    except (ValueError, AttributeError):
+        xp = array_api_compat.array_namespace(x)
+        # to fix BufferError: Cannot export readonly array since signalling readonly is unsupported by DLPack.
+        x = xp.asarray(x, copy=True)
+        return np.from_dlpack(x)
 
 
 __all__ = [
