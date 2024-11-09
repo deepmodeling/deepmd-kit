@@ -9,4 +9,3 @@ os.environ["XLA_FLAGS"] = " ".join(
         "inter_op_parallelism_threads=1",
     )
 )
-os.environ["NPROC"] = "1"
