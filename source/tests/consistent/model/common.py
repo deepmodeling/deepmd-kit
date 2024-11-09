@@ -105,5 +105,6 @@ class ModelTest:
                 numpy_to_paddle(coords),
                 numpy_to_paddle(atype),
                 box=numpy_to_paddle(box),
+                do_atomic_virial=True,
             ).items()
         }

@@ -672,23 +672,22 @@ class DescrptBlockSeA(DescriptorBlock):
                 rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
             else:
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-            rr = rr * mm[:, :, None].astype(rr.dtype)
-            ss = rr[:, :, :1]
-
             if self.compress:
                 raise NotImplementedError(
                     "Compressed environment is not implemented yet."
                 )
             else:
-                # nfnl x nt x ng
-                gg = ll.forward(ss)
-                # nfnl x 4 x ng
-                gr = paddle.matmul(rr.transpose([0, 2, 1]), gg)
-
-            if ti_mask is not None:
-                xyz_scatter[ti_mask] += gr
-            else:
-                xyz_scatter += gr
+                if rr.numel() > 0:
+                    rr = rr * mm.unsqueeze(2).astype(rr.dtype)
+                    ss = rr[:, :, :1]
+                    # nfnl x nt x ng
+                    gg = ll.forward(ss)
+                    # nfnl x 4 x ng
+                    gr = paddle.matmul(rr.transpose([0, 2, 1]), gg)
+                    if ti_mask is not None:
+                        xyz_scatter[ti_mask] += gr
+                    else:
+                        xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.transpose([0, 2, 1])
