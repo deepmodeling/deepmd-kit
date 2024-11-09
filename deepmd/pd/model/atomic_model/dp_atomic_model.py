@@ -46,8 +46,6 @@ class DPAtomicModel(BaseAtomicModel):
             For example `type_map[1]` gives the name of the type 1.
     """
 
-    eval_descriptor_list: list[paddle.Tensor]
-
     def __init__(
         self,
         descriptor,
@@ -113,6 +111,8 @@ class DPAtomicModel(BaseAtomicModel):
             paddle.to_tensor(False, dtype="int32"),
         )
         self.buffer_aparam_nall.name = "buffer_aparam_nall"
+
+    eval_descriptor_list: list[paddle.Tensor]
 
     def set_eval_descriptor_hook(self, enable: bool) -> None:
         """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
@@ -220,7 +220,7 @@ class DPAtomicModel(BaseAtomicModel):
         Parameters
         ----------
         extended_coord
-            coodinates in extended region
+            coordinates in extended region
         extended_atype
             atomic type in extended region
         nlist

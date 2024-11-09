@@ -142,16 +142,16 @@ class TestSeA(unittest.TestCase):
             stddev=std_ones.detach().cpu(),
         )
 
-        pt_coord = self.pd_batch["coord"].to(env.DEVICE)
+        pd_coord = self.pd_batch["coord"].to(env.DEVICE)
         atype = self.pd_batch["atype"].to(env.DEVICE)
-        pt_coord.stop_gradient = False
+        pd_coord.stop_gradient = False
         (
             extended_coord,
             extended_atype,
             mapping,
             nlist,
         ) = extend_input_and_build_neighbor_list(
-            pt_coord,
+            pd_coord,
             self.pd_batch["atype"].to(env.DEVICE),
             self.rcut,
             self.sel,
@@ -168,8 +168,8 @@ class TestSeA(unittest.TestCase):
             self.rcut_smth,
         )
         my_d.sum().backward()
-        bsz = pt_coord.shape[0]
-        my_force = pt_coord.grad.reshape([bsz, -1, 3]).cpu().detach().numpy()
+        bsz = pd_coord.shape[0]
+        my_force = pd_coord.grad.reshape([bsz, -1, 3]).cpu().detach().numpy()
         base_force = base_force.reshape(bsz, -1, 3)
         base_d = base_d.reshape(bsz, -1, self.nnei, 4)
         my_d = my_d.reshape([bsz, -1, self.nnei, 4]).cpu().detach().numpy()

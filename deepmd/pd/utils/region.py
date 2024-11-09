@@ -79,20 +79,6 @@ def to_face_distance(
     return dist.reshape(list(cshape[:-2]) + [3])  # noqa:RUF005
 
 
-def _to_face_distance(cell):
-    volume = paddle.linalg.det(cell)
-    c_yz = paddle.cross(cell[1], cell[2])
-    # _h2yz = volume / paddle.linalg.norm(c_yz)
-    _h2yz = volume / decomp.norm(c_yz)
-    c_zx = paddle.cross(cell[2], cell[0])
-    # _h2zx = volume / paddle.linalg.norm(c_zx)
-    _h2zx = volume / decomp.norm(c_zx)
-    c_xy = paddle.cross(cell[0], cell[1])
-    # _h2xy = volume / paddle.linalg.norm(c_xy)
-    _h2xy = volume / decomp.norm(c_xy)
-    return paddle.stack([_h2yz, _h2zx, _h2xy])
-
-
 def b_to_face_distance(cell):
     volume = paddle.linalg.det(cell)
     c_yz = paddle.cross(cell[:, 1], cell[:, 2], axis=-1)
@@ -120,7 +106,7 @@ def normalize_coord(
     Parameters
     ----------
     coord : paddle.Tensor
-        orignal coordinates of shape [*, na, 3].
+        original coordinates of shape [*, na, 3].
 
     Returns
     -------
@@ -129,5 +115,5 @@ def normalize_coord(
 
     """
     icoord = phys2inter(coord, cell)
-    icoord = paddle.remainder(icoord, paddle.to_tensor(1.0))
+    icoord = paddle.remainder(icoord, paddle.full([], 1.0))
     return inter2phys(icoord, cell)

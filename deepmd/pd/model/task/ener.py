@@ -82,5 +82,4 @@ class EnergyFittingNet(InvarFitting):
             "type": "ener",
         }
 
-    # make jit happy with paddle 2.0.0
     exclude_types: list[int]

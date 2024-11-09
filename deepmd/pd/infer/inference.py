@@ -17,8 +17,6 @@ from deepmd.pd.utils.env import (
     JIT,
 )
 
-# if paddle.__version__.startswith("2"):
-#     import paddle._dynamo
 log = logging.getLogger(__name__)
 
 

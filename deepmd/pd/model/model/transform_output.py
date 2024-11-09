@@ -26,8 +26,7 @@ def atomic_virial_corr(
     coord = coord.detach()
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = paddle.split(paddle.sum(ce, axis=1), [1, 1, 1], axis=-1)
-    faked_grad = paddle.ones_like(sumce0)
-    # lst = paddle.jit.annotate(List[Optional[paddle.Tensor]], [faked_grad])
+    # faked_grad = paddle.ones_like(sumce0)
     extended_virial_corr0 = paddle.autograd.grad(
         [sumce0],
         [extended_coord],
@@ -106,14 +105,6 @@ def get_leading_dims(
     return list(vshape[: (len(vshape) - len(vdef.shape))])
 
 
-def get_atom_axis(
-    vdef: paddle.Tensor,
-):
-    """Get the axis of atoms."""
-    atom_axis = -(len(vdef.shape) + 1)
-    return atom_axis
-
-
 def take_deriv(
     vv: paddle.Tensor,
     svv: paddle.Tensor,
@@ -177,7 +168,10 @@ def fit_output_to_model_output(
         atom_axis = -(len(shap) + 1)
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
-            model_ret[kk_redu] = paddle.sum(vv.astype(redu_prec), axis=atom_axis)
+            if vdef.intensive:
+                model_ret[kk_redu] = paddle.mean(vv.astype(redu_prec), axis=atom_axis)
+            else:
+                model_ret[kk_redu] = paddle.sum(vv.astype(redu_prec), axis=atom_axis)
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 dr, dc = take_deriv(

@@ -185,8 +185,8 @@ def _compute_model_predict(
 
 def _make_preset_out_bias(
     ntypes: int,
-    ibias: list[Optional[np.array]],
-) -> Optional[np.array]:
+    ibias: list[Optional[np.ndarray]],
+) -> Optional[np.ndarray]:
     """Make preset out bias.
 
     output:
@@ -249,11 +249,11 @@ def compute_output_stats(
 
     Parameters
     ----------
-    merged : Union[Callable[[], List[dict]], List[dict]]
-        - List[dict]: A list of data samples from various data systems.
+    merged : Union[Callable[[], list[dict]], list[dict]]
+        - list[dict]: A list of data samples from various data systems.
             Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
             originating from the `i`-th data system.
-        - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+        - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
             only when needed. Since the sampling process can be slow and memory-intensive,
             the lazy function helps by only sampling once.
     ntypes : int
@@ -262,11 +262,11 @@ def compute_output_stats(
         The path to the stat file.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_bias : Dict[str, List[Optional[paddle.Tensor]]], optional
+    preset_bias : dict[str, list[Optional[paddle.Tensor]]], optional
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
-        The `set_davg_zero` key in the descrptor should be set.
+        The `set_davg_zero` key in the descriptor should be set.
     model_forward : Callable[..., paddle.Tensor], optional
         The wrapped forward function of atomic model.
         If not None, the model will be utilized to generate the original energy prediction,

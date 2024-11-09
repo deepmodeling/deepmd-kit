@@ -53,7 +53,7 @@ class JITTest:
 
     def tearDown(self):
         for f in os.listdir("."):
-            if f.startswith("model") and f.endswith("pt"):
+            if f.startswith("model") and f.endswith("pd"):
                 os.remove(f)
             if f in ["lcurve.out", "frozen_model.json", "frozen_model.pdiparams"]:
                 os.remove(f)

@@ -27,7 +27,7 @@ class TestLearningRate(unittest.TestCase):
                 self.decay_step = decay_step
                 self.stop_step = stop_step
                 self.judge_it()
-                self.decay_rate_pt()
+                self.decay_rate_pd()
 
     def judge_it(self):
         base_lr = learning_rate.LearningRateExp(
@@ -55,7 +55,7 @@ class TestLearningRate(unittest.TestCase):
         self.assertTrue(np.allclose(base_vals, my_vals))
         tf.reset_default_graph()
 
-    def decay_rate_pt(self):
+    def decay_rate_pd(self):
         my_lr = LearningRateExp(
             self.start_lr, self.stop_lr, self.decay_step, self.stop_step
         )

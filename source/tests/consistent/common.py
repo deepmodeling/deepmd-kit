@@ -488,15 +488,15 @@ class CommonTest(ABC):
 
     def test_pd_consistent_with_ref(self):
         """Test whether PD and reference are consistent."""
-        if self.skip_pt:
+        if self.skip_pd:
             self.skipTest("Unsupported backend")
         ref_backend = self.get_reference_backend()
         if ref_backend == self.RefBackend.PD:
             self.skipTest("Reference is self")
         ret1, data1 = self.get_reference_ret_serialization(ref_backend)
         ret1 = self.extract_ret(ret1, ref_backend)
-        obj = self.pt_class.deserialize(data1)
-        ret2 = self.eval_pt(obj)
+        obj = self.pd_class.deserialize(data1)
+        ret2 = self.eval_pd(obj)
         ret2 = self.extract_ret(ret2, self.RefBackend.PD)
         data2 = obj.serialize()
         if obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
@@ -504,15 +504,26 @@ class CommonTest(ABC):
             common_keys = set(data1.keys()) & set(data2.keys())
             data1 = {k: data1[k] for k in common_keys}
             data2 = {k: data2[k] for k in common_keys}
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+            assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 
     def test_pd_self_consistent(self):
-        """Test whether PT is self consistent."""
+        """Test whether PD is self consistent."""
         if self.skip_pd:
             self.skipTest("Unsupported backend")
         obj1 = self.init_backend_cls(self.pd_class)
         ret1, data1 = self.get_pd_ret_serialization_from_cls(obj1)
         obj2 = self.pd_class.deserialize(data1)
         ret2, data2 = self.get_pd_ret_serialization_from_cls(obj2)
+        np.testing.assert_equal(data1, data2)
+        for rr1, rr2 in zip(ret1, ret2):
+            if isinstance(rr1, np.ndarray) and isinstance(rr2, np.ndarray):
+                np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
+                assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
+            else:
+                self.assertEqual(rr1, rr2)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
     def test_array_api_strict_consistent_with_ref(self):

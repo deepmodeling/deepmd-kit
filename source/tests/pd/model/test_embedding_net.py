@@ -54,7 +54,7 @@ def get_single_batch(dataset, index=None):
     if index is None:
         index = dp_random.choice(np.arange(len(dataset)))
     np_batch = dataset[index]
-    pt_batch = {}
+    pd_batch = {}
 
     for key in [
         "coord",
@@ -68,11 +68,11 @@ def get_single_batch(dataset, index=None):
     ]:
         if key in np_batch.keys():
             np_batch[key] = np.expand_dims(np_batch[key], axis=0)
-            pt_batch[key] = paddle.to_tensor(np_batch[key]).to(device=env.DEVICE)
+            pd_batch[key] = paddle.to_tensor(np_batch[key]).to(device=env.DEVICE)
             if key in ["coord", "force", "force_mag"]:
                 np_batch[key] = np_batch[key].reshape(1, -1)
     np_batch["natoms"] = np_batch["natoms"][0]
-    return np_batch, pt_batch
+    return np_batch, pd_batch
 
 
 def base_se_a(descriptor, coord, atype, natoms, box):
@@ -181,8 +181,8 @@ class TestSeA(unittest.TestCase):
                     # Keep parameter value consistency between 2 implentations
                     paddle.assign(var, param)
 
-        pt_coord = self.paddle_batch["coord"].to(env.DEVICE)
-        pt_coord.stop_gradient = False
+        pd_coord = self.paddle_batch["coord"].to(env.DEVICE)
+        pd_coord.stop_gradient = False
 
         (
             extended_coord,
@@ -190,7 +190,7 @@ class TestSeA(unittest.TestCase):
             mapping,
             nlist,
         ) = extend_input_and_build_neighbor_list(
-            pt_coord,
+            pd_coord,
             self.paddle_batch["atype"].to(env.DEVICE),
             self.rcut,
             self.sel,
@@ -205,7 +205,7 @@ class TestSeA(unittest.TestCase):
         my_embedding = descriptor_out.cpu().detach().numpy()
         fake_energy = paddle.sum(descriptor_out)
         fake_energy.backward()
-        my_force = -pt_coord.grad.cpu().numpy()
+        my_force = -pd_coord.grad.cpu().numpy()
 
         # Check
         np.testing.assert_allclose(dp_embedding, my_embedding)

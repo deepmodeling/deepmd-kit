@@ -8,6 +8,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 import paddle
 
 from deepmd.dpmodel.atomic_model import (
@@ -67,7 +68,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         Specifying atomic energy contribution in vacuum. Given by key:value pairs.
         The value is a list specifying the bias. the elements can be None or np.array of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
-        The `set_davg_zero` key in the descrptor should be set.
+        The `set_davg_zero` key in the descriptor should be set.
 
     """
 
@@ -77,7 +78,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, paddle.Tensor]] = None,
+        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
     ):
         paddle.nn.Layer.__init__(self)
         BaseAtomicModel_.__init__(self)
@@ -148,7 +149,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         self,
         atype: paddle.Tensor,
     ) -> paddle.Tensor:
-        """The atoms with type < 0 are treated as virutal atoms,
+        """The atoms with type < 0 are treated as virtual atoms,
         which serves as place-holders for multi-frame calculations
         with different number of atoms in different frames.
 
@@ -160,7 +161,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         Returns
         -------
         mask
-            True for real atoms and False for virutal atoms.
+            True for real atoms and False for virtual atoms.
 
         """
         # supposed to be supported by all backends
@@ -200,7 +201,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         Parameters
         ----------
         extended_coord
-            extended coodinates, shape: nf x (nall x 3)
+            extended coordinates, shape: nf x (nall x 3)
         extended_atype
             extended atom typs, shape: nf x nall
             for a type < 0 indicating the atomic is virtual.

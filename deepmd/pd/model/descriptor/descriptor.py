@@ -105,11 +105,11 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 
         Parameters
         ----------
-        merged : Union[Callable[[], List[dict]], List[dict]]
-            - List[dict]: A list of data samples from various data systems.
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
                 Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                 originating from the `i`-th data system.
-            - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
         path : Optional[DPPath]
@@ -126,7 +126,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -145,11 +145,11 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
                         paddle.assign(
                             paddle.to_tensor(mean).to(device=env.DEVICE),
                             base_class.mean,
-                        )  # pylint: disable=no-explicit-dtype
+                        )
                     paddle.assign(
                         paddle.to_tensor(stddev).to(device=env.DEVICE),
                         base_class.stddev,
-                    )  # pylint: disable=no-explicit-dtype
+                    )
                 # must share, even if not do stat
                 self.mean = base_class.mean
                 self.stddev = base_class.stddev
@@ -196,7 +196,7 @@ def extend_descrpt_stat(des, type_map, des_with_stat=None):
     ----------
     des : DescriptorBlock
         The descriptor block to be extended.
-    type_map : List[str]
+    type_map : list[str]
         The name of each type of atoms to be extended.
     des_with_stat : DescriptorBlock, Optional
         The descriptor block has additional statistics of types from newly provided `type_map`.

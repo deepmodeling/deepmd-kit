@@ -3,6 +3,8 @@ from typing import (
     Optional,
 )
 
+import paddle
+
 from deepmd.pd.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -26,7 +28,7 @@ class DPModelCommon:
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -52,3 +54,11 @@ class DPModelCommon:
     def get_descriptor(self):
         """Get the descriptor."""
         return self.atomic_model.descriptor
+
+    def set_eval_descriptor_hook(self, enable: bool) -> None:
+        """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
+        self.atomic_model.set_eval_descriptor_hook(enable)
+
+    def eval_descriptor(self) -> paddle.Tensor:
+        """Evaluate the descriptor."""
+        return self.atomic_model.eval_descriptor()

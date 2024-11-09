@@ -75,10 +75,6 @@ from deepmd.utils.path import (
     DPH5Path,
 )
 
-# if paddle.__version__.startswith("2"):
-#     import paddle._dynamo
-
-
 log = logging.getLogger(__name__)
 
 
@@ -974,16 +970,19 @@ class Trainer:
                 "files, which can be viewd in NVIDIA Nsight Systems software"
             )
 
-    def save_model(self, save_path: Path, lr=0.0, step=0):
+    def save_model(self, save_path, lr=0.0, step=0):
         module = (
             self.wrapper.module
             if dist.is_available() and dist.is_initialized()
             else self.wrapper
         )
-        module.train_infos["lr"] = lr
+        module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
+        optim_state_dict = deepcopy(self.optimizer.state_dict())
+        for item in optim_state_dict["param_groups"]:
+            item["lr"] = float(item["lr"])
         paddle.save(
-            {"model": module.state_dict(), "optimizer": self.optimizer.state_dict()},
+            {"model": module.state_dict(), "optimizer": optim_state_dict},
             str(save_path),
         )
         checkpoint_dir = save_path.parent

@@ -114,6 +114,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
     tf_class = EnergyModelTF
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
+    pd_class = EnergyModelPD
     jax_class = EnergyModelJAX
     pd_class = EnergyModelPD
     args = model_args()
@@ -129,6 +130,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.TF
         if not self.skip_jax:
             return self.RefBackend.JAX
+        if not self.skip_pd:
+            return self.RefBackend.PD
         if not self.skip_dp:
             return self.RefBackend.DP
         raise ValueError("No available reference")
@@ -233,9 +236,9 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
-    def eval_pd(self, pt_obj: Any) -> Any:
+    def eval_pd(self, pd_obj: Any) -> Any:
         return self.eval_pd_model(
-            pt_obj,
+            pd_obj,
             self.natoms,
             self.coords,
             self.atype,

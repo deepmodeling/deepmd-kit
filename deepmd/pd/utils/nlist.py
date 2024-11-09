@@ -57,7 +57,7 @@ def build_neighbor_list(
     sel: Union[int, list[int]],
     distinguish_types: bool = True,
 ) -> paddle.Tensor:
-    """Build neightbor list for a single frame. keeps nsel neighbors.
+    """Build neighbor list for a single frame. keeps nsel neighbors.
 
     Parameters
     ----------
@@ -70,7 +70,7 @@ def build_neighbor_list(
         number of local atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -126,10 +126,10 @@ def build_neighbor_list(
     # nloc x (nall-1)
     rr = rr[:, :, 1:]
     nlist = nlist[:, :, 1:]
-    t = _trim_mask_distinguish_nlist(
+
+    return _trim_mask_distinguish_nlist(
         is_vir, atype, rr, nlist, rcut, sel, distinguish_types
     )
-    return t
 
 
 def _trim_mask_distinguish_nlist(
@@ -158,7 +158,7 @@ def _trim_mask_distinguish_nlist(
                     device=rr.place, dtype=rr.dtype
                 )
                 + rcut,
-            ],  # pylint: disable=no-explicit-dtype
+            ],
             axis=-1,
         )
         nlist = paddle.concat(
@@ -214,7 +214,7 @@ def build_directional_neighbor_list(
         if type < 0 the atom is treated as virtual atoms.
     rcut : float
         cut-off radius
-    sel : int or List[int]
+    sel : int or list[int]
         maximal number of neighbors (of each type).
         if distinguish_types==True, nsel should be list and
         the length of nsel should be equal to number of
@@ -361,14 +361,14 @@ def build_multiple_neighbor_list(
     nlist : paddle.Tensor
         Neighbor list of shape [batch_size, nloc, nsel], the neighbors
         should be stored in an ascending order.
-    rcuts : List[float]
+    rcuts : list[float]
         list of cut-off radius in ascending order.
-    nsels : List[int]
+    nsels : list[int]
         maximal number of neighbors in ascending order.
 
     Returns
     -------
-    nlist_dict : Dict[str, paddle.Tensor]
+    nlist_dict : dict[str, paddle.Tensor]
         A dict of nlists, key given by get_multiple_nlist_key(rc, nsel)
         value being the corresponding nlist.
 
@@ -460,6 +460,7 @@ def extend_coord_with_ghosts(
     """
     device = coord.place
     nf, nloc = atype.shape[:2]
+    # int64 for index
     aidx = paddle.tile(paddle.arange(nloc).to(device=device).unsqueeze(0), [nf, 1])  # pylint: disable=no-explicit-dtype
     if cell is None:
         nall = nloc

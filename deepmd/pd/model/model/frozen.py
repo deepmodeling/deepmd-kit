@@ -34,7 +34,7 @@ class FrozenModel(BaseModel):
             self.model = paddle.jit.load(model_file.split(".json")[0])
         else:
             raise NotImplementedError(
-                "Only support .json file, " f"but received {model_file}"
+                f"Only support .json file, but received {model_file}"
             )
 
     def fitting_output_def(self) -> FittingOutputDef:
@@ -162,7 +162,7 @@ class FrozenModel(BaseModel):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict

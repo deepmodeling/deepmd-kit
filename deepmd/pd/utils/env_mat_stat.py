@@ -47,7 +47,7 @@ class EnvMatStat(BaseEnvMatStat):
 
         Returns
         -------
-        Dict[str, StatItem]
+        dict[str, StatItem]
             The statistics of the environment matrix.
         """
         stats = {}
@@ -63,7 +63,7 @@ class EnvMatStat(BaseEnvMatStat):
 
 
 class EnvMatStatSe(EnvMatStat):
-    """Environmental matrix statistics for the se_a/se_r environemntal matrix.
+    """Environmental matrix statistics for the se_a/se_r environmental matrix.
 
     Parameters
     ----------
@@ -85,12 +85,12 @@ class EnvMatStatSe(EnvMatStat):
 
         Parameters
         ----------
-        data : List[Dict[str, Union[paddle.Tensor, List[Tuple[int, int]]]]]
+        data : list[dict[str, Union[paddle.Tensor, list[tuple[int, int]]]]]
             The data.
 
         Yields
         ------
-        Dict[str, StatItem]
+        dict[str, StatItem]
             The statistics of the environment matrix.
         """
         zero_mean = paddle.zeros(

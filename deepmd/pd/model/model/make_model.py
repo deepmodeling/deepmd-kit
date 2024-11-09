@@ -100,7 +100,34 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                     vars.append(kk)
             return vars
 
-        # cannot use the name forward. paddle script does not work
+        def enable_compression(
+            self,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Call atomic_model enable_compression().
+
+            Parameters
+            ----------
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            self.atomic_model.enable_compression(
+                self.get_min_nbor_dist(),
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            )
+
         def forward_common(
             self,
             coord,
@@ -131,7 +158,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Returns
             -------
             ret_dict
-                The result dict of type Dict[str,paddle.Tensor].
+                The result dict of type dict[str,paddle.Tensor].
                 The keys are defined by the `ModelOutputDef`.
 
             """
@@ -185,11 +212,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
             Parameters
             ----------
-            merged : Union[Callable[[], List[dict]], List[dict]]
-                - List[dict]: A list of data samples from various data systems.
+            merged : Union[Callable[[], list[dict]], list[dict]]
+                - list[dict]: A list of data samples from various data systems.
                     Each element, `merged[i]`, is a data dictionary containing `keys`: `paddle.Tensor`
                     originating from the `i`-th data system.
-                - Callable[[], List[dict]]: A lazy function that returns data samples in the above format
+                - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                     only when needed. Since the sampling process can be slow and memory-intensive,
                     the lazy function helps by only sampling once.
             bias_adjust_mode : str
@@ -223,7 +250,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x (nall x 3)
+                coordinates in extended region. nf x (nall x 3)
             extended_atype
                 atomic type in extended region. nf x nall
             nlist
@@ -364,7 +391,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             the `nlist` is pad with -1.
 
             3. If the number of neighbors in the `nlist` is larger than sum(self.sel),
-            the nearest sum(sel) neighbors will be preseved.
+            the nearest sum(sel) neighbors will be preserved.
 
             Known limitations:
 
@@ -374,7 +401,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             Parameters
             ----------
             extended_coord
-                coodinates in extended region. nf x nall x 3
+                coordinates in extended region. nf x nall x 3
             extended_atype
                 atomic type in extended region. nf x nall
             nlist
@@ -384,8 +411,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
             Returns
             -------
-            formated_nlist
-                the formated nlist.
+            formatted_nlist
+                the formatted nlist.
 
             """
             mixed_types = self.mixed_types()
@@ -419,7 +446,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                         * paddle.ones(
                             [n_nf, n_nloc, nnei - n_nnei],
                             dtype=nlist.dtype,
-                        ),
+                        ).to(nlist.place),
                     ],
                     axis=-1,
                 )

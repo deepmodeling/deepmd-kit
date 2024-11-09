@@ -48,7 +48,7 @@ try:
         Final,
     )
 except ImportError:
-    from paddle.jit import Final
+    pass
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.pd.model.network.mlp import (
@@ -93,6 +93,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
+        self.compress = False
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -164,7 +165,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
-        some seperated parameters (e.g. mean and stddev) will be re-calculated across different classes.
+        some separated parameters (e.g. mean and stddev) will be re-calculated across different classes.
         """
         assert (
             self.__class__ == base_class.__class__
@@ -342,7 +343,7 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
         Parameters
         ----------
         train_data : DeepmdDataSystem
-            data used to do neighbor statictics
+            data used to do neighbor statistics
         type_map : list[str], optional
             The name of each type of atoms
         local_jdata : dict
@@ -366,6 +367,10 @@ class DescrptSeA(BaseDescriptor, paddle.nn.Layer):
 class DescrptBlockSeA(DescriptorBlock):
     ndescrpt: Final[int]
     __constants__: ClassVar[list] = ["ndescrpt"]
+    lower: dict[str, int]
+    upper: dict[str, int]
+    table_data: dict[str, paddle.Tensor]
+    table_config: list[Union[int, float]]
 
     def __init__(
         self,
@@ -395,8 +400,8 @@ class DescrptBlockSeA(DescriptorBlock):
         - axis_neuron: Number of columns of the sub-matrix of the embedding matrix.
         """
         super().__init__()
-        self.rcut = rcut
-        self.rcut_smth = rcut_smth
+        self.rcut = float(rcut)
+        self.rcut_smth = float(rcut_smth)
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
@@ -425,6 +430,13 @@ class DescrptBlockSeA(DescriptorBlock):
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
 
+        # add for compression
+        self.compress = False
+        self.lower = {}
+        self.upper = {}
+        self.table_data = {}
+        self.table_config = []
+
         ndim = 1 if self.type_one_side else 2
         filter_layers = NetworkCollection(
             ndim=ndim, ntypes=len(sel), network_type="embedding_network"
@@ -443,6 +455,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self.filter_layers = filter_layers
         self.stats = None
         # set trainable
+        self.trainable = trainable
         for param in self.parameters():
             param.stop_gradient = not trainable
 
@@ -469,6 +482,10 @@ class DescrptBlockSeA(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+
+    def get_dim_rot_mat_1(self) -> int:
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
+        return self.filter_neuron[-1]
 
     def get_dim_emb(self) -> int:
         """Returns the output dimension."""
@@ -574,6 +591,19 @@ class DescrptBlockSeA(DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def enable_compression(
+        self,
+        table_data,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        self.compress = True
+        self.table_data = table_data
+        self.table_config = table_config
+        self.lower = lower
+        self.upper = upper
+
     def forward(
         self,
         nlist: paddle.Tensor,
@@ -609,7 +639,6 @@ class DescrptBlockSeA(DescriptorBlock):
             protection=self.env_protection,
         )
 
-        assert self.filter_layers is not None
         dmatrix = dmatrix.reshape([-1, self.nnei, 4])
         dmatrix = dmatrix.astype(self.prec)
         nfnl = dmatrix.shape[0]
@@ -623,6 +652,7 @@ class DescrptBlockSeA(DescriptorBlock):
         for embedding_idx, ll in enumerate(self.filter_layers.networks):
             if self.type_one_side:
                 ii = embedding_idx
+                ti = -1
                 # paddle.jit is not happy with slice(None)
                 # ti_mask = paddle.ones(nfnl, dtype=paddle.bool, device=dmatrix.place)
                 # applying a mask seems to cause performance degradation
@@ -642,17 +672,23 @@ class DescrptBlockSeA(DescriptorBlock):
                 rr = dmatrix[ti_mask, self.sec[ii] : self.sec[ii + 1], :]
             else:
                 rr = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
-            if rr.numel() > 0:
-                rr = rr * mm.unsqueeze(2).astype(rr.dtype)
-                ss = rr[:, :, :1]
+            rr = rr * mm[:, :, None].astype(rr.dtype)
+            ss = rr[:, :, :1]
+
+            if self.compress:
+                raise NotImplementedError(
+                    "Compressed environment is not implemented yet."
+                )
+            else:
                 # nfnl x nt x ng
                 gg = ll.forward(ss)
                 # nfnl x 4 x ng
                 gr = paddle.matmul(rr.transpose([0, 2, 1]), gg)
-                if ti_mask is not None:
-                    xyz_scatter[ti_mask] += gr
-                else:
-                    xyz_scatter += gr
+
+            if ti_mask is not None:
+                xyz_scatter[ti_mask] += gr
+            else:
+                xyz_scatter += gr
 
         xyz_scatter /= self.nnei
         xyz_scatter_1 = xyz_scatter.transpose([0, 2, 1])

@@ -9,9 +9,12 @@ import paddle
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.plugin import (
+    make_plugin_registry,
+)
 
 
-class TaskLoss(paddle.nn.Layer, ABC):
+class TaskLoss(paddle.nn.Layer, ABC, make_plugin_registry("loss")):
     def __init__(self, **kwargs):
         """Construct loss."""
         super().__init__()
@@ -38,3 +41,23 @@ class TaskLoss(paddle.nn.Layer, ABC):
             whether the property is found
         """
         return loss if bool(find_property) else paddle.to_tensor(float("nan"))
+
+    @classmethod
+    def get_loss(cls, loss_params: dict) -> "TaskLoss":
+        """Get the loss module by the parameters.
+
+        By default, all the parameters are directly passed to the constructor.
+        If not, override this method.
+
+        Parameters
+        ----------
+        loss_params : dict
+            The loss parameters
+
+        Returns
+        -------
+        TaskLoss
+            The loss module
+        """
+        loss = cls(**loss_params)
+        return loss

@@ -232,16 +232,27 @@ class SummaryPrinter(BaseSummaryPrinter):
         }
 
 
-def train(FLAGS):
-    log.info("Configuration path: %s", FLAGS.INPUT)
+def train(
+    input_file: str,
+    init_model: Optional[str],
+    restart: Optional[str],
+    finetune: Optional[str],
+    init_frz_model: Optional[str],
+    model_branch: str,
+    skip_neighbor_stat: bool = False,
+    use_pretrain_script: bool = False,
+    force_load: bool = False,
+    output: str = "out.json",
+):
+    log.info("Configuration path: %s", input_file)
     SummaryPrinter()()
-    with open(FLAGS.INPUT) as fin:
+    with open(input_file) as fin:
         config = json.load(fin)
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
-    if FLAGS.init_model is not None and not FLAGS.init_model.endswith(".pd"):
-        FLAGS.init_model += ".pd"
-    if FLAGS.restart is not None and not FLAGS.restart.endswith(".pd"):
-        FLAGS.restart += ".pd"
+    if init_model is not None and not init_model.endswith(".pd"):
+        init_model += ".pd"
+    if restart is not None and not restart.endswith(".pd"):
+        restart += ".pd"
 
     # update multitask config
     multi_task = "model_dict" in config["model"]
@@ -255,24 +266,22 @@ def train(FLAGS):
 
     # update fine-tuning config
     finetune_links = None
-    if FLAGS.finetune is not None:
+    if finetune is not None:
         config["model"], finetune_links = get_finetune_rules(
-            FLAGS.finetune,
+            finetune,
             config["model"],
-            model_branch=FLAGS.model_branch,
-            change_model_params=FLAGS.use_pretrain_script,
+            model_branch=model_branch,
+            change_model_params=use_pretrain_script,
         )
     # update init_model or init_frz_model config if necessary
-    if (
-        FLAGS.init_model is not None or FLAGS.init_frz_model is not None
-    ) and FLAGS.use_pretrain_script:
-        if FLAGS.init_model is not None:
-            init_state_dict = paddle.load(FLAGS.init_model)
+    if (init_model is not None or init_frz_model is not None) and use_pretrain_script:
+        if init_model is not None:
+            init_state_dict = paddle.load(init_model)
             if "model" in init_state_dict:
                 init_state_dict = init_state_dict["model"]
             config["model"] = init_state_dict["_extra_state"]["model_params"]
         else:
-            raise NotImplementedError("FLAGS.init_model can not be empty.")
+            raise NotImplementedError("init_frz_model is not supported yet")
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
@@ -280,7 +289,7 @@ def train(FLAGS):
 
     # do neighbor stat
     min_nbor_dist = None
-    if not FLAGS.skip_neighbor_stat:
+    if not skip_neighbor_stat:
         log.info(
             "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
         )
@@ -309,16 +318,16 @@ def train(FLAGS):
                     )
                 )
 
-    with open(FLAGS.output, "w") as fp:
+    with open(output, "w") as fp:
         json.dump(config, fp, indent=4)
 
     trainer = get_trainer(
         config,
-        FLAGS.init_model,
-        FLAGS.restart,
-        FLAGS.finetune,
-        FLAGS.force_load,
-        FLAGS.init_frz_model,
+        init_model,
+        restart,
+        finetune,
+        force_load,
+        init_frz_model,
         shared_links=shared_links,
         finetune_links=finetune_links,
     )
@@ -332,7 +341,11 @@ def train(FLAGS):
     trainer.run()
 
 
-def freeze(FLAGS):
+def freeze(
+    model: str,
+    output: str = "frozen_model.pth",
+    head: Optional[str] = None,
+):
     paddle.set_flags(
         {
             "FLAGS_save_cf_stack_op": 1,
@@ -340,7 +353,7 @@ def freeze(FLAGS):
             "FLAGS_enable_pir_api": 1,
         }
     )
-    model = inference.Tester(FLAGS.model, head=FLAGS.head).model
+    model = inference.Tester(model, head=head).model
     model.eval()
     from paddle.static import (
         InputSpec,
@@ -362,80 +375,30 @@ def freeze(FLAGS):
             InputSpec([-1, -1, -1], dtype="int32", name="nlist"),
         ],
     )
-    if FLAGS.output.endswith(".json"):
-        FLAGS.output = FLAGS.output[:-5]
+    if output.endswith(".json"):
+        output = output[:-5]
     paddle.jit.save(
         jit_model,
-        path=FLAGS.output,
+        path=output,
         skip_prune_program=True,
     )
     log.info(
-        f"Paddle inference model has been exported to: {FLAGS.output}.json and {FLAGS.output}.pdiparams"
+        f"Paddle inference model has been exported to: {output}.json and {output}.pdiparams"
     )
 
 
-def show(FLAGS):
-    if FLAGS.INPUT.split(".")[-1] == "pd":
-        state_dict = paddle.load(FLAGS.INPUT)
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-        model_params = state_dict["_extra_state"]["model_params"]
-    else:
-        raise RuntimeError(
-            "The model provided must be a checkpoint file with a .pd extension"
-        )
-    model_is_multi_task = "model_dict" in model_params
-    log.info("This is a multitask model") if model_is_multi_task else log.info(
-        "This is a singletask model"
-    )
-
-    if "model-branch" in FLAGS.ATTRIBUTES:
-        #  The model must be multitask mode
-        if not model_is_multi_task:
-            raise RuntimeError(
-                "The 'model-branch' option requires a multitask model."
-                " The provided model does not meet this criterion."
-            )
-        model_branches = list(model_params["model_dict"].keys())
-        model_branches += ["RANDOM"]
-        log.info(
-            f"Available model branches are {model_branches}, "
-            f"where 'RANDOM' means using a randomly initialized fitting net."
-        )
-    if "type-map" in FLAGS.ATTRIBUTES:
-        if model_is_multi_task:
-            model_branches = list(model_params["model_dict"].keys())
-            for branch in model_branches:
-                type_map = model_params["model_dict"][branch]["type_map"]
-                log.info(f"The type_map of branch {branch} is {type_map}")
-        else:
-            type_map = model_params["type_map"]
-            log.info(f"The type_map is {type_map}")
-    if "descriptor" in FLAGS.ATTRIBUTES:
-        if model_is_multi_task:
-            model_branches = list(model_params["model_dict"].keys())
-            for branch in model_branches:
-                descriptor = model_params["model_dict"][branch]["descriptor"]
-                log.info(f"The descriptor parameter of branch {branch} is {descriptor}")
-        else:
-            descriptor = model_params["descriptor"]
-            log.info(f"The descriptor parameter is {descriptor}")
-    if "fitting-net" in FLAGS.ATTRIBUTES:
-        if model_is_multi_task:
-            model_branches = list(model_params["model_dict"].keys())
-            for branch in model_branches:
-                fitting_net = model_params["model_dict"][branch]["fitting_net"]
-                log.info(
-                    f"The fitting_net parameter of branch {branch} is {fitting_net}"
-                )
-        else:
-            fitting_net = model_params["fitting_net"]
-            log.info(f"The fitting_net parameter is {fitting_net}")
-
-
-def change_bias(FLAGS):
-    if FLAGS.INPUT.endswith(".pd"):
-        old_state_dict = paddle.load(FLAGS.INPUT)
+def change_bias(
+    input_file: str,
+    mode: str = "change",
+    bias_value: Optional[list] = None,
+    datafile: Optional[str] = None,
+    system: str = ".",
+    numb_batch: int = 0,
+    model_branch: Optional[str] = None,
+    output: Optional[str] = None,
+):
+    if input_file.endswith(".pd"):
+        old_state_dict = paddle.load(input_file)
         model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
         model_params = model_state_dict["_extra_state"]["model_params"]
     else:
@@ -444,10 +407,7 @@ def change_bias(FLAGS):
             "Please provided a checkpoint file with a .pd extension"
         )
     multi_task = "model_dict" in model_params
-    model_branch = FLAGS.model_branch
-    bias_adjust_mode = (
-        "change-by-statistic" if FLAGS.mode == "change" else "set-by-statistic"
-    )
+    bias_adjust_mode = "change-by-statistic" if mode == "change" else "set-by-statistic"
     if multi_task:
         assert (
             model_branch is not None
@@ -464,23 +424,23 @@ def change_bias(FLAGS):
         else model_params["model_dict"][model_branch]["type_map"]
     )
     model_to_change = model if not multi_task else model[model_branch]
-    if FLAGS.INPUT.endswith(".pd"):
+    if input_file.endswith(".pd"):
         wrapper = ModelWrapper(model)
         wrapper.set_state_dict(old_state_dict["model"])
     else:
         raise NotImplementedError("Only support .pd file")
 
-    if FLAGS.bias_value is not None:
+    if bias_value is not None:
         # use user-defined bias
         assert model_to_change.model_type in [
             "ener"
         ], "User-defined bias is only available for energy model!"
         assert (
-            len(FLAGS.bias_value) == len(type_map)
+            len(bias_value) == len(type_map)
         ), f"The number of elements in the bias should be the same as that in the type_map: {type_map}."
         old_bias = model_to_change.get_out_bias()
         bias_to_set = paddle.to_tensor(
-            FLAGS.bias_value, dtype=old_bias.dtype, place=old_bias.place
+            bias_value, dtype=old_bias.dtype, place=old_bias.place
         ).reshape(old_bias.shape)
         model_to_change.set_out_bias(bias_to_set)
         log.info(
@@ -491,11 +451,11 @@ def change_bias(FLAGS):
         updated_model = model_to_change
     else:
         # calculate bias on given systems
-        if FLAGS.datafile is not None:
-            with open(FLAGS.datafile) as datalist:
+        if datafile is not None:
+            with open(datafile) as datalist:
                 all_sys = datalist.read().splitlines()
         else:
-            all_sys = expand_sys_str(FLAGS.system)
+            all_sys = expand_sys_str(system)
         data_systems = process_systems(all_sys)
         data_single = DpLoaderSet(
             data_systems,
@@ -508,7 +468,7 @@ def change_bias(FLAGS):
         data_requirement = mock_loss.label_requirement
         data_requirement += training.get_additional_data_requirement(model_to_change)
         data_single.add_data_requirement(data_requirement)
-        nbatches = FLAGS.numb_batch if FLAGS.numb_batch != 0 else float("inf")
+        nbatches = numb_batch if numb_batch != 0 else float("inf")
         sampled_data = make_stat_input(
             data_single.systems,
             data_single.dataloaders,
@@ -523,11 +483,9 @@ def change_bias(FLAGS):
     else:
         model[model_branch] = updated_model
 
-    if FLAGS.INPUT.endswith(".pd"):
+    if input_file.endswith(".pd"):
         output_path = (
-            FLAGS.output
-            if FLAGS.output is not None
-            else FLAGS.INPUT.replace(".pd", "_updated.pd")
+            output if output is not None else input_file.replace(".pd", "_updated.pd")
         )
         wrapper = ModelWrapper(model)
         if "model" in old_state_dict:
@@ -551,14 +509,25 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
 
     set_log_handles(
         FLAGS.log_level,
-        Path(FLAGS.log_path) if FLAGS.log_path is not None else None,
+        Path(FLAGS.log_path) if FLAGS.log_path else None,
         mpi_log=None,
     )
     log.debug("Log handles were successfully set")
     log.info("DeePMD version: %s", __version__)
 
     if FLAGS.command == "train":
-        train(FLAGS)
+        train(
+            input_file=FLAGS.INPUT,
+            init_model=FLAGS.init_model,
+            restart=FLAGS.restart,
+            finetune=FLAGS.finetune,
+            init_frz_model=FLAGS.init_frz_model,
+            model_branch=FLAGS.model_branch,
+            skip_neighbor_stat=FLAGS.skip_neighbor_stat,
+            use_pretrain_script=FLAGS.use_pretrain_script,
+            force_load=FLAGS.force_load,
+            output=FLAGS.output,
+        )
     elif FLAGS.command == "freeze":
         if Path(FLAGS.checkpoint_folder).is_dir():
             checkpoint_path = Path(FLAGS.checkpoint_folder)
@@ -566,12 +535,19 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
         else:
             FLAGS.model = FLAGS.checkpoint_folder
-        FLAGS.output = str(Path(FLAGS.output).with_suffix(""))
-        freeze(FLAGS)
-    elif FLAGS.command == "show":
-        show(FLAGS)
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(".json"))
+        freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
     elif FLAGS.command == "change-bias":
-        change_bias(FLAGS)
+        change_bias(
+            input_file=FLAGS.INPUT,
+            mode=FLAGS.mode,
+            bias_value=FLAGS.bias_value,
+            datafile=FLAGS.datafile,
+            system=FLAGS.system,
+            numb_batch=FLAGS.numb_batch,
+            model_branch=FLAGS.model_branch,
+            output=FLAGS.output,
+        )
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
 
