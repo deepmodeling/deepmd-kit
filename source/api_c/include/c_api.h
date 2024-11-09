@@ -978,6 +978,53 @@ void DP_DeepPotModelDeviCompute2(DP_DeepPotModelDevi* dp,
                                  double* virial,
                                  double* atomic_energy,
                                  double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ * spin model deviation. (double version)
+ * @version 2
+ * @param[in] dp The DP spin model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be
+ *of size nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
+ * of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 24
+ **/
+void DP_DeepSpinModelDeviCompute2(DP_DeepSpinModelDevi* dp,
+                                  const int nframes,
+                                  const int natoms,
+                                  const double* coord,
+                                  const double* spin,
+                                  const int* atype,
+                                  const double* cell,
+                                  const double* fparam,
+                                  const double* aparam,
+                                  double* energy,
+                                  double* force,
+                                  double* force_mag,
+                                  double* virial,
+                                  double* atomic_energy,
+                                  double* atomic_virial);
 /**
  * @brief Evaluate the energy, force and virial by using a DP model deviation
  *with neighbor list. (float version)
@@ -1017,6 +1064,53 @@ void DP_DeepPotModelDeviComputef2(DP_DeepPotModelDevi* dp,
                                   float* virial,
                                   float* atomic_energy,
                                   float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force, magnetic force and virial by using a DP
+ * spin model deviation. (float version)
+ * @version 2
+ * @param[in] dp The DP spin model deviation to use.
+ * @param[in] nframes The number of frames. Only support 1 for now.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] spin The spins of atoms, [0, 0, 0] if no spin. The array should be
+ *of size nframes x natoms x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] box The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] force_mag Output magnetic force on each atom. The array should be
+ * of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 24
+ **/
+void DP_DeepSpinModelDeviComputef2(DP_DeepSpinModelDevi* dp,
+                                   const int nframes,
+                                   const int natoms,
+                                   const float* coord,
+                                   const float* spin,
+                                   const int* atype,
+                                   const float* cell,
+                                   const float* fparam,
+                                   const float* aparam,
+                                   double* energy,
+                                   float* force,
+                                   float* force_mag,
+                                   float* virial,
+                                   float* atomic_energy,
+                                   float* atomic_virial);
 
 // deprecated interface version1
 /**
@@ -1171,6 +1265,7 @@ void DP_DeepPotModelDeviComputeNList2(DP_DeepPotModelDevi* dp,
  *natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
+ * @since API version 24
  **/
 void DP_DeepSpinModelDeviComputeNList2(DP_DeepSpinModelDevi* dp,
                                        const int nframes,
@@ -1269,6 +1364,7 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
  *natoms x 9.
  * @warning The output arrays should be allocated before calling this function.
  *Pass NULL if not required.
+ * @since API version 24
  **/
 void DP_DeepSpinModelDeviComputeNListf2(DP_DeepSpinModelDevi* dp,
                                         const int nframes,

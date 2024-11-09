@@ -278,3 +278,47 @@ TYPED_TEST(TestInferDeepSpinTFANoPbcHPP, cpu_lmp_nlist) {
   //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   // }
 }
+
+TYPED_TEST(TestInferDeepSpinTFANoPbcHPP, cpu_lmp_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  const std::vector<VALUETYPE>& coord = this->coord;
+  const std::vector<VALUETYPE>& spin = this->spin;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  // std::vector<VALUETYPE>& expected_v = this->expected_v;
+  unsigned int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::hpp::DeepSpin& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
+  std::vector<std::vector<int> > nlist_data = {{1}, {0}, {3}, {2}};
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::hpp::InputNlist inlist(natoms, &ilist[0], &numneigh[0],
+                                 &firstneigh[0]);
+  deepmd::hpp::convert_nlist(inlist, nlist_data);
+  dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord, spin,
+             atype, box, 0, inlist, 0);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(force_mag.size(), natoms * 3);
+  // EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  // for (int ii = 0; ii < 3 * 3; ++ii) {
+  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  // }
+}

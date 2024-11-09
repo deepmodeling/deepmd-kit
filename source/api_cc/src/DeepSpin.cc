@@ -489,6 +489,115 @@ void DeepSpinModelDevi::init(const std::vector<std::string>& models,
   inited = true;
 }
 
+template <typename VALUETYPE>
+void DeepSpinModelDevi::compute(
+    std::vector<ENERGYTYPE>& all_energy,
+    std::vector<std::vector<VALUETYPE>>& all_force,
+    std::vector<std::vector<VALUETYPE>>& all_force_mag,
+    std::vector<std::vector<VALUETYPE>>& all_virial,
+    const std::vector<VALUETYPE>& dcoord_,
+    const std::vector<VALUETYPE>& dspin_,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    const std::vector<VALUETYPE>& fparam,
+    const std::vector<VALUETYPE>& aparam_) {
+  // without nlist
+  if (numb_models == 0) {
+    return;
+  }
+  all_energy.resize(numb_models);
+  all_force.resize(numb_models);
+  all_force_mag.resize(numb_models);
+  all_virial.resize(numb_models);
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    dps[ii]->compute(all_energy[ii], all_force[ii], all_force_mag[ii],
+                     all_virial[ii], dcoord_, dspin_, datype_, dbox, fparam,
+                     aparam_);
+  }
+}
+
+template void DeepSpinModelDevi::compute<double>(
+    std::vector<ENERGYTYPE>& all_energy,
+    std::vector<std::vector<double>>& all_force,
+    std::vector<std::vector<double>>& all_force_mag,
+    std::vector<std::vector<double>>& all_virial,
+    const std::vector<double>& dcoord_,
+    const std::vector<double>& dspin_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
+
+template void DeepSpinModelDevi::compute<float>(
+    std::vector<ENERGYTYPE>& all_energy,
+    std::vector<std::vector<float>>& all_force,
+    std::vector<std::vector<float>>& all_force_mag,
+    std::vector<std::vector<float>>& all_virial,
+    const std::vector<float>& dcoord_,
+    const std::vector<float>& dspin_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
+
+template <typename VALUETYPE>
+void DeepSpinModelDevi::compute(
+    std::vector<ENERGYTYPE>& all_energy,
+    std::vector<std::vector<VALUETYPE>>& all_force,
+    std::vector<std::vector<VALUETYPE>>& all_force_mag,
+    std::vector<std::vector<VALUETYPE>>& all_virial,
+    std::vector<std::vector<VALUETYPE>>& all_atom_energy,
+    std::vector<std::vector<VALUETYPE>>& all_atom_virial,
+    const std::vector<VALUETYPE>& dcoord_,
+    const std::vector<VALUETYPE>& dspin_,
+    const std::vector<int>& datype_,
+    const std::vector<VALUETYPE>& dbox,
+    const std::vector<VALUETYPE>& fparam,
+    const std::vector<VALUETYPE>& aparam_) {
+  if (numb_models == 0) {
+    return;
+  }
+  all_energy.resize(numb_models);
+  all_force.resize(numb_models);
+  all_force_mag.resize(numb_models);
+  all_virial.resize(numb_models);
+  all_atom_energy.resize(numb_models);
+  all_atom_virial.resize(numb_models);
+  for (unsigned ii = 0; ii < numb_models; ++ii) {
+    dps[ii]->compute(all_energy[ii], all_force[ii], all_force_mag[ii],
+                     all_virial[ii], all_atom_energy[ii], all_atom_virial[ii],
+                     dcoord_, dspin_, datype_, dbox, fparam, aparam_);
+  }
+}
+
+template void DeepSpinModelDevi::compute<double>(
+    std::vector<ENERGYTYPE>& all_energy,
+    std::vector<std::vector<double>>& all_force,
+    std::vector<std::vector<double>>& all_force_mag,
+    std::vector<std::vector<double>>& all_virial,
+    std::vector<std::vector<double>>& all_atom_energy,
+    std::vector<std::vector<double>>& all_atom_virial,
+    const std::vector<double>& dcoord_,
+    const std::vector<double>& dspin_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam);
+
+template void DeepSpinModelDevi::compute<float>(
+    std::vector<ENERGYTYPE>& all_energy,
+    std::vector<std::vector<float>>& all_force,
+    std::vector<std::vector<float>>& all_force_mag,
+    std::vector<std::vector<float>>& all_virial,
+    std::vector<std::vector<float>>& all_atom_energy,
+    std::vector<std::vector<float>>& all_atom_virial,
+    const std::vector<float>& dcoord_,
+    const std::vector<float>& dspin_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam);
+
 // support spin
 // nlist, no atomic
 template <typename VALUETYPE>
