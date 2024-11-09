@@ -343,7 +343,7 @@ def train(
 
 def freeze(
     model: str,
-    output: str = "frozen_model.pth",
+    output: str = "frozen_model.json",
     head: Optional[str] = None,
 ):
     paddle.set_flags(
