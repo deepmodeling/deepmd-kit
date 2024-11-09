@@ -4,7 +4,7 @@ import gc
 import pytest
 
 
-@pytest.fixture(scope="package", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def automatic_memory_release():
     """Release memory after each package."""
     # pre
