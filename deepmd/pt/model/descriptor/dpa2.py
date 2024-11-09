@@ -31,10 +31,14 @@ from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.pt.utils.utils import (
+    ActivationFn,
     to_numpy_array,
 )
 from deepmd.utils.data_system import (
@@ -859,3 +863,85 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         )
         local_jdata_cpy["repformer"]["nsel"] = repformer_sel[0]
         return local_jdata_cpy, min_nbor_dist
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the mocel compression process
+        if self.repinit.compress:
+            raise ValueError("Compression is already enabled.")
+        assert (
+            not self.repinit.resnet_dt
+        ), "Model compression error: repinit resnet_dt must be false!"
+        for tt in self.repinit.exclude_types:
+            if (tt[0] not in range(self.repinit.ntypes)) or (
+                tt[1] not in range(self.repinit.ntypes)
+            ):
+                raise RuntimeError(
+                    "Repinit exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.repinit.ntypes)
+                    + "!"
+                )
+        if (
+            self.repinit.ntypes * self.repinit.ntypes - len(self.repinit.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Repinit empty embedding-nets are not supported in model compression!"
+            )
+
+        if self.repinit.attn_layer != 0:
+            raise RuntimeError(
+                "Cannot compress model when repinit attention layer is not 0."
+            )
+
+        if self.repinit.tebd_input_mode != "strip":
+            raise RuntimeError(
+                "Cannot compress model when repinit tebd_input_mode == 'concat'"
+            )
+
+        # repinit doesn't have a serialize method
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["repinit_args"]["neuron"],
+            data["repinit_args"]["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["repinit_args"]["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+
+        self.repinit.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True

@@ -95,11 +95,14 @@ class DPTabulate(BaseTabulate):
             raise RuntimeError("Unknown activation function type!")
 
         self.activation_fn = activation_fn
-        self.davg = self.descrpt.serialize()["@variables"]["davg"]
-        self.dstd = self.descrpt.serialize()["@variables"]["dstd"]
-        self.ntypes = self.descrpt.get_ntypes()
+        serialized = self.descrpt.serialize()
+        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA2):
+            serialized = serialized["repinit_variable"]
+        self.davg = serialized["@variables"]["davg"]
+        self.dstd = serialized["@variables"]["dstd"]
+        self.embedding_net_nodes = serialized["embeddings"]["networks"]
 
-        self.embedding_net_nodes = self.descrpt.serialize()["embeddings"]["networks"]
+        self.ntypes = self.descrpt.get_ntypes()
 
         self.layer_size = self._get_layer_size()
         self.table_size = self._get_table_size()
@@ -291,7 +294,13 @@ class DPTabulate(BaseTabulate):
         return t, self.activation_fn(torch.matmul(x, w) + b) + t
 
     def _get_descrpt_type(self):
-        if isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptDPA1):
+        if isinstance(
+            self.descrpt,
+            (
+                deepmd.pt.model.descriptor.DescrptDPA1,
+                deepmd.pt.model.descriptor.DescrptDPA2,
+            ),
+        ):
             return "Atten"
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeA):
             return "A"
