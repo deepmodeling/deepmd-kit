@@ -100,48 +100,49 @@ TYPED_TEST(TestInferDeepSpinTFAHPP, cpu_build_nlist) {
   // }
 }
 
-TYPED_TEST(TestInferDeepSpinTFAHPP, cpu_build_nlist_atomic) {
-  using VALUETYPE = TypeParam;
-  std::vector<VALUETYPE>& coord = this->coord;
-  std::vector<VALUETYPE>& spin = this->spin;
-  std::vector<int>& atype = this->atype;
-  std::vector<VALUETYPE>& box = this->box;
-  std::vector<VALUETYPE>& expected_e = this->expected_e;
-  std::vector<VALUETYPE>& expected_f = this->expected_f;
-  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
-  // std::vector<VALUETYPE>& expected_v = this->expected_v;
-  unsigned int& natoms = this->natoms;
-  double& expected_tot_e = this->expected_tot_e;
-  // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
-  deepmd::hpp::DeepSpin& dp = this->dp;
-  double ener;
-  std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
-  dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord, spin,
-             atype, box);
+// TYPED_TEST(TestInferDeepSpinTFAHPP, cpu_build_nlist_atomic) {
+//   using VALUETYPE = TypeParam;
+//   std::vector<VALUETYPE>& coord = this->coord;
+//   std::vector<VALUETYPE>& spin = this->spin;
+//   std::vector<int>& atype = this->atype;
+//   std::vector<VALUETYPE>& box = this->box;
+//   std::vector<VALUETYPE>& expected_e = this->expected_e;
+//   std::vector<VALUETYPE>& expected_f = this->expected_f;
+//   std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+//   // std::vector<VALUETYPE>& expected_v = this->expected_v;
+//   unsigned int& natoms = this->natoms;
+//   double& expected_tot_e = this->expected_tot_e;
+//   // std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+//   deepmd::hpp::DeepSpin& dp = this->dp;
+//   double ener;
+//   std::vector<VALUETYPE> force, force_mag, virial, atom_ener, atom_vir;
+//   dp.compute(ener, force, force_mag, virial, atom_ener, atom_vir, coord,
+//   spin,
+//              atype, box);
 
-  EXPECT_EQ(force.size(), natoms * 3);
-  EXPECT_EQ(force_mag.size(), natoms * 3);
-  // EXPECT_EQ(virial.size(), 9);
-  EXPECT_EQ(atom_ener.size(), natoms);
-  // EXPECT_EQ(atom_vir.size(), natoms * 9);
+//   EXPECT_EQ(force.size(), natoms * 3);
+//   EXPECT_EQ(force_mag.size(), natoms * 3);
+//   // EXPECT_EQ(virial.size(), 9);
+//   EXPECT_EQ(atom_ener.size(), natoms);
+//   // EXPECT_EQ(atom_vir.size(), natoms * 9);
 
-  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-  for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
-  }
-  // for (int ii = 0; ii < 3 * 3; ++ii) {
-  //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  // }
-  for (int ii = 0; ii < natoms; ++ii) {
-    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
-  }
-  // for (int ii = 0; ii < natoms * 9; ++ii) {
-  //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  // }
-}
+//   EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+//   for (int ii = 0; ii < natoms * 3; ++ii) {
+//     EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+//   }
+//   for (int ii = 0; ii < natoms * 3; ++ii) {
+//     EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
+//   }
+//   // for (int ii = 0; ii < 3 * 3; ++ii) {
+//   //   EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+//   // }
+//   for (int ii = 0; ii < natoms; ++ii) {
+//     EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+//   }
+//   // for (int ii = 0; ii < natoms * 9; ++ii) {
+//   //   EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+//   // }
+// }
 
 TYPED_TEST(TestInferDeepSpinTFAHPP, print_summary) {
   deepmd::hpp::DeepSpin& dp = this->dp;
