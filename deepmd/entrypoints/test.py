@@ -544,7 +544,6 @@ def test_ener(
             append=append_detail,
         )
         if dp.has_hessian:
-            _n_frames_, _n_hessian_ = test_data["hessian"][:numb_test].shape
             data_h = test_data["hessian"][:numb_test].reshape(-1, 1)
             pred_h = hessian.reshape(-1, 1)
             h = np.concatenate(

@@ -133,7 +133,7 @@ class DeepEval(DeepEvalBackend):
             try:
                 model = torch.jit.script(model)
             except RuntimeError:
-                model = model
+                pass
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
