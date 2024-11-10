@@ -4,6 +4,10 @@
 **Supported backends**: PyTorch {{ pytorch_icon }}
 :::
 
+:::{warning}
+The model trained with Hessian cannot be frozen.
+:::
+
 To train a model that takes Hessian matrices, i.e., the second order derivatives of energies w.r.t coordinates as input, you only need to prepare full Hessian matrices and modify the `loss` section to define the Hessian-specific settings, keeping other sections the same as the normal energy model's input script.
 
 ## Energy Hessian Loss
