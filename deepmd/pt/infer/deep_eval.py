@@ -130,8 +130,10 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if "Hessian" not in str(type(model)):
+            try:
                 model = torch.jit.script(model)
+            except RuntimeError:
+                model = model
             self.dp = ModelWrapper(model)
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
@@ -160,11 +162,7 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
-        self._has_hessian = hasattr(self, "input_param") and self.input_param.get(
-            "hessian_mode", False
-        )
-        if callable(self._has_hessian):
-            self._has_hessian = self._has_hessian()
+        self._has_hessian = self.model_def_script.get("hessian_mode", False)
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""

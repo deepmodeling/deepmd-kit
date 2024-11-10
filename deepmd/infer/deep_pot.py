@@ -100,11 +100,10 @@ class DeepPot(DeepEval):
         aparam: Optional[np.ndarray],
         mixed_type: bool,
         **kwargs: Any,
-    ) -> Union[tuple[
-        np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
-    ], tuple[
-        np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray
-    ]]:
+    ) -> Union[
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    ]:
         pass
 
     @overload

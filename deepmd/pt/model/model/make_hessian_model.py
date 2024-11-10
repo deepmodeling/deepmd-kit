@@ -58,65 +58,10 @@ def make_hessian_model(T_Model):
             """Get the fitting output def."""
             return self.hess_fitting_def
 
-        def forward_common(
+        def _cal_hessian_all(
             self,
             coord,
             atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-            do_atomic_virial: bool = False,
-        ) -> dict[str, torch.Tensor]:
-            """Return model prediction.
-
-            Parameters
-            ----------
-            coord
-                The coordinates of the atoms.
-                shape: nf x (nloc x 3)
-            atype
-                The type of atoms. shape: nf x nloc
-            box
-                The simulation box. shape: nf x 9
-            fparam
-                frame parameter. nf x ndf
-            aparam
-                atomic parameter. nf x nloc x nda
-            do_atomic_virial
-                If calculate the atomic virial.
-
-            Returns
-            -------
-            ret_dict
-                The result dict of type dict[str,torch.Tensor].
-                The keys are defined by the `ModelOutputDef`.
-
-            """
-            ret = super().forward_common(
-                coord,
-                atype,
-                box=box,
-                fparam=fparam,
-                aparam=aparam,
-                do_atomic_virial=do_atomic_virial,
-            )
-            vdef = self.atomic_output_def()
-            hess_yes = [vdef[kk].r_hessian for kk in vdef.keys()]
-            if any(hess_yes):
-                hess = self._cal_hessian_all(
-                    coord,
-                    atype,
-                    box=box,
-                    fparam=fparam,
-                    aparam=aparam,
-                )
-                ret.update(hess)
-            return ret
-
-        def _cal_hessian_all(
-            self,
-            coord: torch.Tensor,
-            atype: torch.Tensor,
             box: Optional[torch.Tensor] = None,
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
@@ -184,7 +129,7 @@ def make_hessian_model(T_Model):
             self,
             obj: CM,
             ci: int,
-            atype: torch.Tensor,
+            atype,
             box: Optional[torch.Tensor],
             fparam: Optional[torch.Tensor],
             aparam: Optional[torch.Tensor],
