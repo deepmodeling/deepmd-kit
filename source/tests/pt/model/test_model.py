@@ -62,6 +62,8 @@ def torch2tf(torch_name, last_layer_id=None):
     offset = int(fields[3] == "networks") + 1
     element_id = int(fields[2 + offset])
     if fields[1] == "descriptor":
+        if fields[2].startswith("compress_"):
+            return None
         layer_id = int(fields[4 + offset]) + 1
         weight_type = fields[5 + offset]
         ret = "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
@@ -318,6 +320,8 @@ class TestEnergy(unittest.TestCase):
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
             var_name = torch2tf(name, last_layer_id=len(self.n_neuron))
+            if var_name is None:
+                continue
             var = vs_dict[var_name].value
             with torch.no_grad():
                 src = torch.from_numpy(var)
@@ -412,6 +416,8 @@ class TestEnergy(unittest.TestCase):
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
             var_name = torch2tf(name, last_layer_id=len(self.n_neuron))
+            if var_name is None:
+                continue
             var_grad = vs_dict[var_name].gradient
             param_grad = param.grad.cpu()
             var_grad = torch.tensor(var_grad, device="cpu")

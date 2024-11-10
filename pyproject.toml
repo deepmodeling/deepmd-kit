@@ -85,7 +85,7 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "dpgui",
-    'array-api-strict>=2;python_version>="3.9"',
+    'array-api-strict>=2,!=2.1.1;python_version>="3.9"',
 ]
 docs = [
     "sphinx>=3.1.1",
@@ -444,6 +444,7 @@ select = [
 
 [tool.uv.sources]
 mpich = { index = "mpi4py" }
+openmpi = { index = "mpi4py" }
 
 [[tool.uv.index]]
 name = "mpi4py"

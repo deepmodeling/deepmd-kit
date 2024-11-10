@@ -90,7 +90,7 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
         # use UTC+0 time
         "time": str(datetime.datetime.now(tz=datetime.timezone.utc)),
     }
-    if filename_extension == ".dp":
+    if filename_extension in (".dp", ".hlo"):
         variable_counter = Counter()
         with h5py.File(filename, "w") as f:
             model_dict = traverse_model_dict(
@@ -141,7 +141,7 @@ def load_dp_model(filename: str) -> dict:
         The loaded model dict, including meta information.
     """
     filename_extension = Path(filename).suffix
-    if filename_extension == ".dp":
+    if filename_extension in {".dp", ".hlo"}:
         with h5py.File(filename, "r") as f:
             model_dict = json.loads(f.attrs["json"])
             model_dict = traverse_model_dict(model_dict, lambda x: f[x][()].copy())

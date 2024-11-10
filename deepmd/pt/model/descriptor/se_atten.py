@@ -49,6 +49,25 @@ from deepmd.utils.version import (
     check_version_compatibility,
 )
 
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_atten"):
+
+    def tabulate_fusion_se_atten(
+        argument0,
+        argument1,
+        argument2,
+        argument3,
+        argument4,
+        argument5,
+        argument6,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_atten is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for model compression for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_atten = tabulate_fusion_se_atten
+
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(DescriptorBlock):
@@ -189,6 +208,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self.ndescrpt = self.nnei * 4
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
+
         self.dpa1_attention = NeighborGatedAttention(
             self.attn_layer,
             self.nnei,
@@ -249,6 +269,16 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
 
+        # add for compression
+        self.compress = False
+        self.is_sorted = False
+        self.compress_info = nn.ParameterList(
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))]
+        )
+        self.compress_data = nn.ParameterList(
+            [nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))]
+        )
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
@@ -276,6 +306,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return self.dim_out
+
+    def get_dim_rot_mat_1(self) -> int:
+        """Returns the first dimension of the rotation matrix. The rotation is of shape dim_1 x 3."""
+        return self.filter_neuron[-1]
 
     def get_dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
@@ -384,7 +418,31 @@ class DescrptBlockSeAtten(DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
     ):
         self.exclude_types = exclude_types
+        self.is_sorted = len(self.exclude_types) == 0
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def enable_compression(
+        self,
+        table_data,
+        table_config,
+        lower,
+        upper,
+    ) -> None:
+        net = "filter_net"
+        self.compress_info[0] = torch.as_tensor(
+            [
+                lower[net],
+                upper[net],
+                upper[net] * table_config[0],
+                table_config[1],
+                table_config[2],
+                table_config[3],
+            ],
+            dtype=self.prec,
+            device="cpu",
+        )
+        self.compress_data[0] = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+        self.compress = True
 
     def forward(
         self,
@@ -450,20 +508,21 @@ class DescrptBlockSeAtten(DescriptorBlock):
         sw = torch.squeeze(sw, -1)
         # nf x nloc x nt -> nf x nloc x nnei x nt
         atype_tebd = extended_atype_embd[:, :nloc, :]
-        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)
+        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)  # i
         # nf x nall x nt
         nt = extended_atype_embd.shape[-1]
         atype_tebd_ext = extended_atype_embd
         # nb x (nloc x nnei) x nt
         index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
         # nb x (nloc x nnei) x nt
-        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)
+        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)  # j
         # nb x nloc x nnei x nt
         atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.view(nb * nloc, nnei)
+
         # nfnl x nnei x 4
         dmatrix = dmatrix.view(-1, self.nnei, 4)
         nfnl = dmatrix.shape[0]
@@ -482,33 +541,80 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ss = torch.concat([ss, nlist_tebd], dim=2)
             # nfnl x nnei x ng
             gg = self.filter_layers.networks[0](ss)
+            input_r = torch.nn.functional.normalize(
+                rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            # nfnl x 4 x ng
+            xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         elif self.tebd_input_mode in ["strip"]:
-            # nfnl x nnei x ng
-            gg_s = self.filter_layers.networks[0](ss)
-            assert self.filter_layers_strip is not None
-            if not self.type_one_side:
-                # nfnl x nnei x (tebd_dim * 2)
-                tt = torch.concat([nlist_tebd, atype_tebd], dim=2)
+            if self.compress:
+                ss = ss.reshape(-1, 1)
+                # nfnl x nnei x ng
+                # gg_s = self.filter_layers.networks[0](ss)
+                assert self.filter_layers_strip is not None
+                if not self.type_one_side:
+                    # nfnl x nnei x (tebd_dim * 2)
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)  # dynamic, index
+                else:
+                    # nfnl x nnei x tebd_dim
+                    tt = nlist_tebd
+                # nfnl x nnei x ng
+                gg_t = self.filter_layers_strip.networks[0](tt)
+                if self.smooth:
+                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+                # nfnl x nnei x ng
+                # gg = gg_s * gg_t + gg_s
+                gg_t = gg_t.reshape(-1, gg_t.size(-1))
+                # Convert all tensors to the required precision at once
+                ss, rr, gg_t = (t.to(self.prec) for t in (ss, rr, gg_t))
+                xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
+                    self.compress_data[0].contiguous(),
+                    self.compress_info[0].cpu().contiguous(),
+                    ss.contiguous(),
+                    rr.contiguous(),
+                    gg_t.contiguous(),
+                    self.filter_neuron[-1],
+                    self.is_sorted,
+                )[0]
+                # to make torchscript happy
+                gg = torch.empty(
+                    nframes,
+                    nloc,
+                    self.nnei,
+                    self.filter_neuron[-1],
+                    dtype=gg_t.dtype,
+                    device=gg_t.device,
+                )
             else:
-                # nfnl x nnei x tebd_dim
-                tt = nlist_tebd
-            # nfnl x nnei x ng
-            gg_t = self.filter_layers_strip.networks[0](tt)
-            if self.smooth:
-                gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-            # nfnl x nnei x ng
-            gg = gg_s * gg_t + gg_s
+                # nfnl x nnei x ng
+                gg_s = self.filter_layers.networks[0](ss)
+                assert self.filter_layers_strip is not None
+                if not self.type_one_side:
+                    # nfnl x nnei x (tebd_dim * 2)
+                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)  # dynamic, index
+                else:
+                    # nfnl x nnei x tebd_dim
+                    tt = nlist_tebd
+                # nfnl x nnei x ng
+                gg_t = self.filter_layers_strip.networks[0](tt)
+                if self.smooth:
+                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
+                # nfnl x nnei x ng
+                gg = gg_s * gg_t + gg_s
+                input_r = torch.nn.functional.normalize(
+                    rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
+                )
+                gg = self.dpa1_attention(
+                    gg, nlist_mask, input_r=input_r, sw=sw
+                )  # shape is [nframes*nloc, self.neei, out_size]
+                # nfnl x 4 x ng
+                xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         else:
             raise NotImplementedError
 
-        input_r = torch.nn.functional.normalize(
-            rr.reshape(-1, self.nnei, 4)[:, :, 1:4], dim=-1
-        )
-        gg = self.dpa1_attention(
-            gg, nlist_mask, input_r=input_r, sw=sw
-        )  # shape is [nframes*nloc, self.neei, out_size]
-        # nfnl x 4 x ng
-        xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         xyz_scatter = xyz_scatter / self.nnei
         xyz_scatter_1 = xyz_scatter.permute(0, 2, 1)
         rot_mat = xyz_scatter_1[:, :, 1:4]
@@ -516,9 +622,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         result = torch.matmul(
             xyz_scatter_1, xyz_scatter_2
         )  # shape is [nframes*nloc, self.filter_neuron[-1], self.axis_neuron]
+
         return (
             result.view(nframes, nloc, self.filter_neuron[-1] * self.axis_neuron),
-            gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1]),
+            gg.view(nframes, nloc, self.nnei, self.filter_neuron[-1])
+            if not self.compress
+            else None,
             dmatrix.view(nframes, nloc, self.nnei, 4)[..., 1:],
             rot_mat.view(nframes, nloc, self.filter_neuron[-1], 3),
             sw,

@@ -6,12 +6,17 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.fitting.dipole_fitting import DipoleFitting as DipoleFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -32,6 +37,21 @@ if INSTALLED_TF:
     from deepmd.tf.fit.dipole import DipoleFittingSeA as DipoleFittingTF
 else:
     DipoleFittingTF = object
+if INSTALLED_JAX:
+    from deepmd.jax.env import (
+        jnp,
+    )
+    from deepmd.jax.fitting.fitting import DipoleFittingNet as DipoleFittingJAX
+else:
+    DipoleFittingJAX = object
+if INSTALLED_ARRAY_API_STRICT:
+    import array_api_strict
+
+    from ...array_api_strict.fitting.fitting import (
+        DipoleFittingNet as DipoleFittingArrayAPIStrict,
+    )
+else:
+    DipoleFittingArrayAPIStrict = object
 from deepmd.utils.argcheck import (
     fitting_dipole,
 )
@@ -69,7 +89,11 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     tf_class = DipoleFittingTF
     dp_class = DipoleFittingDP
     pt_class = DipoleFittingPT
+    jax_class = DipoleFittingJAX
+    array_api_strict_class = DipoleFittingArrayAPIStrict
     args = fitting_dipole()
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     def setUp(self):
         CommonTest.setUp(self)
@@ -83,7 +107,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
         self.atype.sort()
 
     @property
-    def addtional_data(self) -> dict:
+    def additional_data(self) -> dict:
         (
             resnet_dt,
             precision,
@@ -142,6 +166,26 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.gr,
             None,
         )["dipole"]
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return np.asarray(
+            jax_obj(
+                jnp.asarray(self.inputs),
+                jnp.asarray(self.atype.reshape(1, -1)),
+                jnp.asarray(self.gr),
+                None,
+            )["dipole"]
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return to_numpy_array(
+            array_api_strict_obj(
+                array_api_strict.asarray(self.inputs),
+                array_api_strict.asarray(self.atype.reshape(1, -1)),
+                array_api_strict.asarray(self.gr),
+                None,
+            )["dipole"]
+        )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         if backend == self.RefBackend.TF:

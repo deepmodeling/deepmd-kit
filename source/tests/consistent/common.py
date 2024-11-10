@@ -69,11 +69,13 @@ __all__ = [
     "INSTALLED_ARRAY_API_STRICT",
 ]
 
+SKIP_FLAG = object()
+
 
 class CommonTest(ABC):
     data: ClassVar[dict]
     """Arguments data."""
-    addtional_data: ClassVar[dict] = {}
+    additional_data: ClassVar[dict] = {}
     """Additional data that will not be checked."""
     tf_class: ClassVar[Optional[type]]
     """TensorFlow model class."""
@@ -126,7 +128,7 @@ class CommonTest(ABC):
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
-        return cls(**data, **self.addtional_data)
+        return cls(**data, **self.additional_data)
 
     @abstractmethod
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
@@ -362,6 +364,8 @@ class CommonTest(ABC):
         data2 = dp_obj.serialize()
         np.testing.assert_equal(data1, data2)
         for rr1, rr2 in zip(ret1, ret2):
+            if rr1 is SKIP_FLAG or rr2 is SKIP_FLAG:
+                continue
             np.testing.assert_allclose(rr1, rr2, rtol=self.rtol, atol=self.atol)
             assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
 

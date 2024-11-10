@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from copy import (
-    deepcopy,
-)
 from typing import (
     Optional,
 )
@@ -30,7 +27,7 @@ DPZBLModel_ = make_model(DPZBLLinearEnergyAtomicModel)
 
 @BaseModel.register("zbl")
 class DPZBLModel(DPZBLModel_):
-    model_type = "ener"
+    model_type = "zbl"
 
     def __init__(
         self,
@@ -42,19 +39,19 @@ class DPZBLModel(DPZBLModel_):
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            "atom_energy": deepcopy(out_def_data["energy"]),
-            "energy": deepcopy(out_def_data["energy_redu"]),
+            "atom_energy": out_def_data["energy"],
+            "energy": out_def_data["energy_redu"],
         }
         if self.do_grad_r("energy"):
-            output_def["force"] = deepcopy(out_def_data["energy_derv_r"])
+            output_def["force"] = out_def_data["energy_derv_r"]
             output_def["force"].squeeze(-2)
         if self.do_grad_c("energy"):
-            output_def["virial"] = deepcopy(out_def_data["energy_derv_c_redu"])
+            output_def["virial"] = out_def_data["energy_derv_c_redu"]
             output_def["virial"].squeeze(-2)
-            output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
+            output_def["atom_virial"] = out_def_data["energy_derv_c"]
             output_def["atom_virial"].squeeze(-3)
         if "mask" in out_def_data:
-            output_def["mask"] = deepcopy(out_def_data["mask"])
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(

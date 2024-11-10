@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import itertools
 from typing import (
     Any,
@@ -460,7 +459,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("type", None)
@@ -555,7 +554,7 @@ class DescrptSeAArrayAPI(DescrptSeA):
             coord_ext, atype_ext, nlist, self.davg, self.dstd
         )
         nf, nloc, nnei, _ = rr.shape
-        sec = xp.asarray(self.sel_cumsum)
+        sec = self.sel_cumsum
 
         ng = self.neuron[-1]
         gr = xp.zeros([nf * nloc, ng, 4], dtype=self.dstd.dtype)

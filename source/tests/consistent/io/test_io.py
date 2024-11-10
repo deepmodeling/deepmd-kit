@@ -23,6 +23,7 @@ from deepmd.infer.deep_eval import (
 
 from ...utils import (
     CI,
+    DP_TEST_TF2_ONLY,
     TEST_DEVICE,
 )
 
@@ -72,18 +73,26 @@ class IOTest:
                 shutil.rmtree(ii)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
+    @unittest.skipIf(DP_TEST_TF2_ONLY, "Conflict with TF2 eager mode.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
-        for backend_name in ("tensorflow", "pytorch", "dpmodel", "jax"):
+        for backend_name, suffix_idx in (
+            ("tensorflow", 0),
+            ("pytorch", 0),
+            ("dpmodel", 0),
+            ("jax", 0),
+        ):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
                 if not backend.is_available():
                     continue
                 reference_data = copy.deepcopy(self.data)
-                self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
-                data = self.get_data_from_model(prefix + backend.suffixes[0])
-                data = copy.deepcopy(data)
-                reference_data = copy.deepcopy(self.data)
+                self.save_data_to_model(
+                    prefix + backend.suffixes[suffix_idx], reference_data
+                )
+                data = self.get_data_from_model(prefix + backend.suffixes[suffix_idx])
+                data = data.copy()
+                reference_data = self.data.copy()
                 # some keys are not expected to be not the same
                 for kk in [
                     "backend",
@@ -129,19 +138,48 @@ class IOTest:
             [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
             dtype=GLOBAL_NP_FLOAT_PRECISION,
         ).reshape(1, 9)
+        natoms = self.atype.shape[1]
+        nframes = self.atype.shape[0]
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
-        for backend_name in ("tensorflow", "pytorch", "dpmodel"):
+        for backend_name, suffix_idx in (
+            # unfortunately, jax2tf cannot work with tf v1 behaviors
+            ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
+            ("pytorch", 0),
+            ("dpmodel", 0),
+            ("jax", 0),
+        ):
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
-            self.save_data_to_model(prefix + backend.suffixes[0], reference_data)
-            deep_eval = DeepEval(prefix + backend.suffixes[0])
+            self.save_data_to_model(
+                prefix + backend.suffixes[suffix_idx], reference_data
+            )
+            deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
+            if deep_eval.get_dim_fparam() > 0:
+                fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
+            else:
+                fparam = None
+            if deep_eval.get_dim_aparam() > 0:
+                aparam = np.ones((nframes, natoms, deep_eval.get_dim_aparam()))
+            else:
+                aparam = None
             ret = deep_eval.eval(
                 self.coords,
                 self.box,
                 self.atype,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            rets.append(ret)
+            ret = deep_eval.eval(
+                self.coords,
+                self.box,
+                self.atype,
+                fparam=fparam,
+                aparam=aparam,
+                atomic=True,
             )
             rets.append(ret)
         for ret in rets[1:]:
@@ -181,6 +219,50 @@ class TestDeepPot(unittest.TestCase, IOTest):
                 "precision": "float64",
                 "atom_ener": [],
                 "seed": 1,
+            },
+        }
+        model = get_model(copy.deepcopy(model_def_script))
+        self.data = {
+            "model": model.serialize(),
+            "backend": "test",
+            "model_def_script": model_def_script,
+        }
+
+    def tearDown(self):
+        IOTest.tearDown(self)
+
+
+class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
+    def setUp(self):
+        model_def_script = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [20, 20],
+                "rcut_smth": 0.50,
+                "rcut": 6.00,
+                "neuron": [
+                    3,
+                    6,
+                ],
+                "resnet_dt": False,
+                "axis_neuron": 2,
+                "precision": "float64",
+                "type_one_side": True,
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "ener",
+                "neuron": [
+                    5,
+                    5,
+                ],
+                "resnet_dt": True,
+                "precision": "float64",
+                "atom_ener": [],
+                "seed": 1,
+                "numb_fparam": 2,
+                "numb_aparam": 2,
             },
         }
         model = get_model(copy.deepcopy(model_def_script))

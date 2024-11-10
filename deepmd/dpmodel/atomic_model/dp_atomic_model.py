@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Optional,
 )
@@ -85,6 +84,37 @@ class DPAtomicModel(BaseAtomicModel):
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
         return self.descriptor.need_sorted_nlist_for_lower()
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Call descriptor enable_compression().
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        self.descriptor.enable_compression(
+            min_nbor_dist,
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        )
 
     def forward_atomic(
         self,
@@ -177,7 +207,7 @@ class DPAtomicModel(BaseAtomicModel):
 
     @classmethod
     def deserialize(cls, data) -> "DPAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
         data.pop("type")

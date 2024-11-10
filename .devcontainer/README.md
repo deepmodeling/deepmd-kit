@@ -26,6 +26,11 @@ When calling and debuging LAMMPS with DeePMD-kit, use the following scripts inst
 - `.devcontainer/lmp`
 - `.devcontainer/gdb_lmp`
 
+Use the following scripts for `pytest` with LAMMPS:
+
+- `.devcontainer/pytest_lmp`
+- `.devcontainer/gdb_pytest_lmp`
+
 ## Rebuild
 
 Usually the Python package does not need to reinstall.

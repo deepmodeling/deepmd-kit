@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Any,
     Optional,
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -155,7 +155,7 @@ class DipoleFitting(GeneralFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "dipole"
@@ -207,6 +207,7 @@ class DipoleFitting(GeneralFitting):
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
 
         """
+        xp = array_api_compat.array_namespace(descriptor, atype)
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # (nframes, nloc, m1)
@@ -214,9 +215,11 @@ class DipoleFitting(GeneralFitting):
             self.var_name
         ]
         # (nframes * nloc, 1, m1)
-        out = out.reshape(-1, 1, self.embedding_width)
+        out = xp.reshape(out, (-1, 1, self.embedding_width))
         # (nframes * nloc, m1, 3)
-        gr = gr.reshape(nframes * nloc, -1, 3)
+        gr = xp.reshape(gr, (nframes * nloc, -1, 3))
         # (nframes, nloc, 3)
-        out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        # out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
+        out = out @ gr
+        out = xp.reshape(out, (nframes, nloc, 3))
         return {self.var_name: out}

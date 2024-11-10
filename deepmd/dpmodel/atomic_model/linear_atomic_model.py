@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Optional,
     Union,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.utils.nlist import (
@@ -34,6 +34,7 @@ from .pairtab_atomic_model import (
 )
 
 
+@BaseAtomicModel.register("linear")
 class LinearEnergyAtomicModel(BaseAtomicModel):
     """Linear model make linear combinations of several existing models.
 
@@ -68,7 +69,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self.models = models
         sub_model_type_maps = [md.get_type_map() for md in models]
         err_msg = []
-        self.mapping_list = []
+        mapping_list = []
         common_type_map = set(type_map)
         self.type_map = type_map
         for tpmp in sub_model_type_maps:
@@ -76,7 +77,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 err_msg.append(
                     f"type_map {tpmp} is not a subset of type_map {type_map}"
                 )
-            self.mapping_list.append(self.remap_atype(tpmp, self.type_map))
+            mapping_list.append(self.remap_atype(tpmp, self.type_map))
+        self.mapping_list = mapping_list
         assert len(err_msg) == 0, "\n".join(err_msg)
         self.mixed_types_list = [model.mixed_types() for model in self.models]
 
@@ -148,6 +150,38 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         )
         return [p[0] for p in zipped], [p[1] for p in zipped]
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Compress model.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        for model in self.models:
+            model.enable_compression(
+                min_nbor_dist,
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            )
+
     def forward_atomic(
         self,
         extended_coord,
@@ -179,8 +213,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         result_dict
             the result dict, defined by the fitting net output def.
         """
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape
-        extended_coord = extended_coord.reshape(nframes, -1, 3)
+        extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
             extended_coord,
@@ -211,10 +246,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     aparam,
                 )["energy"]
             )
-        self.weights = self._compute_weight(extended_coord, extended_atype, nlists_)
+        weights = self._compute_weight(extended_coord, extended_atype, nlists_)
 
         fit_ret = {
-            "energy": np.sum(np.stack(ener_list) * np.stack(self.weights), axis=0),
+            "energy": xp.sum(xp.stack(ener_list) * xp.stack(weights), axis=0),
         }  # (nframes, nloc, 1)
         return fit_ret
 
@@ -269,7 +304,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 2, 2)
         data.pop("@class", None)
         data.pop("type", None)
@@ -287,11 +322,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         nlists_: list[np.ndarray],
     ) -> list[np.ndarray]:
         """This should be a list of user defined weights that matches the number of models to be combined."""
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlists_)
         nmodels = len(self.models)
         nframes, nloc, _ = nlists_[0].shape
         # the dtype of weights is the interface data type.
         return [
-            np.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION) / nmodels
+            xp.ones((nframes, nloc, 1), dtype=GLOBAL_NP_FLOAT_PRECISION) / nmodels
             for _ in range(nmodels)
         ]
 
@@ -324,6 +360,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return False
 
 
+@BaseAtomicModel.register("zbl")
 class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
     """Model linearly combine a list of AtomicModels.
 
@@ -380,7 +417,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
     @classmethod
     def deserialize(cls, data) -> "DPZBLLinearEnergyAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         models = [
             BaseAtomicModel.get_class_by_type(model["type"]).deserialize(model)
@@ -408,6 +445,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
             self.sw_rmax > self.sw_rmin
         ), "The upper boundary `sw_rmax` must be greater than the lower boundary `sw_rmin`."
 
+        xp = array_api_compat.array_namespace(extended_coord, extended_atype)
         dp_nlist = nlists_[0]
         zbl_nlist = nlists_[1]
 
@@ -416,40 +454,40 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
 
         # use the larger rr based on nlist
         nlist_larger = zbl_nlist if zbl_nnei >= dp_nnei else dp_nlist
-        masked_nlist = np.clip(nlist_larger, 0, None)
+        masked_nlist = xp.clip(nlist_larger, 0, None)
         pairwise_rr = PairTabAtomicModel._get_pairwise_dist(
             extended_coord, masked_nlist
         )
 
-        numerator = np.sum(
-            np.where(
+        numerator = xp.sum(
+            xp.where(
                 nlist_larger != -1,
-                pairwise_rr * np.exp(-pairwise_rr / self.smin_alpha),
-                np.zeros_like(nlist_larger),
+                pairwise_rr * xp.exp(-pairwise_rr / self.smin_alpha),
+                xp.zeros_like(nlist_larger),
             ),
             axis=-1,
         )  # masked nnei will be zero, no need to handle
-        denominator = np.sum(
-            np.where(
+        denominator = xp.sum(
+            xp.where(
                 nlist_larger != -1,
-                np.exp(-pairwise_rr / self.smin_alpha),
-                np.zeros_like(nlist_larger),
+                xp.exp(-pairwise_rr / self.smin_alpha),
+                xp.zeros_like(nlist_larger),
             ),
             axis=-1,
         )  # handle masked nnei.
         with np.errstate(divide="ignore", invalid="ignore"):
             sigma = numerator / denominator
         u = (sigma - self.sw_rmin) / (self.sw_rmax - self.sw_rmin)
-        coef = np.zeros_like(u)
+        coef = xp.zeros_like(u)
         left_mask = sigma < self.sw_rmin
         mid_mask = (self.sw_rmin <= sigma) & (sigma < self.sw_rmax)
         right_mask = sigma >= self.sw_rmax
-        coef[left_mask] = 1
+        coef = xp.where(left_mask, xp.ones_like(coef), coef)
         with np.errstate(invalid="ignore"):
             smooth = -6 * u**5 + 15 * u**4 - 10 * u**3 + 1
-        coef[mid_mask] = smooth[mid_mask]
-        coef[right_mask] = 0
+        coef = xp.where(mid_mask, smooth, coef)
+        coef = xp.where(right_mask, xp.zeros_like(coef), coef)
         # to handle masked atoms
-        coef = np.where(sigma != 0, coef, np.zeros_like(coef))
+        coef = xp.where(sigma != 0, coef, xp.zeros_like(coef))
         self.zbl_weight = coef
-        return [1 - np.expand_dims(coef, -1), np.expand_dims(coef, -1)]
+        return [1 - xp.expand_dims(coef, -1), xp.expand_dims(coef, -1)]
