@@ -337,6 +337,17 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
 
+  if (padding_for_nloc != nloc_real) {
+  	padding_to_nall = nall_real * 1.1;
+	padding_for_nloc = nloc_real;
+  }
+  while (padding_to_nall < nall_real) {
+	  padding_to_nall *= 1.1;
+  }
+  // do padding
+  coord_double.resize(nframes*padding_to_nall*3,0.0);
+  atype.resize(nframes*padding_to_nall, -1);
+
   TFE_Op* op;
   if (atomic) {
     op = get_func_op(ctx, "call_lower_with_atomic_virial", func_vector, device,
@@ -348,11 +359,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<TFE_TensorHandle*> input_list(6);
   std::vector<TF_Tensor*> data_tensor(6);
   // coord
-  std::vector<int64_t> coord_shape = {nframes, nall_real, 3};
+  std::vector<int64_t> coord_shape = {nframes, padding_to_nall, 3};
   input_list[0] =
       add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
-  std::vector<int64_t> atype_shape = {nframes, nall_real};
+  std::vector<int64_t> atype_shape = {nframes, padding_to_nall};
   input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
   // nlist
   if (ago == 0) {
@@ -378,8 +389,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   }
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
-  std::vector<int64_t> mapping_shape = {nframes, nall_real};
-  std::vector<int64_t> mapping(nframes * nall_real, -1);
+  std::vector<int64_t> mapping_shape = {nframes, padding_to_nall};
+  std::vector<int64_t> mapping(nframes * padding_to_nall, -1);
   // pass mapping if it is given in the neighbor list
   if (lmp_list.mapping) {
     // assume nframes is 1
@@ -427,6 +438,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
                                        atom_energy_double.end());
   atom_virial = std::vector<VALUETYPE>(atom_virial_double.begin(),
                                        atom_virial_double.end());
+  force.resize(static_cast<size_t>(nframes) * nall_real * 3);
+  atom_virial.resize(static_cast<size_t>(nframes) * nall_real * 9);
 
   // nall atom_energy is required in the C++ API;
   // we always forget it!
