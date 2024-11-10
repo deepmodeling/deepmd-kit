@@ -2585,7 +2585,7 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
     ener.resize(numb_models);
     force.resize(numb_models);
     force_mag.resize(numb_models);
-    // virial.resize(numb_models);
+    virial.resize(numb_models);
     for (int i = 0; i < numb_models; i++) {
       ener[i] = energy_flat[i];
       force[i].resize(static_cast<size_t>(natoms) * 3);
