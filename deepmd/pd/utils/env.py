@@ -78,15 +78,14 @@ inter_nthreads, intra_nthreads = get_default_nthreads()
 
 def enable_prim(enable: bool = True):
     """Enable running program in primitive C++ API in eager/static mode."""
-    if enable:
-        from paddle.framework import (
-            core,
-        )
+    from paddle.framework import (
+        core,
+    )
 
-        core.set_prim_eager_enabled(True)
-        core._set_prim_all_enabled(True)
-        log = logging.getLogger(__name__)
-        log.info("Enable prim in eager and static mode.")
+    core.set_prim_eager_enabled(enable)
+    core._set_prim_all_enabled(enable)
+    log = logging.getLogger(__name__)
+    log.info(f"{'Enable' if enable else 'Disable'} prim in eager and static mode.")
 
 
 __all__ = [
