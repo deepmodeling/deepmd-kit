@@ -97,6 +97,12 @@ class DeepEval(DeepEvalBackend):
                 stablehlo_atomic_virial=model_data["@variables"][
                     "stablehlo_atomic_virial"
                 ].tobytes(),
+                stablehlo_no_ghost=model_data["@variables"][
+                    "stablehlo_no_ghost"
+                ].tobytes(),
+                stablehlo_atomic_virial_no_ghost=model_data["@variables"][
+                    "stablehlo_atomic_virial_no_ghost"
+                ].tobytes(),
                 model_def_script=model_data["model_def_script"],
                 **model_data["constants"],
             )

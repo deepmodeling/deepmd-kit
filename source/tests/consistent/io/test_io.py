@@ -73,14 +73,12 @@ class IOTest:
                 shutil.rmtree(ii)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
-    @unittest.skipIf(DP_TEST_TF2_ONLY, "Conflict with TF2 eager mode.")
     def test_data_equal(self):
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
-            ("tensorflow", 0),
+            ("tensorflow", 0) if not DP_TEST_TF2_ONLY else ("jax", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
-            ("jax", 0),
         ):
             with self.subTest(backend_name=backend_name):
                 backend = Backend.get_backend(backend_name)()
@@ -142,13 +140,16 @@ class IOTest:
         nframes = self.atype.shape[0]
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         rets = []
+        rets_nopbc = []
         for backend_name, suffix_idx in (
             # unfortunately, jax2tf cannot work with tf v1 behaviors
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
             ("pytorch", 0),
             ("dpmodel", 0),
-            ("jax", 0),
+            ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),
         ):
+            if backend_name is None:
+                continue
             backend = Backend.get_backend(backend_name)()
             if not backend.is_available():
                 continue
@@ -182,12 +183,38 @@ class IOTest:
                 atomic=True,
             )
             rets.append(ret)
+            ret = deep_eval.eval(
+                self.coords,
+                None,
+                self.atype,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            rets_nopbc.append(ret)
+            ret = deep_eval.eval(
+                self.coords,
+                None,
+                self.atype,
+                fparam=fparam,
+                aparam=aparam,
+                atomic=True,
+            )
+            rets_nopbc.append(ret)
         for ret in rets[1:]:
             for vv1, vv2 in zip(rets[0], ret):
                 if np.isnan(vv2).all():
                     # expect all nan if not supported
                     continue
                 np.testing.assert_allclose(vv1, vv2, rtol=1e-12, atol=1e-12)
+
+        for idx, ret in enumerate(rets_nopbc[1:]):
+            for vv1, vv2 in zip(rets_nopbc[0], ret):
+                if np.isnan(vv2).all():
+                    # expect all nan if not supported
+                    continue
+                np.testing.assert_allclose(
+                    vv1, vv2, rtol=1e-12, atol=1e-12, err_msg=f"backend {idx+1}"
+                )
 
 
 class TestDeepPot(unittest.TestCase, IOTest):
