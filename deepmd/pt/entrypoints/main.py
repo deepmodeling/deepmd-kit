@@ -565,6 +565,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             stride=FLAGS.step,
             extrapolate=FLAGS.extrapolate,
             check_frequency=FLAGS.frequency,
+            training_script=FLAGS.training_script,
         )
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")
