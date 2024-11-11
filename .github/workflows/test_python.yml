@@ -96,8 +96,23 @@ jobs:
       with:
         pattern: split-${{ matrix.python }}-*
         merge-multiple: true
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
     - name: Combine test durations
-      run: jq -s add .test_durations_* > .test_durations
+      # Below line causes OOM
+      # run: jq -s add .test_durations_* > .test_durations
+      run: |
+        from glob import glob
+
+        contents = []
+        for fn in glob(".test_durations_*"):
+            with open(fn) as f:
+                contents.append(f.read().strip().strip("{}"))
+        with open(".test_durations", "w") as f:
+            f.write("{" + ",".join(contents) + "}")
+      shell: python
+
   pass:
     name: Pass testing Python
     needs: [testpython, update_durations]
