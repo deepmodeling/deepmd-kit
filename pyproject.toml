@@ -405,8 +405,10 @@ convention = "numpy"
 banned-module-level-imports = [
     "deepmd.tf",
     "deepmd.pt",
+    "deepmd.jax",
     "tensorflow",
     "torch",
+    "jax",
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
@@ -419,7 +421,9 @@ banned-module-level-imports = [
 "deepmd/jax/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
+"source/tests/jax/**" = ["TID253"]
 "source/tests/universal/pt/**" = ["TID253"]
+"source/jax2tf_tests/**" = ["TID253"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected

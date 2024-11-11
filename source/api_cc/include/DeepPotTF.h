@@ -10,13 +10,13 @@ namespace deepmd {
 /**
  * @brief TensorFlow implementation for Deep Potential.
  **/
-class DeepPotTF : public DeepPotBase {
+class DeepPotTF : public DeepPotBackend {
  public:
   /**
    * @brief DP constructor without initialization.
    **/
   DeepPotTF();
-  ~DeepPotTF();
+  virtual ~DeepPotTF();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
