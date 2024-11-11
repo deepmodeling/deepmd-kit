@@ -170,6 +170,49 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
+    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_dpa2_auto(self, sel_mock):
+        sel_mock.return_value = self.mock_min_nbor_dist, [25]
+
+        jdata = {
+            "model": {
+                "descriptor": {
+                    "type": "dpa2",
+                    "repinit": {
+                        "rcut": 6.0,
+                        "nsel": "auto",
+                        "three_body_rcut": 4.0,
+                        "three_body_sel": "auto",
+                    },
+                    "repformer": {
+                        "rcut": 4.0,
+                        "nsel": "auto",
+                    },
+                }
+            },
+            "training": {"training_data": {}},
+        }
+        expected_out = {
+            "model": {
+                "descriptor": {
+                    "type": "dpa2",
+                    "repinit": {
+                        "rcut": 6.0,
+                        "nsel": 28,
+                        "three_body_rcut": 4.0,
+                        "three_body_sel": 28,
+                    },
+                    "repformer": {
+                        "rcut": 4.0,
+                        "nsel": 28,
+                    },
+                }
+            },
+            "training": {"training_data": {}},
+        }
+        jdata = update_sel(jdata)
+        self.assertEqual(jdata, expected_out)
+
     def test_skip_frozen(self):
         jdata = {
             "model": {

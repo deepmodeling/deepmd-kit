@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Any,
     Optional,
@@ -156,7 +155,7 @@ class DipoleFitting(GeneralFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "dipole"

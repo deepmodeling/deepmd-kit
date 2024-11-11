@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from copy import (
-    deepcopy,
-)
 from typing import (
     Optional,
 )
@@ -40,19 +37,19 @@ class DipoleModel(DPModelCommon, DPDOSModel_):
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            "dipole": deepcopy(out_def_data["dipole"]),
-            "global_dipole": deepcopy(out_def_data["dipole_redu"]),
+            "dipole": out_def_data["dipole"],
+            "global_dipole": out_def_data["dipole_redu"],
         }
         if self.do_grad_r("dipole"):
-            output_def["force"] = deepcopy(out_def_data["dipole_derv_r"])
+            output_def["force"] = out_def_data["dipole_derv_r"]
             output_def["force"].squeeze(-2)
         if self.do_grad_c("dipole"):
-            output_def["virial"] = deepcopy(out_def_data["dipole_derv_c_redu"])
+            output_def["virial"] = out_def_data["dipole_derv_c_redu"]
             output_def["virial"].squeeze(-2)
-            output_def["atom_virial"] = deepcopy(out_def_data["dipole_derv_c"])
+            output_def["atom_virial"] = out_def_data["dipole_derv_c"]
             output_def["atom_virial"].squeeze(-3)
         if "mask" in out_def_data:
-            output_def["mask"] = deepcopy(out_def_data["mask"])
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(

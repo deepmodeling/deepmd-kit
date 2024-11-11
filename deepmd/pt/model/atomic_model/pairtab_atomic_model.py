@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Callable,
     Optional,
@@ -195,7 +194,7 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     @classmethod
     def deserialize(cls, data) -> "PairTabAtomicModel":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
         data.pop("@class", None)

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     Optional,
     Union,
@@ -111,7 +110,7 @@ class PropertyFittingNet(InvarFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("dim_out")
         data.pop("var_name")

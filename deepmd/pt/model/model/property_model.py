@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from copy import (
-    deepcopy,
-)
 from typing import (
     Optional,
 )
@@ -40,11 +37,11 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            "atom_property": deepcopy(out_def_data["property"]),
-            "property": deepcopy(out_def_data["property_redu"]),
+            "atom_property": out_def_data["property"],
+            "property": out_def_data["property_redu"],
         }
         if "mask" in out_def_data:
-            output_def["mask"] = deepcopy(out_def_data["mask"])
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(

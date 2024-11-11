@@ -8,9 +8,6 @@ from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
-from deepmd.dpmodel.descriptor.se_e2_a import (
-    DescrptSeA,
-)
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
 )
@@ -39,16 +36,13 @@ def get_standard_model(data: dict) -> EnergyModel:
     data : dict
         The data to construct the model.
     """
-    descriptor_type = data["descriptor"].pop("type")
     data["descriptor"]["type_map"] = data["type_map"]
+    data["descriptor"]["ntypes"] = len(data["type_map"])
     fitting_type = data["fitting_net"].pop("type")
     data["fitting_net"]["type_map"] = data["type_map"]
-    if descriptor_type == "se_e2_a":
-        descriptor = DescrptSeA(
-            **data["descriptor"],
-        )
-    else:
-        raise ValueError(f"Unknown descriptor type {descriptor_type}")
+    descriptor = BaseDescriptor(
+        **data["descriptor"],
+    )
     if fitting_type == "ener":
         fitting = EnergyFittingNet(
             ntypes=descriptor.get_ntypes(),

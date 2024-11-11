@@ -37,6 +37,7 @@ def get_standard_model(data: dict):
     data = deepcopy(data)
     descriptor_type = data["descriptor"].pop("type")
     data["descriptor"]["type_map"] = data["type_map"]
+    data["descriptor"]["ntypes"] = len(data["type_map"])
     fitting_type = data["fitting_net"].pop("type")
     data["fitting_net"]["type_map"] = data["type_map"]
     descriptor = BaseDescriptor.get_class_by_type(descriptor_type)(

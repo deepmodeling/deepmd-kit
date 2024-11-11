@@ -189,6 +189,10 @@ class DeepPotJAX : public DeepPotBase {
   std::vector<int64_t> sel;
   // number of neighbors
   int nnei;
+  // padding to nall
+  int padding_to_nall = 0;
+  // padding for nloc
+  int padding_for_nloc = 0;
   /**  TF C API objects.
    * @{
    */

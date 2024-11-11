@@ -940,7 +940,9 @@ def dpa2_repinit_args():
     # repinit args
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
-    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_nsel = 'Maximally possible number of selected neighbors. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_neuron = (
         "Number of neurons in each hidden layers of the embedding net."
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
@@ -972,7 +974,9 @@ def dpa2_repinit_args():
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
         "a skip connection is built."
     )
-    doc_three_body_sel = "Maximally possible number of selected neighbors in the three-body representation."
+    doc_three_body_sel = 'Maximally possible number of selected neighbors in the three-body representation. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_three_body_rcut = "The cut-off radius in the three-body representation."
     doc_three_body_rcut_smth = "Where to start smoothing in the three-body representation. For example the 1/r term is smoothed from `three_body_rcut` to `three_body_rcut_smth`."
 
@@ -980,7 +984,7 @@ def dpa2_repinit_args():
         # repinit args
         Argument("rcut", float, doc=doc_rcut),
         Argument("rcut_smth", float, doc=doc_rcut_smth),
-        Argument("nsel", int, doc=doc_nsel),
+        Argument("nsel", [int, str], doc=doc_nsel),
         Argument(
             "neuron",
             list,
@@ -1066,7 +1070,11 @@ def dpa2_repinit_args():
             doc=doc_three_body_rcut_smth,
         ),
         Argument(
-            "three_body_sel", int, optional=True, default=40, doc=doc_three_body_sel
+            "three_body_sel",
+            [int, str],
+            optional=True,
+            default=40,
+            doc=doc_three_body_sel,
         ),
     ]
 
@@ -1076,7 +1084,9 @@ def dpa2_repformer_args():
     # repformer args
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
-    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_nsel = 'Maximally possible number of selected neighbors. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_nlayers = "The number of repformer layers."
     doc_g1_dim = "The dimension of invariant single-atom representation."
     doc_g2_dim = "The dimension of invariant pair-atom representation."
@@ -1139,7 +1149,7 @@ def dpa2_repformer_args():
         # repformer args
         Argument("rcut", float, doc=doc_rcut),
         Argument("rcut_smth", float, doc=doc_rcut_smth),
-        Argument("nsel", int, doc=doc_nsel),
+        Argument("nsel", [int, str], doc=doc_nsel),
         Argument(
             "nlayers",
             int,
