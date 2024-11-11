@@ -378,21 +378,21 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
   }
-  std::vector<int64_t> nlist_shape = {nframes, nloc_real, nnei};
-  std::vector<int64_t> nlist(static_cast<size_t>(nframes) * nloc_real * nnei);
+  size_t max_size = 0;
+  for (const auto& row : nlist_data.jlist) {
+    max_size = std::max(max_size, row.size());
+  }
+  std::vector<int64_t> nlist_shape = {nframes, nloc_real, max_size};
+  std::vector<int64_t> nlist(static_cast<size_t>(nframes) * nloc_real *
+                             max_size);
   // pass nlist_data.jlist to nlist
   for (int ii = 0; ii < nloc_real; ii++) {
-    for (int jj = 0; jj < nnei; jj++) {
+    for (int jj = 0; jj < max_size; jj++) {
       if (jj < nlist_data.jlist[ii].size()) {
         nlist[ii * nnei + jj] = nlist_data.jlist[ii][jj];
       } else {
         nlist[ii * nnei + jj] = -1;
       }
-    }
-    if (nnei < nlist_data.jlist[ii].size()) {
-      std::cerr << "WARNING: nnei < nlist_data.jlist[ii].size(); JAX backend "
-                   "never handles this."
-                << std::endl;
     }
   }
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
