@@ -16,7 +16,8 @@ repos:
           (?x)^(
               source/tests/infer/dipolecharge_e.pbtxt|
               source/tests/infer/deeppolar_new.pbtxt|
-              source/tests/infer/deeppot_dpa.savedmodel/saved_model.pb
+              source/tests/infer/deeppot_dpa.savedmodel/saved_model.pb|
+              source/tests/infer/deeppot_sea.savedmodel/saved_model.pb
           )$
       - id: check-merge-conflict
       - id: check-symlinks

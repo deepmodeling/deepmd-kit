@@ -1,1 +1,1 @@
-deepmd_test_models*/
+!*.savedmodel/**/*.pb
