@@ -183,8 +183,8 @@ def get_zbl_model(model_params):
     filepath = model_params["use_srtab"]
     pt_model = PairTabAtomicModel(
         filepath,
-        model_params["descriptor"]["rcut"],
-        model_params["descriptor"]["sel"],
+        descriptor.get_rcut(),
+        descriptor.get_sel(),
         type_map=model_params["type_map"],
     )
 
