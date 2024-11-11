@@ -72,8 +72,6 @@ inline TFE_Op* get_func_op(TFE_Context* ctx,
   if (func == NULL) {
     throw std::runtime_error("Function " + func_name + " not found");
   }
-  TFE_ContextAddFunction(ctx, func, status);
-  check_status(status);
   const char* real_func_name = TF_FunctionName(func);
   // execute the function
   TFE_Op* op = TFE_NewOp(ctx, real_func_name, status);
@@ -261,6 +259,14 @@ void deepmd::DeepPotJAX::init(const std::string& model,
 #else
   device = "/cpu:0";
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+
+  // add all functions, otherwise the function will not be found
+  // even for tf.cond
+  for (size_t i = 0; i < func_vector.size(); i++) {
+    TF_Function* func = func_vector[i];
+    TFE_ContextAddFunction(ctx, func, status);
+    check_status(status);
+  }
 
   rcut = get_scalar<double>(ctx, "get_rcut", func_vector, device, status);
   dfparam =
