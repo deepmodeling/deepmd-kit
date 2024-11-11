@@ -841,6 +841,10 @@ class StandardModel(Model):
             Name suffix to identify this descriptor
         """
         if self.typeebd is not None:
+            if not self.descrpt.explicit_ntypes:
+                raise RuntimeError(
+                    "type embedding for descriptors without mixed types is not supported in other backends"
+                )
             self.descrpt.type_embedding = self.typeebd
             self.fitting.tebd_dim = self.typeebd.neuron[-1]
         if self.spin is not None:

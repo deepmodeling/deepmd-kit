@@ -19,7 +19,7 @@
         ],
         "axis_neuron": 12,
         "activation_function": "tanh",
-        "three_body_sel": 40,
+        "three_body_sel": 47,
         "three_body_rcut": 4.0,
         "three_body_rcut_smth": 3.5,
         "use_three_body": true
@@ -27,7 +27,7 @@
       "repformer": {
         "rcut": 4.0,
         "rcut_smth": 3.5,
-        "nsel": 40,
+        "nsel": 47,
         "nlayers": 6,
         "g1_dim": 128,
         "g2_dim": 32,

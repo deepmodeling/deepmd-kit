@@ -73,6 +73,10 @@ from .spin_model import (
 
 
 def _get_standard_model_components(model_params, ntypes):
+    if "type_embedding" in model_params:
+        raise ValueError(
+            "In the PyTorch backend, type_embedding is not at the model level, but within the descriptor. See type embedding documentation for details."
+        )
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
