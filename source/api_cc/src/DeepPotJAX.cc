@@ -17,6 +17,8 @@
 #include "device.h"
 #include "errors.h"
 
+#define PADDING_FACTOR 1.05
+
 inline void check_status(TF_Status* status) {
   if (TF_GetCode(status) != TF_OK) {
     throw deepmd::deepmd_exception("TensorFlow C API Error: " +
@@ -338,15 +340,15 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
 
   if (padding_for_nloc != nloc_real) {
-  	padding_to_nall = nall_real * 1.1;
-	padding_for_nloc = nloc_real;
+    padding_to_nall = nall_real * PADDING_FACTOR;
+    padding_for_nloc = nloc_real;
   }
   while (padding_to_nall < nall_real) {
-	  padding_to_nall *= 1.1;
+    padding_to_nall *= PADDING_FACTOR;
   }
   // do padding
-  coord_double.resize(nframes*padding_to_nall*3,0.0);
-  atype.resize(nframes*padding_to_nall, -1);
+  coord_double.resize(nframes * padding_to_nall * 3, 0.0);
+  atype.resize(nframes * padding_to_nall, -1);
 
   TFE_Op* op;
   if (atomic) {
