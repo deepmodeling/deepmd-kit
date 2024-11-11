@@ -390,9 +390,9 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   for (int ii = 0; ii < nloc_real; ii++) {
     for (int jj = 0; jj < max_size; jj++) {
       if (jj < nlist_data.jlist[ii].size()) {
-        nlist[ii * nnei + jj] = nlist_data.jlist[ii][jj];
+        nlist[ii * max_size + jj] = nlist_data.jlist[ii][jj];
       } else {
-        nlist[ii * nnei + jj] = -1;
+        nlist[ii * max_size + jj] = -1;
       }
     }
   }
