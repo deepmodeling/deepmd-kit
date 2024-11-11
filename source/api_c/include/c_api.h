@@ -12,7 +12,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 24
+#define DP_C_API_VERSION 25
 
 /**
  * @brief Neighbor list.
@@ -83,7 +83,7 @@ extern void DP_NlistSetMask(DP_Nlist* nl, int mask);
  *
  * @param nl Neighbor list.
  * @param mapping mapping from all atoms to real atoms, in size nall.
- * @since API version 24
+ * @since API version 25
  *
  **/
 extern void DP_NlistSetMapping(DP_Nlist* nl, int* mapping);
