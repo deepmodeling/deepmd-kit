@@ -71,7 +71,8 @@ class TestInferDeepPotAJAX : public ::testing::Test {
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot_sea.savedmodel";
 
-    dp.init(file_name);
+    // the model is generated for the CPU, so always use the CPU
+    dp.init(file_name, -1);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -93,6 +94,121 @@ class TestInferDeepPotAJAX : public ::testing::Test {
 };
 
 TYPED_TEST_SUITE(TestInferDeepPotAJAX, ValueTypes);
+
+TYPED_TEST(TestInferDeepPotAJAX, cpu_build_nlist) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute(ener, force, virial, coord, atype, box);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+TYPED_TEST(TestInferDeepPotAJAX, cpu_build_nlist_numfv) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  class MyModel : public EnergyModelTest<VALUETYPE> {
+    deepmd::DeepPot& mydp;
+    const std::vector<int> atype;
+
+   public:
+    MyModel(deepmd::DeepPot& dp_, const std::vector<int>& atype_)
+        : mydp(dp_), atype(atype_) {};
+    virtual void compute(double& ener,
+                         std::vector<VALUETYPE>& force,
+                         std::vector<VALUETYPE>& virial,
+                         const std::vector<VALUETYPE>& coord,
+                         const std::vector<VALUETYPE>& box) {
+      mydp.compute(ener, force, virial, coord, atype, box);
+    }
+  };
+  MyModel model(dp, atype);
+  model.test_f(coord, box);
+  model.test_v(coord, box);
+  std::vector<VALUETYPE> box_(box);
+  box_[1] -= 0.4;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[2] += 0.5;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[4] += 0.2;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[3] -= 0.3;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[6] -= 0.7;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+  box_[7] += 0.6;
+  model.test_f(coord, box_);
+  model.test_v(coord, box_);
+}
+
+TYPED_TEST(TestInferDeepPotAJAX, cpu_build_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
+  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
 
 TYPED_TEST(TestInferDeepPotAJAX, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;

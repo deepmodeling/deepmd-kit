@@ -6,6 +6,8 @@
 #include <tensorflow/c/c_api.h>
 #include <tensorflow/c/eager/c_api.h>
 
+#include <array>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <numeric>
@@ -228,6 +230,13 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   status = TF_NewStatus();
 
   sessionopts = TF_NewSessionOptions();
+  int num_intra_nthreads, num_inter_nthreads;
+  get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
+  // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
+  std::array<std::uint8_t, 4> config = {
+      {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
+       static_cast<std::uint8_t>(num_inter_nthreads)}};
+  TF_SetConfig(sessionopts, config.data(), config.size(), status);
   TF_Buffer* runopts = NULL;
 
   const char* tags = "serve";
@@ -250,8 +259,8 @@ void deepmd::DeepPotJAX::init(const std::string& model,
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
   int gpu_num;
   DPGetDeviceCount(gpu_num);  // check current device environment
-  DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
-  if (gpu_num > 0) {
+  if (gpu_num > 0 && gpu_rank >= 0) {
+    DPErrcheck(DPSetDevice(gpu_rank % gpu_num));
     device = "/gpu:" + std::to_string(gpu_rank % gpu_num);
   } else {
     device = "/cpu:0";
@@ -298,6 +307,153 @@ deepmd::DeepPotJAX::~DeepPotJAX() {
       TF_DeleteFunction(func_vector[i]);
     }
   }
+}
+
+template <typename VALUETYPE>
+void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
+                                 std::vector<VALUETYPE>& force_,
+                                 std::vector<VALUETYPE>& virial,
+                                 std::vector<VALUETYPE>& atom_energy_,
+                                 std::vector<VALUETYPE>& atom_virial_,
+                                 const std::vector<VALUETYPE>& dcoord,
+                                 const std::vector<int>& datype,
+                                 const std::vector<VALUETYPE>& box,
+                                 const std::vector<VALUETYPE>& fparam,
+                                 const std::vector<VALUETYPE>& aparam_,
+                                 const bool atomic) {
+  std::vector<VALUETYPE> coord, force, aparam, atom_energy, atom_virial;
+  std::vector<double> ener_double, force_double, virial_double,
+      atom_energy_double, atom_virial_double;
+  std::vector<int> atype, fwd_map, bkw_map;
+  int nghost_real, nall_real, nloc_real;
+  int nall = datype.size();
+  // nlist passed to the model
+  int nframes = nall > 0 ? (dcoord.size() / 3 / nall) : 1;
+  int nghost = 0;
+
+  select_real_atoms_coord(coord, atype, aparam, nghost_real, fwd_map, bkw_map,
+                          nall_real, nloc_real, dcoord, datype, aparam_, nghost,
+                          ntypes, nframes, daparam, nall, false);
+
+  if (nloc_real == 0) {
+    // no real atoms, fill 0 for all outputs
+    // this can prevent a Xla error
+    ener.resize(nframes, 0.0);
+    force_.resize(static_cast<size_t>(nframes) * nall * 3, 0.0);
+    virial.resize(static_cast<size_t>(nframes) * 9, 0.0);
+    atom_energy_.resize(static_cast<size_t>(nframes) * nall, 0.0);
+    atom_virial_.resize(static_cast<size_t>(nframes) * nall * 9, 0.0);
+    return;
+  }
+
+  // cast coord, fparam, and aparam to double - I think it's useless to have a
+  // float model interface
+  std::vector<double> coord_double(coord.begin(), coord.end());
+  std::vector<double> box_double(box.begin(), box.end());
+  std::vector<double> fparam_double(fparam.begin(), fparam.end());
+  std::vector<double> aparam_double(aparam.begin(), aparam.end());
+
+  TFE_Op* op;
+  if (atomic) {
+    op = get_func_op(ctx, "call_with_atomic_virial", func_vector, device,
+                     status);
+  } else {
+    op = get_func_op(ctx, "call_without_atomic_virial", func_vector, device,
+                     status);
+  }
+  std::vector<TFE_TensorHandle*> input_list(5);
+  std::vector<TF_Tensor*> data_tensor(5);
+  // coord
+  std::vector<int64_t> coord_shape = {nframes, nloc_real, 3};
+  input_list[0] =
+      add_input(op, coord_double, coord_shape, data_tensor[0], status);
+  // atype
+  std::vector<int64_t> atype_shape = {nframes, nloc_real};
+  input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
+  // box
+  int box_size = box_double.size() > 0 ? 3 : 0;
+  std::vector<int64_t> box_shape = {nframes, box_size, box_size};
+  input_list[2] = add_input(op, box_double, box_shape, data_tensor[2], status);
+  // fparam
+  std::vector<int64_t> fparam_shape = {nframes, dfparam};
+  input_list[3] =
+      add_input(op, fparam_double, fparam_shape, data_tensor[3], status);
+  // aparam
+  std::vector<int64_t> aparam_shape = {nframes, nloc_real, daparam};
+  input_list[4] =
+      add_input(op, aparam_double, aparam_shape, data_tensor[4], status);
+  // execute the function
+  int nretvals = 6;
+  TFE_TensorHandle* retvals[nretvals];
+
+  TFE_Execute(op, retvals, &nretvals, status);
+  check_status(status);
+
+  // copy data
+  // for atom virial, the order is:
+  // Identity_15 energy -1, -1, 1
+  // Identity_16 energy_derv_c -1, -1, 1, 9 (may pop)
+  // Identity_17 energy_derv_c_redu -1, 1, 9
+  // Identity_18 energy_derv_r -1, -1, 1, 3
+  // Identity_19 energy_redu -1, 1
+  // Identity_20 mask (int32) -1, -1
+  //
+  // for no atom virial, the order is:
+  // Identity_15 energy -1, -1, 1
+  // Identity_16 energy_derv_c -1, 1, 9
+  // Identity_17 energy_derv_r -1, -1, 1, 3
+  // Identity_18 energy_redu -1, 1
+  // Identity_19 mask (int32) -1, -1
+  //
+  // it seems the order is the alphabet order?
+  // not sure whether it is safe to assume the order
+  if (atomic) {
+    tensor_to_vector(ener_double, retvals[4], status);
+    tensor_to_vector(force_double, retvals[3], status);
+    tensor_to_vector(virial_double, retvals[2], status);
+    tensor_to_vector(atom_energy_double, retvals[0], status);
+    tensor_to_vector(atom_virial_double, retvals[1], status);
+  } else {
+    tensor_to_vector(ener_double, retvals[3], status);
+    tensor_to_vector(force_double, retvals[2], status);
+    tensor_to_vector(virial_double, retvals[1], status);
+    tensor_to_vector(atom_energy_double, retvals[0], status);
+  }
+
+  // cast back to VALUETYPE
+  ener = std::vector<ENERGYTYPE>(ener_double.begin(), ener_double.end());
+  force = std::vector<VALUETYPE>(force_double.begin(), force_double.end());
+  virial = std::vector<VALUETYPE>(virial_double.begin(), virial_double.end());
+  atom_energy = std::vector<VALUETYPE>(atom_energy_double.begin(),
+                                       atom_energy_double.end());
+  atom_virial = std::vector<VALUETYPE>(atom_virial_double.begin(),
+                                       atom_virial_double.end());
+  force.resize(static_cast<size_t>(nframes) * nall_real * 3);
+  atom_virial.resize(static_cast<size_t>(nframes) * nall_real * 9);
+
+  // nall atom_energy is required in the C++ API;
+  // we always forget it!
+  atom_energy.resize(static_cast<size_t>(nframes) * nall_real, 0.0);
+
+  force_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
+  atom_energy_.resize(static_cast<size_t>(nframes) * fwd_map.size());
+  atom_virial_.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+  select_map<VALUETYPE>(force_, force, bkw_map, 3, nframes, fwd_map.size(),
+                        nall_real);
+  select_map<VALUETYPE>(atom_energy_, atom_energy, bkw_map, 1, nframes,
+                        fwd_map.size(), nall_real);
+  select_map<VALUETYPE>(atom_virial_, atom_virial, bkw_map, 9, nframes,
+                        fwd_map.size(), nall_real);
+
+  // cleanup input_list, etc
+  for (size_t i = 0; i < 5; i++) {
+    TFE_DeleteTensorHandle(input_list[i]);
+    TF_DeleteTensor(data_tensor[i]);
+  }
+  for (size_t i = 0; i < nretvals; i++) {
+    TFE_DeleteTensorHandle(retvals[i]);
+  }
+  TFE_DeleteOp(op);
 }
 
 template <typename VALUETYPE>
@@ -523,7 +679,8 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<double>& fparam,
                                   const std::vector<double>& aparam,
                                   const bool atomic) {
-  throw deepmd::deepmd_exception("not implemented");
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<float>& force,
@@ -536,7 +693,8 @@ void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   const std::vector<float>& fparam,
                                   const std::vector<float>& aparam,
                                   const bool atomic) {
-  throw deepmd::deepmd_exception("not implemented");
+  compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+          fparam, aparam, atomic);
 }
 void deepmd::DeepPotJAX::computew(std::vector<double>& ener,
                                   std::vector<double>& force,
