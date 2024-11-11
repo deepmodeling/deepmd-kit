@@ -382,7 +382,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   for (const auto& row : nlist_data.jlist) {
     max_size = std::max(max_size, row.size());
   }
-  std::vector<int64_t> nlist_shape = {nframes, nloc_real, max_size};
+  std::vector<int64_t> nlist_shape = {nframes, nloc_real,
+                                      static_cast<int64_t>(max_size)};
   std::vector<int64_t> nlist(static_cast<size_t>(nframes) * nloc_real *
                              max_size);
   // pass nlist_data.jlist to nlist
