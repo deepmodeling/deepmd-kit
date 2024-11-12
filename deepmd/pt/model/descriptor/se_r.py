@@ -62,10 +62,10 @@ from .base_descriptor import (
 if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_r"):
 
     def tabulate_fusion_se_r(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: int,
     ) -> list[torch.Tensor]:
         raise NotImplementedError(
             "tabulate_fusion_se_r is not available since customized PyTorch OP library is not built when freezing the model. "
