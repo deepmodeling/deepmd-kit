@@ -105,12 +105,12 @@ jobs:
       run: |
         from glob import glob
 
-        with open(".test_durations", "w") as fw:
-            fw.write("{")
+        with open(".test_durations", "w") as f:
+            f.write("{")
             for fn in glob(".test_durations_*"):
                 with open(fn) as f:
-                    fw.write(f.read().strip().strip("{}"))
-            fw.write("}")
+                    f.write(f.read().strip().strip("{}"))
+            f.write("}")
       shell: python
 
   pass:
