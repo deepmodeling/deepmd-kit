@@ -52,13 +52,13 @@ from deepmd.utils.version import (
 if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_atten"):
 
     def tabulate_fusion_se_atten(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
-        argument4,
-        argument5,
-        argument6,
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: torch.Tensor,
+        argument4: torch.Tensor,
+        argument5: int,
+        argument6: bool,
     ) -> list[torch.Tensor]:
         raise NotImplementedError(
             "tabulate_fusion_se_atten is not available since customized PyTorch OP library is not built when freezing the model. "
