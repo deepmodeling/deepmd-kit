@@ -172,6 +172,11 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
             return tuple(
                 safe_cast_array(vv, self.precision, "global") for vv in returned_tensor
             )
+        elif isinstance(returned_tensor, dict):
+            return {
+                kk: safe_cast_array(vv, self.precision, "global")
+                for kk, vv in returned_tensor.items()
+            }
         else:
             return safe_cast_array(returned_tensor, self.precision, "global")
 
