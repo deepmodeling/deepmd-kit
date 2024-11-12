@@ -213,7 +213,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             tmp_arr = ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
             tmp_arr = xp.where(atom_mask[:, :, None], tmp_arr, xp.zeros_like(tmp_arr))
             ret_dict[kk] = xp.reshape(tmp_arr, out_shape)
-        ret_dict["mask"] = atom_mask
+        ret_dict["mask"] = xp.astype(atom_mask, xp.int32)
 
         return ret_dict
 
