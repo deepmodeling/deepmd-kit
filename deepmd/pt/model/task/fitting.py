@@ -506,7 +506,7 @@ class GeneralFitting(Fitting):
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
-        mask = self.emask(atype).bool()
+        mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
         outs = torch.where(mask[:, :, None], outs, 0.0)
         return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
