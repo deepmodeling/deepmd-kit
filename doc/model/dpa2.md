@@ -26,6 +26,8 @@ When using the JAX backend, 2 or more MPI ranks are not supported. One must set 
 atom_modify map yes
 ```
 
+See the example `examples/water/lmp/jax_dpa2.lammps`.
+
 ## Data format
 
 DPA-2 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
