@@ -22,6 +22,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
+    PRECISION_DICT,
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.tabulate import (
@@ -311,6 +312,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
+        self.prec = PRECISION_DICT[precision]
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable

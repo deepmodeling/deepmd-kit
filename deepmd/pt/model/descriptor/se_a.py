@@ -118,6 +118,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         super().__init__()
         self.type_map = type_map
         self.compress = False
+        self.prec = PRECISION_DICT[precision]
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,

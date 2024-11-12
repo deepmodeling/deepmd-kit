@@ -161,6 +161,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             smooth=smooth,
             seed=child_seed(seed, 1),
         )
+        self.prec = PRECISION_DICT[precision]
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
         self.smooth = smooth
