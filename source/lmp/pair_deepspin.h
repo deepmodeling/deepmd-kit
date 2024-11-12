@@ -5,18 +5,18 @@
 
 #ifdef PAIR_CLASS
 
-PairStyle(deepmd, PairDeepMD)
+PairStyle(deepspin, PairDeepSpin)
 
 #else
 
-#ifndef LMP_PAIR_NNP_H
-#define LMP_PAIR_NNP_H
+#ifndef LMP_PAIR_NNP_SPIN_H
+#define LMP_PAIR_NNP_SPIN_H
 
 #ifdef DP_USE_CXX_API
 #ifdef LMPPLUGIN
-#include "DeepPot.h"
+#include "DeepSpin.h"
 #else
-#include "deepmd/DeepPot.h"
+#include "deepmd/DeepSpin.h"
 #endif
 namespace deepmd_compat = deepmd;
 #else
@@ -37,13 +37,13 @@ namespace deepmd_compat = deepmd::hpp;
 #define FLOAT_PREC double
 
 namespace LAMMPS_NS {
-class CommBrickDeepMD : public CommBrick {
-  friend class PairDeepMD;
+class CommBrickDeepSpin : public CommBrick {
+  friend class PairDeepSpin;
 };
-class PairDeepMD : public PairDeepBaseModel {
+class PairDeepSpin : public PairDeepBaseModel {
  public:
-  PairDeepMD(class LAMMPS *);
-  ~PairDeepMD() override;
+  PairDeepSpin(class LAMMPS *);
+  ~PairDeepSpin() override;
   void settings(int, char **) override;
   void coeff(int, char **) override;
   void compute(int, int) override;
@@ -51,11 +51,12 @@ class PairDeepMD : public PairDeepBaseModel {
   void unpack_reverse_comm(int, int *, double *) override;
 
  protected:
-  deepmd_compat::DeepPot deep_pot;
-  deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
+  deepmd_compat::DeepSpin deep_spin;
+  deepmd_compat::DeepSpinModelDevi deep_spin_model_devi;
+  std::vector<std::vector<double> > all_force_mag;
 
  private:
-  CommBrickDeepMD *commdata_;
+  CommBrickDeepSpin *commdata_;
 };
 
 }  // namespace LAMMPS_NS
