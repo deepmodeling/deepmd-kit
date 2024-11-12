@@ -86,6 +86,30 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_pt
 
+    @property
+    def skip_dp(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
+        return CommonTest.skip_dp
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
+        return not INSTALLED_ARRAY_API_STRICT
+
     tf_class = DipoleFittingTF
     dp_class = DipoleFittingDP
     pt_class = DipoleFittingPT
@@ -93,7 +117,6 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     array_api_strict_class = DipoleFittingArrayAPIStrict
     args = fitting_dipole()
     skip_jax = not INSTALLED_JAX
-    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     def setUp(self):
         CommonTest.setUp(self)

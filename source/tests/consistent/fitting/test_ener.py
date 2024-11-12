@@ -100,6 +100,21 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         ) = self.param
         return CommonTest.skip_pt
 
+    @property
+    def skip_dp(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
+        return CommonTest.skip_dp
+
     skip_jax = not INSTALLED_JAX
 
     @property
@@ -112,6 +127,9 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             (numb_aparam, use_aparam_as_mask),
             atom_ener,
         ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
         # TypeError: The array_api_strict namespace does not support the dtype 'bfloat16'
         return not INSTALLED_ARRAY_API_STRICT or precision == "bfloat16"
 

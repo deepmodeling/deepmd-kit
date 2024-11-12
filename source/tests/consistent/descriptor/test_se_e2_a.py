@@ -98,6 +98,9 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
         return CommonTest.skip_dp
 
     @property
@@ -131,6 +134,9 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
         return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeATF

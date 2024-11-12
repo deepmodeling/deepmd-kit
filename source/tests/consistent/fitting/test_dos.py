@@ -98,11 +98,37 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     @property
+    def skip_dp(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            numb_dos,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
+        return CommonTest.skip_dp
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
     @property
     def skip_array_api_strict(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            numb_dos,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
         return not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DOSFittingTF

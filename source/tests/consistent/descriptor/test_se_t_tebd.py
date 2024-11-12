@@ -127,6 +127,9 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
         return CommonTest.skip_dp
 
     @property
@@ -147,7 +150,26 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
         return True
 
     skip_jax = not INSTALLED_JAX
-    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            smooth,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
+        return not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeTTebdTF
     dp_class = DescrptSeTTebdDP

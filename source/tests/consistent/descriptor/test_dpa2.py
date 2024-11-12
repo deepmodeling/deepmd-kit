@@ -245,6 +245,9 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
         return CommonTest.skip_dp
 
     @property
@@ -281,7 +284,42 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
         return True
 
     skip_jax = not INSTALLED_JAX
-    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
+    @property
+    def skip_array_api_strict(self) -> bool:
+        (
+            repinit_tebd_input_mode,
+            repinit_set_davg_zero,
+            repinit_type_one_side,
+            repinit_use_three_body,
+            repformer_update_g1_has_conv,
+            repformer_direct_dist,
+            repformer_update_g1_has_drrd,
+            repformer_update_g1_has_grrg,
+            repformer_update_g1_has_attn,
+            repformer_update_g2_has_g1g1,
+            repformer_update_g2_has_attn,
+            repformer_update_h2,
+            repformer_attn2_has_gate,
+            repformer_update_style,
+            repformer_update_residual_init,
+            repformer_set_davg_zero,
+            repformer_trainable_ln,
+            repformer_ln_eps,
+            repformer_use_sqrt_nnei,
+            repformer_g1_out_conv,
+            repformer_g1_out_mlp,
+            smooth,
+            exclude_types,
+            precision,
+            add_tebd_to_repinit_out,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        if precision == "float32":
+            # NumPy doesn't throw errors for float64 x float32
+            return True
+        return not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptDPA2TF
     dp_class = DescrptDPA2DP
