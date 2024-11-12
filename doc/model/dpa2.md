@@ -28,5 +28,6 @@ Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard
 
 ## Model compression
 
-Model compression is supported, but only the `repinit` part is compressed.
-The effect is limited.
+Model compression is supported when {ref}`repinit/tebd_input_mode <model[standard]/descriptor[dpa2]/repinit/tebd_input_mode>` is `strip`, but only the `repinit` part is compressed.
+An example is given in `examples/water/dpa2/input_torch_compressible.json`.
+The performance improvement will be limited if other parts are more expensive.
