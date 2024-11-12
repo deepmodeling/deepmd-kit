@@ -105,12 +105,12 @@ jobs:
       run: |
         from glob import glob
 
+        contents = []
+        for fn in glob(".test_durations_*"):
+            with open(fn) as f:
+                contents.append(f.read().strip().strip("{}"))
         with open(".test_durations", "w") as f:
-            f.write("{")
-            for fn in glob(".test_durations_*"):
-                with open(fn) as f:
-                    f.write(f.read().strip().strip("{}"))
-            f.write("}")
+            f.write("{" + ",".join(contents) + "}")
       shell: python
 
   pass:
