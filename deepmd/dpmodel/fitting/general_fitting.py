@@ -448,18 +448,15 @@ class GeneralFitting(NativeOP, BaseFitting):
                     mask, atom_property, xp.zeros_like(atom_property)
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
-            outs = xp.astype(outs, get_xp_precision(xp, "global"))
-            for type_i in range(self.ntypes):
-                outs = outs + self.bias_atom_e[type_i, ...]
         else:
             outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
-            outs = xp.astype(outs, get_xp_precision(xp, "global"))
-            outs += xp.reshape(
-                xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
-                [nf, nloc, net_dim_out],
-            )
+        outs = xp.astype(outs, get_xp_precision(xp, "global"))
+        outs += xp.reshape(
+            xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
+            [nf, nloc, net_dim_out],
+        )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
