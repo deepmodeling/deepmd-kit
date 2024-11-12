@@ -92,9 +92,6 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
         ) = self.param
-        if precision == "float32":
-            # NumPy doesn't throw errors for float64 x float32
-            return True
         return not type_one_side or CommonTest.skip_dp
 
     @property
@@ -115,9 +112,6 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
             excluded_types,
             precision,
         ) = self.param
-        if precision == "float32":
-            # NumPy doesn't throw errors for float64 x float32
-            return True
         return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptSeRTF

@@ -89,9 +89,6 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        if precision == "float32":
-            # NumPy doesn't throw errors for float64 x float32
-            return True
         return CommonTest.skip_dp
 
     @property
@@ -104,19 +101,7 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return env_protection != 0.0 or excluded_types
 
-    @property
-    def skip_array_api_strict(self) -> bool:
-        (
-            resnet_dt,
-            excluded_types,
-            precision,
-            env_protection,
-        ) = self.param
-        if precision == "float32":
-            # NumPy doesn't throw errors for float64 x float32
-            return True
-        return not INSTALLED_ARRAY_API_STRICT
-
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_jax = not INSTALLED_JAX
 
     tf_class = DescrptSeTTF

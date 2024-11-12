@@ -178,9 +178,6 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        if precision == "float32":
-            # NumPy doesn't throw errors for float64 x float32
-            return True
         return CommonTest.skip_dp or self.is_meaningless_zero_attention_layer_tests(
             attn_layer,
             attn_dotr,
@@ -241,9 +238,6 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             use_econf_tebd,
             use_tebd_bias,
         ) = self.param
-        if precision == "float32":
-            # NumPy doesn't throw errors for float64 x float32
-            return True
         return (
             not INSTALLED_ARRAY_API_STRICT
             or self.is_meaningless_zero_attention_layer_tests(
