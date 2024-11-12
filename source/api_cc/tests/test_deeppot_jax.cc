@@ -71,8 +71,7 @@ class TestInferDeepPotAJAX : public ::testing::Test {
   void SetUp() override {
     std::string file_name = "../../tests/infer/deeppot_sea.savedmodel";
 
-    // the model is generated for the CPU, so always use the CPU
-    dp.init(file_name, -1);
+    dp.init(file_name);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());

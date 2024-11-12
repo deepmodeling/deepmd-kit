@@ -62,4 +62,4 @@ class Tester:
         self.wrapper = ModelWrapper(self.model)  # inference only
         if JIT:
             self.wrapper = torch.jit.script(self.wrapper)
-        self.wrapper.load_state_dict(state_dict)
+        self.wrapper.load_state_dict(state_dict, strict=False)

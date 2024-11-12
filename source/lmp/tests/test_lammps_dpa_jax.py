@@ -19,12 +19,6 @@ from write_lmp_data import (
     write_lmp_data,
 )
 
-if os.environ.get("CUDA_VISIBLE_DEVICES", "") != "":
-    pytest.skip(
-        reason="The model is generated with CPU",
-        allow_module_level=True,
-    )
-
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot-1.pbtxt"
 )
