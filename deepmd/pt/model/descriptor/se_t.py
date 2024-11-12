@@ -373,7 +373,18 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.seat.forward(nlist, coord_ext, atype_ext, None, mapping)
+        # cast the input to internal precsion
+        coord_ext = coord_ext.to(dtype=self.prec)
+        g1, rot_mat, g2, h2, sw = self.seat.forward(
+            nlist, coord_ext, atype_ext, None, mapping
+        )
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            None,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     def set_stat_mean_and_stddev(
         self,
@@ -801,7 +812,6 @@ class DescrptBlockSeT(DescriptorBlock):
             protection=self.env_protection,
         )
         dmatrix = dmatrix.view(-1, self.nnei, 4)
-        dmatrix = dmatrix.to(dtype=self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         result = torch.zeros(
@@ -832,8 +842,6 @@ class DescrptBlockSeT(DescriptorBlock):
                 env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
                 if self.compress:
                     ebd_env_ij = env_ij.view(-1, 1)
-                    ebd_env_ij = ebd_env_ij.to(dtype=self.prec)
-                    env_ij = env_ij.to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
                         compress_data_ii.contiguous(),
                         compress_info_ii.cpu().contiguous(),
@@ -853,7 +861,7 @@ class DescrptBlockSeT(DescriptorBlock):
         # xyz_scatter /= (self.nnei * self.nnei)
         result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            result,
             None,
             None,
             None,

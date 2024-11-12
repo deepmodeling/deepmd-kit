@@ -403,7 +403,11 @@ class GeneralFitting(Fitting):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
     ):
-        xx = descriptor
+        # cast the input to internal precsion
+        xx = descriptor.to(self.prec)
+        fparam = fparam.to(self.prec) if fparam is not None else None
+        aparam = aparam.to(self.prec) if aparam is not None else None
+
         if self.remove_vaccum_contribution is not None:
             # TODO: compute the input for vaccm when remove_vaccum_contribution is set
             # Ideally, the input for vacuum should be computed;
@@ -477,10 +481,12 @@ class GeneralFitting(Fitting):
             device=descriptor.device,
         )  # jit assertion
         if self.mixed_types:
-            atom_property = self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
+            atom_property = self.filter_layers.networks[0](xx)
             if xx_zeros is not None:
                 atom_property -= self.filter_layers.networks[0](xx_zeros)
-            outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
+            outs = (
+                outs + atom_property + self.bias_atom_e[atype]
+            )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
@@ -495,12 +501,12 @@ class GeneralFitting(Fitting):
                     ):
                         atom_property -= ll(xx_zeros)
                 atom_property = atom_property + self.bias_atom_e[type_i]
-                atom_property = atom_property * mask
+                atom_property = torch.where(mask, atom_property, 0.0)
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
-        mask = self.emask(atype)
+        mask = self.emask(atype).bool()
         # nf x nloc x nod
-        outs = outs * mask[:, :, None]
+        outs = torch.where(mask[:, :, None], outs, 0.0)
         return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}

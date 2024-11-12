@@ -54,11 +54,6 @@ class TestDescriptorDPA2(unittest.TestCase):
     def setUp(self):
         (self.dtype, self.type_one_side) = self.param
         if self.dtype == "float32":
-            self.skipTest("FP32 has bugs:")
-            # ../../../../deepmd/pt/model/descriptor/repformer_layer.py:521: in forward
-            # torch.matmul(attnw.unsqueeze(-2), gg1v).squeeze(-2).view(nb, nloc, nh * ni)
-            # E       RuntimeError: expected scalar type Float but found Double
-        if self.dtype == "float32":
             self.atol = 1e-5
         elif self.dtype == "float64":
             self.atol = 1e-10

@@ -200,7 +200,6 @@ class MLPLayer(nn.Module):
             The output.
         """
         ori_prec = xx.dtype
-        xx = xx.to(self.prec)
         yy = (
             torch.matmul(xx, self.matrix) + self.bias
             if self.bias is not None
@@ -215,7 +214,6 @@ class MLPLayer(nn.Module):
                 yy += torch.concat([xx, xx], dim=-1)
             else:
                 yy = yy
-        yy = yy.to(ori_prec)
         return yy
 
     def serialize(self) -> dict:

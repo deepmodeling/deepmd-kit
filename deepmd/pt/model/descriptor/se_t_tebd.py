@@ -441,12 +441,14 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # cast the input to internal precsion
+        extended_coord = extended_coord.to(dtype=self.prec)
         del mapping
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
-        g1, g2, h2, rot_mat, sw = self.se_ttebd(
+        g1, _, _, _, sw = self.se_ttebd(
             nlist,
             extended_coord,
             extended_atype,
@@ -456,7 +458,13 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
 
-        return g1, rot_mat, g2, h2, sw
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            None,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     @classmethod
     def update_sel(
@@ -540,12 +548,8 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self.reinit_exclude(exclude_types)
 
         wanted_shape = (self.ntypes, self.nnei, 4)
-        mean = torch.zeros(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
-        stddev = torch.ones(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
+        mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
+        stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.tebd_dim_input = self.tebd_dim * 2
@@ -849,7 +853,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         # nf x nl x ng
         result = res_ij.view(nframes, nloc, self.filter_neuron[-1])
         return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            result,
             None,
             None,
             None,
