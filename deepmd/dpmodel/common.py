@@ -10,6 +10,7 @@ from typing import (
     Any,
     Callable,
     Optional,
+    overload,
 )
 
 import array_api_compat
@@ -177,9 +178,15 @@ def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+@overload
 def safe_cast_array(
     input: np.ndarray, from_precision: str, to_precision: str
-) -> np.ndarray:
+) -> np.ndarray: ...
+@overload
+def safe_cast_array(input: None, from_precision: str, to_precision: str) -> None: ...
+def safe_cast_array(
+    input: Optional[np.ndarray], from_precision: str, to_precision: str
+) -> Optional[np.ndarray]:
     """Convert an array from a precision to another precision.
 
     If input is not an array or without the specific precision, the method will not
