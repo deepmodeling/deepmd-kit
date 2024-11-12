@@ -77,7 +77,7 @@ The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.m
 
 The type of the descriptor is set by the key {ref}`type <model[standard]/descriptor/type>`.
 
-## Tyoe embedding
+## Type embedding
 
 Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[se_e3_tebd]/tebd_dim>` argument.
 

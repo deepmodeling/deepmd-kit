@@ -85,7 +85,7 @@ And the `loss` section in the training input script should be set as follows.
   }
 ```
 
-## Tyoe embedding
+## Type embedding
 
 Same as [`se_e2_a`](./train-se-e2-a.md).
 

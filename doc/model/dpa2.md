@@ -22,7 +22,7 @@ otherwise the communication between GPU cards falls back to the slower CPU imple
 
 DPA-2 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
 
-## Tyoe embedding
+## Type embedding
 
 Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[dpa2]/tebd_dim>` argument.
 
