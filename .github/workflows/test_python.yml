@@ -62,6 +62,7 @@ jobs:
       env:
         NUM_WORKERS: 0
         DP_TEST_TF2_ONLY: 1
+        DP_DTYPE_PROMOTION_STRICT: 1
       if: matrix.group == 1
     - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations

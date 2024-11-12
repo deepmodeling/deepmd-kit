@@ -3,8 +3,12 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from functools import (
+    wraps,
+)
 from typing import (
     Any,
+    Callable,
     Optional,
 )
 
@@ -114,6 +118,94 @@ def to_numpy_array(x: Any) -> Optional[np.ndarray]:
         # to fix BufferError: Cannot export readonly array since signalling readonly is unsupported by DLPack.
         x = xp.asarray(x, copy=True)
         return np.from_dlpack(x)
+
+
+def cast_precision(func: Callable[..., Any]) -> Callable[..., Any]:
+    """A decorator that casts and casts back the input
+    and output tensor of a method.
+
+    The decorator should be used in a classmethod.
+
+    The decorator will do the following thing:
+    (1) It casts input arrays from the global precision
+    to precision defined by property `precision`.
+    (2) It casts output arrays from `precision` to
+    the global precision.
+    (3) It checks inputs and outputs and only casts when
+    input or output is an array and its dtype matches
+    the global precision and `precision`, respectively.
+    If it does not match (e.g. it is an integer), the decorator
+    will do nothing on it.
+
+    The decorator supports the array API.
+
+    Returns
+    -------
+    Callable
+        a decorator that casts and casts back the input and
+        output array of a method
+
+    Examples
+    --------
+    >>> class A:
+    ...     def __init__(self):
+    ...         self.precision = "float32"
+    ...
+    ...     @cast_precision
+    ...     def f(x: Array, y: Array) -> Array:
+    ...         return x**2 + y
+    """
+
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        # only convert tensors
+        returned_tensor = func(
+            self,
+            *[safe_cast_array(vv, "global", self.precision) for vv in args],
+            **{
+                kk: safe_cast_array(vv, "global", self.precision)
+                for kk, vv in kwargs.items()
+            },
+        )
+        if isinstance(returned_tensor, tuple):
+            return tuple(
+                safe_cast_array(vv, self.precision, "global") for vv in returned_tensor
+            )
+        else:
+            return safe_cast_array(returned_tensor, self.precision, "global")
+
+    return wrapper
+
+
+def safe_cast_array(
+    input: np.ndarray, from_precision: str, to_precision: str
+) -> np.ndarray:
+    """Convert an array from a precision to another precision.
+
+    If input is not an array or without the specific precision, the method will not
+    cast it.
+
+    Array API is supported.
+
+    Parameters
+    ----------
+    input : tf.Tensor
+        Input tensor
+    from_precision : str
+        Array data type that is casted from
+    to_precision : str
+        Array data type that casts to
+
+    Returns
+    -------
+    tf.Tensor
+        casted Tensor
+    """
+    if array_api_compat.is_array_api_obj(input):
+        xp = array_api_compat.array_namespace(input)
+        if input.dtype == get_xp_precision(xp, from_precision):
+            return xp.astype(input, get_xp_precision(xp, to_precision))
+    return input
 
 
 __all__ = [

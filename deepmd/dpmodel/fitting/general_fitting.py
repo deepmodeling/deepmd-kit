@@ -364,6 +364,11 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
+        descriptor = xp.astype(descriptor, get_xp_precision(xp, self.precision))
+        if fparam is not None:
+            fparam = xp.astype(fparam, get_xp_precision(xp, self.precision))
+        if aparam is not None:
+            aparam = xp.astype(aparam, get_xp_precision(xp, self.precision))
         nf, nloc, nd = descriptor.shape
         net_dim_out = self._net_out_dim()
         # check input dim
@@ -439,18 +444,24 @@ class GeneralFitting(NativeOP, BaseFitting):
                 ):
                     assert xx_zeros is not None
                     atom_property -= self.nets[(type_i,)](xx_zeros)
-                atom_property = atom_property + self.bias_atom_e[type_i, ...]
-                atom_property = atom_property * xp.astype(mask, atom_property.dtype)
+                atom_property = xp.where(
+                    mask, atom_property, xp.zeros_like(atom_property)
+                )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+            outs = xp.astype(outs, get_xp_precision(xp, "global"))
+            for type_i in range(self.ntypes):
+                outs = outs + self.bias_atom_e[type_i, ...]
         else:
-            outs = self.nets[()](xx) + xp.reshape(
+            outs = self.nets[()](xx)
+            if xx_zeros is not None:
+                outs -= self.nets[()](xx_zeros)
+            outs = xp.astype(outs, get_xp_precision(xp, "global"))
+            outs += xp.reshape(
                 xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
                 [nf, nloc, net_dim_out],
             )
-            if xx_zeros is not None:
-                outs -= self.nets[()](xx_zeros)
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
-        outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
+        outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
         return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}

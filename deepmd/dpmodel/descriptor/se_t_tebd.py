@@ -16,7 +16,7 @@ from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
-    get_xp_precision,
+    cast_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -168,6 +168,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
+        self.precision = precision
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -287,6 +288,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         obj["davg"] = obj["davg"][remap_index]
         obj["dstd"] = obj["dstd"][remap_index]
 
+    @cast_precision
     def call(
         self,
         coord_ext,
@@ -741,7 +743,6 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         res_ij = res_ij * (1.0 / float(self.nnei) / float(self.nnei))
         # nf x nl x ng
         result = xp.reshape(res_ij, (nf, nloc, self.filter_neuron[-1]))
-        result = xp.astype(result, get_xp_precision(xp, "global"))
         return (
             result,
             None,
