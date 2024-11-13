@@ -10,6 +10,9 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.common import (
+    cast_precision,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -203,6 +206,7 @@ class InvarFitting(GeneralFitting):
             ]
         )
 
+    @cast_precision
     def call(
         self,
         descriptor: np.ndarray,

@@ -364,11 +364,6 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
-        descriptor = xp.astype(descriptor, get_xp_precision(xp, self.precision))
-        if fparam is not None:
-            fparam = xp.astype(fparam, get_xp_precision(xp, self.precision))
-        if aparam is not None:
-            aparam = xp.astype(aparam, get_xp_precision(xp, self.precision))
         nf, nloc, nd = descriptor.shape
         net_dim_out = self._net_out_dim()
         # check input dim
@@ -452,13 +447,14 @@ class GeneralFitting(NativeOP, BaseFitting):
             outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
-        outs = xp.astype(outs, get_xp_precision(xp, "global"))
         outs += xp.reshape(
-            xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
+            xp.take(
+                xp.astype(self.bias_atom_e, outs.dtype), xp.reshape(atype, [-1]), axis=0
+            ),
             [nf, nloc, net_dim_out],
         )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
-        return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}
+        return {self.var_name: xp.astype(outs, descriptor.dtype)}
