@@ -124,3 +124,9 @@ Notice: Model compression for the `se_atten_v2` descriptor is exclusively design
 - relu6
 - softplus
 - sigmoid
+
+## Requirements of installation {{ pytorch_icon }}
+
+When compressing models in the PyTorch backend, the customized OP library for the Python interface must be installed when [freezing the model](../freeze/freeze.md).
+
+The customized OP library for the Python interface can be installed by setting environment variable {envvar}`DP_ENABLE_PYTORCH` to `1` during [installation](../install/install-from-source.md).

@@ -20,7 +20,7 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 ### Highlighted features
 
 - **interfaced with multiple backends**, including TensorFlow, PyTorch, and JAX, the most popular deep learning frameworks, making the training process highly automatic and efficient.
-- **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, including LAMMPS, i-PI, AMBER, CP2K, GROMACS, OpenMM, and ABUCUS.
+- **interfaced with high-performance classical MD and quantum (path-integral) MD packages**, including LAMMPS, i-PI, AMBER, CP2K, GROMACS, OpenMM, and ABACUS.
 - **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems, including organic molecules, metals, semiconductors, insulators, etc.
 - **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
 - **highly modularized**, easy to adapt to different descriptors for deep learning-based potential energy models.
@@ -74,6 +74,7 @@ See [our latest paper](https://doi.org/10.1063/5.0155600) for details of all fea
 
 - Multiple backends supported. Add PyTorch and JAX backends.
 - The DPA-2 model.
+- Plugin mechanisms for external models.
 
 ## Install and use DeePMD-kit
 

@@ -80,8 +80,8 @@ def get_zbl_model(data: dict) -> DPZBLModel:
     filepath = data["use_srtab"]
     pt_model = PairTabAtomicModel(
         filepath,
-        data["descriptor"]["rcut"],
-        data["descriptor"]["sel"],
+        descriptor.get_rcut(),
+        descriptor.get_sel(),
         type_map=data["type_map"],
     )
 

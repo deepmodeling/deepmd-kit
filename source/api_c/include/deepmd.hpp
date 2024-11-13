@@ -863,6 +863,11 @@ struct InputNlist {
    * @brief Set mask for this neighbor list.
    */
   void set_mask(int mask) { DP_NlistSetMask(nl, mask); };
+  /**
+   * @brief Set mapping for this neighbor list.
+   * @param mapping mapping from all atoms to real atoms, in size nall.
+   */
+  void set_mapping(int *mapping) { DP_NlistSetMapping(nl, mapping); };
 };
 
 /**

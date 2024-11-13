@@ -27,7 +27,13 @@ jobs:
         mpi: mpich
     - uses: lukka/get-cmake@latest
     - run: python -m pip install uv
-    - run: source/install/uv_with_retry.sh pip install --system tensorflow
+    - name: Install Python dependencies
+      run: |
+        source/install/uv_with_retry.sh pip install --system tensorflow-cpu
+        export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py
+    - name: Convert models
+      run: source/tests/infer/convert-models.sh
     - name: Download libtorch
       run: |
          wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
@@ -47,12 +53,6 @@ jobs:
         CMAKE_GENERATOR: Ninja
         CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
     # test lammps
-    - run: |
-        export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp] mpi4py
-      env:
-        DP_BUILD_TESTING: 1
-      if: ${{ !matrix.check_memleak }}
     - run: pytest --cov=deepmd source/lmp/tests
       env:
         OMP_NUM_THREADS: 1

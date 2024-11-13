@@ -12,7 +12,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 24
+#define DP_C_API_VERSION 25
 
 /**
  * @brief Neighbor list.
@@ -31,7 +31,7 @@ extern DP_Nlist* DP_NewNlist(int inum_,
                              int* ilist_,
                              int* numneigh_,
                              int** firstneigh_);
-/*
+/**
  * @brief Create a new neighbor list with communication capabilities.
  * @details This function extends DP_NewNlist by adding support for parallel
  * communication, allowing the neighbor list to be used in distributed
@@ -68,7 +68,7 @@ extern DP_Nlist* DP_NewNlist_comm(int inum_,
                                   int* recvproc,
                                   void* world);
 
-/*
+/**
  * @brief Set mask for a neighbor list.
  *
  * @param nl Neighbor list.
@@ -77,6 +77,16 @@ extern DP_Nlist* DP_NewNlist_comm(int inum_,
  *
  **/
 extern void DP_NlistSetMask(DP_Nlist* nl, int mask);
+
+/**
+ * @brief Set mapping for a neighbor list.
+ *
+ * @param nl Neighbor list.
+ * @param mapping mapping from all atoms to real atoms, in size nall.
+ * @since API version 25
+ *
+ **/
+extern void DP_NlistSetMapping(DP_Nlist* nl, int* mapping);
 
 /**
  * @brief Delete a neighbor list.
