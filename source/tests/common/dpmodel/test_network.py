@@ -8,6 +8,9 @@ from copy import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    get_xp_precision,
+)
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
     FittingNet,
@@ -46,7 +49,9 @@ class TestNativeLayer(unittest.TestCase):
             inp_shap = [ni]
             if ashp is not None:
                 inp_shap = ashp + inp_shap
-            inp = np.arange(np.prod(inp_shap)).reshape(inp_shap)
+            inp = np.arange(
+                np.prod(inp_shap), dtype=get_xp_precision(np, prec)
+            ).reshape(inp_shap)
             np.testing.assert_allclose(nl0.call(inp), nl1.call(inp))
 
     def test_shape_error(self):
@@ -168,7 +173,7 @@ class TestEmbeddingNet(unittest.TestCase):
                 resnet_dt=idt,
             )
             en1 = EmbeddingNet.deserialize(en0.serialize())
-            inp = np.ones([ni])
+            inp = np.ones([ni], dtype=get_xp_precision(np, prec))
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
 
@@ -191,7 +196,7 @@ class TestFittingNet(unittest.TestCase):
                 bias_out=bo,
             )
             en1 = FittingNet.deserialize(en0.serialize())
-            inp = np.ones([ni])
+            inp = np.ones([ni], dtype=get_xp_precision(np, prec))
             en0.call(inp)
             en1.call(inp)
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
