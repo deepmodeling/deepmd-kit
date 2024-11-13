@@ -248,6 +248,10 @@ class NativeLayer(NativeOP):
             if self.b is not None
             else xp.matmul(x, self.w)
         )
+        if y.dtype != x.dtype:
+            # workaround for bfloat16
+            # https://github.com/jax-ml/ml_dtypes/issues/235
+            y = xp.astype(y, x.dtype)
         y = fn(y)
         if self.idt is not None:
             y *= self.idt
