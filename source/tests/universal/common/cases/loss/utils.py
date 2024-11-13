@@ -41,6 +41,7 @@ class LossTestCase:
             }
             if "atom_ener" in model_predict:
                 model_predict["atom_energy"] = model_predict.pop("atom_ener")
+            model_predict.update({"mask_mag": np.ones([1, natoms, 1], dtype=np.bool_)})
             return model_predict
 
         labels = {
@@ -66,8 +67,9 @@ def fake_input_one_frame(data_item: DataRequirementItem, natoms=5) -> np.ndarray
     nframes = 1
     dtype = data_item.dtype if data_item.dtype is not None else np.float64
     if atomic:
-        ndof = ndof * natoms
-    data = rng.random([nframes, ndof], dtype)
+        data = rng.random([nframes, natoms, ndof], dtype)
+    else:
+        data = rng.random([nframes, ndof], dtype)
     if repeat != 1:
         data = np.repeat(data, repeat).reshape([nframes, -1])
     return data

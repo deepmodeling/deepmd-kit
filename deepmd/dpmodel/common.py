@@ -29,7 +29,7 @@ PRECISION_DICT = {
     "double": np.float64,
     "int32": np.int32,
     "int64": np.int64,
-    "bool": bool,
+    "bool": np.bool_,
     "default": GLOBAL_NP_FLOAT_PRECISION,
     # NumPy doesn't have bfloat16 (and doesn't plan to add)
     # ml_dtypes is a solution, but it seems not supporting np.save/np.load
@@ -45,7 +45,7 @@ RESERVED_PRECISON_DICT = {
     np.int32: "int32",
     np.int64: "int64",
     ml_dtypes.bfloat16: "bfloat16",
-    bool: "bool",
+    np.bool_: "bool",
 }
 assert set(RESERVED_PRECISON_DICT.keys()) == set(PRECISION_DICT.values())
 DEFAULT_PRECISION = "float64"
