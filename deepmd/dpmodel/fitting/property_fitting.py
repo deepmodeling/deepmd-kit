@@ -85,7 +85,7 @@ class PropertyFittingNet(InvarFitting):
         type_map: Optional[list[str]] = None,
         # not used
         seed: Optional[int] = None,
-    ):
+    ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
         self.bias_method = bias_method

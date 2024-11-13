@@ -4,7 +4,7 @@ import numpy as np
 comment_lmp_data = "# the first line must be comment"
 
 
-def write_lmp_data(box, coord, type_list, file_name):
+def write_lmp_data(box, coord, type_list, file_name) -> None:
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     with open(file_name, "w") as f:
@@ -25,7 +25,7 @@ def write_lmp_data(box, coord, type_list, file_name):
 
 def write_lmp_data_full(
     box, coord, mol_list, type_list, charge, file_name, bond_list, mass_list
-):
+) -> None:
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     nbond_type = len(bond_list)
@@ -71,7 +71,7 @@ def write_lmp_data_full(
         f.write("\n")
 
 
-def write_lmp_data_spin(box, coord, spin, type_list, file_name):
+def write_lmp_data_spin(box, coord, spin, type_list, file_name) -> None:
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     sp_norm = np.linalg.norm(spin, axis=1, keepdims=True)

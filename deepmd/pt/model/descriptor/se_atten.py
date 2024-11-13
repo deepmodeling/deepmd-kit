@@ -100,7 +100,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
         Parameters
@@ -315,7 +315,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -366,7 +366,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -416,7 +416,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.is_sorted = len(self.exclude_types) == 0
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
@@ -659,7 +659,7 @@ class NeighborGatedAttention(nn.Module):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
         self.layer_num = layer_num
@@ -730,7 +730,7 @@ class NeighborGatedAttention(nn.Module):
         else:
             raise TypeError(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -802,7 +802,7 @@ class NeighborGatedAttentionLayer(nn.Module):
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
         self.nnei = nnei
@@ -909,7 +909,7 @@ class GatedAttentionLayer(nn.Module):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
         assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"

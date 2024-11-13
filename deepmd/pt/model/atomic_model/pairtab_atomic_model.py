@@ -69,7 +69,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         sel: Union[int, list[int]],
         type_map: list[str],
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
@@ -217,7 +217,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 

@@ -39,11 +39,11 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
 )
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
         self.filename = __file__
 
-    def test_model(self):
+    def test_model(self) -> None:
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
@@ -193,7 +193,7 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
 
-    def test_exclude_types(self):
+    def test_exclude_types(self) -> None:
         """In this test, we make type 0 has no interaction with type 0 and type 1,
         so the descriptor should be zero for type 0 atoms.
         """
@@ -268,7 +268,7 @@ class TestModel(tf.test.TestCase):
         with self.assertRaises(AssertionError):
             np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)
 
-    def test_compressible_model(self):
+    def test_compressible_model(self) -> None:
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
@@ -419,7 +419,7 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
 
-    def test_compressible_exclude_types(self):
+    def test_compressible_exclude_types(self) -> None:
         """In this test, we make type 0 has no interaction with type 0 and type 1,
         so the descriptor should be zero for type 0 atoms.
         """
@@ -497,7 +497,7 @@ class TestModel(tf.test.TestCase):
         with self.assertRaises(AssertionError):
             np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)
 
-    def test_stripped_type_embedding_model(self):
+    def test_stripped_type_embedding_model(self) -> None:
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
 
@@ -652,7 +652,7 @@ class TestModel(tf.test.TestCase):
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
 
-    def test_stripped_type_embedding_exclude_types(self):
+    def test_stripped_type_embedding_exclude_types(self) -> None:
         """In this test, we make type 0 has no interaction with type 0 and type 1,
         so the descriptor should be zero for type 0 atoms.
         """
@@ -735,7 +735,7 @@ class TestModel(tf.test.TestCase):
         with self.assertRaises(AssertionError):
             np.testing.assert_almost_equal(des[:, 2:6], 0.0, 10)
 
-    def test_smoothness_of_stripped_type_embedding_smooth_model(self):
+    def test_smoothness_of_stripped_type_embedding_smooth_model(self) -> None:
         """test: auto-diff, continuity of e,f,v."""
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)
@@ -882,7 +882,9 @@ class TestModel(tf.test.TestCase):
             np.testing.assert_allclose(df[0], df[1], rtol=0, atol=deltad)
             np.testing.assert_allclose(dv[0], dv[1], rtol=0, atol=deltad)
 
-    def test_smoothness_of_stripped_type_embedding_smooth_model_excluded_types(self):
+    def test_smoothness_of_stripped_type_embedding_smooth_model_excluded_types(
+        self,
+    ) -> None:
         """test: auto-diff, continuity of e,f,v."""
         jfile = "water_se_atten.json"
         jdata = j_loader(jfile)

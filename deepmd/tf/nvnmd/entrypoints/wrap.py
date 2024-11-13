@@ -71,7 +71,7 @@ class Wrap:
 
     def __init__(
         self, config_file: str, weight_file: str, map_file: str, model_file: str
-    ):
+    ) -> None:
         self.config_file = config_file
         self.weight_file = weight_file
         self.map_file = map_file
@@ -85,7 +85,7 @@ class Wrap:
 
         nvnmd_cfg.init_from_jdata(jdata)
 
-    def wrap(self):
+    def wrap(self) -> None:
         e = Encode()
         # cfg
         bcfg = self.wrap_dscp()
@@ -613,6 +613,6 @@ def wrap(
     nvnmd_map: Optional[str] = "nvnmd/map.npy",
     nvnmd_model: Optional[str] = "nvnmd/model.pb",
     **kwargs,
-):
+) -> None:
     wrapObj = Wrap(nvnmd_config, nvnmd_weight, nvnmd_map, nvnmd_model)
     wrapObj.wrap()

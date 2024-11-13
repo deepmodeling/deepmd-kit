@@ -14,7 +14,9 @@ from deepmd.pt.model.task import (
 
 
 class TypePredictNet(Fitting):
-    def __init__(self, feature_dim, ntypes, activation_function="gelu", **kwargs):
+    def __init__(
+        self, feature_dim, ntypes, activation_function="gelu", **kwargs
+    ) -> None:
         """Construct a type predict net.
 
         Args:

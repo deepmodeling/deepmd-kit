@@ -12,14 +12,14 @@ from deepmd.tf.utils.network import (
 
 
 class Inter(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.sess = self.cached_session().__enter__()
         self.inputs = tf.constant([0.0, 1.0, 2.0], dtype=tf.float64)
         self.ndata = 3
         self.inputs = tf.reshape(self.inputs, [-1, 1])
         self.places = 6
 
-    def test_enlarger_net(self):
+    def test_enlarger_net(self) -> None:
         network_size = [3, 4]
         out = embedding_net(
             self.inputs,
@@ -38,7 +38,7 @@ class Inter(tf.test.TestCase):
         ]
         np.testing.assert_almost_equal(refout, myout, self.places)
 
-    def test_enlarger_net_1(self):
+    def test_enlarger_net_1(self) -> None:
         network_size = [4, 4]
         out = embedding_net(
             self.inputs,
@@ -57,7 +57,7 @@ class Inter(tf.test.TestCase):
         ]
         np.testing.assert_almost_equal(refout, myout, self.places)
 
-    def test_enlarger_net_1_idt(self):
+    def test_enlarger_net_1_idt(self) -> None:
         network_size = [4, 4]
         out = embedding_net(
             self.inputs,
@@ -77,7 +77,7 @@ class Inter(tf.test.TestCase):
         ]
         np.testing.assert_almost_equal(refout, myout, self.places)
 
-    def test_enlarger_net_2(self):
+    def test_enlarger_net_2(self) -> None:
         network_size = [2, 4]
         out = embedding_net(
             self.inputs,
@@ -96,7 +96,7 @@ class Inter(tf.test.TestCase):
         ]
         np.testing.assert_almost_equal(refout, myout, self.places)
 
-    def test_enlarger_net_3(self):
+    def test_enlarger_net_3(self) -> None:
         network_size = [2, 4]
         out = embedding_net(
             self.inputs,

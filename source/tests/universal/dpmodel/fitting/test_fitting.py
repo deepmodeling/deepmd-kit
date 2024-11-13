@@ -239,7 +239,7 @@ FittingParamProperty = FittingParamPropertyList[0]
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestFittingDP(unittest.TestCase, FittingTest, DPTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         ((FittingParam, Fitting), self.mixed_types) = self.param
         FittingTest.setUp(self)
         self.module_class = Fitting

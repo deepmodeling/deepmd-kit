@@ -95,11 +95,11 @@ sp.check_output(
 )
 
 
-def setup_module():
+def setup_module() -> None:
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
 
 
-def teardown_module():
+def teardown_module() -> None:
     os.remove(data_file)
 
 
@@ -134,7 +134,7 @@ def lammps():
     lmp.close()
 
 
-def test_pair_deepmd(lammps):
+def test_pair_deepmd(lammps) -> None:
     lammps.pair_style(f"deepspin {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -146,7 +146,7 @@ def test_pair_deepmd(lammps):
     lammps.run(1)
 
 
-def test_pair_deepmd_virial(lammps):
+def test_pair_deepmd_virial(lammps) -> None:
     lammps.pair_style(f"deepspin {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.compute("peatom all pe/atom pair")
@@ -186,7 +186,7 @@ def test_pair_deepmd_virial(lammps):
     #     ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
 
 
-def test_pair_deepmd_model_devi(lammps):
+def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
     )
@@ -209,7 +209,7 @@ def test_pair_deepmd_model_devi(lammps):
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
 
 
-def test_pair_deepmd_model_devi_atomic_relative(lammps):
+def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative {relative}"
@@ -247,7 +247,7 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps):
     ("balance_args",),
     [(["--balance"],), ([],)],
 )
-def test_pair_deepmd_mpi(balance_args: list):
+def test_pair_deepmd_mpi(balance_args: list) -> None:
     with tempfile.NamedTemporaryFile() as f:
         sp.check_call(
             [

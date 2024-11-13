@@ -15,7 +15,7 @@ from ..seed import (
 
 
 class TestCvt(unittest.TestCase):
-    def test_to_numpy(self):
+    def test_to_numpy(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         foo = rng.normal([3, 4])
         for ptp, npp in zip(

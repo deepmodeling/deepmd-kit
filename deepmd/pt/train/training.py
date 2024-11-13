@@ -99,7 +99,7 @@ class Trainer:
         shared_links=None,
         finetune_links=None,
         init_frz_model=None,
-    ):
+    ) -> None:
         """Construct a DeePMD trainer.
 
         Args:
@@ -477,7 +477,7 @@ class Trainer:
                         _new_state_dict,
                         _origin_state_dict,
                         _random_state_dict,
-                    ):
+                    ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
                         target_keys = [
@@ -627,7 +627,7 @@ class Trainer:
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
-    def run(self):
+    def run(self) -> None:
         fout = (
             open(
                 self.disp_file,
@@ -662,7 +662,7 @@ class Trainer:
             )
             prof.start()
 
-        def step(_step_id, task_key="Default"):
+        def step(_step_id, task_key="Default") -> None:
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
@@ -1037,7 +1037,7 @@ class Trainer:
                     f"The profiling trace have been saved to: {self.profiling_file}"
                 )
 
-    def save_model(self, save_path, lr=0.0, step=0):
+    def save_model(self, save_path, lr=0.0, step=0) -> None:
         module = (
             self.wrapper.module
             if dist.is_available() and dist.is_initialized()
@@ -1139,7 +1139,7 @@ class Trainer:
         log_dict["sid"] = batch_data["sid"]
         return input_dict, label_dict, log_dict
 
-    def print_header(self, fout, train_results, valid_results):
+    def print_header(self, fout, train_results, valid_results) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += "# %5s" % "step"
@@ -1170,7 +1170,9 @@ class Trainer:
         fout.write(print_str)
         fout.flush()
 
-    def print_on_training(self, fout, step_id, cur_lr, train_results, valid_results):
+    def print_on_training(
+        self, fout, step_id, cur_lr, train_results, valid_results
+    ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += "%7d" % step_id

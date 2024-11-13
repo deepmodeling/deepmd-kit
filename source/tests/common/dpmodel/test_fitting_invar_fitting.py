@@ -20,12 +20,12 @@ from .case_single_frame_with_nlist import (
 
 
 class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_self_consistency(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
@@ -72,7 +72,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             self.assertEqual(sel_set | exclude_set, set(range(self.nt)))
             self.assertEqual(sel_set & exclude_set, set())
 
-    def test_mask(self):
+    def test_mask(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
         dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
@@ -104,7 +104,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_self_exception(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
@@ -156,7 +156,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     ifn0(dd[0], atype, fparam=ifp, aparam=iap)
                     self.assertIn("input aparam", context.exception)
 
-    def test_get_set(self):
+    def test_get_set(self) -> None:
         ifn0 = InvarFitting(
             "energy",
             self.nt,

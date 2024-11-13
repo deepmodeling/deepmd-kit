@@ -15,7 +15,7 @@ from deepmd.tf.utils.convert import (
 
 
 class TestDPLR(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # a bit strange path, need to move to the correct directory
         pbtxt_file = (
             Path(__file__).parent.parent.parent / "lmp" / "tests" / "lrmodel.pbtxt"
@@ -49,7 +49,7 @@ class TestDPLR(unittest.TestCase):
         ).reshape(1, 8, 3)
         self.atype = np.array([0, 0, 1, 1, 1, 1, 2, 2])
 
-    def test_eval(self):
+    def test_eval(self) -> None:
         dp = DeepPot("lrmodel.pb")
         e, f, v, ae, av = dp.eval(
             self.coord[:, :6], self.box, self.atype[:6], atomic=True

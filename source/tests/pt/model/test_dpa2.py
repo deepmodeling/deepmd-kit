@@ -34,12 +34,12 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_consistency(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(100)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
@@ -195,7 +195,7 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(100)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))

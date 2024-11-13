@@ -5,6 +5,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    NoReturn,
     Optional,
 )
 
@@ -137,10 +138,10 @@ class FooFitting(torch.nn.Module, BaseFitting):
 
 
 class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         nf, nloc, nnei = self.nlist.shape
         self.merged_output_stat = [
@@ -173,7 +174,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             pass
         self.stat_file_path = DPPath(h5file, "a")
 
-    def test_output_stat(self):
+    def test_output_stat(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,
@@ -243,7 +244,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
 
         # 3. test bias load from file
-        def raise_error():
+        def raise_error() -> NoReturn:
             raise RuntimeError
 
         md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
@@ -280,7 +281,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # bar is too complicated to be manually computed.
         np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
 
-    def test_preset_bias(self):
+    def test_preset_bias(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,
@@ -355,7 +356,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
         # 3. test bias load from file
-        def raise_error():
+        def raise_error() -> NoReturn:
             raise RuntimeError
 
         md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
@@ -392,7 +393,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
         # bar is too complicated to be manually computed.
 
-    def test_preset_bias_all_none(self):
+    def test_preset_bias_all_none(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,
@@ -462,7 +463,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
-    def test_serialize(self):
+    def test_serialize(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,

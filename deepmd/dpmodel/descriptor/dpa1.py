@@ -3,6 +3,7 @@ import math
 from typing import (
     Any,
     Callable,
+    NoReturn,
     Optional,
     Union,
 )
@@ -388,7 +389,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -404,7 +405,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: list[dict], path: Optional[DPPath] = None
+    ) -> NoReturn:
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -783,7 +786,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -834,18 +837,18 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> NoReturn:
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
         raise NotImplementedError
 
-    def get_stats(self):
+    def get_stats(self) -> NoReturn:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
@@ -1077,7 +1080,7 @@ class NeighborGatedAttention(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
         self.layer_num = layer_num
@@ -1132,7 +1135,7 @@ class NeighborGatedAttention(NativeOP):
         else:
             raise TypeError(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -1205,7 +1208,7 @@ class NeighborGatedAttentionLayer(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
         self.nnei = nnei
@@ -1311,7 +1314,7 @@ class GatedAttentionLayer(NativeOP):
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
         assert hidden_dim % num_heads == 0, "hidden_dim must be divisible by num_heads"

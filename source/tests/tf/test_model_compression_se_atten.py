@@ -21,7 +21,7 @@ from .common import (
 )
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -154,7 +154,7 @@ def _init_models_exclude_types():
     return inputs, frozen_models, compressed_models
 
 
-def setUpModule():
+def setUpModule() -> None:
     global \
         INPUTS, \
         FROZEN_MODELS, \
@@ -172,7 +172,7 @@ def setUpModule():
 )
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
         cls.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
         cls.coords = np.array(
@@ -200,7 +200,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -218,7 +218,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             self.assertEqual(dp_compressed.get_dim_fparam(), 0)
             self.assertEqual(dp_compressed.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -244,7 +244,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -276,7 +276,7 @@ class TestDeepPotAPBC(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -318,7 +318,7 @@ class TestDeepPotAPBC(unittest.TestCase):
 )
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
         cls.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
         cls.coords = np.array(
@@ -346,7 +346,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = None
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -372,7 +372,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -404,7 +404,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -445,7 +445,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
 )
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_originals = [DeepPot(FROZEN_MODELS[i]) for i in range(len(tests))]
         cls.dp_compresseds = [DeepPot(COMPRESSED_MODELS[i]) for i in range(len(tests))]
         cls.coords = np.array(
@@ -473,7 +473,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -505,7 +505,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 vv0, vv1, default_places, err_msg=str(tests[i])
             )
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -537,7 +537,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_ase(self):
+    def test_ase(self) -> None:
         for i in range(len(tests)):
             default_places = tests[i]["precision_digit"]
             from ase import (
@@ -575,7 +575,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 )
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_originals = [DeepPot(FROZEN_MODELS_ET[i]) for i in range(len(tests))]
         cls.dp_compresseds = [
             DeepPot(COMPRESSED_MODELS_ET[i]) for i in range(len(tests))
@@ -606,7 +606,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         for i in range(len(tests)):
             _file_delete(INPUTS_ET[i])
             _file_delete(FROZEN_MODELS_ET[i])
@@ -628,7 +628,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -646,7 +646,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             self.assertEqual(dp_compressed.get_dim_fparam(), 0)
             self.assertEqual(dp_compressed.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -672,7 +672,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]
@@ -704,7 +704,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
             np.testing.assert_almost_equal(ee0, ee1, default_places)
             np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         for i in range(len(tests)):
             dp_original = self.dp_originals[i]
             dp_compressed = self.dp_compresseds[i]

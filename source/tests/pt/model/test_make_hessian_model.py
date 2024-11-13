@@ -63,7 +63,7 @@ def finite_hessian(f, x, delta=1e-6):
 class HessianTest:
     def test(
         self,
-    ):
+    ) -> None:
         # setup test case
         places = 6
         delta = 1e-3
@@ -142,7 +142,7 @@ class HessianTest:
 
 
 class TestDPModel(unittest.TestCase, HessianTest):
-    def setUp(self):
+    def setUp(self) -> None:
         torch.manual_seed(2)
         self.nf = 2
         self.nloc = 3
@@ -174,7 +174,7 @@ class TestDPModel(unittest.TestCase, HessianTest):
         self.model_valu = EnergyModel.deserialize(self.model_hess.serialize())
         self.model_hess.requires_hessian("energy")
 
-    def test_output_def(self):
+    def test_output_def(self) -> None:
         self.assertTrue(self.model_hess.atomic_output_def()["energy"].r_hessian)
         self.assertFalse(self.model_valu.atomic_output_def()["energy"].r_hessian)
         self.assertTrue(self.model_hess.model_output_def()["energy"].r_hessian)

@@ -11,7 +11,7 @@ from deepmd.utils.data import (
 
 
 class TestLossGf(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.loss = EnerStdLoss(
             1e-3,
             start_pref_e=0,
@@ -29,7 +29,7 @@ class TestLossGf(tf.test.TestCase):
             numb_generalized_coord=2,
         )
 
-    def test_label_requirements(self):
+    def test_label_requirements(self) -> None:
         """Test label_requirements are expected."""
         self.assertCountEqual(
             self.loss.label_requirement,
@@ -85,7 +85,7 @@ class TestLossGf(tf.test.TestCase):
             ],
         )
 
-    def test_build_loss(self):
+    def test_build_loss(self) -> None:
         natoms = tf.constant([6, 6])
         model_dict = {
             "energy": tf.zeros((1, 1), dtype=tf.float64),

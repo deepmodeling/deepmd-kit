@@ -38,16 +38,16 @@ def gen_sys(nframes):
 
 
 class TestNeighborStat(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         data0 = gen_sys(1)
         sys0 = dpdata.LabeledSystem()
         sys0.data = data0
         sys0.to_deepmd_npy("system_0", set_size=1)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree("system_0")
 
-    def run_neighbor_stat(self, backend):
+    def run_neighbor_stat(self, backend) -> None:
         for rcut in (0.0, 1.0, 2.0, 4.0):
             for mixed_type in (True, False):
                 with self.subTest(rcut=rcut, mixed_type=mixed_type):
@@ -74,16 +74,16 @@ class TestNeighborStat(unittest.TestCase):
                     np.testing.assert_array_equal(max_nbor_size, ret)
 
     @unittest.skipUnless(INSTALLED_TF, "tensorflow is not installed")
-    def test_neighbor_stat_tf(self):
+    def test_neighbor_stat_tf(self) -> None:
         self.run_neighbor_stat("tensorflow")
 
     @unittest.skipUnless(INSTALLED_PT, "pytorch is not installed")
-    def test_neighbor_stat_pt(self):
+    def test_neighbor_stat_pt(self) -> None:
         self.run_neighbor_stat("pytorch")
 
-    def test_neighbor_stat_dp(self):
+    def test_neighbor_stat_dp(self) -> None:
         self.run_neighbor_stat("numpy")
 
     @unittest.skipUnless(INSTALLED_JAX, "jax is not installed")
-    def test_neighbor_stat_jax(self):
+    def test_neighbor_stat_jax(self) -> None:
         self.run_neighbor_stat("jax")

@@ -22,7 +22,7 @@ from deepmd.dpmodel.utils import (
 
 
 class TestDPModelFormatNlist(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 3
         self.nall = 5
@@ -67,7 +67,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
         type_map = ["foo", "bar"]
         self.md = EnergyModel(ds, ft, type_map=type_map)
 
-    def test_nlist_eq(self):
+    def test_nlist_eq(self) -> None:
         # n_nnei == nnei
         nlist = np.array(
             [
@@ -84,7 +84,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
         )
         np.testing.assert_allclose(self.expected_nlist, nlist1)
 
-    def test_nlist_st(self):
+    def test_nlist_st(self) -> None:
         # n_nnei < nnei
         nlist = np.array(
             [
@@ -101,7 +101,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
         )
         np.testing.assert_allclose(self.expected_nlist, nlist1)
 
-    def test_nlist_lt(self):
+    def test_nlist_lt(self) -> None:
         # n_nnei > nnei
         nlist = np.array(
             [
@@ -123,7 +123,7 @@ dtype = np.float64
 
 
 class TestNeighList(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.nf = 3
         self.nloc = 3
         self.ns = 5 * 5 * 3
@@ -150,7 +150,7 @@ class TestNeighList(unittest.TestCase):
             ]
         )
 
-    def test_build_notype(self):
+    def test_build_notype(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
@@ -171,7 +171,7 @@ class TestNeighList(unittest.TestCase):
             np.sort(self.ref_nlist, axis=-1),
         )
 
-    def test_build_type(self):
+    def test_build_type(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
@@ -193,7 +193,7 @@ class TestNeighList(unittest.TestCase):
                 np.sort(np.split(self.ref_nlist, self.nsel, axis=-1)[ii], axis=-1),
             )
 
-    def test_build_multiple_nlist(self):
+    def test_build_multiple_nlist(self) -> None:
         rcuts = [1.01, 2.01]
         nsels = [20, 80]
         ecoord, eatype, mapping = extend_coord_with_ghosts(
@@ -232,7 +232,7 @@ class TestNeighList(unittest.TestCase):
             nlist2,
         )
 
-    def test_extend_coord(self):
+    def test_extend_coord(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )

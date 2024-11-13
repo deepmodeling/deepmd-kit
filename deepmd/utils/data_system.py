@@ -56,7 +56,7 @@ class DeepmdDataSystem:
         sys_probs=None,
         auto_prob_style="prob_sys_size",
         sort_atoms: bool = True,
-    ):
+    ) -> None:
         """Constructor.
 
         Parameters
@@ -231,7 +231,7 @@ class DeepmdDataSystem:
                     % (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1])
                 )
 
-    def _load_test(self, ntests=-1):
+    def _load_test(self, ntests=-1) -> None:
         self.test_data = collections.defaultdict(list)
         for ii in range(self.nsystems):
             test_system_data = self.data_systems[ii].get_test(ntests=ntests)
@@ -313,7 +313,7 @@ class DeepmdDataSystem:
         default: float = 0.0,
         dtype: Optional[np.dtype] = None,
         output_natoms_for_type_sel: bool = False,
-    ):
+    ) -> None:
         """Add a data item that to be loaded.
 
         Parameters
@@ -356,7 +356,7 @@ class DeepmdDataSystem:
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
             )
 
-    def reduce(self, key_out, key_in):
+    def reduce(self, key_out, key_in) -> None:
         """Generate a new item from the reduction of another atom.
 
         Parameters
@@ -372,7 +372,9 @@ class DeepmdDataSystem:
     def get_data_dict(self, ii: int = 0) -> dict:
         return self.data_systems[ii].get_data_dict()
 
-    def set_sys_probs(self, sys_probs=None, auto_prob_style: str = "prob_sys_size"):
+    def set_sys_probs(
+        self, sys_probs=None, auto_prob_style: str = "prob_sys_size"
+    ) -> None:
         if sys_probs is None:
             if auto_prob_style == "prob_uniform":
                 prob_v = 1.0 / float(self.nsystems)
@@ -575,7 +577,7 @@ class DeepmdDataSystem:
         """Get the batch size."""
         return self.batch_size
 
-    def print_summary(self, name: str):
+    def print_summary(self, name: str) -> None:
         print_summary(
             name,
             self.nsystems,
@@ -642,7 +644,7 @@ def print_summary(
     nbatches: list[int],
     sys_probs: list[float],
     pbc: list[bool],
-):
+) -> None:
     """Print summary of systems.
 
     Parameters

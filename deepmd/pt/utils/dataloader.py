@@ -46,7 +46,7 @@ log = logging.getLogger(__name__)
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 
-def setup_seed(seed):
+def setup_seed(seed) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
@@ -76,7 +76,7 @@ class DpLoaderSet(Dataset):
         type_map,
         seed=None,
         shuffle=True,
-    ):
+    ) -> None:
         if seed is not None:
             setup_seed(seed)
         if isinstance(systems, str):
@@ -152,7 +152,7 @@ class DpLoaderSet(Dataset):
             for item in self.dataloaders:
                 self.iters.append(iter(item))
 
-    def set_noise(self, noise_settings):
+    def set_noise(self, noise_settings) -> None:
         # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
         # noise_settings['noise'] # float, default 1.0
         # noise_settings['noise_mode'] # "prob", "fix_num"
@@ -162,7 +162,7 @@ class DpLoaderSet(Dataset):
         for system in self.systems:
             system.set_noise(noise_settings)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.dataloaders)
 
     def __getitem__(self, idx):
@@ -175,7 +175,7 @@ class DpLoaderSet(Dataset):
         batch["sid"] = idx
         return batch
 
-    def add_data_requirement(self, data_requirement: list[DataRequirementItem]):
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
@@ -184,7 +184,7 @@ class DpLoaderSet(Dataset):
         self,
         name: str,
         prob: list[float],
-    ):
+    ) -> None:
         print_summary(
             name,
             len(self.systems),
@@ -205,13 +205,13 @@ QUEUESIZE = 32
 
 
 class BackgroundConsumer(Thread):
-    def __init__(self, queue, source, max_len):
+    def __init__(self, queue, source, max_len) -> None:
         Thread.__init__(self)
         self._queue = queue
         self._source = source  # Main DL iterator
         self._max_len = max_len  #
 
-    def run(self):
+    def run(self) -> None:
         for item in self._source:
             self._queue.put(item)  # Blocking if the queue is full
 
@@ -220,7 +220,7 @@ class BackgroundConsumer(Thread):
 
 
 class BufferedIterator:
-    def __init__(self, iterable):
+    def __init__(self, iterable) -> None:
         self._queue = queue.Queue(QUEUESIZE)
         self._iterable = iterable
         self._consumer = None
@@ -229,7 +229,7 @@ class BufferedIterator:
         self.warning_time = None
         self.total = len(iterable)
 
-    def _create_consumer(self):
+    def _create_consumer(self) -> None:
         self._consumer = BackgroundConsumer(self._queue, self._iterable, self.total)
         self._consumer.daemon = True
         self._consumer.start()
@@ -237,7 +237,7 @@ class BufferedIterator:
     def __iter__(self):
         return self
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.total
 
     def __next__(self):

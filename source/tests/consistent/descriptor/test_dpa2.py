@@ -290,7 +290,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     array_api_strict_class = DescrptDPA2Strict
     args = descrpt_dpa2_args().append(Argument("ntypes", int, optional=False))
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

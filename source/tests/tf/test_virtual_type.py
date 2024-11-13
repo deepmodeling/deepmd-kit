@@ -28,7 +28,7 @@ from .common import (
 
 class TestVirtualType(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("virtual_type.pbtxt")),
             "virtual_type.pb",
@@ -36,7 +36,7 @@ class TestVirtualType(unittest.TestCase):
         cls.dp = DeepPot("virtual_type.pb")
         os.remove("virtual_type.pb")
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -62,7 +62,7 @@ class TestVirtualType(unittest.TestCase):
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = None
 
-    def test_virtual_type(self):
+    def test_virtual_type(self) -> None:
         nloc = len(self.atype)
         nghost = 10
         e1, f1, v1, ae1, av1 = self.dp.eval(
@@ -82,7 +82,7 @@ class TestVirtualType(unittest.TestCase):
         np.testing.assert_almost_equal(ae1, ae2[:, :nloc])
         np.testing.assert_almost_equal(av1, av2[:, :nloc])
 
-    def test_infer_mixed_type(self):
+    def test_infer_mixed_type(self) -> None:
         nloc = len(self.atype)
         nghost = 10
         e, f, v, ae, av = self.dp.eval(
@@ -123,7 +123,7 @@ class TestTrainVirtualType(unittest.TestCase):
     def setUp(self) -> None:
         gen_data(mixed_type=True, virtual_type=True)
 
-    def test_data_mixed_type(self):
+    def test_data_mixed_type(self) -> None:
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 

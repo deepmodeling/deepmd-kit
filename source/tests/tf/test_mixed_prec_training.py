@@ -23,7 +23,7 @@ from .common import (
 )
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -31,7 +31,7 @@ def _file_delete(file):
 
 
 class TestMixedPrecTraining(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         data_file = str(tests_path / os.path.join("model_compression", "data"))
         self.INPUT = str(tests_path / "input.json")
         jdata = j_loader(
@@ -45,14 +45,14 @@ class TestMixedPrecTraining(unittest.TestCase):
         with open(self.INPUT, "w") as fp:
             json.dump(jdata, fp, indent=4)
 
-    def test_training(self):
+    def test_training(self) -> None:
         _TF_VERSION = Version(TF_VERSION)
         # check the TF_VERSION, when TF < 1.12, mixed precision is not allowed
         if _TF_VERSION >= Version("1.14.0"):
             ret = run_dp("dp train " + self.INPUT)
             np.testing.assert_equal(ret, 0, "DP train failed!")
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         _file_delete(self.INPUT)
         _file_delete("out.json")
         _file_delete("checkpoint")

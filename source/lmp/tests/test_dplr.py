@@ -270,7 +270,7 @@ sp.check_output(
 )
 
 
-def setup_module():
+def setup_module() -> None:
     write_lmp_data_full(
         box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
     )
@@ -292,7 +292,7 @@ def setup_module():
     )
 
 
-def teardown_module():
+def teardown_module() -> None:
     os.remove(data_file)
     os.remove(data_file2)
     os.remove(data_type_map_file)
@@ -352,7 +352,7 @@ def lammps_si():
     lmp.close()
 
 
-def test_pair_deepmd_sr(lammps):
+def test_pair_deepmd_sr(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -365,7 +365,7 @@ def test_pair_deepmd_sr(lammps):
     lammps.run(1)
 
 
-def test_pair_deepmd_sr_virial(lammps):
+def test_pair_deepmd_sr_virial(lammps) -> None:
     lammps.group("real_atom type 1 2")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
@@ -392,7 +392,7 @@ def test_pair_deepmd_sr_virial(lammps):
     os.remove("dump")
 
 
-def test_pair_deepmd_lr(lammps):
+def test_pair_deepmd_lr(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
@@ -420,7 +420,7 @@ def test_pair_deepmd_lr(lammps):
     lammps.run(1)
 
 
-def test_pair_deepmd_lr_run0(lammps2):
+def test_pair_deepmd_lr_run0(lammps2) -> None:
     lammps2.pair_style(f"deepmd {pb_file.resolve()}")
     lammps2.pair_coeff("* *")
     lammps2.bond_style("zero")
@@ -434,7 +434,7 @@ def test_pair_deepmd_lr_run0(lammps2):
     lammps2.run(0)
 
 
-def test_pair_deepmd_lr_efield_constant(lammps):
+def test_pair_deepmd_lr_efield_constant(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
@@ -469,7 +469,7 @@ def test_pair_deepmd_lr_efield_constant(lammps):
         )
 
 
-def test_pair_deepmd_lr_efield_variable(lammps):
+def test_pair_deepmd_lr_efield_variable(lammps) -> None:
     lammps.variable("EFIELD_Z equal 2*sin(2*PI*time/0.006)")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
@@ -505,7 +505,7 @@ def test_pair_deepmd_lr_efield_variable(lammps):
         )
 
 
-def test_min_dplr(lammps):
+def test_min_dplr(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.bond_style("zero")
@@ -529,7 +529,7 @@ def test_min_dplr(lammps):
         )
 
 
-def test_pair_deepmd_lr_type_map(lammps_type_map):
+def test_pair_deepmd_lr_type_map(lammps_type_map) -> None:
     lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_type_map.pair_coeff("* * H O")
     lammps_type_map.bond_style("zero")
@@ -559,7 +559,7 @@ def test_pair_deepmd_lr_type_map(lammps_type_map):
     lammps_type_map.run(1)
 
 
-def test_pair_deepmd_lr_si(lammps_si):
+def test_pair_deepmd_lr_si(lammps_si) -> None:
     lammps_si.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_si.pair_coeff("* *")
     lammps_si.bond_style("zero")

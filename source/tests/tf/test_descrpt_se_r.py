@@ -21,7 +21,7 @@ from .common import (
 
 
 class Inter:
-    def setUp(self, data, pbc=True, sess=None):
+    def setUp(self, data, pbc=True, sess=None) -> None:
         self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()
@@ -133,26 +133,26 @@ class TestSmooth(Inter, tf.test.TestCase):
     #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.places = 5
         data = Data()
         Inter.setUp(self, data, sess=self.cached_session().__enter__())
 
-    def test_force(self):
+    def test_force(self) -> None:
         force_test(self, self, suffix="_se_r")
 
-    def test_virial(self):
+    def test_virial(self) -> None:
         virial_test(self, self, suffix="_se_r")
 
-    def test_force_dw(self):
+    def test_force_dw(self) -> None:
         force_dw_test(self, self, suffix="_se_r")
 
-    def test_virial_dw(self):
+    def test_virial_dw(self) -> None:
         virial_dw_test(self, self, suffix="_se_r")
 
 
 class TestSeRPbc(tf.test.TestCase):
-    def test_pbc(self):
+    def test_pbc(self) -> None:
         data = Data()
         inter0 = Inter()
         inter1 = Inter()
@@ -204,7 +204,7 @@ class TestSeRPbc(tf.test.TestCase):
         np.testing.assert_almost_equal(f0[0], f1[0])
         np.testing.assert_almost_equal(v0[0], v1[0])
 
-    def test_pbc_small_box(self):
+    def test_pbc_small_box(self) -> None:
         data0 = Data()
         data1 = Data(box_scale=2)
         inter0 = Inter()

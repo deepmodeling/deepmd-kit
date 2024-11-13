@@ -32,7 +32,7 @@ from .common import (
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
 )
 class TestMakeModelDeviMix(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
         self.data_dir = "system"
         with open(os.path.join(self.data_dir, "type_map.raw"), "w") as f:
@@ -87,7 +87,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
             ]
         )
 
-    def test_calc_model_devi(self):
+    def test_calc_model_devi(self) -> None:
         model_devi = calc_model_devi(
             self.coord,
             None,
@@ -102,7 +102,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
         np.testing.assert_almost_equal(model_devi[0][1:8], model_devi[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
 
-    def test_calc_model_devi_mixed(self):
+    def test_calc_model_devi_mixed(self) -> None:
         model_devi = calc_model_devi(
             self.coord,
             None,
@@ -118,7 +118,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
         np.testing.assert_almost_equal(model_devi[1][1:8], self.expect[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
 
-    def test_make_model_devi_mixed(self):
+    def test_make_model_devi_mixed(self) -> None:
         make_model_devi(
             models=self.graph_dirs,
             system=self.data_dir,
@@ -129,7 +129,7 @@ class TestMakeModelDeviMix(unittest.TestCase):
         x = np.loadtxt(self.output)
         np.testing.assert_allclose(x, self.expect, 6)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for pb in self.graph_dirs:
             os.remove(pb)
         os.remove(self.output)

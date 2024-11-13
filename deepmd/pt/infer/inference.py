@@ -27,7 +27,7 @@ class Tester:
         self,
         model_ckpt,
         head=None,
-    ):
+    ) -> None:
         """Construct a DeePMD tester.
 
         Args:

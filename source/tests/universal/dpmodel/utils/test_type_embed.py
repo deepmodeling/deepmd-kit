@@ -19,7 +19,7 @@ from ..backend import (
 
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestTypeEmbd(unittest.TestCase, TypeEmbdTest, DPTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         TypeEmbdTest.setUp(self)
         self.module_class = TypeEmbedNet
         self.module = TypeEmbedNet(**self.input_dict)

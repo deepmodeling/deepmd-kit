@@ -1400,7 +1400,7 @@ class DescrptSeAtten(DescrptSeA):
             graph_def, suffix=suffix
         )
 
-        def compat_ln_pattern(old_key):
+        def compat_ln_pattern(old_key) -> None:
             pattern = r"attention_layer_(\d+)/(layer_normalization)_\d+"
             replacement = r"attention_layer_\1/\2"
             if bool(re.search(pattern, old_key)):

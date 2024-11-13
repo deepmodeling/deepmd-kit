@@ -15,13 +15,13 @@ from deepmd.tf.utils import (
 
 
 class TestLearningRate(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 0.001
         self.stop_lr = 3.51e-8
         self.decay_steps = np.arange(400, 601, 100)
         self.stop_steps = np.arange(500, 1600, 500)
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         for decay_step in self.decay_steps:
             for stop_step in self.stop_steps:
                 self.decay_step = decay_step
@@ -29,7 +29,7 @@ class TestLearningRate(unittest.TestCase):
                 self.judge_it()
                 self.decay_rate_pt()
 
-    def judge_it(self):
+    def judge_it(self) -> None:
         base_lr = learning_rate.LearningRateExp(
             self.start_lr, self.stop_lr, self.decay_step
         )
@@ -55,7 +55,7 @@ class TestLearningRate(unittest.TestCase):
         self.assertTrue(np.allclose(base_vals, my_vals))
         tf.reset_default_graph()
 
-    def decay_rate_pt(self):
+    def decay_rate_pt(self) -> None:
         my_lr = LearningRateExp(
             self.start_lr, self.stop_lr, self.decay_step, self.stop_step
         )

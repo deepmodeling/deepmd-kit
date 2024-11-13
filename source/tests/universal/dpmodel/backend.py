@@ -54,7 +54,7 @@ class DPTestCase(BackendTestCase):
         return modules
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         super().tearDownClass()
         if hasattr(cls, "module"):
             del cls.module

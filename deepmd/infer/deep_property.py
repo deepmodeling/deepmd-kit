@@ -53,7 +53,7 @@ class DeepProperty(DeepEval):
             )
         )
 
-    def change_output_def(self):
+    def change_output_def(self) -> None:
         self.output_def["property"].shape = self.task_dim
         self.output_def["property"].intensive = self.get_intensive()
 

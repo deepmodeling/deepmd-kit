@@ -14,7 +14,7 @@ GLOBAL_SEED = 20241110
 
 
 class TestFormatNlist(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.nf = 3
         self.nloc = 3
         self.ns = 5 * 5 * 3
@@ -42,11 +42,11 @@ class TestFormatNlist(tf.test.TestCase):
             distinguish_types=False,
         )
 
-    def test_format_nlist_equal(self):
+    def test_format_nlist_equal(self) -> None:
         nlist = format_nlist(self.ecoord, self.nlist, sum(self.nsel), self.rcut)
         self.assertAllEqual(nlist, self.nlist)
 
-    def test_format_nlist_less(self):
+    def test_format_nlist_less(self) -> None:
         nlist = build_neighbor_list(
             self.ecoord,
             self.eatype,
@@ -58,7 +58,7 @@ class TestFormatNlist(tf.test.TestCase):
         nlist = format_nlist(self.ecoord, nlist, sum(self.nsel), self.rcut)
         self.assertAllEqual(nlist, self.nlist)
 
-    def test_format_nlist_large(self):
+    def test_format_nlist_large(self) -> None:
         nlist = build_neighbor_list(
             self.ecoord,
             self.eatype,
@@ -74,7 +74,7 @@ class TestFormatNlist(tf.test.TestCase):
         # we only need to ensure the result is correct, no need to check the order
         self.assertAllEqual(tnp.sort(nlist, axis=-1), tnp.sort(self.nlist, axis=-1))
 
-    def test_format_nlist_larger_rcut(self):
+    def test_format_nlist_larger_rcut(self) -> None:
         nlist = build_neighbor_list(
             self.ecoord,
             self.eatype,

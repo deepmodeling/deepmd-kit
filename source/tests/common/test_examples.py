@@ -67,7 +67,7 @@ input_files_multi = (
 
 
 class TestExamples(unittest.TestCase):
-    def test_arguments(self):
+    def test_arguments(self) -> None:
         for fn in input_files + input_files_multi:
             multi_task = fn in input_files_multi
             fn = str(fn)

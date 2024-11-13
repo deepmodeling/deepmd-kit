@@ -106,7 +106,7 @@ class DipoleFitting(GeneralFitting):
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:

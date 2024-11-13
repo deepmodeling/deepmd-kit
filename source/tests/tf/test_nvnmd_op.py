@@ -11,7 +11,7 @@ from deepmd.tf.env import (
 
 
 class TestOpAddFltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -19,7 +19,7 @@ class TestOpAddFltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
         t_y = op_module.add_flt_nvnmd(t_x, t_x)
@@ -104,7 +104,7 @@ class TestOpAddFltNvnmd(tf.test.TestCase):
 
 
 class TestOpCopyFltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -112,7 +112,7 @@ class TestOpCopyFltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 1], "t_x")
         t_y, t_y2 = op_module.copy_flt_nvnmd(t_x)
@@ -134,7 +134,7 @@ class TestOpCopyFltNvnmd(tf.test.TestCase):
 
 
 class TestOpDotmulFltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -142,7 +142,7 @@ class TestOpDotmulFltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_y = op_module.dotmul_flt_nvnmd(t_x, t_x)
@@ -160,7 +160,7 @@ class TestOpDotmulFltNvnmd(tf.test.TestCase):
 
 
 class TestOpFltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -168,7 +168,7 @@ class TestOpFltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_y = op_module.flt_nvnmd(t_x)
@@ -186,7 +186,7 @@ class TestOpFltNvnmd(tf.test.TestCase):
 
 
 class TestOpMatmulFitnetNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -194,7 +194,7 @@ class TestOpMatmulFitnetNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
@@ -232,7 +232,7 @@ class TestOpMatmulFitnetNvnmd(tf.test.TestCase):
 
 
 class TestOpMatmulFltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -240,7 +240,7 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
@@ -278,7 +278,7 @@ class TestOpMatmulFltNvnmd(tf.test.TestCase):
 
 
 class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -286,7 +286,7 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
@@ -324,7 +324,7 @@ class TestOpMatmulFlt2fixNvnmd(tf.test.TestCase):
 
 
 class TestOpMulFltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -332,7 +332,7 @@ class TestOpMulFltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_w = tf.placeholder(tf.float64, [4, 4], "t_w")
@@ -370,7 +370,7 @@ class TestOpMulFltNvnmd(tf.test.TestCase):
 
 
 class TestOpQuantizeNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -378,7 +378,7 @@ class TestOpQuantizeNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_y = op_module.quantize_nvnmd(t_x, 0, 23, 23, -1)
@@ -396,7 +396,7 @@ class TestOpQuantizeNvnmd(tf.test.TestCase):
 
 
 class TestOpTanh4FltNvnmd(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -404,7 +404,7 @@ class TestOpTanh4FltNvnmd(tf.test.TestCase):
             )
         self.sess = self.cached_session(config=config).__enter__()
 
-    def test_op(self):
+    def test_op(self) -> None:
         # graph
         t_x = tf.placeholder(tf.float64, [None, 4], "t_x")
         t_y = op_module.tanh4_flt_nvnmd(t_x)

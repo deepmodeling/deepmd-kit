@@ -38,7 +38,7 @@ else:
     default_places = 10
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -135,15 +135,15 @@ def _init_models(model_setup, i):
 
 if not parse_version(tf.__version__) < parse_version("1.15"):
 
-    def previous_se_atten(jdata):
+    def previous_se_atten(jdata) -> None:
         jdata["model"]["descriptor"]["tebd_input_mode"] = "concat"
         jdata["model"]["descriptor"]["attn_layer"] = 2
 
-    def stripped_model(jdata):
+    def stripped_model(jdata) -> None:
         jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 2
 
-    def compressible_model(jdata):
+    def compressible_model(jdata) -> None:
         jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
         jdata["model"]["descriptor"]["attn_layer"] = 0
 
@@ -154,7 +154,7 @@ if not parse_version(tf.__version__) < parse_version("1.15"):
 )
 class TestInitFrzModelAtten(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         models = [previous_se_atten, stripped_model, compressible_model]
         INPUTS = []
         CKPTS = []
@@ -193,7 +193,7 @@ class TestInitFrzModelAtten(unittest.TestCase):
         cls.stop_batchs = STOP_BATCHS
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         for i in range(len(cls.dp_ckpts)):
             _file_delete(cls.INPUTS[i])
             _file_delete(cls.FROZEN_MODELS[i])
@@ -211,7 +211,7 @@ class TestInitFrzModelAtten(unittest.TestCase):
             _file_delete(f"input_v2_compat{i}.json")
             _file_delete("lcurve.out")
 
-    def test_single_frame(self):
+    def test_single_frame(self) -> None:
         for i in range(len(self.dp_ckpts)):
             self.dp_ckpt = self.CKPT_TRAINERS[i]
             self.dp_frz = self.FRZ_TRAINERS[i]

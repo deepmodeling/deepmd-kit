@@ -27,7 +27,7 @@ else:
 
 
 class TestDataSystem(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         self.nsys = 4
         self.nframes = [3, 6, 5, 4]
@@ -56,12 +56,12 @@ class TestDataSystem(unittest.TestCase):
                 )
                 np.save(path, val)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for ii in range(self.nsys):
             sys_name = "sys_%d" % ii
             shutil.rmtree(sys_name)
 
-    def test_ntypes(self):
+    def test_ntypes(self) -> None:
         batch_size = 3
         test_size = 2
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
@@ -72,25 +72,25 @@ class TestDataSystem(unittest.TestCase):
         self.assertEqual(ds.get_nsystems(), self.nsys)
         self.assertEqual(list(ds.get_batch_size()), [batch_size] * 4)
 
-    def test_batch_size_5(self):
+    def test_batch_size_5(self) -> None:
         batch_size = "auto:5"
         test_size = 2
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
         self.assertEqual(ds.batch_size, [2, 2, 1, 1])
 
-    def test_batch_size_null(self):
+    def test_batch_size_null(self) -> None:
         batch_size = "auto:3"
         test_size = 2
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
         self.assertEqual(ds.batch_size, [1, 1, 1, 1])
 
-    def test_batch_size_raise(self):
+    def test_batch_size_raise(self) -> None:
         batch_size = "foo"
         test_size = 2
         with self.assertRaises(RuntimeError):
             ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
 
-    def test_get_test(self):
+    def test_get_test(self) -> None:
         batch_size = 3
         test_size = 2
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
@@ -193,7 +193,7 @@ class TestDataSystem(unittest.TestCase):
             0.0,
         )
 
-    def test_get_batch(self):
+    def test_get_batch(self) -> None:
         batch_size = 3
         test_size = 2
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
@@ -412,7 +412,7 @@ class TestDataSystem(unittest.TestCase):
             0.0,
         )
 
-    def test_prob_sys_size_1(self):
+    def test_prob_sys_size_1(self) -> None:
         batch_size = 1
         test_size = 1
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
@@ -436,7 +436,7 @@ class TestDataSystem(unittest.TestCase):
             / float(self.nframes[2] * (self.nset) + shift),
         )
 
-    def test_prob_sys_size_2(self):
+    def test_prob_sys_size_2(self) -> None:
         batch_size = 1
         test_size = 1
         ds = DeepmdDataSystem(self.sys_name, batch_size, test_size, 2.0)
@@ -464,7 +464,7 @@ class TestDataSystem(unittest.TestCase):
         target = target.reshape([-1, natoms * ndof])
         return target
 
-    def _in_array(self, target, idx_map, ndof, array):
+    def _in_array(self, target, idx_map, ndof, array) -> None:
         target = self._idx_map(target, idx_map, ndof)
         all_find = []
         for ii in array:
@@ -476,7 +476,7 @@ class TestDataSystem(unittest.TestCase):
         for idx, ii in enumerate(all_find):
             self.assertTrue(ii, msg="does not find frame %d in array" % idx)
 
-    def test_sys_prob_floating_point_error(self):
+    def test_sys_prob_floating_point_error(self) -> None:
         # test floating point error; See #1917
         sys_probs = [
             0.010,
@@ -513,7 +513,7 @@ class TestDataSystem(unittest.TestCase):
         ds = DeepmdDataSystem(self.sys_name, 3, 2, 2.0, sys_probs=sys_probs)
         self.assertEqual(ds.sys_probs.size, len(sys_probs))
 
-    def test_get_mixed_batch(self):
+    def test_get_mixed_batch(self) -> None:
         """Test get_batch with mixed system."""
         batch_size = "mixed:3"
         test_size = 2

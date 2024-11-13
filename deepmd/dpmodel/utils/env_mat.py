@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    Union,
 )
 
 import array_api_compat
@@ -83,7 +82,7 @@ class EnvMat(NativeOP):
         rcut,
         rcut_smth,
         protection: float = 0.0,
-    ):
+    ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
         self.protection = protection
@@ -96,7 +95,7 @@ class EnvMat(NativeOP):
         davg: Optional[np.ndarray] = None,
         dstd: Optional[np.ndarray] = None,
         radial_only: bool = False,
-    ) -> Union[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Compute the environment matrix.
 
         Parameters

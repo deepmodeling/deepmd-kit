@@ -35,7 +35,7 @@ class EnergySpinLoss(TaskLoss):
         use_l1_all: bool = False,
         inference=False,
         **kwargs,
-    ):
+    ) -> None:
         r"""Construct a layer to compute loss on energy, real force, magnetic force and virial.
 
         Parameters

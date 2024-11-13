@@ -26,13 +26,13 @@ else:
 
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("deepspin.pbtxt")), "deepspin.pb"
         )
         cls.dp = DeepPot("deepspin.pb")
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 0.0,
@@ -163,11 +163,11 @@ class TestDeepPotAPBC(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deepspin.pb")
         cls.dp = None
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 3)
         self.assertEqual(self.dp.get_ntypes_spin(), 1)
         self.assertAlmostEqual(self.dp.get_rcut(), 5.6, places=default_places)
@@ -175,7 +175,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         self.assertEqual(self.dp.get_dim_fparam(), 0)
         self.assertEqual(self.dp.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee, ff, vv = self.dp.eval(self.coords, self.box, self.atype, atomic=False)
 
         # check shape of the returns
@@ -199,7 +199,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee, ff, vv, ae, av = self.dp.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -232,7 +232,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         ee, ff, vv, ae, av = self.dp.eval(coords2, box2, self.atype, atomic=True)

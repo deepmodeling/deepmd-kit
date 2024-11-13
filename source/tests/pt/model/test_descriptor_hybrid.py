@@ -31,12 +31,12 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         ddsub0 = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -54,7 +54,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_get_parameters(
         self,
-    ):
+    ) -> None:
         nf, nloc, nnei = self.nlist.shape
         ddsub0 = DescrptSeA(
             rcut=self.rcut,
@@ -85,7 +85,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
         with self.assertRaises(ValueError):
             self.assertAlmostEqual(em0.get_env_protection(), 0.0)
 
-    def test_hybrid_mixed_and_no_mixed(self):
+    def test_hybrid_mixed_and_no_mixed(self) -> None:
         coord_ext = to_torch_tensor(self.coord_ext)
         atype_ext = to_torch_tensor(self.atype_ext)
         nlist1 = to_torch_tensor(self.nlist)

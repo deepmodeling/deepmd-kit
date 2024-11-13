@@ -160,7 +160,7 @@ class Atten2Map(torch.nn.Module):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
         self.input_dim = input_dim
@@ -285,7 +285,7 @@ class Atten2MultiHeadApply(torch.nn.Module):
         head_num: int,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
@@ -370,7 +370,7 @@ class Atten2EquiVarApply(torch.nn.Module):
         head_num: int,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
@@ -443,7 +443,7 @@ class LocalAtten(torch.nn.Module):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -602,7 +602,7 @@ class RepformerLayer(torch.nn.Module):
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
         self.rcut = float(rcut)
