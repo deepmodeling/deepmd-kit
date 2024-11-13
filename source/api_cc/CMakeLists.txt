@@ -23,6 +23,10 @@ if(ENABLE_PYTORCH
   target_link_libraries(${libname} PRIVATE "${TORCH_LIBRARIES}")
   target_compile_definitions(${libname} PRIVATE BUILD_PYTORCH)
 endif()
+if(ENABLE_JAX)
+  target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_c)
+  target_compile_definitions(${libname} PRIVATE BUILD_JAX)
+endif()
 
 target_include_directories(
   ${libname}

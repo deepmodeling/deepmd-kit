@@ -4,6 +4,11 @@ project(DeePMD)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
+option(ENABLE_JAX "Enable JAX interface" OFF)
+if(ENABLE_TENSORFLOW)
+  # JAX requires TF C interface, contained in TF C++ library
+  set(ENABLE_JAX ON)
+endif()
 option(BUILD_TESTING "Build test and enable coverage" OFF)
 set(DEEPMD_C_ROOT
     ""
@@ -246,6 +251,19 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   list(APPEND BACKEND_LIBRARY_PATH ${PyTorch_LIBRARY_PATH})
   list(APPEND BACKEND_INCLUDE_DIRS ${TORCH_INCLUDE_DIRS})
 endif()
+if(ENABLE_JAX AND NOT DEEPMD_C_ROOT)
+  find_package(TensorFlowC REQUIRED MODULE)
+  if(DEFINED TENSORFLOWC_LIBRARY)
+    list(APPEND BACKEND_LIBRARY_PATH ${TENSORFLOWC_LIBRARY})
+  endif()
+  if(DEFINED TENSORFLOWC_INCLUDE_DIR)
+    list(APPEND BACKEND_INCLUDE_DIRS ${TENSORFLOWC_INCLUDE_DIR})
+  endif()
+endif()
+if(NOT DEFINED OP_CXX_ABI)
+  # prevent setting an empty value; this is default on GCC>=5
+  set(OP_CXX_ABI 1)
+endif()
 # log enabled backends
 if(NOT DEEPMD_C_ROOT)
   message(STATUS "Enabled backends:")
@@ -255,8 +273,12 @@ if(NOT DEEPMD_C_ROOT)
   if(ENABLE_PYTORCH)
     message(STATUS "- PyTorch")
   endif()
+  if(ENABLE_JAX)
+    message(STATUS "- JAX")
+  endif()
   if(NOT ENABLE_TENSORFLOW
      AND NOT ENABLE_PYTORCH
+     AND NOT ENABLE_JAX
      AND NOT BUILD_PY_IF)
     message(FATAL_ERROR "No backend is enabled.")
   endif()
