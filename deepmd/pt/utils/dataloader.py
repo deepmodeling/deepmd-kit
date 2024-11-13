@@ -306,3 +306,19 @@ def get_weighted_sampler(training_data, prob_style, sys_prob=False):
     with torch.device("cpu"):
         sampler = WeightedRandomSampler(probs, len_sampler, replacement=True)
     return sampler
+
+
+def get_sampler_from_params(_data, _params):
+    if (
+        "sys_probs" in _params and _params["sys_probs"] is not None
+    ):  # use sys_probs first
+        _sampler = get_weighted_sampler(
+            _data,
+            _params["sys_probs"],
+            sys_prob=True,
+        )
+    elif "auto_prob" in _params:
+        _sampler = get_weighted_sampler(_data, _params["auto_prob"])
+    else:
+        _sampler = get_weighted_sampler(_data, "prob_sys_size")
+    return _sampler

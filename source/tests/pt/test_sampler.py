@@ -14,6 +14,7 @@ from torch.utils.data import (
 
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
+    get_sampler_from_params,
     get_weighted_sampler,
 )
 from deepmd.tf.common import (
@@ -102,6 +103,27 @@ class TestSampler(unittest.TestCase):
         )
         my_probs = np.array(sampler.weights)
         self.dp_dataset.set_sys_probs(sys_probs=sys_probs)
+        dp_probs = np.array(self.dp_dataset.sys_probs)
+        self.assertTrue(np.allclose(my_probs, dp_probs))
+
+    def test_sys_probs_end2end(self):
+        sys_probs = [0.1, 0.4, 0.5]
+        _params = {
+            "sys_probs": sys_probs,
+            "auto_prob": "prob_sys_size",
+        }  # use sys_probs first
+        sampler = get_sampler_from_params(self.my_dataset, _params)
+        my_probs = np.array(sampler.weights)
+        self.dp_dataset.set_sys_probs(sys_probs=sys_probs)
+        dp_probs = np.array(self.dp_dataset.sys_probs)
+        self.assertTrue(np.allclose(my_probs, dp_probs))
+
+    def test_auto_prob_sys_size_ext_end2end(self):
+        auto_prob_style = "prob_sys_size;0:1:0.2;1:3:0.8"
+        _params = {"sys_probs": None, "auto_prob": auto_prob_style}  # use auto_prob
+        sampler = get_sampler_from_params(self.my_dataset, _params)
+        my_probs = np.array(sampler.weights)
+        self.dp_dataset.set_sys_probs(auto_prob_style=auto_prob_style)
         dp_probs = np.array(self.dp_dataset.sys_probs)
         self.assertTrue(np.allclose(my_probs, dp_probs))
 
