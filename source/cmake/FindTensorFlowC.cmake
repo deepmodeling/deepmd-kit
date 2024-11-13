@@ -4,7 +4,7 @@
 
 if(TARGET TensorFlow::tensorflow_cc)
   # since tensorflow_cc contain tensorflow_c, just use it
-  add_library(TensorFlow::tensorflow_c SHARED IMPORTED GLOBAL)
+  add_library(TensorFlow::tensorflow_c INTERFACE)
   target_link_libraries(TensorFlow::tensorflow_c
                         INTERFACE TensorFlow::tensorflow_cc)
   set(TensorFlowC_FOUND TRUE)
