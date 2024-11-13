@@ -254,7 +254,7 @@ void deepmd::DeepPotJAX::init(const std::string& model,
     config[i + 3] = bytes[i];
   }
 
-  TF_SetConfig(options, config.data(), config.size(), status);
+  TF_SetConfig(sessionopts, config.data(), config.size(), status);
 
   TF_Buffer* runopts = NULL;
 
