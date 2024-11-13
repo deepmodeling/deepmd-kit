@@ -233,10 +233,28 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L400-L401
-  std::array<std::uint8_t, 4> config = {
+  // https://github.com/Neargye/hello_tf_c_api/blob/51516101cf59408a6bb456f7e5f3c6628e327b3a/src/tf_utils.cpp#L364-L379
+  // The following is an equivalent of setting this in Python:
+  // config = tf.ConfigProto( allow_soft_placement = True )
+  // config.gpu_options.allow_growth = True
+  // config.gpu_options.per_process_gpu_memory_fraction = percentage
+  // Create a byte-array for the serialized ProtoConfig, set the mandatory bytes
+  // (first three and last four)
+  std::array<std::uint8_t, 19> config = {
       {0x10, static_cast<std::uint8_t>(num_intra_nthreads), 0x28,
-       static_cast<std::uint8_t>(num_inter_nthreads)}};
-  TF_SetConfig(sessionopts, config.data(), config.size(), status);
+       static_cast<std::uint8_t>(num_inter_nthreads), 0x32, 0xb, 0x9, 0xFF,
+       0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
+
+  // Convert the desired percentage into a byte-array.
+  auto bytes = reinterpret_cast<std::uint8_t*>(0.9);
+
+  // Put it to the config byte-array, from 3 to 10:
+  for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
+    config[i + 3] = bytes[i];
+  }
+
+  TF_SetConfig(options, config.data(), config.size(), status);
+
   TF_Buffer* runopts = NULL;
 
   const char* tags = "serve";
