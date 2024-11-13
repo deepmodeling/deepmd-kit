@@ -43,6 +43,9 @@ DP_Nlist* DP_NewNlist_comm(int inum_,
   return new_nl;
 }
 void DP_NlistSetMask(DP_Nlist* nl, int mask) { nl->nl.set_mask(mask); }
+void DP_NlistSetMapping(DP_Nlist* nl, int* mapping) {
+  nl->nl.set_mapping(mapping);
+}
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 // DP Base Model
