@@ -47,7 +47,7 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.dataloader import (
     BufferedIterator,
-    get_weighted_sampler,
+    get_sampler_from_params,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -160,19 +160,7 @@ class Trainer:
 
         def get_data_loader(_training_data, _validation_data, _training_params):
             def get_dataloader_and_buffer(_data, _params):
-                if "auto_prob" in _training_params["training_data"]:
-                    _sampler = get_weighted_sampler(
-                        _data, _params["training_data"]["auto_prob"]
-                    )
-                elif "sys_probs" in _training_params["training_data"]:
-                    _sampler = get_weighted_sampler(
-                        _data,
-                        _params["training_data"]["sys_probs"],
-                        sys_prob=True,
-                    )
-                else:
-                    _sampler = get_weighted_sampler(_data, "prob_sys_size")
-
+                _sampler = get_sampler_from_params(_data, _params)
                 if _sampler is None:
                     log.warning(
                         "Sampler not specified!"
@@ -193,14 +181,16 @@ class Trainer:
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
-                _training_data, _training_params
+                _training_data, _training_params["training_data"]
             )
 
             if _validation_data is not None:
                 (
                     validation_dataloader,
                     validation_data_buffered,
-                ) = get_dataloader_and_buffer(_validation_data, _training_params)
+                ) = get_dataloader_and_buffer(
+                    _validation_data, _training_params["validation_data"]
+                )
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
