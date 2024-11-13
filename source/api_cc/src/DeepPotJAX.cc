@@ -255,6 +255,7 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   }
 
   TF_SetConfig(sessionopts, config.data(), config.size(), status);
+  check_status(status);
 
   TF_Buffer* runopts = NULL;
 
@@ -273,6 +274,8 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   check_status(status);
 
   ctx_opts = TFE_NewContextOptions();
+  TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
+  check_status(status);
   ctx = TFE_NewContext(ctx_opts, status);
   check_status(status);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
