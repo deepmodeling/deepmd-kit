@@ -456,6 +456,8 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
+        # cast the input to internal precsion
+        coord_ext = coord_ext.to(dtype=self.prec)
         del mapping, comm_dict
         nf = nlist.shape[0]
         nloc = nlist.shape[1]
@@ -474,7 +476,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         assert self.filter_layers is not None
         dmatrix = dmatrix.view(-1, self.nnei, 1)
-        dmatrix = dmatrix.to(dtype=self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         xyz_scatter = torch.zeros(
@@ -519,7 +520,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             None,
             None,
             None,
-            sw,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
         )
 
     def set_stat_mean_and_stddev(

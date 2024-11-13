@@ -180,6 +180,8 @@ class DipoleFittingNet(GeneralFitting):
     ):
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
+        # cast the input to internal precsion
+        gr = gr.to(self.prec)
         # (nframes, nloc, m1)
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name

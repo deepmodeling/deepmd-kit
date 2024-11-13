@@ -326,7 +326,7 @@ class TestEquivalence(unittest.TestCase):
                     nlist,
                 )
 
-                ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+                ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
                 res.append(ret0["polarizability"])
 
             np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))

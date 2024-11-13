@@ -227,12 +227,8 @@ class DescrptBlockSeAtten(DescriptorBlock):
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
-        mean = torch.zeros(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
-        stddev = torch.ones(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
+        mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
+        stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.tebd_dim_input = self.tebd_dim if self.type_one_side else self.tebd_dim * 2
@@ -568,8 +564,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 # nfnl x nnei x ng
                 # gg = gg_s * gg_t + gg_s
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
-                # Convert all tensors to the required precision at once
-                ss, rr, gg_t = (t.to(self.prec) for t in (ss, rr, gg_t))
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
                     self.compress_data[0].contiguous(),
                     self.compress_info[0].cpu().contiguous(),
