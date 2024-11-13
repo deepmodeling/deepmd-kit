@@ -1399,3 +1399,15 @@ void deepmd::print_summary(const std::string& pre) {
             << "set tf inter_op_parallelism_threads: " << num_inter_nthreads
             << std::endl;
 }
+
+deepmd::DPBackend deepmd::get_backend(const std::string& model) {
+  if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
+    return deepmd::DPBackend::PyTorch;
+  } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
+    return deepmd::DPBackend::TensorFlow;
+  } else if (model.length() >= 11 &&
+             model.substr(model.length() - 11) == ".savedmodel") {
+    return deepmd::DPBackend::JAX;
+  }
+  throw deepmd::deepmd_exception("Unsupported model file format");
+}

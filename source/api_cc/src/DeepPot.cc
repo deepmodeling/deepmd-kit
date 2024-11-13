@@ -37,17 +37,7 @@ void DeepPot::init(const std::string& model,
               << std::endl;
     return;
   }
-  DPBackend backend;
-  if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
-    backend = deepmd::DPBackend::PyTorch;
-  } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
-    backend = deepmd::DPBackend::TensorFlow;
-  } else if (model.length() >= 11 &&
-             model.substr(model.length() - 11) == ".savedmodel") {
-    backend = deepmd::DPBackend::JAX;
-  } else {
-    throw deepmd::deepmd_exception("Unsupported model file format");
-  }
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);

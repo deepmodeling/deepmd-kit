@@ -36,14 +36,7 @@ void DeepSpin::init(const std::string& model,
               << std::endl;
     return;
   }
-  DPBackend backend;
-  if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
-    backend = deepmd::DPBackend::PyTorch;
-  } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
-    backend = deepmd::DPBackend::TensorFlow;
-  } else {
-    throw deepmd::deepmd_exception("Unsupported model file format");
-  }
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dp = std::make_shared<deepmd::DeepSpinTF>(model, gpu_rank, file_content);
