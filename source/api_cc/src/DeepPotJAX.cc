@@ -246,7 +246,8 @@ void deepmd::DeepPotJAX::init(const std::string& model,
        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x20, 0x1, 0x38, 0x1}};
 
   // Convert the desired percentage into a byte-array.
-  auto bytes = reinterpret_cast<std::uint8_t*>(0.9);
+  double gpu_memory_fraction = 0.9;
+  auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
 
   // Put it to the config byte-array, from 3 to 10:
   for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
