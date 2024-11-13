@@ -457,4 +457,4 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
-        return {self.var_name: outs)}
+        return {self.var_name: outs}
