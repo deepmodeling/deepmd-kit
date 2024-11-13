@@ -249,9 +249,9 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   double gpu_memory_fraction = 0.9;
   auto bytes = reinterpret_cast<std::uint8_t*>(&gpu_memory_fraction);
 
-  // Put it to the config byte-array, from 3 to 10:
+  // Put it to the config byte-array, from 7 to 14:
   for (std::size_t i = 0; i < sizeof(gpu_memory_fraction); ++i) {
-    config[i + 3] = bytes[i];
+    config[i + 7] = bytes[i];
   }
 
   TF_SetConfig(sessionopts, config.data(), config.size(), status);
