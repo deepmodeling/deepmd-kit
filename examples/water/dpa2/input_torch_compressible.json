@@ -22,13 +22,14 @@
         "three_body_sel": 48,
         "three_body_rcut": 4.0,
         "three_body_rcut_smth": 3.5,
-        "use_three_body": true
+        "use_three_body": true,
+        "tebd_input_mode": "strip"
       },
       "repformer": {
         "rcut": 4.0,
         "rcut_smth": 3.5,
         "nsel": 48,
-        "nlayers": 6,
+        "nlayers": 3,
         "g1_dim": 128,
         "g2_dim": 32,
         "attn2_hidden": 32,
@@ -42,7 +43,7 @@
         "update_g1_has_drrd": true,
         "update_g1_has_attn": false,
         "update_g2_has_g1g1": false,
-        "update_g2_has_attn": true,
+        "update_g2_has_attn": false,
         "update_style": "res_residual",
         "update_residual": 0.01,
         "update_residual_init": "norm",

@@ -13,3 +13,5 @@ For detailed differences in their configurations, please refer to the table belo
 | `input_torch_small.json`  | 3                | ✓                               | ✗                                | ✓                                                                                     | Smallest DPA-2 model, optimized for speed.                                   |
 | `input_torch_medium.json` | 6                | ✓                               | ✓                                | ✓                                                                                     | Recommended well-performing DPA-2 model, balancing efficiency and precision. |
 | `input_torch_large.json`  | 12               | ✓                               | ✓                                | ✓                                                                                     | Most complex model with the highest precision.                               |
+
+`input_torch_compressible.json` is derived from `input_torch_small.json` and makes the `repinit` part compressible.

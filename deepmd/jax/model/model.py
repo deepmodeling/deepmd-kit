@@ -35,6 +35,10 @@ def get_standard_model(data: dict):
         The data to construct the model.
     """
     data = deepcopy(data)
+    if "type_embedding" in data:
+        raise ValueError(
+            "In the JAX backend, type_embedding is not at the model level, but within the descriptor. See type embedding documentation for details."
+        )
     descriptor_type = data["descriptor"].pop("type")
     data["descriptor"]["type_map"] = data["type_map"]
     data["descriptor"]["ntypes"] = len(data["type_map"])
