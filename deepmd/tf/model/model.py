@@ -805,6 +805,11 @@ class StandardModel(Model):
         -------
         Descriptor
             The deserialized descriptor
+
+        Raises
+        ------
+        ValueError
+            If both fitting/@variables/bias_atom_e and @variables/out_bias are non-zero
         """
         data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 2, 1)
@@ -815,6 +820,14 @@ class StandardModel(Model):
             # deepcopy is not used for performance reasons
             data["fitting"] = data["fitting"].copy()
             data["fitting"]["@variables"] = data["fitting"]["@variables"].copy()
+            if (
+                int(np.any(data["fitting"]["@variables"]["bias_atom_e"]))
+                + int(np.any(data["@variables"]["out_bias"]))
+                > 1
+            ):
+                raise ValueError(
+                    "fitting/@variables/bias_atom_e and @variables/out_bias should not be both non-zero"
+                )
             data["fitting"]["@variables"]["bias_atom_e"] = data["fitting"][
                 "@variables"
             ]["bias_atom_e"] + data["@variables"]["out_bias"].reshape(
