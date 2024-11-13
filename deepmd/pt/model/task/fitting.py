@@ -477,7 +477,7 @@ class GeneralFitting(Fitting):
 
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            dtype=self.prec,
             device=descriptor.device,
         )  # jit assertion
         if self.mixed_types:
@@ -485,7 +485,7 @@ class GeneralFitting(Fitting):
             if xx_zeros is not None:
                 atom_property -= self.filter_layers.networks[0](xx_zeros)
             outs = (
-                outs + atom_property + self.bias_atom_e[atype]
+                outs + atom_property + self.bias_atom_e[atype].to(self.prec)
             )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
@@ -500,7 +500,7 @@ class GeneralFitting(Fitting):
                         and not self.remove_vaccum_contribution[type_i]
                     ):
                         atom_property -= ll(xx_zeros)
-                atom_property = atom_property + self.bias_atom_e[type_i]
+                atom_property = atom_property + self.bias_atom_e[type_i].to(self.prec)
                 atom_property = torch.where(mask, atom_property, 0.0)
                 outs = (
                     outs + atom_property
@@ -509,4 +509,4 @@ class GeneralFitting(Fitting):
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
         outs = torch.where(mask[:, :, None], outs, 0.0)
-        return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        return {self.var_name: outs}

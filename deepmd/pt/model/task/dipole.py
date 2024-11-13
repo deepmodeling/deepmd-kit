@@ -186,8 +186,6 @@ class DipoleFittingNet(GeneralFitting):
         ]
         # (nframes * nloc, 1, m1)
         out = out.view(-1, 1, self.embedding_width)
-        # cast from global to gr precision again
-        out = out.to(dtype=gr.dtype)
         # (nframes * nloc, m1, 3)
         gr = gr.view(nframes * nloc, self.embedding_width, 3)
         # (nframes, nloc, 3)

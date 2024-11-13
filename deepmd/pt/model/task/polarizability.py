@@ -237,9 +237,7 @@ class PolarFittingNet(GeneralFitting):
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        out = out * (self.scale.to(atype.device))[atype]
-        # cast from global to gr precision again
-        out = out.to(dtype=gr.dtype)
+        out = out * (self.scale.to(atype.device).to(self.prec))[atype]
 
         gr = gr.view(nframes * nloc, self.embedding_width, 3)  # (nframes * nloc, m1, 3)
 
