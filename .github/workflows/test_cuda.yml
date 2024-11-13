@@ -63,7 +63,6 @@ jobs:
         CUDA_VISIBLE_DEVICES: 0
         # See https://jax.readthedocs.io/en/latest/gpu_memory_allocation.html
         XLA_PYTHON_CLIENT_PREALLOCATE: false
-      if: false # debug
     - name: Convert models
       run: source/tests/infer/convert-models.sh
     - name: Download libtorch
