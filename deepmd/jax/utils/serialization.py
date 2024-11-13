@@ -167,7 +167,7 @@ def serialize_from_file(model_file: str) -> dict:
         state = data.state
 
         # convert str "1" to int 1 key
-        def convert_str_to_int_key(item: dict):
+        def convert_str_to_int_key(item: dict) -> None:
             for key, value in item.copy().items():
                 if isinstance(value, dict):
                     convert_str_to_int_key(value)

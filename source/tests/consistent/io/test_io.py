@@ -64,7 +64,7 @@ class IOTest:
         out_hook = out_backend.deserialize_hook
         out_hook(model_file, data)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for ii in Path(".").glob(prefix + ".*"):
             if Path(ii).is_file():
@@ -73,7 +73,7 @@ class IOTest:
                 shutil.rmtree(ii)
 
     @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
-    def test_data_equal(self):
+    def test_data_equal(self) -> None:
         prefix = "test_consistent_io_" + self.__class__.__name__.lower()
         for backend_name, suffix_idx in (
             ("tensorflow", 0) if not DP_TEST_TF2_ONLY else ("jax", 0),
@@ -107,7 +107,7 @@ class IOTest:
                     reference_data.pop(kk, None)
                 np.testing.assert_equal(data, reference_data)
 
-    def test_deep_eval(self):
+    def test_deep_eval(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -218,7 +218,7 @@ class IOTest:
 
 
 class TestDeepPot(unittest.TestCase, IOTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_def_script = {
             "type_map": ["O", "H"],
             "descriptor": {
@@ -255,12 +255,12 @@ class TestDeepPot(unittest.TestCase, IOTest):
             "model_def_script": model_def_script,
         }
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         IOTest.tearDown(self)
 
 
 class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_def_script = {
             "type_map": ["O", "H"],
             "descriptor": {
@@ -299,5 +299,5 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
             "model_def_script": model_def_script,
         }
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         IOTest.tearDown(self)

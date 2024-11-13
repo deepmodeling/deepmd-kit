@@ -25,7 +25,7 @@ from .test_descrpt_smooth import (
 )
 
 
-def _make_tab(ntype):
+def _make_tab(ntype) -> None:
     xx = np.arange(0, 9, 0.001)
     yy = 1000 / (xx + 0.5) ** 6
     prt = xx
@@ -37,7 +37,7 @@ def _make_tab(ntype):
 
 
 class IntplInter(Inter):
-    def setUp(self, data, sess=None):
+    def setUp(self, data, sess=None) -> None:
         # tabulated
         Inter.setUp(self, data, sess=sess)
         _make_tab(data.get_ntypes())
@@ -62,7 +62,7 @@ class IntplInter(Inter):
                 initializer=tf.constant_initializer(tab_data),
             )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         os.remove("tab.xvg")
 
     def comp_ef(self, dcoord, dbox, dtype, tnatoms, name, reuse=None):
@@ -173,21 +173,21 @@ class TestTabSmooth(IntplInter, tf.test.TestCase):
     #     unittest.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.places = 5
         data = Data()
         IntplInter.setUp(self, data, sess=self.cached_session().__enter__())
 
-    def test_force(self):
+    def test_force(self) -> None:
         force_test(self, self, places=5, suffix="_tab_smth")
 
-    def test_virial(self):
+    def test_virial(self) -> None:
         virial_test(self, self, places=5, suffix="_tab_smth")
 
-    def test_force_dw(self):
+    def test_force_dw(self) -> None:
         force_dw_test(self, self, places=8, suffix="_tab_smth")
 
-    def test_virial_dw(self):
+    def test_virial_dw(self) -> None:
         virial_dw_test(self, self, places=8, suffix="_tab_smth")
 
 

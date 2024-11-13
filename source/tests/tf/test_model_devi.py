@@ -24,7 +24,7 @@ from .common import (
 
 
 class TestMakeModelDevi(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
         self.data_dir = "system"
         with open(os.path.join(self.data_dir, "type_map.raw"), "w") as f:
@@ -58,7 +58,7 @@ class TestMakeModelDevi(unittest.TestCase):
             ]
         )
 
-    def test_calc_model_devi(self):
+    def test_calc_model_devi(self) -> None:
         model_devi = calc_model_devi(
             self.coord,
             None,
@@ -73,7 +73,7 @@ class TestMakeModelDevi(unittest.TestCase):
         np.testing.assert_almost_equal(model_devi[0][1:8], model_devi[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
 
-    def test_make_model_devi(self):
+    def test_make_model_devi(self) -> None:
         make_model_devi(
             models=self.graph_dirs,
             system=self.data_dir,
@@ -84,7 +84,7 @@ class TestMakeModelDevi(unittest.TestCase):
         x = np.loadtxt(self.output)
         np.testing.assert_allclose(x, self.expect, 6)
 
-    def test_make_model_devi_real_erorr(self):
+    def test_make_model_devi_real_erorr(self) -> None:
         make_model_devi(
             models=self.graph_dirs,
             system=self.data_dir,
@@ -111,7 +111,7 @@ class TestMakeModelDevi(unittest.TestCase):
             6,
         )
 
-    def test_make_model_devi_atomic_relative(self):
+    def test_make_model_devi_atomic_relative(self) -> None:
         _, expected_f, expected_v = self.graphs[0].eval(
             self.coord[0], self.box[0], self.atype
         )
@@ -152,7 +152,7 @@ class TestMakeModelDevi(unittest.TestCase):
         np.testing.assert_allclose(md[2], np.min(expected_md_v), 6)
         np.testing.assert_allclose(md[3], np.sqrt(np.mean(np.square(expected_md_v))), 6)
 
-    def test_make_model_devi_atomic_relative_v(self):
+    def test_make_model_devi_atomic_relative_v(self) -> None:
         _, expected_f, expected_v = self.graphs[0].eval(
             self.coord[0], self.box[0], self.atype
         )
@@ -200,7 +200,7 @@ class TestMakeModelDevi(unittest.TestCase):
         np.testing.assert_allclose(md[2], np.min(expected_md_v), 6)
         np.testing.assert_allclose(md[3], np.sqrt(np.mean(np.square(expected_md_v))), 6)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for pb in self.graph_dirs:
             os.remove(pb)
         os.remove(self.output)
@@ -211,7 +211,7 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
     """Ensure dp model_devi accepts fparam and aparam."""
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.pbtxts = [
             os.path.join(infer_path, "fparam_aparam.pbtxt"),
         ]
@@ -221,12 +221,12 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
         cls.graphs = [DeepPotential(pb) for pb in cls.graph_dirs]
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         for pb in cls.graph_dirs:
             os.remove(pb)
         cls.graphs = None
 
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data(dim_fparam=1)
         self.data_dir = "system"
         coord = np.load(os.path.join(self.data_dir, "set.000/coord.npy"))
@@ -246,7 +246,7 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
             (nframes, self.atype.size, 1)
         )
 
-    def test_calc_model_devi(self):
+    def test_calc_model_devi(self) -> None:
         model_devi = calc_model_devi(
             self.coord,
             None,
@@ -263,7 +263,7 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
         np.testing.assert_almost_equal(model_devi[0][1:8], model_devi[1][1:8], 6)
         self.assertTrue(os.path.isfile(self.output))
 
-    def test_make_model_devi(self):
+    def test_make_model_devi(self) -> None:
         make_model_devi(
             models=self.graph_dirs,
             system=self.data_dir,
@@ -274,6 +274,6 @@ class TestMakeModelDeviFparamAparam(unittest.TestCase):
         x = np.loadtxt(self.output)
         np.testing.assert_allclose(x, self.expect, 6)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         os.remove(self.output)
         del_data()

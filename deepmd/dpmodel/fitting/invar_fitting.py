@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    NoReturn,
     Optional,
     Union,
 )
@@ -133,7 +134,7 @@ class InvarFitting(GeneralFitting):
         exclude_types: list[int] = [],
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -186,7 +187,7 @@ class InvarFitting(GeneralFitting):
         """Set the FittingNet output dim."""
         return self.dim_out
 
-    def compute_output_stats(self, merged):
+    def compute_output_stats(self, merged) -> NoReturn:
         """Update the output bias for fitting net."""
         raise NotImplementedError
 

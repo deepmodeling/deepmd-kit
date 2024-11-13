@@ -47,7 +47,7 @@ def empty_t(shape, precision):
 
 
 class Identity(nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def forward(
@@ -82,7 +82,7 @@ class MLPLayer(nn.Module):
         precision: str = DEFAULT_PRECISION,
         init: str = "default",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         # only use_timestep when skip connection is established.
         self.use_timestep = use_timestep and (
@@ -126,10 +126,10 @@ class MLPLayer(nn.Module):
         else:
             raise ValueError(f"Unknown initialization method: {init}")
 
-    def check_type_consistency(self):
+    def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var):
+        def check_var(var) -> None:
             if var is not None:
                 # assertion "float64" == "double" would fail
                 assert PRECISION_DICT[var.dtype.name] is PRECISION_DICT[precision]
@@ -149,7 +149,7 @@ class MLPLayer(nn.Module):
         bavg: float = 0.0,
         stddev: float = 1.0,
         generator: Optional[torch.Generator] = None,
-    ):
+    ) -> None:
         normal_(
             self.matrix.data,
             std=stddev / np.sqrt(self.num_out + self.num_in),
@@ -162,7 +162,7 @@ class MLPLayer(nn.Module):
 
     def _trunc_normal_init(
         self, scale=1.0, generator: Optional[torch.Generator] = None
-    ):
+    ) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
         _, fan_in = self.matrix.shape
@@ -170,17 +170,17 @@ class MLPLayer(nn.Module):
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
         trunc_normal_(self.matrix, mean=0.0, std=std, generator=generator)
 
-    def _glorot_uniform_init(self, generator: Optional[torch.Generator] = None):
+    def _glorot_uniform_init(self, generator: Optional[torch.Generator] = None) -> None:
         xavier_uniform_(self.matrix, gain=1, generator=generator)
 
-    def _zero_init(self, use_bias=True):
+    def _zero_init(self, use_bias=True) -> None:
         with torch.no_grad():
             self.matrix.fill_(0.0)
             if use_bias and self.bias is not None:
                 with torch.no_grad():
                     self.bias.fill_(1.0)
 
-    def _normal_init(self, generator: Optional[torch.Generator] = None):
+    def _normal_init(self, generator: Optional[torch.Generator] = None) -> None:
         kaiming_normal_(self.matrix, nonlinearity="linear", generator=generator)
 
     def forward(
@@ -282,7 +282,7 @@ MLP_ = make_multilayer_network(MLPLayer, nn.Module)
 
 
 class MLP(MLP_):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.layers = torch.nn.ModuleList(self.layers)
 
@@ -303,7 +303,7 @@ class NetworkCollection(DPNetworkCollection, nn.Module):
         "fitting_network": FittingNet,
     }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         # init both two base classes
         DPNetworkCollection.__init__(self, *args, **kwargs)
         nn.Module.__init__(self)

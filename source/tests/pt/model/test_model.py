@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import collections
 import json
 import unittest
+from typing import (
+    NamedTuple,
+)
 
 import numpy as np
 import tensorflow.compat.v1 as tf
@@ -54,7 +56,10 @@ from ..test_finetune import (
     energy_data_requirement,
 )
 
-VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
+
+class VariableState(NamedTuple):
+    value: np.ndarray
+    gradient: np.ndarray
 
 
 def torch2tf(torch_name, last_layer_id=None):
@@ -80,7 +85,7 @@ def torch2tf(torch_name, last_layer_id=None):
 
 
 class DpTrainer:
-    def __init__(self):
+    def __init__(self) -> None:
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
@@ -262,7 +267,7 @@ class DpTrainer:
 
 
 class TestEnergy(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.dp_trainer = DpTrainer()
         self.wanted_step = 0
         for key in dir(self.dp_trainer):
@@ -270,7 +275,7 @@ class TestEnergy(unittest.TestCase):
                 value = getattr(self.dp_trainer, key)
                 setattr(self, key, value)
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         batch, head_dict, stat_dict, vs_dict = self.dp_trainer.get_intermediate_state(
             self.wanted_step
         )
@@ -406,7 +411,7 @@ class TestEnergy(unittest.TestCase):
         optimizer = torch.optim.Adam(my_model.parameters(), lr=cur_lr)
         optimizer.zero_grad()
 
-        def step(step_id):
+        def step(step_id) -> None:
             bdata = self.training_data.get_trainning_batch()
             optimizer.zero_grad()
 

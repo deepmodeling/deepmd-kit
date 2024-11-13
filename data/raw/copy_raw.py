@@ -8,7 +8,7 @@ import os.path
 import numpy as np
 
 
-def copy(in_dir, out_dir, ncopies=[1, 1, 1]):
+def copy(in_dir, out_dir, ncopies=[1, 1, 1]) -> None:
     has_energy = os.path.isfile(in_dir + "/energy.raw")
     has_force = os.path.isfile(in_dir + "/force.raw")
     has_virial = os.path.isfile(in_dir + "/virial.raw")
@@ -71,7 +71,7 @@ def copy(in_dir, out_dir, ncopies=[1, 1, 1]):
     np.savetxt(out_dir + "/ncopies.raw", ncopies, fmt="%d")
 
 
-def _main():
+def _main() -> None:
     parser = argparse.ArgumentParser(description="parse copy raw args")
     parser.add_argument("INPUT", default=".", help="input dir of raw files")
     parser.add_argument("OUTPUT", default=".", help="output dir of copied raw files")

@@ -104,7 +104,7 @@ class DeepTensor(DeepEval):
         self._run_default_sess()
         self.tmap = self.tmap.decode("UTF-8").split()
 
-    def _run_default_sess(self):
+    def _run_default_sess(self) -> None:
         [self.ntypes, self.rcut, self.tmap, self.tselt, self.output_dim] = run_sess(
             self.sess,
             [

@@ -250,7 +250,7 @@ class DescrptSeR(DescrptSe):
         mesh,
         input_dict,
         **kwargs,
-    ):
+    ) -> None:
         """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
@@ -283,7 +283,7 @@ class DescrptSeR(DescrptSe):
         stat_dict = {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
         self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict):
+    def merge_input_stats(self, stat_dict) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters

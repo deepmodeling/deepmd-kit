@@ -142,7 +142,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         use_econf_tebd: bool = False,
         use_tebd_bias=False,
         smooth: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.se_ttebd = DescrptBlockSeTTebd(
             rcut,
@@ -239,7 +239,7 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.se_ttebd.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -519,7 +519,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         env_protection: float = 0.0,
         smooth: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.rcut = float(rcut)
         self.rcut_smth = float(rcut_smth)
@@ -620,7 +620,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -671,7 +671,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -721,7 +721,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 

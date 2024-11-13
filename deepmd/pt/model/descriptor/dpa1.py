@@ -252,7 +252,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is not None:
@@ -378,7 +378,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),

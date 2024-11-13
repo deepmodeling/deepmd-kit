@@ -15,7 +15,7 @@ from deepmd.tf.utils.network import (
 
 
 class TestGelu(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.places = 6
         self.sess = self.cached_session().__enter__()
         self.inputs = tf.reshape(
@@ -64,7 +64,7 @@ class TestGelu(tf.test.TestCase):
             ],
         ]
 
-    def test_activation_function_gelu_custom(self):
+    def test_activation_function_gelu_custom(self) -> None:
         network_size = [2, 4, 8]
         out = embedding_net(
             self.inputs,
@@ -79,7 +79,7 @@ class TestGelu(tf.test.TestCase):
         myout = self.sess.run(out)
         np.testing.assert_almost_equal(self.refout, myout, self.places)
 
-    def test_activation_function_gelu_tensorflow(self):
+    def test_activation_function_gelu_tensorflow(self) -> None:
         network_size = [2, 4, 8]
         out = embedding_net(
             self.inputs,

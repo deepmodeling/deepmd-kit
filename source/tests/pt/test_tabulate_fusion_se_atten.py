@@ -18,7 +18,7 @@ from ..consistent.common import (
 @parameterized((torch.float64, torch.float32))
 @unittest.skipIf(not ENABLE_CUSTOMIZED_OP, "PyTorch customized OPs are not built")
 class TestTabulateFusionSeAttenOp(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         (dtype,) = self.param
         if dtype == torch.float64:
             self.prec = 1e-10
@@ -1553,7 +1553,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             device=env.DEVICE,
         ).reshape(4, 4, 4)
 
-    def test_forward(self):
+    def test_forward(self) -> None:
         # Call the forward function
         forward_result = torch.ops.deepmd.tabulate_fusion_se_atten(
             self.table_tensor,
@@ -1578,7 +1578,7 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
             rtol=self.prec,
         )
 
-    def test_backward(self):
+    def test_backward(self) -> None:
         # Call the forward function
         forward_result = torch.ops.deepmd.tabulate_fusion_se_atten(
             self.table_tensor,

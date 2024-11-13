@@ -32,7 +32,7 @@ class CheckSymmetry(DeepmdData):
         self,
         sys_path: str,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         super().__init__(sys_path=sys_path, type_map=type_map)
         self.add("energy", 1, atomic=False, must=False, high_prec=True)
         self.add("force", 3, atomic=True, must=False, high_prec=False)
@@ -61,7 +61,7 @@ def get_data(batch):
 
 
 class TestForceGrad(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             self.config = json.load(fin)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
@@ -72,10 +72,10 @@ class TestForceGrad(unittest.TestCase):
         self.get_dataset(self.system_index, self.batch_index)
         self.get_model()
 
-    def get_model(self):
+    def get_model(self) -> None:
         self.model = get_model(self.config["model"]).to(env.DEVICE)
 
-    def get_dataset(self, system_index=0, batch_index=0):
+    def get_dataset(self, system_index=0, batch_index=0) -> None:
         systems = self.config["training"]["training_data"]["systems"]
         rcut = self.config["model"]["descriptor"]["rcut"]
         sel = self.config["model"]["descriptor"]["sel"]
@@ -87,7 +87,7 @@ class TestForceGrad(unittest.TestCase):
         self.origin_batch = self.dpdatasystem.get_item_torch(batch_index)
 
     @unittest.skip("it can be replaced by autodiff")
-    def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20):
+    def test_force_grad(self, threshold=1e-2, delta0=1e-6, seed=20) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         result0 = self.model(**get_data(self.origin_batch))
         np.random.default_rng(seed)

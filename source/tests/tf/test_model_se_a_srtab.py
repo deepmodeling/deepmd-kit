@@ -27,7 +27,7 @@ GLOBAL_TF_FLOAT_PRECISION = tf.float64
 GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
-def _make_tab(ntype):
+def _make_tab(ntype) -> None:
     xx = np.arange(0, 9, 0.001)
     yy = 1000 / (xx + 0.5) ** 6
     prt = xx
@@ -39,14 +39,14 @@ def _make_tab(ntype):
 
 
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
         _make_tab(2)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         os.remove("tab.xvg")
 
-    def test_model(self):
+    def test_model(self) -> None:
         jfile = "water_se_a_srtab.json"
         jdata = j_loader(jfile)
 

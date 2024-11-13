@@ -30,7 +30,7 @@ from .model.test_permutation import (
 
 
 class TestSingleTaskModel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -45,7 +45,7 @@ class TestSingleTaskModel(unittest.TestCase):
         trainer.run()
         run_dp("dp --pt freeze")
 
-    def test_checkpoint(self):
+    def test_checkpoint(self) -> None:
         INPUT = "model.pt"
         ATTRIBUTES = "type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
@@ -61,7 +61,7 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    def test_frozen_model(self):
+    def test_frozen_model(self) -> None:
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
@@ -77,7 +77,7 @@ class TestSingleTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    def test_checkpoint_error(self):
+    def test_checkpoint_error(self) -> None:
         INPUT = "model.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         with self.assertRaisesRegex(
@@ -85,7 +85,7 @@ class TestSingleTaskModel(unittest.TestCase):
         ):
             run_dp(f"dp --pt show {INPUT} {ATTRIBUTES}")
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith("pt"):
                 os.remove(f)
@@ -96,7 +96,7 @@ class TestSingleTaskModel(unittest.TestCase):
 
 
 class TestMultiTaskModel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/multitask.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -142,7 +142,7 @@ class TestMultiTaskModel(unittest.TestCase):
         trainer.run()
         run_dp("dp --pt freeze --head model_1")
 
-    def test_checkpoint(self):
+    def test_checkpoint(self) -> None:
         INPUT = "model.ckpt.pt"
         ATTRIBUTES = "model-branch type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
@@ -177,7 +177,7 @@ class TestMultiTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    def test_frozen_model(self):
+    def test_frozen_model(self) -> None:
         INPUT = "frozen_model.pth"
         ATTRIBUTES = "type-map descriptor fitting-net"
         with redirect_stderr(io.StringIO()) as f:
@@ -193,7 +193,7 @@ class TestMultiTaskModel(unittest.TestCase):
             in results[-1]
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith("pt"):
                 os.remove(f)

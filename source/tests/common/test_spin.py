@@ -12,7 +12,7 @@ CUR_DIR = os.path.dirname(__file__)
 
 
 class SpinTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         type_map_1 = ["H", "O"]
         self.use_spin_1 = [False, False]
         self.virtual_scale_1 = [0.1, 0.1]
@@ -105,7 +105,7 @@ class SpinTest(unittest.TestCase):
             [9, 9],
         ]
 
-    def test_ntypes(self):
+    def test_ntypes(self) -> None:
         self.assertEqual(self.spin_1.get_ntypes_real(), 2)
         self.assertEqual(self.spin_1.get_ntypes_spin(), 0)
         self.assertEqual(self.spin_1.get_ntypes_real_and_spin(), 2)
@@ -121,12 +121,12 @@ class SpinTest(unittest.TestCase):
         self.assertEqual(self.spin_3.get_ntypes_real_and_spin(), 6)
         self.assertEqual(self.spin_3.get_ntypes_input(), 10)
 
-    def test_use_spin(self):
+    def test_use_spin(self) -> None:
         np.testing.assert_allclose(self.spin_1.get_use_spin(), self.use_spin_1)
         np.testing.assert_allclose(self.spin_2.get_use_spin(), self.use_spin_2)
         np.testing.assert_allclose(self.spin_3.get_use_spin(), self.use_spin_3)
 
-    def test_mask(self):
+    def test_mask(self) -> None:
         np.testing.assert_allclose(
             self.spin_1.get_virtual_scale_mask(), self.expect_virtual_scale_mask_1
         )
@@ -137,7 +137,7 @@ class SpinTest(unittest.TestCase):
             self.spin_3.get_virtual_scale_mask(), self.expect_virtual_scale_mask_3
         )
 
-    def test_exclude_types(self):
+    def test_exclude_types(self) -> None:
         self.assertEqual(
             sorted(self.spin_1.get_pair_exclude_types()),
             sorted(self.expect_pair_exclude_types_1),
@@ -151,7 +151,7 @@ class SpinTest(unittest.TestCase):
             sorted(self.expect_pair_exclude_types_3),
         )
 
-    def test_virtual_scale_consistence(self):
+    def test_virtual_scale_consistence(self) -> None:
         np.testing.assert_allclose(
             self.spin_3.get_virtual_scale(), self.spin_3_float.get_virtual_scale()
         )

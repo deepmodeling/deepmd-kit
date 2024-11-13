@@ -28,7 +28,7 @@ CUR_DIR = os.path.dirname(__file__)
 
 
 class TestSampler(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
@@ -54,7 +54,7 @@ class TestSampler(unittest.TestCase):
         tf_random.seed(10)
         self.dp_dataset = DeepmdDataSystem(self.systems, self.batch_size, 1, self.rcut)
 
-    def test_sampler_debug_info(self):
+    def test_sampler_debug_info(self) -> None:
         dataloader = DataLoader(
             self.my_dataset,
             sampler=get_weighted_sampler(self.my_dataset, prob_style="prob_sys_size"),
@@ -71,7 +71,7 @@ class TestSampler(unittest.TestCase):
         frame = self.my_dataset.systems[sid].__getitem__(fid)
         self.assertTrue(np.allclose(coord, frame["coord"]))
 
-    def test_auto_prob_uniform(self):
+    def test_auto_prob_uniform(self) -> None:
         auto_prob_style = "prob_uniform"
         sampler = get_weighted_sampler(self.my_dataset, prob_style=auto_prob_style)
         my_probs = np.array(sampler.weights)
@@ -79,7 +79,7 @@ class TestSampler(unittest.TestCase):
         dp_probs = np.array(self.dp_dataset.sys_probs)
         self.assertTrue(np.allclose(my_probs, dp_probs))
 
-    def test_auto_prob_sys_size(self):
+    def test_auto_prob_sys_size(self) -> None:
         auto_prob_style = "prob_sys_size"
         sampler = get_weighted_sampler(self.my_dataset, prob_style=auto_prob_style)
         my_probs = np.array(sampler.weights)
@@ -87,7 +87,7 @@ class TestSampler(unittest.TestCase):
         dp_probs = np.array(self.dp_dataset.sys_probs)
         self.assertTrue(np.allclose(my_probs, dp_probs))
 
-    def test_auto_prob_sys_size_ext(self):
+    def test_auto_prob_sys_size_ext(self) -> None:
         auto_prob_style = "prob_sys_size;0:1:0.2;1:3:0.8"
         sampler = get_weighted_sampler(self.my_dataset, prob_style=auto_prob_style)
         my_probs = np.array(sampler.weights)
@@ -95,7 +95,7 @@ class TestSampler(unittest.TestCase):
         dp_probs = np.array(self.dp_dataset.sys_probs)
         self.assertTrue(np.allclose(my_probs, dp_probs))
 
-    def test_sys_probs(self):
+    def test_sys_probs(self) -> None:
         sys_probs = [0.1, 0.4, 0.5]
         sampler = get_weighted_sampler(
             self.my_dataset, prob_style=sys_probs, sys_prob=True

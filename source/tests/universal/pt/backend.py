@@ -55,14 +55,14 @@ class PTTestCase(BackendTestCase):
         return modules
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         super().tearDownClass()
         if hasattr(cls, "module"):
             del cls.module
         cls._get_deserialized_module.cache_clear()
         cls._get_script_module.cache_clear()
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         if getattr(self, "skip_test_jit", False):
             self.skipTest("Skip test jit.")
         self.script_module

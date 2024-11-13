@@ -51,7 +51,7 @@ def eval_pt_descriptor(
 
 @parameterized(("float32", "float64"), (True, False))
 class TestDescriptorDPA2(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         (self.dtype, self.type_one_side) = self.param
         if self.dtype == "float32":
             self.atol = 1e-5
@@ -114,7 +114,7 @@ class TestDescriptorDPA2(unittest.TestCase):
             precision=self.dtype,
         )
 
-    def test_compressed_forward(self):
+    def test_compressed_forward(self) -> None:
         result_pt = eval_pt_descriptor(
             self.descriptor,
             self.natoms,

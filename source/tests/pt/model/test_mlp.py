@@ -38,7 +38,7 @@ def get_tols(prec):
 
 
 class TestMLPLayer(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_cases = itertools.product(
             [(5, 5), (5, 10), (5, 8), (8, 5)],  # inp, out
             [True, False],  # bias
@@ -51,7 +51,7 @@ class TestMLPLayer(unittest.TestCase):
 
     def test_match_native_layer(
         self,
-    ):
+    ) -> None:
         for (ninp, nout), bias, ut, ac, resnet, ashp, prec in self.test_cases:
             # input
             inp_shap = [ninp]
@@ -85,7 +85,7 @@ class TestMLPLayer(unittest.TestCase):
                 err_msg=f"(i={ninp}, o={nout}) bias={bias} use_dt={ut} act={ac} resnet={resnet} prec={prec}",
             )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         for (ninp, nout), bias, ut, ac, resnet, _, prec in self.test_cases:
             ml = MLPLayer(ninp, nout, bias, ut, ac, resnet, precision=prec)
             model = torch.jit.script(ml)
@@ -94,7 +94,7 @@ class TestMLPLayer(unittest.TestCase):
 
 
 class TestMLP(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_cases = itertools.product(
             [[2, 2, 4, 8], [1, 3, 3]],  # inp and hiddens
             [True, False],  # bias
@@ -107,7 +107,7 @@ class TestMLP(unittest.TestCase):
 
     def test_match_native_net(
         self,
-    ):
+    ) -> None:
         for ndims, bias, ut, ac, resnet, ashp, prec in self.test_cases:
             # input
             inp_shap = [ndims[0]]
@@ -146,7 +146,7 @@ class TestMLP(unittest.TestCase):
                 err_msg=f"net={ndims} bias={bias} use_dt={ut} act={ac} resnet={resnet} prec={prec}",
             )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         for ndims, bias, ut, ac, resnet, _, prec in self.test_cases:
             layers = []
             for ii in range(1, len(ndims)):
@@ -162,7 +162,7 @@ class TestMLP(unittest.TestCase):
 
 
 class TestEmbeddingNet(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_cases = itertools.product(
             [1, 3],  # inp
             [[24, 48, 96], [24, 36]],  # and hiddens
@@ -173,7 +173,7 @@ class TestEmbeddingNet(unittest.TestCase):
 
     def test_match_embedding_net(
         self,
-    ):
+    ) -> None:
         for idim, nn, act, idt, prec in self.test_cases:
             # input
             rtol, atol = get_tols(prec)
@@ -202,7 +202,7 @@ class TestEmbeddingNet(unittest.TestCase):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         for idim, nn, act, idt, prec in self.test_cases:
             # def MLP
             ml = EmbeddingNet(idim, nn, act, idt, prec).to(env.DEVICE)
@@ -212,7 +212,7 @@ class TestEmbeddingNet(unittest.TestCase):
 
 
 class TestFittingNet(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.test_cases = itertools.product(
             [1, 3],  # inp
             [1, 5],  # out
@@ -225,7 +225,7 @@ class TestFittingNet(unittest.TestCase):
 
     def test_match_fitting_net(
         self,
-    ):
+    ) -> None:
         for idim, odim, nn, act, idt, prec, ob in self.test_cases:
             # input
             rtol, atol = get_tols(prec)
@@ -262,7 +262,7 @@ class TestFittingNet(unittest.TestCase):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         for idim, odim, nn, act, idt, prec, ob in self.test_cases:
             # def MLP
             ml = FittingNet(

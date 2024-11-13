@@ -111,7 +111,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
-    ):
+    ) -> None:
         del ntypes
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
@@ -186,7 +186,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.sea.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -247,7 +247,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
 
@@ -468,7 +468,7 @@ class DescrptBlockSeA(DescriptorBlock):
         trainable: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         **kwargs,
-    ):
+    ) -> None:
         """Construct an embedding net of type `se_a`.
 
         Args:
@@ -604,11 +604,11 @@ class DescrptBlockSeA(DescriptorBlock):
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return 0
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -628,7 +628,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -678,7 +678,7 @@ class DescrptBlockSeA(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 

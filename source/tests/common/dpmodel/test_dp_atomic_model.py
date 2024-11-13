@@ -21,10 +21,10 @@ from .case_single_frame_with_nlist import (
 
 
 class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def test_methods(self):
+    def test_methods(self) -> None:
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -55,7 +55,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_self_consistency(
         self,
-    ):
+    ) -> None:
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -81,7 +81,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
             np.testing.assert_allclose(ret0["energy"], ret1["energy"])
 
-    def test_excl_consistency(self):
+    def test_excl_consistency(self) -> None:
         type_map = ["foo", "bar"]
 
         # test the case of exclusion
@@ -146,13 +146,13 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestDPAtomicModelVirtualConsistency(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.case0 = TestCaseSingleFrameWithNlist()
         self.case1 = TestCaseSingleFrameWithNlistWithVirtual()
         self.case0.setUp()
         self.case1.setUp()
 
-    def test_virtual_consistency(self):
+    def test_virtual_consistency(self) -> None:
         nf, _, _ = self.case0.nlist.shape
         ds = DescrptSeA(
             self.case0.rcut,

@@ -230,7 +230,7 @@ def freeze_graph(
     out_graph_name,
     node_names=None,
     out_suffix="",
-):
+) -> None:
     """Freeze the single graph with chosen out_suffix.
 
     Parameters
@@ -300,7 +300,7 @@ def freeze(
     node_names: Optional[str] = None,
     nvnmd_weight: Optional[str] = None,
     **kwargs,
-):
+) -> None:
     """Freeze the graph in supplied folder.
 
     Parameters

@@ -26,13 +26,13 @@ else:
 
 class TestDeepDOS(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("deepdos.pbtxt")), "deepdos.pb"
         )
         cls.dp = DeepDOS("deepdos.pb")
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 2.288635,
@@ -832,17 +832,17 @@ class TestDeepDOS(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deepdos.pb")
         cls.dp = None
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 1)
         self.assertAlmostEqual(self.dp.get_rcut(), 5.0, places=default_places)
         self.assertEqual(self.dp.get_type_map(), ["Si"])
         self.assertEqual(self.dp.get_numb_dos(), 250)
 
-    def test_1frame_atomic(self):
+    def test_1frame_atomic(self) -> None:
         dd = self.dp.eval(self.coords, self.box, self.atype, atomic=True)
         # check shape of the returns
         nframes = 1
@@ -857,7 +857,7 @@ class TestDeepDOS(unittest.TestCase):
         np.testing.assert_almost_equal(ados_list[1], self.expected_ados_2, 4)
         np.testing.assert_almost_equal(dd[0].ravel(), self.expected_dos, 4)
 
-    def test_2frame_atomic(self):
+    def test_2frame_atomic(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         dd = self.dp.eval(coords2, box2, self.atype, atomic=True)

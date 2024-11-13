@@ -27,7 +27,7 @@ from .common import (
 
 
 class TestLinearModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
         self.data_dir = "system"
         with open(os.path.join(self.data_dir, "type_map.raw"), "w") as f:
@@ -41,7 +41,7 @@ class TestLinearModel(tf.test.TestCase):
             convert_pbtxt_to_pb(pbtxt, pb)
         self.graphs = [DeepPotential(pb) for pb in self.graph_dirs]
 
-    def test_linear_ener_model(self):
+    def test_linear_ener_model(self) -> None:
         numb_test = 1
         data = DataSystem([self.data_dir], "set", 1, 1, 6, run_opt=None)
         test_data = data.get_test()
@@ -117,7 +117,7 @@ class TestLinearModel(tf.test.TestCase):
         np.testing.assert_allclose(f, np.mean(fs, axis=0), rtol=1e-5, atol=1e-5)
         np.testing.assert_allclose(v, np.mean(vs, axis=0), rtol=1e-5, atol=1e-5)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for pb in self.graph_dirs:
             os.remove(pb)
         del_data()

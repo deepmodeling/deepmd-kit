@@ -522,7 +522,7 @@ def DescriptorParamHybridMixedTTebd(ntypes, rcut, rcut_smth, sel, type_map, **kw
 )
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestDescriptorDP(unittest.TestCase, DescriptorTest, DPTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         DescriptorTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
         self.module_class = Descrpt

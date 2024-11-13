@@ -38,7 +38,7 @@ else:
     default_places = 10
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -145,15 +145,15 @@ class TestFinetuneSeAtten(unittest.TestCase):
     def setUpClass(cls) -> None:
         if not parse_version(tf.__version__) < parse_version("1.15"):
 
-            def previous_se_atten(jdata):
+            def previous_se_atten(jdata) -> None:
                 jdata["model"]["descriptor"]["tebd_input_mode"] = "concat"
                 jdata["model"]["descriptor"]["attn_layer"] = 2
 
-            def stripped_model(jdata):
+            def stripped_model(jdata) -> None:
                 jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
                 jdata["model"]["descriptor"]["attn_layer"] = 2
 
-            def compressible_model(jdata):
+            def compressible_model(jdata) -> None:
                 jdata["model"]["descriptor"]["tebd_input_mode"] = "strip"
                 jdata["model"]["descriptor"]["attn_layer"] = 0
 
@@ -199,7 +199,7 @@ class TestFinetuneSeAtten(unittest.TestCase):
         cls.VALID_DATAS = VALID_DATAS
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         for i in range(len(cls.INPUT_PRES)):
             _file_delete(cls.INPUT_PRES[i])
             _file_delete(cls.INPUT_FINETUNES[i])
@@ -221,7 +221,7 @@ class TestFinetuneSeAtten(unittest.TestCase):
             _file_delete("input_v2_compat.json")
             _file_delete("lcurve.out")
 
-    def test_finetune_standard(self):
+    def test_finetune_standard(self) -> None:
         for i in range(len(self.INPUT_PRES)):
             self.valid_data = self.VALID_DATAS[i]
             pretrained_bias = get_tensor_by_name(
@@ -264,7 +264,7 @@ class TestFinetuneSeAtten(unittest.TestCase):
             )
             np.testing.assert_almost_equal(finetune_results, 0.0, default_places)
 
-    def test_finetune_mixed_type(self):
+    def test_finetune_mixed_type(self) -> None:
         for i in range(len(self.INPUT_PRES)):
             self.valid_data = self.VALID_DATAS[i]
             pretrained_bias = get_tensor_by_name(

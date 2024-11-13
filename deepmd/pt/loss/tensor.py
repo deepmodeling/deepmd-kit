@@ -23,7 +23,7 @@ class TensorLoss(TaskLoss):
         pref: float = 0.0,
         inference=False,
         **kwargs,
-    ):
+    ) -> None:
         r"""Construct a loss for local and global tensors.
 
         Parameters

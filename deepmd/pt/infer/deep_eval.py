@@ -99,7 +99,7 @@ class DeepEval(DeepEvalBackend):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: Optional[Union[str, int]] = None,
         **kwargs: Any,
-    ):
+    ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         if str(self.model_path).endswith(".pt"):
@@ -221,11 +221,11 @@ class DeepEval(DeepEvalBackend):
         """Get the output dimension."""
         return self.dp.model["Default"].get_task_dim()
 
-    def get_has_efield(self):
+    def get_has_efield(self) -> bool:
         """Check if the model has efield."""
         return False
 
-    def get_ntypes_spin(self):
+    def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
 

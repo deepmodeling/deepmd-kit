@@ -48,7 +48,7 @@ else:
     )
 
 
-def set_env_if_empty(key: str, value: str, verbose: bool = True):
+def set_env_if_empty(key: str, value: str, verbose: bool = True) -> None:
     """Set environment variable only if it is empty.
 
     Parameters
@@ -68,7 +68,7 @@ def set_env_if_empty(key: str, value: str, verbose: bool = True):
             )
 
 
-def set_default_nthreads():
+def set_default_nthreads() -> None:
     """Set internal number of threads to default=automatic selection.
 
     Notes

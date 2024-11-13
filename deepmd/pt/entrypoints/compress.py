@@ -36,7 +36,7 @@ def enable_compression(
     extrapolate: int = 5,
     check_frequency: int = -1,
     training_script: Optional[str] = None,
-):
+) -> None:
     saved_model = torch.jit.load(input_file, map_location="cpu")
     model_def_script = json.loads(saved_model.model_def_script)
     model = get_model(model_def_script)

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    NoReturn,
     Optional,
     Union,
 )
@@ -88,7 +89,7 @@ class RepinitArgs:
         three_body_sel: int = 40,
         three_body_rcut: float = 4.0,
         three_body_rcut_smth: float = 0.5,
-    ):
+    ) -> None:
         r"""The constructor for the RepinitArgs class which defines the parameters of the repinit block in DPA2 descriptor.
 
         Parameters
@@ -212,7 +213,7 @@ class RepformerArgs:
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
-    ):
+    ) -> None:
         r"""The constructor for the RepformerArgs class which defines the parameters of the repformer block in DPA2 descriptor.
 
         Parameters
@@ -384,7 +385,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
         Parameters
@@ -656,7 +657,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -728,7 +729,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: list[dict], path: Optional[DPPath] = None
+    ) -> NoReturn:
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 

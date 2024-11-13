@@ -54,7 +54,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -150,7 +150,7 @@ class GeneralFitting(Fitting):
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.var_name = var_name
         self.ntypes = ntypes
@@ -242,7 +242,7 @@ class GeneralFitting(Fitting):
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
@@ -349,7 +349,7 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value

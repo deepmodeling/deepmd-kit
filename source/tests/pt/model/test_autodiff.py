@@ -60,7 +60,7 @@ def stretch_box(old_coord, old_box, new_box):
 class ForceTest:
     def test(
         self,
-    ):
+    ) -> None:
         places = 5
         delta = 1e-5
         natoms = 5
@@ -132,7 +132,7 @@ class ForceTest:
 class VirialTest:
     def test(
         self,
-    ):
+    ) -> None:
         places = 5
         delta = 1e-4
         natoms = 5
@@ -176,77 +176,77 @@ class VirialTest:
 
 
 class TestEnergyModelSeAForce(unittest.TestCase, ForceTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelSeAVirial(unittest.TestCase, VirialTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA1Force(unittest.TestCase, ForceTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA1Virial(unittest.TestCase, VirialTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA2Force(unittest.TestCase, ForceTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPAUniVirial(unittest.TestCase, VirialTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelHybridForce(unittest.TestCase, ForceTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_hybrid)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelHybridVirial(unittest.TestCase, VirialTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_hybrid)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelZBLForce(unittest.TestCase, ForceTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelZBLVirial(unittest.TestCase, VirialTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelSpinSeAForce(unittest.TestCase, ForceTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True

@@ -23,10 +23,10 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data(nframes=2)
 
-    def test_descriptor_two_sides(self):
+    def test_descriptor_two_sides(self) -> None:
         jfile = "water_se_a_type.json"
         jdata = j_loader(jfile)
 
@@ -188,7 +188,7 @@ class TestModel(tf.test.TestCase):
         places = 10
         np.testing.assert_almost_equal(model_dout, ref_dout, places)
 
-    def test_descriptor_one_side(self):
+    def test_descriptor_one_side(self) -> None:
         jfile = "water_se_a_type.json"
         jdata = j_loader(jfile)
 

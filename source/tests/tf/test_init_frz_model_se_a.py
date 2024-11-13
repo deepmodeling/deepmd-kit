@@ -37,7 +37,7 @@ else:
     default_places = 10
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -131,7 +131,7 @@ def _init_models():
 
 class TestInitFrzModelA(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         (
             cls.INPUT,
             cls.CKPT,
@@ -147,7 +147,7 @@ class TestInitFrzModelA(unittest.TestCase):
         cls.stop_batch = STOP_BATCH
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         _file_delete(cls.INPUT)
         _file_delete(cls.FROZEN_MODEL)
         _file_delete("out.json")
@@ -164,7 +164,7 @@ class TestInitFrzModelA(unittest.TestCase):
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
-    def test_single_frame(self):
+    def test_single_frame(self) -> None:
         valid_batch = self.valid_data.get_batch()
         natoms = valid_batch["natoms_vec"]
         tf.reset_default_graph()

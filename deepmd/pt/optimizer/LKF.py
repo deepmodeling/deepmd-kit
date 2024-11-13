@@ -31,7 +31,7 @@ class LKFOptimizer(Optimizer):
         kalman_lambda=0.98,
         kalman_nue=0.9987,
         block_size=5120,
-    ):
+    ) -> None:
         defaults = {"lr": 0.1, "kalman_nue": kalman_nue, "block_size": block_size}
 
         super().__init__(params, defaults)
@@ -53,7 +53,7 @@ class LKFOptimizer(Optimizer):
         self.remainder = 0
         self.__init_P()
 
-    def __init_P(self):
+    def __init_P(self) -> None:
         param_nums = []
         param_sum = 0
         block_size = self.__get_blocksize()
@@ -179,7 +179,7 @@ class LKFOptimizer(Optimizer):
                     res.append(weight[i * block_size :])
         return res
 
-    def __update(self, H, error, weights):
+    def __update(self, H, error, weights) -> None:
         P = self._state.get("P")
         kalman_lambda = self._state.get("kalman_lambda")
         weights_num = self._state.get("weights_num")
@@ -253,10 +253,10 @@ class LKFOptimizer(Optimizer):
                         i += 1
                     param.data = tmp_weight.reshape(param.data.T.shape).T.contiguous()
 
-    def set_grad_prefactor(self, grad_prefactor):
+    def set_grad_prefactor(self, grad_prefactor) -> None:
         self.grad_prefactor = grad_prefactor
 
-    def step(self, error):
+    def step(self, error) -> None:
         params_packed_index = self._state.get("params_packed_index")
 
         weights = []

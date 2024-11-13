@@ -115,7 +115,7 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
     array_api_strict_class = PropertyFittingStrict
     args = fitting_property()
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

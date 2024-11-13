@@ -29,13 +29,13 @@ else:
 
 class TestDeepPolarPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("deeppolar.pbtxt")), "deeppolar.pb"
         )
         cls.dp = DeepPolar("deeppolar.pb")
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -85,17 +85,17 @@ class TestDeepPolarPBC(unittest.TestCase):
         self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deeppolar.pb")
         cls.dp = None
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp.get_type_map(), ["O", "H"])
         self.assertEqual(self.dp.get_sel_type(), [0])
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         dd = self.dp.eval(self.coords, self.box, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
@@ -105,7 +105,7 @@ class TestDeepPolarPBC(unittest.TestCase):
         # check values
         np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         dd = self.dp.eval(coords2, box2, self.atype)[:, self.sel_mask]
@@ -121,13 +121,13 @@ class TestDeepPolarPBC(unittest.TestCase):
 
 class TestDeepPolarNoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("deeppolar.pbtxt")), "deeppolar.pb"
         )
         cls.dp = DeepPolar("deeppolar.pb")
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -177,11 +177,11 @@ class TestDeepPolarNoPBC(unittest.TestCase):
         self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deeppolar.pb")
         cls.dp = None
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         dd = self.dp.eval(self.coords, None, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
@@ -191,7 +191,7 @@ class TestDeepPolarNoPBC(unittest.TestCase):
         # check values
         np.testing.assert_almost_equal(dd.ravel(), self.expected_d, default_places)
 
-    def test_1frame_atm_large_box(self):
+    def test_1frame_atm_large_box(self) -> None:
         dd = self.dp.eval(self.coords, self.box, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
@@ -208,14 +208,14 @@ class TestDeepPolarNoPBC(unittest.TestCase):
 )
 class TestDeepPolarNewPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("deeppolar_new.pbtxt")),
             "deeppolar_new.pb",
         )
         cls.dp = DeepPolar("deeppolar_new.pb")
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -926,17 +926,17 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         self.sel_mask = np.isin(self.atype, self.dp.get_sel_type())
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deeppolar_new.pb")
         cls.dp = None
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp.get_type_map(), ["O", "H"])
         self.assertEqual(self.dp.get_sel_type(), [0])
 
-    def test_1frame_old(self):
+    def test_1frame_old(self) -> None:
         gt = self.dp.eval(self.coords, self.box, self.atype, atomic=False)
         # check shape of the returns
         nframes = 1
@@ -944,7 +944,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         # check values
         np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
 
-    def test_1frame_old_atm(self):
+    def test_1frame_old_atm(self) -> None:
         at = self.dp.eval(self.coords, self.box, self.atype)[:, self.sel_mask]
         # check shape of the returns
         nframes = 1
@@ -954,7 +954,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         # check values
         np.testing.assert_almost_equal(at.ravel(), self.expected_t, default_places)
 
-    def test_2frame_old_atm(self):
+    def test_2frame_old_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         at = self.dp.eval(coords2, box2, self.atype)[:, self.sel_mask]
@@ -967,7 +967,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         expected_d = np.concatenate((self.expected_t, self.expected_t))
         np.testing.assert_almost_equal(at.ravel(), expected_d, default_places)
 
-    def test_1frame_full(self):
+    def test_1frame_full(self) -> None:
         gt, ff, vv = self.dp.eval_full(self.coords, self.box, self.atype, atomic=False)
         # check shape of the returns
         nframes = 1
@@ -980,7 +980,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
         np.testing.assert_almost_equal(gt.ravel(), self.expected_gt, default_places)
         np.testing.assert_almost_equal(vv.ravel(), self.expected_gv, default_places)
 
-    def test_1frame_full_atm(self):
+    def test_1frame_full_atm(self) -> None:
         gt, ff, vv, at, av = self.dp.eval_full(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -1012,7 +1012,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
 
-    def test_1frame_full_atm_shuffle(self):
+    def test_1frame_full_atm_shuffle(self) -> None:
         i_sf = [2, 1, 3, 0, 5, 4]
         isel_sf = [1, 0]
         gt, ff, vv, at, av = self.dp.eval_full(
@@ -1055,7 +1055,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
             vv.reshape([-1]), self.expected_gv.reshape([-1]), decimal=default_places
         )
 
-    def test_2frame_full_atm(self):
+    def test_2frame_full_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         gt, ff, vv, at, av = self.dp.eval_full(coords2, box2, self.atype, atomic=True)
@@ -1098,7 +1098,7 @@ class TestDeepPolarNewPBC(unittest.TestCase):
 )
 class TestDeepPolarNewPBCNeighborList(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("deeppolar_new.pbtxt")),
             "deeppolar_new.pb",
@@ -1111,9 +1111,9 @@ class TestDeepPolarNewPBCNeighborList(unittest.TestCase):
         )
 
     @unittest.skip("multiple frames not supported")
-    def test_2frame_full_atm(self):
+    def test_2frame_full_atm(self) -> None:
         pass
 
     @unittest.skip("multiple frames not supported")
-    def test_2frame_old_atm(self):
+    def test_2frame_old_atm(self) -> None:
         pass

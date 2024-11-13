@@ -31,13 +31,13 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         del_data()
 
-    def test_model_atom_ener(self):
+    def test_model_atom_ener(self) -> None:
         jfile = "water_se_a.json"
         jdata = j_loader(jfile)
         set_atom_ener = [0.02, 0.01]
@@ -132,7 +132,7 @@ class TestModel(tf.test.TestCase):
         [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
         self.assertAlmostEqual(e[0], set_atom_ener[1], places=10)
 
-    def test_model(self):
+    def test_model(self) -> None:
         jfile = "water_se_a.json"
         jdata = j_loader(jfile)
 
@@ -263,7 +263,7 @@ class TestModel(tf.test.TestCase):
         # test input requirement for the model
         self.assertCountEqual(model.input_requirement, [])
 
-    def test_model_atom_ener_type_embedding(self):
+    def test_model_atom_ener_type_embedding(self) -> None:
         """Test atom ener with type embedding."""
         jfile = "water_se_a.json"
         jdata = j_loader(jfile)

@@ -12,7 +12,7 @@ from deepmd.tf.env import (
 
 
 class TestProdForce(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         config = tf.ConfigProto()
         if int(os.environ.get("DP_AUTO_PARALLELIZATION", 0)):
             config.graph_options.rewrite_options.custom_optimizers.add().name = (
@@ -1016,7 +1016,7 @@ class TestProdForce(tf.test.TestCase):
         )
         self.tnatoms = tf.placeholder(tf.int32, [None], name="t_natoms")
 
-    def test_prod_force(self):
+    def test_prod_force(self) -> None:
         tforce = op_module.prod_force_se_a(
             self.tnet_deriv,
             self.tem_deriv,
@@ -1040,7 +1040,7 @@ class TestProdForce(tf.test.TestCase):
             np.testing.assert_almost_equal(dforce[ff], self.expected_force, 5)
 
     @unittest.skipIf(tf.test.is_gpu_available(), reason="Not supported in GPUs")
-    def test_prod_force_parallel(self):
+    def test_prod_force_parallel(self) -> None:
         forces = []
         for ii in range(4):
             tforce = op_module.parallel_prod_force_se_a(

@@ -28,7 +28,7 @@ dtype = torch.float64
 class RotDenoiseTest:
     def test(
         self,
-    ):
+    ) -> None:
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         prec = 1e-10
         natoms = 5
@@ -104,7 +104,7 @@ class RotDenoiseTest:
 
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA1(unittest.TestCase, RotDenoiseTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -112,7 +112,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, RotDenoiseTest):
 
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, RotDenoiseTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)

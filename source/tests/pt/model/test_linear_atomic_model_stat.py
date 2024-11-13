@@ -149,10 +149,10 @@ class FooFittingB(torch.nn.Module, BaseFitting):
 
 
 class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         nf, nloc, nnei = self.nlist.shape
         self.merged_output_stat = [
@@ -179,7 +179,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             pass
         self.stat_file_path = DPPath(h5file, "a")
 
-    def test_linear_atomic_model_stat_with_bias(self):
+    def test_linear_atomic_model_stat_with_bias(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,

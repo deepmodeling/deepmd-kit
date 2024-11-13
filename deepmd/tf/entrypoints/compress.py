@@ -61,7 +61,7 @@ def compress(
     log_path: Optional[str],
     log_level: int,
     **kwargs,
-):
+) -> None:
     """Compress model.
 
     The table is composed of fifth-order polynomial coefficients and is assembled from
@@ -199,7 +199,7 @@ def compress(
         ) from e
 
 
-def _check_compress_type(graph: tf.Graph):
+def _check_compress_type(graph: tf.Graph) -> None:
     try:
         t_model_type = bytes.decode(get_tensor_by_name_from_graph(graph, "model_type"))
     except GraphWithoutTensorError as e:

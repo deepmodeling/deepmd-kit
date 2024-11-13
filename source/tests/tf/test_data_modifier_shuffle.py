@@ -41,19 +41,19 @@ modifier_datapath = "data_modifier"
 
 
 class TestDataModifier(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # with tf.variable_scope('load', reuse = False) :
         tf.reset_default_graph()
         self._setUp()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         tf.reset_default_graph()
         if os.path.isdir(os.path.join(modifier_datapath, "sys_test_0")):
             shutil.rmtree(os.path.join(modifier_datapath, "sys_test_0"))
         if os.path.isfile(os.path.join(modifier_datapath, "dipole.pb")):
             os.remove(os.path.join(modifier_datapath, "dipole.pb"))
 
-    def _setUp(self):
+    def _setUp(self) -> None:
         run_opt = RunOptions(
             restart=None, init_model=None, log_path=None, log_level=30, mpi_log="master"
         )
@@ -94,7 +94,7 @@ class TestDataModifier(tf.test.TestCase):
             with tf.gfile.GFile(output_graph, "wb") as f:
                 f.write(output_graph_def.SerializeToString())
 
-    def _setUp_data(self):
+    def _setUp_data(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         jdata = self._setUp_jdata()
         # sys0
@@ -129,7 +129,7 @@ class TestDataModifier(tf.test.TestCase):
         self.sel_mask0 = np.isin(self.atom_types0, self.sel_type)
         self.sel_mask1 = np.isin(self.atom_types1, self.sel_type)
 
-    def _write_sys_data(self, dirname, atom_types, coords, dipoles, box):
+    def _write_sys_data(self, dirname, atom_types, coords, dipoles, box) -> None:
         os.makedirs(dirname, exist_ok=True)
         os.makedirs(dirname + "/set.0", exist_ok=True)
         np.savetxt(os.path.join(dirname, "type.raw"), atom_types, fmt="%d")
@@ -182,7 +182,7 @@ class TestDataModifier(tf.test.TestCase):
         }
         return jdata
 
-    def test_z_dipole(self):
+    def test_z_dipole(self) -> None:
         dd = DeepDipole(os.path.join(modifier_datapath, "dipole.pb"))
 
         dv0 = dd.eval(self.coords0, self.box0, self.atom_types0)[:, self.sel_mask0]
@@ -195,7 +195,7 @@ class TestDataModifier(tf.test.TestCase):
 
         np.testing.assert_almost_equal(dv01, dv1, err_msg="dipole dose not match")
 
-    def test_modify(self):
+    def test_modify(self) -> None:
         dcm = DipoleChargeModifier(
             os.path.join(modifier_datapath, "dipole.pb"),
             [-1, -3],

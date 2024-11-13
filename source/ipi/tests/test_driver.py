@@ -27,7 +27,7 @@ default_places = 6
 
 
 class DPiPICalculator(FileIOCalculator):
-    def __init__(self, model: str, use_unix: bool = True, **kwargs):
+    def __init__(self, model: str, use_unix: bool = True, **kwargs) -> None:
         self.xyz_file = "test_ipi.xyz"
         self.config_file = "config.json"
         config = {
@@ -49,20 +49,20 @@ class DPiPICalculator(FileIOCalculator):
             self, command=command, label=self.config_file, **kwargs
         )
 
-    def write_input(self, atoms, **kwargs):
+    def write_input(self, atoms, **kwargs) -> None:
         atoms.write(self.xyz_file, format="xyz")
 
 
 class TestDPIPI(unittest.TestCase):
     # copy from test_deeppot_a.py
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.model_file = "deeppot.pb"
         convert_pbtxt_to_pb(
             str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -179,11 +179,11 @@ class TestDPIPI(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deeppot.pb")
         cls.dp = None
 
-    def test_ase_unix(self):
+    def test_ase_unix(self) -> None:
         with SocketIOCalculator(
             DPiPICalculator(self.model_file), log=sys.stdout, unixsocket="localhost"
         ) as calc:
@@ -202,7 +202,7 @@ class TestDPIPI(unittest.TestCase):
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
 
-    def test_ase_nounix(self):
+    def test_ase_nounix(self) -> None:
         with SocketIOCalculator(
             DPiPICalculator(self.model_file, use_unix=False),
             log=sys.stdout,
@@ -222,7 +222,7 @@ class TestDPIPI(unittest.TestCase):
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
 
-    def test_normalize_coords(self):
+    def test_normalize_coords(self) -> None:
         # coordinate nomarlization should happen inside the interface
         cell = self.box.reshape((3, 3))
         coord = self.coords.reshape((-1, 3))
@@ -255,10 +255,10 @@ class TestDPIPI(unittest.TestCase):
 
 class TestDPIPIPt(TestDPIPI):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.model_file = str(tests_path / "infer" / "deeppot_sea.pth")
 
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
 
         self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
@@ -354,5 +354,5 @@ class TestDPIPIPt(TestDPIPI):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.dp = None

@@ -45,7 +45,7 @@ class TestCompressedTrainingSeAtten(unittest.TestCase):
         with open(self.input_file, "w") as fp:
             json.dump(jdata, fp, indent=4)
 
-    def test_compressed_training(self):
+    def test_compressed_training(self) -> None:
         run_dp(f"dp train {self.input_file}")
         run_dp(f"dp freeze -c {self.checkpoint_dir} -o {self.frozen_model}")
         run_dp(f"dp compress -i {self.frozen_model} -o {self.compressed_model}")

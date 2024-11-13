@@ -14,7 +14,7 @@ from ...seed import (
 
 
 class TestRegion(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.cell = np.array(
             [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]],
         )
@@ -22,7 +22,7 @@ class TestRegion(unittest.TestCase):
         self.cell = np.tile(self.cell, [4, 5, 1, 1])
         self.prec = 1e-8
 
-    def test_inter_to_phys(self):
+    def test_inter_to_phys(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         inter = rng.normal(size=[4, 5, 3, 3])
         phys = inter2phys(inter, self.cell)
@@ -33,7 +33,7 @@ class TestRegion(unittest.TestCase):
                     phys[ii, jj], expected_phys, rtol=self.prec, atol=self.prec
                 )
 
-    def test_to_face_dist(self):
+    def test_to_face_dist(self) -> None:
         cell0 = self.cell[0][0]
         vol = np.linalg.det(cell0)
         # area of surfaces xy, xz, yz
