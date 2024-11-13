@@ -233,11 +233,14 @@ class PolarFittingNet(GeneralFitting):
         assert (
             gr is not None
         ), "Must provide the rotation matrix for polarizability fitting."
+        # cast the input to internal precsion
+        gr = gr.to(self.prec)
         # (nframes, nloc, _net_out_dim)
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        out = out * (self.scale.to(atype.device))[atype]
+        out = out * (self.scale.to(atype.device).to(self.prec))[atype]
+
         gr = gr.view(nframes * nloc, self.embedding_width, 3)  # (nframes * nloc, m1, 3)
 
         if self.fit_diag:

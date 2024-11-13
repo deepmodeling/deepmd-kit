@@ -74,6 +74,7 @@ See [our latest paper](https://doi.org/10.1063/5.0155600) for details of all fea
 
 - Multiple backends supported. Add PyTorch and JAX backends.
 - The DPA-2 model.
+- Plugin mechanisms for external models.
 
 ## Install and use DeePMD-kit
 

@@ -297,7 +297,9 @@ If one does not need to use DeePMD-kit with LAMMPS or i-PI, then the python inte
 
 ::::{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
+
+The C++ interfaces of both TensorFlow and JAX backends are based on the TensorFlow C++ library.
 
 Since TensorFlow 2.12, TensorFlow C++ library (`libtensorflow_cc`) is packaged inside the Python library. Thus, you can skip building TensorFlow C++ library manually. If that does not work for you, you can still build it manually.
 
@@ -338,7 +340,7 @@ We recommend using [conda packages](https://docs.deepmodeling.org/faq/conda.html
 
 ::::{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
 
 I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
 
@@ -375,7 +377,7 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
-{{ tensorflow_icon }} Whether building the TensorFlow backend.
+{{ tensorflow_icon }} {{ jax_icon }} Whether building the TensorFlow backend and the JAX backend.
 
 :::
 
@@ -391,7 +393,7 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 
 **Type**: `PATH`
 
-{{ tensorflow_icon }} The Path to TensorFlow's C++ interface.
+{{ tensorflow_icon }} {{ jax_icon }} The Path to TensorFlow's C++ interface.
 
 :::
 
