@@ -142,7 +142,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             model = get_model_pt(data)
-            model.atomic_model.out_bias += 1.0
+            model.atomic_model.out_bias.uniform_()
             return model
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
