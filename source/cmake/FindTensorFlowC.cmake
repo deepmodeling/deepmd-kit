@@ -38,5 +38,5 @@ if(NOT TensorFlowC_FOUND)
   target_include_directories(TensorFlow::tensorflow_c
                              INTERFACE ${TENSORFLOWC_INCLUDE_DIR})
 
-  mark_as_advanced(TENSORFLOWC_LIBRARY TENSORFLOWC_INCLUDE_DIR =)
+  mark_as_advanced(TENSORFLOWC_LIBRARY TENSORFLOWC_INCLUDE_DIR)
 endif()
