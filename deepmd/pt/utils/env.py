@@ -15,6 +15,7 @@ from deepmd.env import (
 )
 
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
+DP_DTYPE_PROMOTION_STRICT = os.environ.get("DP_DTYPE_PROMOTION_STRICT", "0") == "1"
 try:
     # only linux
     ncpus = len(os.sched_getaffinity(0))

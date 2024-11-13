@@ -32,6 +32,7 @@ from deepmd.pt.model.network.init import (
 )
 from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
+    DP_DTYPE_PROMOTION_STRICT,
     PRECISION_DICT,
 )
 from deepmd.pt.utils.utils import (
@@ -200,6 +201,8 @@ class MLPLayer(nn.Module):
             The output.
         """
         ori_prec = xx.dtype
+        if not DP_DTYPE_PROMOTION_STRICT:
+            xx = xx.to(self.prec)
         yy = (
             torch.matmul(xx, self.matrix) + self.bias
             if self.bias is not None
@@ -214,6 +217,8 @@ class MLPLayer(nn.Module):
                 yy += torch.concat([xx, xx], dim=-1)
             else:
                 yy = yy
+        if not DP_DTYPE_PROMOTION_STRICT:
+            yy = yy.to(ori_prec)
         return yy
 
     def serialize(self) -> dict:
