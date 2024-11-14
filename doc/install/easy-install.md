@@ -204,11 +204,11 @@ pip install deepmd-kit[jax]
 
 ::::
 
+:::::
+
 To generate a SavedModel and use [the LAMMPS module](../third-party/lammps-command.md) and [the i-PI driver](../third-party/ipi.md),
 you need to install the TensorFlow.
 Switch to the TensorFlow {{ tensorflow_icon }} tab for more information.
-
-:::::
 
 ::::::
 
