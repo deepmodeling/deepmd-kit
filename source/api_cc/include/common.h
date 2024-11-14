@@ -15,6 +15,13 @@ namespace deepmd {
 typedef double ENERGYTYPE;
 enum DPBackend { TensorFlow, PyTorch, Paddle, JAX, Unknown };
 
+/**
+ * @brief Get the backend of the model.
+ * @param[in] model The model name.
+ * @return The backend of the model.
+ **/
+DPBackend get_backend(const std::string& model);
+
 struct NeighborListData {
   /// Array stores the core region atom's index
   std::vector<int> ilist;
