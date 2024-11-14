@@ -36,7 +36,7 @@ from ..backend import (
         *[(param_func, PropertyLoss) for param_func in LossParamPropertyList],
     )  # class_param & class
 )
-class TestFittingPT(unittest.TestCase, LossTest, PTTestCase):
+class TestLossPT(unittest.TestCase, LossTest, PTTestCase):
     def setUp(self):
         (LossParam, Loss) = self.param[0]
         LossTest.setUp(self)
