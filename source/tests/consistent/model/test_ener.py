@@ -141,7 +141,9 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         if cls is EnergyModelDP:
             return get_model_dp(data)
         elif cls is EnergyModelPT:
-            return get_model_pt(data)
+            model = get_model_pt(data)
+            model.atomic_model.out_bias.uniform_()
+            return model
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
