@@ -15,6 +15,7 @@ from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
+    cast_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -595,6 +596,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.rcut = self.repinit.get_rcut()
         self.ntypes = ntypes
         self.sel = self.repinit.sel
+        self.precision = precision
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -760,6 +762,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             stddev_list.append(self.repinit_three_body.stddev)
         return mean_list, stddev_list
 
+    @cast_precision
     def call(
         self,
         coord_ext: np.ndarray,

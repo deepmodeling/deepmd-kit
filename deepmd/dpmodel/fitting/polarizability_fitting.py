@@ -15,6 +15,7 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
 from deepmd.dpmodel.common import (
+    cast_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.fitting.base_fitting import (
@@ -241,6 +242,7 @@ class PolarFitting(GeneralFitting):
         self.scale = self.scale[remap_index]
         self.constant_matrix = self.constant_matrix[remap_index]
 
+    @cast_precision
     def call(
         self,
         descriptor: np.ndarray,
@@ -285,7 +287,8 @@ class PolarFitting(GeneralFitting):
         ]
         # out = out * self.scale[atype, ...]
         scale_atype = xp.reshape(
-            xp.take(self.scale, xp.reshape(atype, [-1]), axis=0), (*atype.shape, 1)
+            xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, [-1]), axis=0),
+            (*atype.shape, 1),
         )
         out = out * scale_atype
         # (nframes * nloc, m1, 3)
@@ -308,7 +311,11 @@ class PolarFitting(GeneralFitting):
         if self.shift_diag:
             # bias = self.constant_matrix[atype]
             bias = xp.reshape(
-                xp.take(self.constant_matrix, xp.reshape(atype, [-1]), axis=0),
+                xp.take(
+                    xp.astype(self.constant_matrix, out.dtype),
+                    xp.reshape(atype, [-1]),
+                    axis=0,
+                ),
                 (nframes, nloc),
             )
             # (nframes, nloc, 1)

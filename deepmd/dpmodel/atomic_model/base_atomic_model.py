@@ -201,18 +201,19 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
         # nf x nloc
-        atom_mask = ext_atom_mask[:, :nloc].astype(xp.int32)
+        atom_mask = ext_atom_mask[:, :nloc]
         if self.atom_excl is not None:
-            atom_mask *= self.atom_excl.build_type_exclude_mask(atype)
+            atom_mask = xp.logical_and(
+                atom_mask, self.atom_excl.build_type_exclude_mask(atype)
+            )
 
         for kk in ret_dict.keys():
             out_shape = ret_dict[kk].shape
             out_shape2 = math.prod(out_shape[2:])
-            ret_dict[kk] = (
-                ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
-                * atom_mask[:, :, None]
-            ).reshape(out_shape)
-        ret_dict["mask"] = atom_mask
+            tmp_arr = ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
+            tmp_arr = xp.where(atom_mask[:, :, None], tmp_arr, xp.zeros_like(tmp_arr))
+            ret_dict[kk] = xp.reshape(tmp_arr, out_shape)
+        ret_dict["mask"] = xp.astype(atom_mask, xp.int32)
 
         return ret_dict
 
