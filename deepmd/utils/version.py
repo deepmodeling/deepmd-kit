@@ -3,7 +3,7 @@ def check_version_compatibility(
     current_version: int,
     maximum_supported_version: int,
     minimal_supported_version: int = 1,
-):
+) -> None:
     """Check if the current version is compatible with the supported versions.
 
     Parameters

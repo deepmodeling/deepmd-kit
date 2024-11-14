@@ -116,7 +116,7 @@ def skip_model_tests(test_obj):
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         EnerModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
@@ -204,7 +204,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
 @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
 class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         SpinEnerModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]

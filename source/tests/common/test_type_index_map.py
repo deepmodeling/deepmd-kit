@@ -9,7 +9,7 @@ from deepmd.utils.finetune import (
 
 
 class TestTypeIndexMap(unittest.TestCase):
-    def test_get_index_between_two_maps(self):
+    def test_get_index_between_two_maps(self) -> None:
         tm_1 = [
             "Al",
             "F",
@@ -88,7 +88,7 @@ class TestTypeIndexMap(unittest.TestCase):
         self.assertEqual(expected_map, result_map)
         self.assertEqual(expected_has_new, result_has_new)
 
-    def test_map_exclude_types(self):
+    def test_map_exclude_types(self) -> None:
         old_tm = [
             "Al",
             "F",

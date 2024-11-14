@@ -77,7 +77,7 @@ class MapTable:
     DOI: 10.1038/s41524-022-00773-z
     """
 
-    def __init__(self, config_file: str, weight_file: str, map_file: str):
+    def __init__(self, config_file: str, weight_file: str, map_file: str) -> None:
         self.config_file = config_file
         self.weight_file = weight_file
         self.map_file = map_file
@@ -250,7 +250,7 @@ class MapTable:
             dic_val[key] = dats
         return dic_val
 
-    def plot_lines(self, x, dic1, dic2=None):
+    def plot_lines(self, x, dic1, dic2=None) -> None:
         r"""Plot lines to see accuracy."""
         pass
 
@@ -653,7 +653,7 @@ def mapt(
     nvnmd_weight: Optional[str] = "nvnmd/weight.npy",
     nvnmd_map: Optional[str] = "nvnmd/map.npy",
     **kwargs,
-):
+) -> None:
     # build mapping table
     mapObj = MapTable(nvnmd_config, nvnmd_weight, nvnmd_map)
     mapObj.build_map()

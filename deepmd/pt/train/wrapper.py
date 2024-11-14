@@ -21,7 +21,7 @@ class ModelWrapper(torch.nn.Module):
         loss: Union[torch.nn.Module, dict] = None,
         model_params=None,
         shared_links=None,
-    ):
+    ) -> None:
         """Construct a DeePMD model wrapper.
 
         Args:
@@ -59,7 +59,7 @@ class ModelWrapper(torch.nn.Module):
                     self.loss[task_key] = loss[task_key]
         self.inference_only = self.loss is None
 
-    def share_params(self, shared_links, resume=False):
+    def share_params(self, shared_links, resume=False) -> None:
         """
         Share the parameters of classes following rules defined in shared_links during multitask training.
         If not start from checkpoint (resume is False),
@@ -182,7 +182,7 @@ class ModelWrapper(torch.nn.Module):
             )
             return model_pred, loss, more_loss
 
-    def set_extra_state(self, state: dict):
+    def set_extra_state(self, state: dict) -> None:
         self.model_params = state["model_params"]
         self.train_infos = state["train_infos"]
         return None

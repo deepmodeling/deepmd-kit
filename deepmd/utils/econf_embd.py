@@ -257,7 +257,7 @@ def transform_to_spin_rep(res: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     return ret
 
 
-def print_econf_embedding(res: dict[str, np.ndarray]):
+def print_econf_embedding(res: dict[str, np.ndarray]) -> None:
     """Print electron configuration embedding."""
     for kk, vv in res.items():
         vvstr = ",".join([str(ii) for ii in vv])

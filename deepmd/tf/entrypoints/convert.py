@@ -17,7 +17,7 @@ def convert(
     input_model: str,
     output_model: str,
     **kwargs,
-):
+) -> None:
     if output_model[-6:] == ".pbtxt":
         if input_model[-6:] != ".pbtxt":
             convert_pb_to_pbtxt(input_model, output_model)

@@ -74,7 +74,7 @@ def _brute_aparam(data, ndim):
 
 
 class TestEnerFittingStat(unittest.TestCase):
-    def test(self):
+    def test(self) -> None:
         jdata = j_loader(input_json)
         jdata = jdata["model"]
         # descrpt = DescrptSeA(jdata['descriptor'])

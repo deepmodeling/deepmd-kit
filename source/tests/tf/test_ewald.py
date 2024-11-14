@@ -26,7 +26,7 @@ else:
 
 
 class TestEwaldRecp(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         boxl = 4.5  # NOTICE grid should not change before and after box pert...
         box_pert = 0.2
@@ -66,7 +66,7 @@ class TestEwaldRecp(tf.test.TestCase):
         self.box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_box")
         self.nloc = tf.placeholder(tf.int32, [1], name="t_nloc")
 
-    def test_py_interface(self):
+    def test_py_interface(self) -> None:
         hh = 1e-4
         places = 4
         sess = self.cached_session().__enter__()
@@ -93,7 +93,7 @@ class TestEwaldRecp(tf.test.TestCase):
         np.testing.assert_almost_equal(f, f1, places, err_msg="force component failed")
         np.testing.assert_almost_equal(v, v, places, err_msg="virial component failed")
 
-    def test_force(self):
+    def test_force(self) -> None:
         hh = 1e-4
         places = 6
         sess = self.cached_session().__enter__()
@@ -146,7 +146,7 @@ class TestEwaldRecp(tf.test.TestCase):
                     err_msg="force component [%d,%d] failed" % (idx, dd),
                 )
 
-    def test_virial(self):
+    def test_virial(self) -> None:
         hh = 1e-4
         places = 6
         sess = self.cached_session().__enter__()

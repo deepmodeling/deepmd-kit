@@ -85,7 +85,7 @@ import exhale.deploy
 import exhale.utils
 
 
-def exhale_environment_ready(app):
+def exhale_environment_ready(app) -> None:
     default_project = app.config.breathe_default_project
     default_exhale_args = dict(app.config.exhale_args)
 

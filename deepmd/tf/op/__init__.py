@@ -13,7 +13,7 @@ PACKAGE_BASE = "deepmd.tf.op"
 log = logging.getLogger(__name__)
 
 
-def import_ops():
+def import_ops() -> None:
     """Import all custom TF ops that are present in this submodule.
 
     Notes

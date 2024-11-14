@@ -30,10 +30,10 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
 )
 class TestHybrid(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data(nframes=2)
 
-    def test_descriptor_hybrid(self):
+    def test_descriptor_hybrid(self) -> None:
         jfile = "water_hybrid.json"
         jdata = j_loader(jfile)
 

@@ -252,7 +252,7 @@ def train(
     use_pretrain_script: bool = False,
     force_load: bool = False,
     output: str = "out.json",
-):
+) -> None:
     log.info("Configuration path: %s", input_file)
     SummaryPrinter()()
     with open(input_file) as fin:
@@ -364,7 +364,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.pth",
     head: Optional[str] = None,
-):
+) -> None:
     model = inference.Tester(model, head=head).model
     model.eval()
     model = torch.jit.script(model)
@@ -386,7 +386,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
-):
+) -> None:
     if input_file.endswith(".pt"):
         old_state_dict = torch.load(
             input_file, map_location=env.DEVICE, weights_only=True
@@ -509,7 +509,7 @@ def change_bias(
 
 
 @record
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
+def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:
@@ -565,6 +565,7 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             stride=FLAGS.step,
             extrapolate=FLAGS.extrapolate,
             check_frequency=FLAGS.frequency,
+            training_script=FLAGS.training_script,
         )
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")

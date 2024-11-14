@@ -11,7 +11,7 @@ class LearningRateExp:
         stop_steps,
         decay_rate=None,
         **kwargs,
-    ):
+    ) -> None:
         """
         Construct an exponential-decayed learning rate.
 

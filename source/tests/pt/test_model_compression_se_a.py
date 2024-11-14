@@ -24,7 +24,7 @@ else:
     default_places = 10
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -74,21 +74,54 @@ def _init_models_exclude_types():
     return INPUT, frozen_model, compressed_model
 
 
-def setUpModule():
+def _init_models_skip_neighbor_stat():
+    suffix = "-skip-neighbor-stat"
+    data_file = str(tests_path / os.path.join("model_compression", "data"))
+    frozen_model = str(tests_path / f"dp-original{suffix}.pth")
+    compressed_model = str(tests_path / f"dp-compressed{suffix}.pth")
+    INPUT = str(tests_path / "input.json")
+    jdata = j_loader(str(tests_path / os.path.join("model_compression", "input.json")))
+    jdata["training"]["training_data"]["systems"] = data_file
+    with open(INPUT, "w") as fp:
+        json.dump(jdata, fp, indent=4)
+
+    ret = run_dp("dp --pt train " + INPUT + " --skip-neighbor-stat")
+    np.testing.assert_equal(ret, 0, "DP train failed!")
+    ret = run_dp("dp --pt freeze -o " + frozen_model)
+    np.testing.assert_equal(ret, 0, "DP freeze failed!")
+    ret = run_dp(
+        "dp --pt compress "
+        + " -i "
+        + frozen_model
+        + " -o "
+        + compressed_model
+        + " -t "
+        + INPUT
+    )
+    np.testing.assert_equal(ret, 0, "DP model compression failed!")
+    return INPUT, frozen_model, compressed_model
+
+
+def setUpModule() -> None:
     global \
         INPUT, \
         FROZEN_MODEL, \
         COMPRESSED_MODEL, \
         INPUT_ET, \
         FROZEN_MODEL_ET, \
-        COMPRESSED_MODEL_ET
+        COMPRESSED_MODEL_ET, \
+        FROZEN_MODEL_SKIP_NEIGHBOR_STAT, \
+        COMPRESSED_MODEL_SKIP_NEIGHBOR_STAT
     INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
+    _, FROZEN_MODEL_SKIP_NEIGHBOR_STAT, COMPRESSED_MODEL_SKIP_NEIGHBOR_STAT = (
+        _init_models_skip_neighbor_stat()
+    )
     INPUT_ET, FROZEN_MODEL_ET, COMPRESSED_MODEL_ET = _init_models_exclude_types()
 
 
 class TestDeepPotAPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_original = DeepEval(FROZEN_MODEL)
         cls.dp_compressed = DeepEval(COMPRESSED_MODEL)
         cls.coords = np.array(
@@ -116,7 +149,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp_original.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp_original.get_type_map(), ["O", "H"])
@@ -131,7 +164,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
         self.assertEqual(self.dp_compressed.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee0, ff0, vv0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=False
         )
@@ -152,7 +185,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -179,7 +212,7 @@ class TestDeepPotAPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
@@ -212,7 +245,7 @@ class TestDeepPotAPBC(unittest.TestCase):
 
 class TestDeepPotANoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_original = DeepEval(FROZEN_MODEL)
         cls.dp_compressed = DeepEval(COMPRESSED_MODEL)
         cls.coords = np.array(
@@ -240,7 +273,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = None
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee0, ff0, vv0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=False
         )
@@ -261,7 +294,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -288,7 +321,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             coords2, self.box, self.atype, atomic=True
@@ -320,7 +353,7 @@ class TestDeepPotANoPBC(unittest.TestCase):
 
 class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_original = DeepEval(FROZEN_MODEL)
         cls.dp_compressed = DeepEval(COMPRESSED_MODEL)
         cls.coords = np.array(
@@ -348,7 +381,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = np.array([19.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee0, ff0, vv0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=False
         )
@@ -369,7 +402,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -396,7 +429,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_ase(self):
+    def test_ase(self) -> None:
         from ase import (
             Atoms,
         )
@@ -428,7 +461,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
 
 class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.dp_original = DeepEval(FROZEN_MODEL_ET)
         cls.dp_compressed = DeepEval(COMPRESSED_MODEL_ET)
         cls.coords = np.array(
@@ -457,7 +490,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         _file_delete(INPUT_ET)
         _file_delete(FROZEN_MODEL_ET)
         _file_delete(COMPRESSED_MODEL_ET)
@@ -478,7 +511,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         _file_delete("input_v2_compat.json")
         _file_delete("lcurve.out")
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp_original.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp_original.get_type_map(), ["O", "H"])
@@ -493,7 +526,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
         self.assertEqual(self.dp_compressed.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee0, ff0, vv0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=False
         )
@@ -514,7 +547,7 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -541,7 +574,131 @@ class TestDeepPotAPBCExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
+        coords2 = np.concatenate((self.coords, self.coords))
+        box2 = np.concatenate((self.box, self.box))
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
+            coords2, box2, self.atype, atomic=True
+        )
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(
+            coords2, box2, self.atype, atomic=True
+        )
+        # check shape of the returns
+        nframes = 2
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ae0.shape, (nframes, natoms, 1))
+        self.assertEqual(av0.shape, (nframes, natoms, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        self.assertEqual(ae1.shape, (nframes, natoms, 1))
+        self.assertEqual(av1.shape, (nframes, natoms, 9))
+
+        # check values
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+
+class TestSkipNeighborStat(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dp_original = DeepEval(FROZEN_MODEL_SKIP_NEIGHBOR_STAT)
+        cls.dp_compressed = DeepEval(COMPRESSED_MODEL_SKIP_NEIGHBOR_STAT)
+        cls.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                00.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ]
+        )
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+
+    def test_attrs(self) -> None:
+        self.assertEqual(self.dp_original.get_ntypes(), 2)
+        self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
+        self.assertEqual(self.dp_original.get_type_map(), ["O", "H"])
+        self.assertEqual(self.dp_original.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_original.get_dim_aparam(), 0)
+
+        self.assertEqual(self.dp_compressed.get_ntypes(), 2)
+        self.assertAlmostEqual(
+            self.dp_compressed.get_rcut(), 6.0, places=default_places
+        )
+        self.assertEqual(self.dp_compressed.get_type_map(), ["O", "H"])
+        self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
+        self.assertEqual(self.dp_compressed.get_dim_aparam(), 0)
+
+    def test_1frame(self) -> None:
+        ee0, ff0, vv0 = self.dp_original.eval(
+            self.coords, self.box, self.atype, atomic=False
+        )
+        ee1, ff1, vv1 = self.dp_compressed.eval(
+            self.coords, self.box, self.atype, atomic=False
+        )
+        # check shape of the returns
+        nframes = 1
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        # check values
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_1frame_atm(self) -> None:
+        ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
+            self.coords, self.box, self.atype, atomic=True
+        )
+        ee1, ff1, vv1, ae1, av1 = self.dp_compressed.eval(
+            self.coords, self.box, self.atype, atomic=True
+        )
+        # check shape of the returns
+        nframes = 1
+        natoms = len(self.atype)
+        self.assertEqual(ee0.shape, (nframes, 1))
+        self.assertEqual(ff0.shape, (nframes, natoms, 3))
+        self.assertEqual(vv0.shape, (nframes, 9))
+        self.assertEqual(ae0.shape, (nframes, natoms, 1))
+        self.assertEqual(av0.shape, (nframes, natoms, 9))
+        self.assertEqual(ee1.shape, (nframes, 1))
+        self.assertEqual(ff1.shape, (nframes, natoms, 3))
+        self.assertEqual(vv1.shape, (nframes, 9))
+        self.assertEqual(ae1.shape, (nframes, natoms, 1))
+        self.assertEqual(av1.shape, (nframes, natoms, 9))
+        # check values
+        np.testing.assert_almost_equal(ff0, ff1, default_places)
+        np.testing.assert_almost_equal(ae0, ae1, default_places)
+        np.testing.assert_almost_equal(av0, av1, default_places)
+        np.testing.assert_almost_equal(ee0, ee1, default_places)
+        np.testing.assert_almost_equal(vv0, vv1, default_places)
+
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(

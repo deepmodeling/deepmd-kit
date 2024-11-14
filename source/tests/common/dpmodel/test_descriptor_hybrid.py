@@ -25,13 +25,13 @@ from .case_single_frame_with_nlist import (
 
 
 class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         unittest.TestCase.setUp(self)
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_get_parameters(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
@@ -74,7 +74,7 @@ class TestDescrptHybrid(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_self_consistency(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))

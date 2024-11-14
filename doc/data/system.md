@@ -1,6 +1,6 @@
 # System
 
-DeePMD-kit takes a **system** as the data structure. A snapshot of a system is called a **frame**. A system may contain multiple frames with the same atom types and numbers, i.e. the same formula (like `H2O`). To contains data with different formulas, one usually needs to divide data into multiple systems, which may sometimes result in sparse-frame systems. See a [new system format](../model/train-se-atten.md#data-format) to further combine different systems with the same atom numbers, when training with descriptor `se_atten`.
+DeePMD-kit takes a **system** as the data structure. A snapshot of a system is called a **frame**. A system may contain multiple frames with the same atom types and numbers, i.e. the same formula (like `H2O`). To contains data with different formulas, one usually needs to divide data into multiple systems, which may sometimes result in sparse-frame systems.
 
 A system should contain system properties, input frame properties, and labeled frame properties. The system property contains the following property:
 

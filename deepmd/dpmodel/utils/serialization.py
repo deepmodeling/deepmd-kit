@@ -64,7 +64,7 @@ class Counter:
     1
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.count = -1
 
     def __call__(self):

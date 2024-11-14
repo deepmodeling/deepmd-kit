@@ -30,7 +30,7 @@ def detect_raw(path):
     return raws
 
 
-def _main():
+def _main() -> None:
     args = _parse_args()
     raws = args.raws
     inpath = args.INPUT

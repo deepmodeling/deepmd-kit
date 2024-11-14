@@ -86,7 +86,7 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: Union[bool, int, AutoBatchSize] = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
-    ):
+    ) -> None:
         self.output_def = output_def
         self.model_path = model_file
 
@@ -96,6 +96,12 @@ class DeepEval(DeepEvalBackend):
                 stablehlo=model_data["@variables"]["stablehlo"].tobytes(),
                 stablehlo_atomic_virial=model_data["@variables"][
                     "stablehlo_atomic_virial"
+                ].tobytes(),
+                stablehlo_no_ghost=model_data["@variables"][
+                    "stablehlo_no_ghost"
+                ].tobytes(),
+                stablehlo_atomic_virial_no_ghost=model_data["@variables"][
+                    "stablehlo_atomic_virial_no_ghost"
                 ].tobytes(),
                 model_def_script=model_data["model_def_script"],
                 **model_data["constants"],
@@ -172,11 +178,11 @@ class DeepEval(DeepEvalBackend):
         """Get the number of DOS."""
         return 0
 
-    def get_has_efield(self):
+    def get_has_efield(self) -> bool:
         """Check if the model has efield."""
         return False
 
-    def get_ntypes_spin(self):
+    def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return 0
 

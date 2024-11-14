@@ -2,7 +2,7 @@
 """DP-GUI entrypoint."""
 
 
-def start_dpgui(*, port: int, bind_all: bool, **kwargs):
+def start_dpgui(*, port: int, bind_all: bool, **kwargs) -> None:
     """Host DP-GUI server.
 
     Parameters

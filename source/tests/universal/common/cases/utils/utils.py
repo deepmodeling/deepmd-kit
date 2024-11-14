@@ -17,7 +17,7 @@ from ..cases import (
 class TypeEmbdTestCase(TestCaseSingleFrameWithNlist):
     """Common test case for type embedding network."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.input_dict = {
             "ntypes": self.nt,
@@ -27,7 +27,7 @@ class TypeEmbdTestCase(TestCaseSingleFrameWithNlist):
         }
         self.module_input = {}
 
-    def test_change_type_map(self):
+    def test_change_type_map(self) -> None:
         atype_ext_device = self.atype_ext
         # type_map for data and exclude_types
         original_type_map = ["O", "H"]

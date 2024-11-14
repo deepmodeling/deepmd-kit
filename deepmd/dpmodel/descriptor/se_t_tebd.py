@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
+    NoReturn,
     Optional,
     Union,
 )
@@ -227,7 +228,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_ttebd.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -243,7 +244,9 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
     def dim_emb(self):
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: list[dict], path: Optional[DPPath] = None
+    ) -> NoReturn:
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -570,7 +573,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -621,18 +624,18 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> NoReturn:
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
         raise NotImplementedError
 
-    def get_stats(self):
+    def get_stats(self) -> NoReturn:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 

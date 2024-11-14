@@ -54,7 +54,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -150,7 +150,7 @@ class GeneralFitting(Fitting):
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.var_name = var_name
         self.ntypes = ntypes
@@ -242,7 +242,7 @@ class GeneralFitting(Fitting):
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
@@ -349,7 +349,7 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             value = value.view([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value
@@ -403,7 +403,11 @@ class GeneralFitting(Fitting):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
     ):
-        xx = descriptor
+        # cast the input to internal precsion
+        xx = descriptor.to(self.prec)
+        fparam = fparam.to(self.prec) if fparam is not None else None
+        aparam = aparam.to(self.prec) if aparam is not None else None
+
         if self.remove_vaccum_contribution is not None:
             # TODO: compute the input for vaccm when remove_vaccum_contribution is set
             # Ideally, the input for vacuum should be computed;
@@ -473,14 +477,16 @@ class GeneralFitting(Fitting):
 
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            dtype=self.prec,
             device=descriptor.device,
         )  # jit assertion
         if self.mixed_types:
-            atom_property = self.filter_layers.networks[0](xx) + self.bias_atom_e[atype]
+            atom_property = self.filter_layers.networks[0](xx)
             if xx_zeros is not None:
                 atom_property -= self.filter_layers.networks[0](xx_zeros)
-            outs = outs + atom_property  # Shape is [nframes, natoms[0], net_dim_out]
+            outs = (
+                outs + atom_property + self.bias_atom_e[atype].to(self.prec)
+            )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
@@ -494,13 +500,13 @@ class GeneralFitting(Fitting):
                         and not self.remove_vaccum_contribution[type_i]
                     ):
                         atom_property -= ll(xx_zeros)
-                atom_property = atom_property + self.bias_atom_e[type_i]
-                atom_property = atom_property * mask
+                atom_property = atom_property + self.bias_atom_e[type_i].to(self.prec)
+                atom_property = torch.where(mask, atom_property, 0.0)
                 outs = (
                     outs + atom_property
                 )  # Shape is [nframes, natoms[0], net_dim_out]
         # nf x nloc
-        mask = self.emask(atype)
+        mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
-        outs = outs * mask[:, :, None]
-        return {self.var_name: outs.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        outs = torch.where(mask[:, :, None], outs, 0.0)
+        return {self.var_name: outs}

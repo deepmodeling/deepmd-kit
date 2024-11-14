@@ -69,3 +69,11 @@ The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.m
 ```
 
 The type of the descriptor is set by the key {ref}`type <model[standard]/descriptor/type>`.
+
+## Type embedding support
+
+Type embdding is only supported in the TensorFlow backends.
+
+## Model compression
+
+Model compression is supported when type embedding is not used.

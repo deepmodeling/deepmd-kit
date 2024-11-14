@@ -22,6 +22,7 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
+    PRECISION_DICT,
     RESERVED_PRECISON_DICT,
 )
 from deepmd.pt.utils.tabulate import (
@@ -251,7 +252,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is not None:
@@ -311,6 +312,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
+        self.prec = PRECISION_DICT[precision]
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
@@ -376,7 +378,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -678,6 +680,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # cast the input to internal precsion
+        extended_coord = extended_coord.to(dtype=self.prec)
         del mapping
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
@@ -693,7 +697,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
 
-        return g1, rot_mat, g2, h2, sw
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            g2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if g2 is not None else None,
+            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     @classmethod
     def update_sel(

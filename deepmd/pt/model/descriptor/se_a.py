@@ -73,11 +73,11 @@ from .base_descriptor import (
 if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_a"):
 
     def tabulate_fusion_se_a(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
-        argument4,
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: torch.Tensor,
+        argument4: int,
     ) -> list[torch.Tensor]:
         raise NotImplementedError(
             "tabulate_fusion_se_a is not available since customized PyTorch OP library is not built when freezing the model. "
@@ -111,13 +111,14 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         type_map: Optional[list[str]] = None,
         # not implemented
         spin=None,
-    ):
+    ) -> None:
         del ntypes
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
         self.compress = False
+        self.prec = PRECISION_DICT[precision]
         self.sea = DescrptBlockSeA(
             rcut,
             rcut_smth,
@@ -185,7 +186,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.sea.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -246,7 +247,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         """Update the type exclusions."""
         self.sea.reinit_exclude(exclude_types)
 
@@ -337,7 +338,18 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.sea.forward(nlist, coord_ext, atype_ext, None, mapping)
+        # cast the input to internal precsion
+        coord_ext = coord_ext.to(dtype=self.prec)
+        g1, rot_mat, g2, h2, sw = self.sea.forward(
+            nlist, coord_ext, atype_ext, None, mapping
+        )
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     def set_stat_mean_and_stddev(
         self,
@@ -456,7 +468,7 @@ class DescrptBlockSeA(DescriptorBlock):
         trainable: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
         **kwargs,
-    ):
+    ) -> None:
         """Construct an embedding net of type `se_a`.
 
         Args:
@@ -592,11 +604,11 @@ class DescrptBlockSeA(DescriptorBlock):
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return 0
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -616,7 +628,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -666,7 +678,7 @@ class DescrptBlockSeA(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
@@ -742,7 +754,6 @@ class DescrptBlockSeA(DescriptorBlock):
         )
 
         dmatrix = dmatrix.view(-1, self.nnei, 4)
-        dmatrix = dmatrix.to(dtype=self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         xyz_scatter = torch.zeros(
@@ -811,8 +822,8 @@ class DescrptBlockSeA(DescriptorBlock):
         result = result.view(nf, nloc, self.filter_neuron[-1] * self.axis_neuron)
         rot_mat = rot_mat.view([nf, nloc] + list(rot_mat.shape[1:]))  # noqa:RUF005
         return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            result,
+            rot_mat,
             None,
             None,
             sw,

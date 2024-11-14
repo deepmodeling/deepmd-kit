@@ -103,7 +103,7 @@ class DescrptSe(Descriptor):
         descrpt_deriv: tf.Tensor,
         rij: tf.Tensor,
         nlist: tf.Tensor,
-    ):
+    ) -> None:
         """Pass the descrpt_reshape tensor as well as descrpt_deriv tensor from the frz graph_def.
 
         Parameters

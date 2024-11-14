@@ -30,7 +30,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         DPModelCommon.__init__(self)
         DPPropertyModel_.__init__(self, *args, **kwargs)
 

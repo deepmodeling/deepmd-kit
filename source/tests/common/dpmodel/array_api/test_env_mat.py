@@ -13,7 +13,7 @@ from .utils import (
 
 
 class TestEnvMat(unittest.TestCase, ArrayAPITest):
-    def test_compute_smooth_weight(self):
+    def test_compute_smooth_weight(self) -> None:
         d = xp.arange(10, dtype=xp.float64)
         w = compute_smooth_weight(
             d,

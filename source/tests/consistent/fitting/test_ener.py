@@ -145,7 +145,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
     array_api_strict_class = EnerFittingStrict
     args = fitting_ener()
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

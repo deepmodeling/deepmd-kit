@@ -10,13 +10,13 @@ namespace deepmd {
 /**
  * @brief PyTorch implementation for Deep Potential.
  **/
-class DeepPotPT : public DeepPotBase {
+class DeepPotPT : public DeepPotBackend {
  public:
   /**
    * @brief DP constructor without initialization.
    **/
   DeepPotPT();
-  ~DeepPotPT();
+  virtual ~DeepPotPT();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.

@@ -112,7 +112,7 @@ class TestDOS(CommonTest, FittingTest, unittest.TestCase):
     array_api_strict_class = DOSFittingStrict
     args = fitting_dos()
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

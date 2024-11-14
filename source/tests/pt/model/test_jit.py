@@ -29,13 +29,13 @@ from .test_permutation import (
 
 
 class JITTest:
-    def test_jit(self):
+    def test_jit(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
         model = torch.jit.script(inference.Tester("./model.pt").model)
         torch.jit.save(model, "./frozen_model.pth", {})
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith("pt"):
                 os.remove(f)
@@ -48,7 +48,7 @@ class JITTest:
 
 
 class TestEnergyModelSeA(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -59,12 +59,12 @@ class TestEnergyModelSeA(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 
 class TestDOSModelSeA(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent.parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -75,12 +75,12 @@ class TestDOSModelSeA(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 
 class TestEnergyModelDPA1(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -91,12 +91,12 @@ class TestEnergyModelDPA1(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -107,12 +107,12 @@ class TestEnergyModelDPA2(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 
 class TestEnergyModelHybrid(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -123,12 +123,12 @@ class TestEnergyModelHybrid(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 
 class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -140,12 +140,12 @@ class TestEnergyModelHybrid2(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 
 class TestEnergyModelDPA2IntRcut(unittest.TestCase, JITTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -162,7 +162,7 @@ class TestEnergyModelDPA2IntRcut(unittest.TestCase, JITTest):
         self.config["training"]["numb_steps"] = 10
         self.config["training"]["save_freq"] = 10
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         JITTest.tearDown(self)
 
 

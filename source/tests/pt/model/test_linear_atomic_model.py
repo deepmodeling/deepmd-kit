@@ -44,7 +44,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 class TestWeightCalculation(unittest.TestCase):
     @patch("numpy.loadtxt")
-    def test_pairwise(self, mock_loadtxt):
+    def test_pairwise(self, mock_loadtxt) -> None:
         file_path = "dummy_path"
         mock_loadtxt.return_value = np.array(
             [
@@ -121,7 +121,7 @@ class TestWeightCalculation(unittest.TestCase):
 
 class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
     @patch("numpy.loadtxt")
-    def setUp(self, mock_loadtxt):
+    def setUp(self, mock_loadtxt) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         file_path = "dummy_path"
         mock_loadtxt.return_value = np.array(
@@ -165,7 +165,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dp_model, zbl_model, sw_rmin=0.1, sw_rmax=0.25, type_map=type_map
         )
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
         ]
@@ -181,7 +181,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             to_numpy_array(ret0["energy"]), ret2["energy"], atol=0.001, rtol=0.001
         )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         md1 = torch.jit.script(self.md1)
         # atomic model no more export methods
         # self.assertEqual(md1.get_rcut(), self.rcut)
@@ -193,7 +193,7 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestRemmapMethod(unittest.TestCase):
-    def test_valid(self):
+    def test_valid(self) -> None:
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         atype = torch.randint(0, 3, (4, 20), device=env.DEVICE, generator=generator)
         commonl = ["H", "O", "S"]

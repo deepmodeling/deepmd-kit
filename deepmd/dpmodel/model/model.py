@@ -36,6 +36,10 @@ def get_standard_model(data: dict) -> EnergyModel:
     data : dict
         The data to construct the model.
     """
+    if "type_embedding" in data:
+        raise ValueError(
+            "In the DP backend, type_embedding is not at the model level, but within the descriptor. See type embedding documentation for details."
+        )
     data["descriptor"]["type_map"] = data["type_map"]
     data["descriptor"]["ntypes"] = len(data["type_map"])
     fitting_type = data["fitting_net"].pop("type")
@@ -80,8 +84,8 @@ def get_zbl_model(data: dict) -> DPZBLModel:
     filepath = data["use_srtab"]
     pt_model = PairTabAtomicModel(
         filepath,
-        data["descriptor"]["rcut"],
-        data["descriptor"]["sel"],
+        descriptor.get_rcut(),
+        descriptor.get_sel(),
         type_map=data["type_map"],
     )
 

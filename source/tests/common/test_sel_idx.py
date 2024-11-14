@@ -9,7 +9,7 @@ from deepmd.common import (
 
 
 class TestSelIdx(unittest.TestCase):
-    def test_add(self):
+    def test_add(self) -> None:
         atom_type = np.array([0, 1, 2, 2, 1, 0], dtype=int)
         type_sel = np.array([1, 0], dtype=int)
         idx_map = select_idx_map(atom_type, type_sel)

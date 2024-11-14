@@ -25,7 +25,7 @@ from deepmd.dpmodel.fitting.invar_fitting import (
 
 class TestWeightCalculation(unittest.TestCase):
     @patch("numpy.loadtxt")
-    def test_pairwise(self, mock_loadtxt):
+    def test_pairwise(self, mock_loadtxt) -> None:
         file_path = "dummy_path"
         mock_loadtxt.return_value = np.array(
             [
@@ -100,7 +100,7 @@ class TestWeightCalculation(unittest.TestCase):
 
 class TestIntegration(unittest.TestCase):
     @patch("numpy.loadtxt")
-    def setUp(self, mock_loadtxt):
+    def setUp(self, mock_loadtxt) -> None:
         self.nloc = 3
         self.nall = 4
         self.nf, self.nt = 1, 2
@@ -162,7 +162,7 @@ class TestIntegration(unittest.TestCase):
         )
         self.md1 = DPZBLLinearEnergyAtomicModel.deserialize(self.md0.serialize())
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         ret0 = self.md0.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
         ret1 = self.md1.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
         np.testing.assert_allclose(

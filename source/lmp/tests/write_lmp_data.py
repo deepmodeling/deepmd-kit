@@ -4,7 +4,7 @@ import numpy as np
 comment_lmp_data = "# the first line must be comment"
 
 
-def write_lmp_data(box, coord, type_list, file_name):
+def write_lmp_data(box, coord, type_list, file_name) -> None:
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     with open(file_name, "w") as f:
@@ -25,7 +25,7 @@ def write_lmp_data(box, coord, type_list, file_name):
 
 def write_lmp_data_full(
     box, coord, mol_list, type_list, charge, file_name, bond_list, mass_list
-):
+) -> None:
     natom = coord.shape[0]
     ntype = np.unique(type_list).shape[0]
     nbond_type = len(bond_list)
@@ -68,4 +68,36 @@ def write_lmp_data_full(
                     "%d %d %d %d\n"
                     % (bond_count, i + 1, bond_list[i][j][0], bond_list[i][j][1])
                 )
+        f.write("\n")
+
+
+def write_lmp_data_spin(box, coord, spin, type_list, file_name) -> None:
+    natom = coord.shape[0]
+    ntype = np.unique(type_list).shape[0]
+    sp_norm = np.linalg.norm(spin, axis=1, keepdims=True)
+    sp_unit = spin / np.where(sp_norm == 0, 1, sp_norm)
+    sp_unit = np.where(sp_norm == 0, 1, sp_unit)
+    with open(file_name, "w") as f:
+        f.write(comment_lmp_data + "\n")
+        f.write("%d atoms\n" % (natom))
+        f.write("%d atom types\n" % (ntype))
+        f.write(f"{box[0]:.10e} {box[1]:.10e} xlo xhi\n")
+        f.write(f"{box[2]:.10e} {box[3]:.10e} ylo yhi\n")
+        f.write(f"{box[4]:.10e} {box[5]:.10e} zlo zhi\n")
+        f.write(f"{box[6]:.10e} {box[7]:.10e} {box[8]:.10e} xy xz yz\n\nAtoms\n\n")
+        for i in range(natom):
+            f.write(
+                "%d %d %.10e %.10e %.10e %.10e %.10e %.10e %.10e\n"
+                % (
+                    i + 1,
+                    type_list[i],
+                    coord[i][0],
+                    coord[i][1],
+                    coord[i][2],
+                    sp_unit[i][0],
+                    sp_unit[i][1],
+                    sp_unit[i][2],
+                    sp_norm[i][0],
+                )
+            )
         f.write("\n")

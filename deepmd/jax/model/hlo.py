@@ -46,6 +46,8 @@ class HLO(BaseModel):
         self,
         stablehlo,
         stablehlo_atomic_virial,
+        stablehlo_no_ghost,
+        stablehlo_atomic_virial_no_ghost,
         model_def_script,
         type_map,
         rcut,
@@ -61,6 +63,10 @@ class HLO(BaseModel):
         self._call_lower = jax_export.deserialize(stablehlo).call
         self._call_lower_atomic_virial = jax_export.deserialize(
             stablehlo_atomic_virial
+        ).call
+        self._call_lower_no_ghost = jax_export.deserialize(stablehlo_no_ghost).call
+        self._call_lower_atomic_virial_no_ghost = jax_export.deserialize(
+            stablehlo_atomic_virial_no_ghost
         ).call
         self.stablehlo = stablehlo
         self.type_map = type_map
@@ -174,10 +180,16 @@ class HLO(BaseModel):
         aparam: Optional[jnp.ndarray] = None,
         do_atomic_virial: bool = False,
     ):
-        if do_atomic_virial:
-            call_lower = self._call_lower_atomic_virial
+        if extended_coord.shape[1] > nlist.shape[1]:
+            if do_atomic_virial:
+                call_lower = self._call_lower_atomic_virial
+            else:
+                call_lower = self._call_lower
         else:
-            call_lower = self._call_lower
+            if do_atomic_virial:
+                call_lower = self._call_lower_atomic_virial_no_ghost
+            else:
+                call_lower = self._call_lower_no_ghost
         return call_lower(
             extended_coord,
             extended_atype,

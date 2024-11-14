@@ -23,7 +23,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestAtomExcludeMask(unittest.TestCase):
-    def test_build_type_exclude_mask(self):
+    def test_build_type_exclude_mask(self) -> None:
         nf = 2
         nt = 3
         exclude_types = [0, 2]
@@ -47,10 +47,10 @@ class TestAtomExcludeMask(unittest.TestCase):
 
 # to be merged with the tf test case
 class TestPairExcludeMask(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def test_build_type_exclude_mask(self):
+    def test_build_type_exclude_mask(self) -> None:
         exclude_types = [[0, 1]]
         expected_mask = np.array(
             [

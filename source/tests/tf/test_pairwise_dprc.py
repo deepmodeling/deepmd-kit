@@ -51,7 +51,7 @@ else:
 class TestPairwiseOP(tf.test.TestCase):
     """Test dprc_pairwise_idx OP."""
 
-    def test_op_single_frame(self):
+    def test_op_single_frame(self) -> None:
         """Test dprc_pairwise_idx OP with a single frame."""
         # same as C++ tests
         idxs = np.array([[1, 1, 1, 0, 0, 2, 2, 2, 3, 3, 0, 1]], dtype=int)
@@ -104,7 +104,7 @@ class TestPairwiseOP(tf.test.TestCase):
 class TestConvertForwardMapOP(tf.test.TestCase):
     """Test convert_forward_map OP."""
 
-    def test_convert_forward_map(self):
+    def test_convert_forward_map(self) -> None:
         forward_qmmm_map = np.array(
             [
                 [3, 4, 0, 1, 2, 10, 11],
@@ -269,7 +269,7 @@ class TestConvertForwardMapOP(tf.test.TestCase):
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
 )
 class TestPairwiseModel(tf.test.TestCase):
-    def test_gather_placeholder(self):
+    def test_gather_placeholder(self) -> None:
         coord = np.arange(12 * 3, dtype=np.float64).reshape(1, 12, 3)
         idxs = np.array([[1, 1, 1, 0, 0, 2, 2, 2, 3, 3, 0, 1]], dtype=int)
         natoms = np.array([10, 12, 10], dtype=int)
@@ -343,7 +343,7 @@ class TestPairwiseModel(tf.test.TestCase):
             ),
         )
 
-    def test_model_ener(self):
+    def test_model_ener(self) -> None:
         jfile = tests_path / "pairwise_dprc.json"
         jdata = j_loader(jfile)
         model = Model(**jdata["model"])
@@ -531,7 +531,7 @@ class TestPairwiseModel(tf.test.TestCase):
             [DataRequirementItem("aparam", 1, atomic=True, must=True, high_prec=False)],
         )
 
-    def test_nloc(self):
+    def test_nloc(self) -> None:
         jfile = tests_path / "pairwise_dprc.json"
         jdata = j_loader(jfile)
         model = Model(**jdata["model"])
@@ -826,7 +826,7 @@ def _init_models():
 )
 class TestPairwiseCompress(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
         cls.dp_original = DeepPotential(FROZEN_MODEL)
         cls.dp_compressed = DeepPotential(COMPRESSED_MODEL)
@@ -907,7 +907,7 @@ class TestPairwiseCompress(unittest.TestCase):
         # self.idxs = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,0,0,0,0,0,0,0,0]).astype(np.float64)
         self.type_map = ["C", "N", "O", "H", "OW", "HW"]
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp_original.get_ntypes(), len(self.type_map))
         self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp_original.get_type_map(), self.type_map)
@@ -922,7 +922,7 @@ class TestPairwiseCompress(unittest.TestCase):
         self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
         self.assertEqual(self.dp_compressed.get_dim_aparam(), 1)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee0, ff0, vv0 = self.dp_original.eval(
             self.coords,
             self.box,
@@ -951,7 +951,7 @@ class TestPairwiseCompress(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             self.coords,
             self.box,
@@ -986,7 +986,7 @@ class TestPairwiseCompress(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = None
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(

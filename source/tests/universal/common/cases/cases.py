@@ -4,7 +4,7 @@ import numpy as np
 
 # originally copied from source/tests/pt/model/test_env_mat.py
 class TestCaseSingleFrameWithNlist:
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 3
         self.nall = 4
@@ -71,7 +71,7 @@ class TestCaseSingleFrameWithNlist:
 
 
 class TestCaseSingleFrameWithNlistWithVirtual:
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 4
         self.nall = 5
@@ -123,7 +123,7 @@ class TestCaseSingleFrameWithNlistWithVirtual:
 
 
 class TestCaseSingleFrameWithoutNlist:
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 3
         self.nf, self.nt = 1, 2

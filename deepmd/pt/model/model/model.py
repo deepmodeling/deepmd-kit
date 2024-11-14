@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    NoReturn,
     Optional,
 )
 
@@ -17,7 +18,7 @@ from deepmd.utils.path import (
 
 
 class BaseModel(torch.nn.Module, make_base_model()):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         """Construct a basic model for different tasks."""
         torch.nn.Module.__init__(self)
         self.model_def_script = ""
@@ -29,7 +30,7 @@ class BaseModel(torch.nn.Module, make_base_model()):
         self,
         sampled_func,
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
         such as mean and standard deviation of descriptors or the energy bias of the fitting net.

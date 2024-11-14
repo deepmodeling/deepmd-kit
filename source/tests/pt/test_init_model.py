@@ -26,7 +26,7 @@ from .common import (
 
 
 class TestInitModel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             config = json.load(f)
@@ -71,7 +71,7 @@ class TestInitModel(unittest.TestCase):
                 trainer.run()
             self.models.append(ckpt_model + ".pt")
 
-    def test_dp_test(self):
+    def test_dp_test(self) -> None:
         dp1 = DeepPot(str(self.models[0]))
         dp2 = DeepPot(str(self.models[1]))
         dp3 = DeepPot(str(self.models[2]))
@@ -126,7 +126,7 @@ class TestInitModel(unittest.TestCase):
         np.testing.assert_allclose(av1, av2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(av1, av3, rtol=1e-10, atol=1e-10)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)

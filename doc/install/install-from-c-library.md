@@ -1,7 +1,7 @@
-# Install from pre-compiled C library {{ tensorflow_icon }}
+# Install from pre-compiled C library {{ tensorflow_icon }}, JAX {{ jax_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, JAX {{ jax_icon }}
 :::
 
 DeePMD-kit provides pre-compiled C library package (`libdeepmd_c.tar.gz`) in each [release](https://github.com/deepmodeling/deepmd-kit/releases). It can be used to build the [LAMMPS plugin](./install-lammps.md) and [GROMACS patch](./install-gromacs.md), as well as many [third-party software packages](../third-party/out-of-deepmd-kit.md), without building TensorFlow and DeePMD-kit on one's own.

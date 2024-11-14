@@ -43,7 +43,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: Optional[float] = None,
         preset_out_bias: Optional[dict[str, np.ndarray]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.type_map = type_map
         self.reinit_atom_exclude(atom_exclude_types)
@@ -51,7 +51,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
 
-    def init_out_stat(self):
+    def init_out_stat(self) -> None:
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
@@ -68,7 +68,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ["out_bias"]:
             self.out_bias = value
         elif key in ["out_std"]:
@@ -91,7 +91,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         self.atom_exclude_types = exclude_types
         if exclude_types == []:
             self.atom_excl = None
@@ -101,7 +101,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def reinit_pair_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.pair_exclude_types = exclude_types
         if exclude_types == []:
             self.pair_excl = None

@@ -53,7 +53,7 @@ def get_dataset(config):
 
 
 class TestSaveLoadDPA1(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as fin:
             self.config = json.load(fin)
@@ -129,7 +129,7 @@ class TestSaveLoadDPA1(unittest.TestCase):
                 label_dict[item] = batch_data[item].to(env.DEVICE)
         return input_dict, label_dict
 
-    def test_saveload(self):
+    def test_saveload(self) -> None:
         result1 = self.get_model_result()
         result2 = self.get_model_result(read=True)
         final_result = all(

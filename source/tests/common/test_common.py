@@ -14,7 +14,7 @@ from deepmd.env import (
 
 
 class TestGetXPPrecision(unittest.TestCase):
-    def test(self):
+    def test(self) -> None:
         aa = np.zeros(3)
         xp = array_api_compat.array_namespace(aa)
         self.assertEqual(get_xp_precision(xp, "float16"), xp.float16)

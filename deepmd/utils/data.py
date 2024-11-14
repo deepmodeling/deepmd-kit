@@ -57,7 +57,7 @@ class DeepmdData:
         modifier=None,
         trn_all_set: bool = False,
         sort_atoms: bool = True,
-    ):
+    ) -> None:
         """Constructor."""
         root = DPPath(sys_path)
         self.dirs = root.glob(set_prefix + ".*")
@@ -418,7 +418,7 @@ class DeepmdData:
                     new_data[ii] = dd
         return new_data
 
-    def _load_batch_set(self, set_name: DPPath):
+    def _load_batch_set(self, set_name: DPPath) -> None:
         if not hasattr(self, "batch_set") or self.get_numb_set() > 1:
             self.batch_set = self._load_set(set_name)
             if self.modifier is not None:
@@ -426,10 +426,10 @@ class DeepmdData:
         self.batch_set, _ = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
 
-    def reset_get_batch(self):
+    def reset_get_batch(self) -> None:
         self.iterator = 0
 
-    def _load_test_set(self, shuffle_test: bool):
+    def _load_test_set(self, shuffle_test: bool) -> None:
         test_sets = []
         for ii in self.dirs:
             test_set = self._load_set(ii)

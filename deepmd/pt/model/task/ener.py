@@ -56,7 +56,7 @@ class EnergyFittingNet(InvarFitting):
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             "energy",
             ntypes,
@@ -109,7 +109,7 @@ class EnergyFittingNetDirect(Fitting):
         use_tebd=True,
         return_energy=False,
         **kwargs,
-    ):
+    ) -> None:
         """Construct a fitting net for energy.
 
         Args:

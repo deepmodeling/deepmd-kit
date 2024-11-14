@@ -13,7 +13,7 @@
 namespace deepmd {
 
 typedef double ENERGYTYPE;
-enum DPBackend { TensorFlow, PyTorch, Paddle, Unknown };
+enum DPBackend { TensorFlow, PyTorch, Paddle, JAX, Unknown };
 
 struct NeighborListData {
   /// Array stores the core region atom's index
