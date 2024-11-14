@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-#ifdef BUILD_TENSORFLOW
+#if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
 
 #include "DeepPotJAX.h"
 

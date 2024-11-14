@@ -316,6 +316,15 @@ You can also download libtorch prebuilt library from the [PyTorch website](https
 
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+The JAX backend only depends on the TensorFlow C API, which is included in both TensorFlow C++ library and [TensorFlow C library](https://www.tensorflow.org/install/lang_c).
+If you want to use the TensorFlow C++ library, just enable the TensorFlow backend (which depends on the TensorFlow C++ library) and nothing else needs to do.
+If you want to use the TensorFlow C library and disable the TensorFlow backend,
+download the TensorFlow C library from [this page](https://www.tensorflow.org/install/lang_c#download_and_extract).
+
+:::
+
 ::::
 
 ### Install DeePMD-kit's C++ interface
@@ -369,6 +378,17 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+If you want to use the TensorFlow C++ library, just enable the TensorFlow backend and nothing else needs to do.
+If you want to use the TensorFlow C library and disable the TensorFlow backend, set {cmake:variable}`ENABLE_JAX` to `ON` and `CMAKE_PREFIX_PATH` to the root directory of the [TensorFlow C library](https://www.tensorflow.org/install/lang_c).
+
+```bash
+cmake -DENABLE_JAX=ON -D CMAKE_PREFIX_PATH=${tensorflow_c_root} ..
+```
+
+:::
+
 ::::
 
 One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
@@ -378,6 +398,7 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 {{ tensorflow_icon }} {{ jax_icon }} Whether building the TensorFlow backend and the JAX backend.
+Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
 
 :::
 
@@ -386,6 +407,16 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 {{ pytorch_icon }} Whether building the PyTorch backend.
+
+:::
+
+:::{cmake:variable} ENABLE_JAX
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ jax_icon }} Build the JAX backend.
+If {cmake:variable}`ENABLE_TENSORFLOW` is `ON`, the TensorFlow C++ library is used to build the JAX backend;
+If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is used to build the JAX backend.
 
 :::
 
