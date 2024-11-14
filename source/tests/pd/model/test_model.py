@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import collections
 import json
 import unittest
+from typing import (
+    NamedTuple,
+)
 
 import numpy as np
 import paddle
@@ -54,7 +56,10 @@ from ..test_finetune import (
     energy_data_requirement,
 )
 
-VariableState = collections.namedtuple("VariableState", ["value", "gradient"])
+
+class VariableState(NamedTuple):
+    value: np.ndarray
+    gradient: np.ndarray
 
 
 def paddle2tf(paddle_name, last_layer_id=None):
@@ -62,6 +67,8 @@ def paddle2tf(paddle_name, last_layer_id=None):
     offset = int(fields[3] == "networks") + 1
     element_id = int(fields[2 + offset])
     if fields[1] == "descriptor":
+        if fields[2].startswith("compress_"):
+            return None
         layer_id = int(fields[4 + offset]) + 1
         weight_type = fields[5 + offset]
         ret = "filter_type_all/%s_%d_%d:0" % (weight_type, layer_id, element_id)
@@ -78,7 +85,7 @@ def paddle2tf(paddle_name, last_layer_id=None):
 
 
 class DpTrainer:
-    def __init__(self):
+    def __init__(self) -> None:
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
         config = json.loads(content)
@@ -260,7 +267,7 @@ class DpTrainer:
 
 
 class TestEnergy(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.dp_trainer = DpTrainer()
         self.wanted_step = 0
         for key in dir(self.dp_trainer):
@@ -268,7 +275,7 @@ class TestEnergy(unittest.TestCase):
                 value = getattr(self.dp_trainer, key)
                 setattr(self, key, value)
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         batch, head_dict, stat_dict, vs_dict = self.dp_trainer.get_intermediate_state(
             self.wanted_step
         )
@@ -300,7 +307,7 @@ class TestEnergy(unittest.TestCase):
             limit_pref_f=self.limit_pref_f,
         )
 
-        # Keep statistics consistency between 2 implentations
+        # Keep statistics consistency between 2 implementations
         my_em = my_model.get_descriptor()
         mean = stat_dict["descriptor.mean"].reshape([self.ntypes, my_em.get_nsel(), 4])
         stddev = stat_dict["descriptor.stddev"].reshape(
@@ -314,10 +321,12 @@ class TestEnergy(unittest.TestCase):
             stat_dict["fitting_net.bias_atom_e"], place=DEVICE
         )
 
-        # Keep parameter value consistency between 2 implentations
+        # Keep parameter value consistency between 2 implementations
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
             var_name = paddle2tf(name, last_layer_id=len(self.n_neuron))
+            if var_name is None:
+                continue
             var = vs_dict[var_name].value
             with paddle.no_grad():
                 src = paddle.to_tensor(var)
@@ -399,12 +408,10 @@ class TestEnergy(unittest.TestCase):
             .detach()
             .numpy(),
         )
-        optimizer = paddle.optimizer.Adam(
-            learning_rate=cur_lr, parameters=my_model.parameters()
-        )
+        optimizer = paddle.optimizer.Adam(cur_lr, parameters=my_model.parameters())
         optimizer.clear_grad()
 
-        def step(step_id):
+        def step(step_id) -> None:
             bdata = self.training_data.get_trainning_batch()
             optimizer.clear_grad()
 
@@ -414,6 +421,8 @@ class TestEnergy(unittest.TestCase):
         for name, param in my_model.named_parameters():
             name = name.replace("sea.", "")
             var_name = paddle2tf(name, last_layer_id=len(self.n_neuron))
+            if var_name is None:
+                continue
             var_grad = vs_dict[var_name].gradient
             param_grad = param.grad.cpu()
             var_grad = paddle.to_tensor(var_grad).to(device="cpu")

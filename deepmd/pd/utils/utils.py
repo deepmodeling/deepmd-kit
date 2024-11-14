@@ -4,6 +4,7 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     overload,
 )
 
@@ -13,14 +14,16 @@ import paddle
 import paddle.nn.functional as F
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
-from deepmd.pd.model.network.init import (
-    PaddleGenerator,
-)
 
 from .env import (
     DEVICE,
 )
 from .env import PRECISION_DICT as PD_PRECISION_DICT
+
+if TYPE_CHECKING:
+    from deepmd.pd.model.network.init import (
+        PaddleGenerator,
+    )
 
 
 class ActivationFn(paddle.nn.Layer):
