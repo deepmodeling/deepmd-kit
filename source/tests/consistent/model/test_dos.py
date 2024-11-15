@@ -17,7 +17,6 @@ from ..common import (
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
 )
 from .common import (
     ModelTest,
@@ -35,7 +34,6 @@ else:
 from deepmd.utils.argcheck import (
     model_args,
 )
-
 
 
 class TestDOS(CommonTest, ModelTest, unittest.TestCase):
