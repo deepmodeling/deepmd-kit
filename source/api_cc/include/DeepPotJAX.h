@@ -189,6 +189,8 @@ class DeepPotJAX : public DeepPotBackend {
   std::vector<int64_t> sel;
   // number of neighbors
   int nnei;
+  // do message passing
+  bool do_message_passing;
   // padding to nall
   int padding_to_nall = 0;
   // padding for nloc
