@@ -48,3 +48,13 @@ A complete training input script of this example can be found in the directory
 ```bash
 $deepmd_source_dir/examples/water/hybrid/input.json
 ```
+
+## Type embedding
+
+Type embedding is different between the TensorFlow backend and other backends.
+In the TensorFlow backend, all descriptors share the same descriptor that defined in the model level.
+In other backends, each descriptor has its own type embedding and their parameters may be different.
+
+## Model compression
+
+Model compression is supported if all sub-descriptors support model compression.

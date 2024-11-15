@@ -33,7 +33,7 @@ class DPChecker(BaseChecker):
         ),
     }
 
-    def visit_call(self, node):
+    def visit_call(self, node) -> None:
         if (
             isinstance(node.func, Attribute)
             and isinstance(node.func.expr, Name)
@@ -73,5 +73,5 @@ def register(linter: "PyLinter") -> None:
     pass
 
 
-def load_configuration(linter):
+def load_configuration(linter) -> None:
     linter.register_checker(DPChecker(linter))

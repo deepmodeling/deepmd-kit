@@ -31,7 +31,7 @@ class DPZBLModel(DPZBLModel_):
         self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(*args, **kwargs)
 
     @classmethod

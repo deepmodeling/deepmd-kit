@@ -71,7 +71,7 @@ class TestParserOutput(unittest.TestCase):
 
     def attr_and_type_check(
         self, namespace: Namespace, mapping: "TEST_DICT", command: str, test_value: bool
-    ):
+    ) -> None:
         """Check attributes of `argparse.Manespace` types and values are as expected.
 
         First check for attribute existence, if it exists check its type and if type is
@@ -131,7 +131,7 @@ class TestParserOutput(unittest.TestCase):
                     f"{getattr(namespace, attribute)}",
                 )
 
-    def run_test(self, *, command: str, mapping: "TEST_DICT"):
+    def run_test(self, *, command: str, mapping: "TEST_DICT") -> None:
         """Run test first for specified arguments and then for default.
 
         Parameters
@@ -195,16 +195,16 @@ class TestParserOutput(unittest.TestCase):
             ) from e
         self.attr_and_type_check(namespace, mapping, command, test_value=False)
 
-    def test_no_command(self):
+    def test_no_command(self) -> None:
         """Test that parser outputs nothing when no command is input and does not fail."""
         self.assertIsNone(parse_args([]).command)
 
-    def test_wrong_command(self):
+    def test_wrong_command(self) -> None:
         """Test that parser fails if no command is passed in."""
         with self.assertRaises(SystemExit):
             parse_args(["RANDOM_WRONG_COMMAND"])
 
-    def test_parser_log(self):
+    def test_parser_log(self) -> None:
         """Check if logging associated attributes are present in specified parsers."""
         ARGS = {
             "--log-level": {"type": int, "value": "INFO", "expected": 20},
@@ -227,7 +227,7 @@ class TestParserOutput(unittest.TestCase):
 
             self.run_test(command=parser, mapping=args)
 
-    def test_parser_mpi(self):
+    def test_parser_mpi(self) -> None:
         """Check if mpi-log attribute is present in specified parsers."""
         ARGS = {"--mpi-log": {"type": str, "value": "master"}}
 
@@ -238,7 +238,7 @@ class TestParserOutput(unittest.TestCase):
                 args = ARGS
             self.run_test(command=parser, mapping=args)
 
-    def test_parser_transfer(self):
+    def test_parser_transfer(self) -> None:
         """Test transfer subparser."""
         ARGS = {
             "--raw-model": {"type": str, "value": "INFILE.PB"},
@@ -248,7 +248,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="transfer", mapping=ARGS)
 
-    def test_parser_train_init_model(self):
+    def test_parser_train_init_model(self) -> None:
         """Test train init-model subparser."""
         ARGS = {
             "INPUT": {"type": str, "value": "INFILE"},
@@ -258,7 +258,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="train", mapping=ARGS)
 
-    def test_parser_train_restart(self):
+    def test_parser_train_restart(self) -> None:
         """Test train restart subparser."""
         ARGS = {
             "INPUT": {"type": str, "value": "INFILE"},
@@ -268,7 +268,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="train", mapping=ARGS)
 
-    def test_parser_train_init_frz_model(self):
+    def test_parser_train_init_frz_model(self) -> None:
         """Test train init-frz-model subparser."""
         ARGS = {
             "INPUT": {"type": str, "value": "INFILE"},
@@ -278,7 +278,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="train", mapping=ARGS)
 
-    def test_parser_train_finetune(self):
+    def test_parser_train_finetune(self) -> None:
         """Test train finetune subparser."""
         ARGS = {
             "INPUT": {"type": str, "value": "INFILE"},
@@ -288,7 +288,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="train", mapping=ARGS)
 
-    def test_parser_train_wrong_subcommand(self):
+    def test_parser_train_wrong_subcommand(self) -> None:
         """Test train with multiple subparsers."""
         ARGS = {
             "INPUT": {"type": str, "value": "INFILE"},
@@ -299,7 +299,7 @@ class TestParserOutput(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_test(command="train", mapping=ARGS)
 
-    def test_parser_freeze(self):
+    def test_parser_freeze(self) -> None:
         """Test freeze subparser."""
         ARGS = {
             "--checkpoint-folder": {"type": str, "value": "FOLDER"},
@@ -309,7 +309,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="freeze", mapping=ARGS)
 
-    def test_parser_test(self):
+    def test_parser_test(self) -> None:
         """Test test subparser."""
         ARGS = {
             "--model": {"type": str, "value": "MODEL.PB"},
@@ -322,7 +322,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="test", mapping=ARGS)
 
-    def test_parser_compress(self):
+    def test_parser_compress(self) -> None:
         """Test compress subparser."""
         ARGS = {
             "--output": {"type": str, "value": "OUTFILE"},
@@ -334,7 +334,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="compress", mapping=ARGS)
 
-    def test_parser_doc(self):
+    def test_parser_doc(self) -> None:
         """Test doc subparser."""
         ARGS = {
             "--out-type": {"type": str, "value": "rst"},
@@ -342,7 +342,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="doc-train-input", mapping=ARGS)
 
-    def test_parser_model_devi(self):
+    def test_parser_model_devi(self) -> None:
         """Test model-devi subparser."""
         ARGS = {
             "--models": {
@@ -357,7 +357,7 @@ class TestParserOutput(unittest.TestCase):
 
         self.run_test(command="model-devi", mapping=ARGS)
 
-    def test_get_log_level(self):
+    def test_get_log_level(self) -> None:
         MAPPING = {
             "DEBUG": 10,
             "INFO": 20,

@@ -33,13 +33,13 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
 class TestModelSpin(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         del_data()
 
-    def test_model_spin(self):
+    def test_model_spin(self) -> None:
         jfile = "test_model_spin.json"
         jdata = j_loader(jfile)
 

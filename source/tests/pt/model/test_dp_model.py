@@ -41,10 +41,10 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithoutNlist.setUp(self)
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         nf, nloc = self.atype.shape
         ds = DescrptSeA(
             self.rcut,
@@ -114,7 +114,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             atol=self.atol,
         )
 
-    def test_dp_consistency(self):
+    def test_dp_consistency(self) -> None:
         nf, nloc = self.atype.shape
         nfp, nap = 2, 3
         ds = DPDescrptSeA(
@@ -153,7 +153,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             atol=self.atol,
         )
 
-    def test_dp_consistency_nopbc(self):
+    def test_dp_consistency_nopbc(self) -> None:
         nf, nloc = self.atype.shape
         nfp, nap = 2, 3
         ds = DPDescrptSeA(
@@ -192,7 +192,7 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             atol=self.atol,
         )
 
-    def test_prec_consistency(self):
+    def test_prec_consistency(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc = self.atype.shape
         ds = DPDescrptSeA(
@@ -243,10 +243,10 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
 
 
 class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -294,7 +294,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             atol=self.atol,
         )
 
-    def test_dp_consistency(self):
+    def test_dp_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,
@@ -326,7 +326,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             atol=self.atol,
         )
 
-    def test_prec_consistency(self):
+    def test_prec_consistency(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
@@ -377,7 +377,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 atol=self.atol,
             )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -397,7 +397,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestDPModelFormatNlist(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 3
         self.nall = 5
@@ -440,7 +440,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
         type_map = ["foo", "bar"]
         self.md = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
 
-    def test_nlist_eq(self):
+    def test_nlist_eq(self) -> None:
         # n_nnei == nnei
         nlist = np.array(
             [
@@ -457,7 +457,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
         )
         np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
-    def test_nlist_st(self):
+    def test_nlist_st(self) -> None:
         # n_nnei < nnei
         nlist = np.array(
             [
@@ -474,7 +474,7 @@ class TestDPModelFormatNlist(unittest.TestCase):
         )
         np.testing.assert_equal(self.expected_nlist, to_numpy_array(nlist1))
 
-    def test_nlist_lt(self):
+    def test_nlist_lt(self) -> None:
         # n_nnei > nnei
         nlist = np.array(
             [
@@ -493,10 +493,10 @@ class TestDPModelFormatNlist(unittest.TestCase):
 
 
 class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithoutNlist.setUp(self)
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         nf, nloc = self.atype.shape
         ds = DescrptSeA(
             self.rcut,
@@ -561,10 +561,10 @@ class TestEnergyModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
 
 
 class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -612,7 +612,7 @@ class TestEnergyModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
             atol=self.atol,
         )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,

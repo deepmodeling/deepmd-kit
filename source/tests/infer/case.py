@@ -135,7 +135,7 @@ class Case:
         The path to the test case file.
     """
 
-    def __init__(self, filename: str):
+    def __init__(self, filename: str) -> None:
         with open(filename) as file:
             config = yaml.safe_load(file)
         self.key = config["key"]

@@ -27,7 +27,7 @@ from ...seed import (
 
 
 class FakeDescriptor:
-    def __init__(self, ntypes, embedding_width):
+    def __init__(self, ntypes, embedding_width) -> None:
         self._ntypes = ntypes
         self._dim_out = embedding_width
 
@@ -84,7 +84,7 @@ def base_fitting_net(dp_fn, embedding, natoms, atype):
 
 
 class TestFittingNet(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         nloc = 7
         self.embedding_width = 30
         self.natoms = np.array([nloc, nloc, 2, 5], dtype=np.int32)
@@ -104,7 +104,7 @@ class TestFittingNet(unittest.TestCase):
         )
         self.dp_fn.bias_atom_e = rng.uniform(size=[self.ntypes])
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         dp_energy, values = base_fitting_net(
             self.dp_fn, self.embedding, self.natoms, self.atype
         )

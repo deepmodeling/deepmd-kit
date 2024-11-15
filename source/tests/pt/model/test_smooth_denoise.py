@@ -27,7 +27,7 @@ dtype = torch.float64
 class SmoothDenoiseTest:
     def test(
         self,
-    ):
+    ) -> None:
         # displacement of atoms
         epsilon = 1e-5 if self.epsilon is None else self.epsilon
         # required prec. relative prec is not checked.
@@ -88,7 +88,7 @@ class SmoothDenoiseTest:
         )
         ret3 = {"updated_coord": update_c3.squeeze(0), "logits": logits3.squeeze(0)}
 
-        def compare(ret0, ret1):
+        def compare(ret0, ret1) -> None:
             torch.testing.assert_close(
                 ret0["updated_coord"], ret1["updated_coord"], rtol=rprec, atol=aprec
             )
@@ -103,7 +103,7 @@ class SmoothDenoiseTest:
 
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["sel"] = 8
         model_params["descriptor"]["rcut_smth"] = 3.5
@@ -116,7 +116,7 @@ class TestDenoiseModelDPA2(unittest.TestCase, SmoothDenoiseTest):
 
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2_1(unittest.TestCase, SmoothDenoiseTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         # model_params["descriptor"]["combine_grrg"] = True
         self.type_split = True

@@ -33,7 +33,7 @@ dtype = torch.float64
 class TransTest:
     def test(
         self,
-    ):
+    ) -> None:
         natoms = 5
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE, generator=generator)
@@ -88,35 +88,35 @@ class TransTest:
 
 
 class TestEnergyModelSeA(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestDOSModelSeA(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dos)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA1(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelDPA2(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestForceModelDPA2(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "direct_force_ener"
         self.type_split = True
@@ -125,14 +125,14 @@ class TestForceModelDPA2(unittest.TestCase, TransTest):
 
 
 class TestEnergyModelHybrid(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_hybrid)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestForceModelHybrid(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_hybrid)
         model_params["fitting_net"]["type"] = "direct_force_ener"
         self.type_split = True
@@ -141,14 +141,14 @@ class TestForceModelHybrid(unittest.TestCase, TransTest):
 
 
 class TestEnergyModelZBL(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, TransTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True

@@ -20,13 +20,13 @@ class TestLAMMPS(unittest.TestCase):
     """Test LAMMPS in cibuildwheel environment."""
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.work_dir = infer_path
 
         convert_pbtxt_to_pb(
             str(cls.work_dir / "deeppot.pbtxt"), str(cls.work_dir / "deep_pot.pb")
         )
 
-    def test_lmp(self):
+    def test_lmp(self) -> None:
         in_file = (self.work_dir / "in.test").absolute()
         subprocess.check_call(["lmp", "-in", str(in_file)], cwd=str(self.work_dir))

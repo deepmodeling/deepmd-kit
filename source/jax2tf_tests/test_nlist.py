@@ -16,7 +16,7 @@ dtype = tnp.float64
 
 
 class TestNeighList(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.nf = 3
         self.nloc = 3
         self.ns = 5 * 5 * 3
@@ -43,7 +43,7 @@ class TestNeighList(tf.test.TestCase):
             ]
         )
 
-    def test_build_notype(self):
+    def test_build_notype(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
@@ -64,7 +64,7 @@ class TestNeighList(tf.test.TestCase):
             tnp.sort(self.ref_nlist, axis=-1),
         )
 
-    def test_build_type(self):
+    def test_build_type(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )
@@ -86,7 +86,7 @@ class TestNeighList(tf.test.TestCase):
                 tnp.sort(tnp.split(self.ref_nlist, self.nsel, axis=-1)[ii], axis=-1),
             )
 
-    def test_extend_coord(self):
+    def test_extend_coord(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut
         )

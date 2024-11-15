@@ -109,7 +109,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError("No available reference")
 
     @property
-    def skip_jax(self):
+    def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
     def pass_data_to_cls(self, cls, data) -> Any:
@@ -123,7 +123,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

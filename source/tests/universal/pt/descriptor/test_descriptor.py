@@ -45,7 +45,7 @@ from ..backend import (
     )  # class_param & class
 )
 class TestDescriptorPT(unittest.TestCase, DescriptorTest, PTTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         DescriptorTest.setUp(self)
         (DescriptorParam, Descrpt) = self.param[0]
         self.module_class = Descrpt

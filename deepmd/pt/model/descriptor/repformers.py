@@ -22,6 +22,9 @@ from deepmd.pt.model.network.mlp import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.env import (
+    PRECISION_DICT,
+)
 from deepmd.pt.utils.env_mat_stat import (
     EnvMatStatSe,
 )
@@ -108,7 +111,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-    ):
+    ) -> None:
         r"""
         The repformer descriptor block.
 
@@ -237,6 +240,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.reinit_exclude(exclude_types)
         self.env_protection = env_protection
         self.precision = precision
+        self.prec = PRECISION_DICT[precision]
         self.trainable_ln = trainable_ln
         self.ln_eps = ln_eps
         self.epsilon = 1e-4
@@ -286,12 +290,8 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.layers = torch.nn.ModuleList(layers)
 
         wanted_shape = (self.ntypes, self.nnei, 4)
-        mean = torch.zeros(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
-        stddev = torch.ones(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
+        mean = torch.zeros(wanted_shape, dtype=self.prec, device=env.DEVICE)
+        stddev = torch.ones(wanted_shape, dtype=self.prec, device=env.DEVICE)
         self.register_buffer("mean", mean)
         self.register_buffer("stddev", stddev)
         self.stats = None
@@ -328,7 +328,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -378,7 +378,7 @@ class DescrptBlockRepformers(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
@@ -532,7 +532,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 

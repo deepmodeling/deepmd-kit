@@ -97,7 +97,7 @@ class DeepEval(DeepEvalBackend):
         input_map: Optional[dict] = None,
         neighbor_list=None,
         **kwargs: dict,
-    ):
+    ) -> None:
         self.graph = self._load_graph(
             model_file,
             prefix=load_prefix,
@@ -169,7 +169,7 @@ class DeepEval(DeepEvalBackend):
                 ewald_beta=ewald_beta,
             )
 
-    def _init_tensors(self):
+    def _init_tensors(self) -> None:
         tensor_names = {
             # descrpt attrs
             "ntypes": "descrpt_attr/ntypes:0",
@@ -224,7 +224,7 @@ class DeepEval(DeepEvalBackend):
         for ii in sorted(removed_defs, reverse=True):
             del self.output_def.var_defs[list(self.output_def.var_defs.keys())[ii]]
 
-    def _init_attr(self):
+    def _init_attr(self) -> None:
         [
             self.ntypes,
             self.rcut,
@@ -1157,7 +1157,7 @@ class DeepEvalOld:
         auto_batch_size: Union[bool, int, AutoBatchSize] = False,
         input_map: Optional[dict] = None,
         neighbor_list=None,
-    ):
+    ) -> None:
         self.graph = self._load_graph(
             model_file,
             prefix=load_prefix,

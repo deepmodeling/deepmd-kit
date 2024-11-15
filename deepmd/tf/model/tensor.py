@@ -81,13 +81,13 @@ class TensorModel(StandardModel):
     def get_out_size(self):
         return self.fitting.get_out_size()
 
-    def data_stat(self, data):
+    def data_stat(self, data) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection=self.data_stat_protect)
         self._compute_output_stat(m_all_stat)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2):
+    def _compute_input_stat(self, all_stat, protection=1e-2) -> None:
         self.descrpt.compute_input_stats(
             all_stat["coord"],
             all_stat["box"],
@@ -99,7 +99,7 @@ class TensorModel(StandardModel):
         if hasattr(self.fitting, "compute_input_stats"):
             self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat):
+    def _compute_output_stat(self, all_stat) -> None:
         if hasattr(self.fitting, "compute_output_stats"):
             self.fitting.compute_output_stats(all_stat)
 

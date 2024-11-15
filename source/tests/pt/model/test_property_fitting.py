@@ -43,7 +43,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.rng = np.random.default_rng()
         self.nf, self.nloc, _ = self.nlist.shape
@@ -51,7 +51,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_consistency(
         self,
-    ):
+    ) -> None:
         rd0, gr, _, _, _ = self.dd0(
             torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
             torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
@@ -134,7 +134,7 @@ class TestPropertyFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         for nfp, nap, intensive, bias_method in itertools.product(
             [0, 3],
             [0, 4],
@@ -189,7 +189,7 @@ class TestInvarianceOutCell(unittest.TestCase):
         )
         self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
-    def test_trans(self):
+    def test_trans(self) -> None:
         atype = self.atype.reshape(1, 5)
         coord_s = torch.matmul(
             torch.remainder(
@@ -228,7 +228,7 @@ class TestInvarianceOutCell(unittest.TestCase):
                 nlist,
             )
 
-            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+            ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
             res.append(ret0["property"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
@@ -250,7 +250,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
         self.cell = torch.rand([3, 3], dtype=dtype, device=env.DEVICE)
         self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
-    def test_rot(self):
+    def test_rot(self) -> None:
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
@@ -318,7 +318,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 to_numpy_array(res[0]),
             )
 
-    def test_permu(self):
+    def test_permu(self) -> None:
         coord = torch.matmul(self.coord, self.cell)
         ft0 = PropertyFittingNet(
             self.nt,
@@ -360,7 +360,7 @@ class TestInvarianceRandomShift(unittest.TestCase):
             to_numpy_array(res[1]),
         )
 
-    def test_trans(self):
+    def test_trans(self) -> None:
         atype = self.atype.reshape(1, 5)
         coord_s = torch.matmul(
             torch.remainder(
@@ -399,14 +399,14 @@ class TestInvarianceRandomShift(unittest.TestCase):
                 nlist,
             )
 
-            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+            ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
             res.append(ret0["property"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
 
 class TestPropertyModel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.natoms = 5
         self.rcut = 4.0
         self.nt = 3
@@ -432,7 +432,7 @@ class TestPropertyModel(unittest.TestCase):
         self.model = PropertyModel(self.dd0, self.ft0, self.type_mapping)
         self.file_path = "model_output.pth"
 
-    def test_deepproperty_infer(self):
+    def test_deepproperty_infer(self) -> None:
         atype = self.atype.view(self.nf, self.natoms)
         coord = self.coord.reshape(1, 5, 3)
         cell = self.cell.reshape(1, 9)

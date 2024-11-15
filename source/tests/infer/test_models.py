@@ -34,24 +34,24 @@ class TestDeepPot(unittest.TestCase):
     # moved from tests/tf/test_deeppot_a.py
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         key, extension = cls.param
         cls.case = get_cases()[key]
         cls.model_name = cls.case.get_model(extension)
         cls.dp = DeepEval(cls.model_name)
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         cls.dp = None
 
-    def setUp(self):
+    def setUp(self) -> None:
         key, extension = self.param
         if key == "se_e2_r" and extension == ".pth":
             self.skipTest(
                 reason="se_e2_r type_one_side is not supported for PyTorch models"
             )
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         assert isinstance(self.dp, DeepPot)
         self.assertEqual(self.dp.get_ntypes(), self.case.ntypes)
         self.assertAlmostEqual(
@@ -61,7 +61,7 @@ class TestDeepPot(unittest.TestCase):
         self.assertEqual(self.dp.get_dim_fparam(), self.case.dim_fparam)
         self.assertEqual(self.dp.get_dim_aparam(), self.case.dim_aparam)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         for ii, result in enumerate(self.case.results):
             ee, ff, vv = self.dp.eval(
                 result.coord,
@@ -99,7 +99,7 @@ class TestDeepPot(unittest.TestCase):
                 err_msg=f"Result {ii} virial",
             )
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         for ii, result in enumerate(self.case.results):
             ee, ff, vv, ae, av = self.dp.eval(
                 result.coord,
@@ -151,7 +151,7 @@ class TestDeepPot(unittest.TestCase):
                 err_msg=f"Result {ii} virial",
             )
 
-    def test_descriptor(self):
+    def test_descriptor(self) -> None:
         _, extension = self.param
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
@@ -160,7 +160,7 @@ class TestDeepPot(unittest.TestCase):
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         for ii, result in enumerate(self.case.results):
             coords2 = np.concatenate((result.coord, result.coord))
             if result.box is not None:
@@ -209,7 +209,7 @@ class TestDeepPot(unittest.TestCase):
                 vv.ravel(), expected_sv.ravel(), default_places
             )
 
-    def test_zero_input(self):
+    def test_zero_input(self) -> None:
         _, extension = self.param
         if extension == ".pb":
             from deepmd.tf.env import (
@@ -243,7 +243,7 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(ee.ravel(), 0, default_places)
             np.testing.assert_almost_equal(vv.ravel(), 0, default_places)
 
-    def test_ase(self):
+    def test_ase(self) -> None:
         from ase import (
             Atoms,
         )
@@ -280,7 +280,7 @@ class TestDeepPot(unittest.TestCase):
                 err_msg=f"Result {ii} energy",
             )
 
-    def test_dpdata_driver(self):
+    def test_dpdata_driver(self) -> None:
         if self.case.dim_fparam or self.case.dim_aparam:
             self.skipTest("fparam and aparam not supported")
 
@@ -323,7 +323,7 @@ class TestDeepPot(unittest.TestCase):
                 err_msg=f"Result {ii} virial",
             )
 
-    def test_model_script_def(self):
+    def test_model_script_def(self) -> None:
         if self.case.model_def_script is not None:
             self.assertDictEqual(
                 self.case.model_def_script, self.dp.get_model_def_script()
@@ -336,7 +336,7 @@ class TestDeepPot(unittest.TestCase):
 )
 class TestDeepPotNeighborList(TestDeepPot):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         key, extension = cls.param
         cls.case = get_cases()[key]
         model_name = cls.case.get_model(extension)
@@ -348,9 +348,9 @@ class TestDeepPotNeighborList(TestDeepPot):
         )
 
     @unittest.skip("multiple frames not supported")
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         pass
 
     @unittest.skip("Zero atoms not supported")
-    def test_zero_input(self):
+    def test_zero_input(self) -> None:
         pass

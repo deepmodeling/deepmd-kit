@@ -26,7 +26,7 @@ dtype = torch.float64
 
 
 class TestCalculator(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -50,7 +50,7 @@ class TestCalculator(unittest.TestCase):
 
         self.calculator = DPCalculator("model.pt")
 
-    def test_calculator(self):
+    def test_calculator(self) -> None:
         from ase import (
             Atoms,
         )

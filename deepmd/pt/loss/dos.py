@@ -28,7 +28,7 @@ class DOSLoss(TaskLoss):
         limit_pref_acdf: float = 0.0,
         inference=False,
         **kwargs,
-    ):
+    ) -> None:
         r"""Construct a loss for local and global tensors.
 
         Parameters
@@ -151,10 +151,10 @@ class DOSLoss(TaskLoss):
         if self.has_acdf and "atom_dos" in model_pred and "atom_dos" in label:
             find_local = label.get("find_atom_dos", 0.0)
             pref_acdf = pref_acdf * find_local
-            local_tensor_pred_cdf = torch.cusum(
+            local_tensor_pred_cdf = torch.cumsum(
                 model_pred["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
             )
-            local_tensor_label_cdf = torch.cusum(
+            local_tensor_label_cdf = torch.cumsum(
                 label["atom_dos"].reshape([-1, natoms, self.numb_dos]), dim=-1
             )
             diff = (local_tensor_pred_cdf - local_tensor_label_cdf).reshape(
@@ -199,10 +199,10 @@ class DOSLoss(TaskLoss):
         if self.has_cdf and "dos" in model_pred and "dos" in label:
             find_global = label.get("find_dos", 0.0)
             pref_cdf = pref_cdf * find_global
-            global_tensor_pred_cdf = torch.cusum(
+            global_tensor_pred_cdf = torch.cumsum(
                 model_pred["dos"].reshape([-1, self.numb_dos]), dim=-1
             )
-            global_tensor_label_cdf = torch.cusum(
+            global_tensor_label_cdf = torch.cumsum(
                 label["dos"].reshape([-1, self.numb_dos]), dim=-1
             )
             diff = global_tensor_pred_cdf - global_tensor_label_cdf

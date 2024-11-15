@@ -7,5 +7,5 @@ from dpgui import (
 
 
 class TestDPGUI(unittest.TestCase):
-    def test_dpgui_entrypoints(self):
+    def test_dpgui_entrypoints(self) -> None:
         self.assertTrue(len(generate_dpgui_templates()) > 0)

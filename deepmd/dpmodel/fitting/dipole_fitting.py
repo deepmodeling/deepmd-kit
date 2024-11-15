@@ -11,6 +11,9 @@ import numpy as np
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
 )
+from deepmd.dpmodel.common import (
+    cast_precision,
+)
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
 )
@@ -106,7 +109,7 @@ class DipoleFitting(GeneralFitting):
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -174,6 +177,7 @@ class DipoleFitting(GeneralFitting):
             ]
         )
 
+    @cast_precision
     def call(
         self,
         descriptor: np.ndarray,

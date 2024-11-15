@@ -27,7 +27,7 @@ else:
 
 
 class TestDataTypeSel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         self.data_name = "test_data"
         os.makedirs(self.data_name, exist_ok=True)
@@ -60,10 +60,10 @@ class TestDataTypeSel(unittest.TestCase):
         self.value_2 = np.reshape(self.value_2, [self.nframes, 4])
         np.save(path, self.value_2)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.data_name)
 
-    def test_load_set_1(self):
+    def test_load_set_1(self) -> None:
         dd = DeepmdData(self.data_name).add(
             "value_1", 1, atomic=True, must=True, type_sel=[0]
         )
@@ -71,7 +71,7 @@ class TestDataTypeSel(unittest.TestCase):
         self.assertEqual(data["value_1"].shape, (self.nframes, 2))
         np.testing.assert_almost_equal(data["value_1"], self.value_1)
 
-    def test_load_set_2(self):
+    def test_load_set_2(self) -> None:
         dd = DeepmdData(self.data_name).add(
             "value_2", 1, atomic=True, must=True, type_sel=[1]
         )
@@ -81,7 +81,7 @@ class TestDataTypeSel(unittest.TestCase):
 
 
 class TestData(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         self.data_name = "test_data"
         os.makedirs(self.data_name, exist_ok=True)
@@ -157,10 +157,10 @@ class TestData(unittest.TestCase):
         self.tensor_nsel = self.tensor_natoms[:, 1, :]
         np.save(path, self.tensor_nsel)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.data_name)
 
-    def test_init(self):
+    def test_init(self) -> None:
         dd = DeepmdData(self.data_name)
         self.assertEqual(dd.idx_map[0], 1)
         self.assertEqual(dd.idx_map[1], 0)
@@ -169,7 +169,7 @@ class TestData(unittest.TestCase):
             dd.dirs, ["test_data/set.bar", "test_data/set.foo", "test_data/set.tar"]
         )
 
-    def test_init_type_map(self):
+    def test_init_type_map(self) -> None:
         dd = DeepmdData(self.data_name, type_map=["bar", "foo", "tar"])
         self.assertEqual(dd.idx_map[0], 0)
         self.assertEqual(dd.idx_map[1], 1)
@@ -177,7 +177,7 @@ class TestData(unittest.TestCase):
         self.assertEqual(dd.atom_type[1], 1)
         self.assertEqual(dd.type_map, ["bar", "foo", "tar"])
 
-    def test_load_set(self):
+    def test_load_set(self) -> None:
         dd = (
             DeepmdData(self.data_name)
             .add("test_atomic", 7, atomic=True, must=True)
@@ -202,7 +202,7 @@ class TestData(unittest.TestCase):
         self.assertEqual(data["find_test_null"], 0)
         self._comp_np_mat2(data["test_null"], self.test_null)
 
-    def test_shuffle(self):
+    def test_shuffle(self) -> None:
         dd = (
             DeepmdData(self.data_name)
             .add("test_atomic", 7, atomic=True, must=True)
@@ -215,7 +215,7 @@ class TestData(unittest.TestCase):
         self._comp_np_mat2(data_bk["test_atom"][idx, :], data["test_atom"])
         self._comp_np_mat2(data_bk["test_frame"][idx, :], data["test_frame"])
 
-    def test_shuffle_with_numb_copy(self):
+    def test_shuffle_with_numb_copy(self) -> None:
         path = os.path.join(self.data_name, "set.foo", "numb_copy.npy")
         prob = np.arange(self.nframes)
         np.save(path, prob)
@@ -232,7 +232,7 @@ class TestData(unittest.TestCase):
         self._comp_np_mat2(data_bk["test_atom"][idx, :], data["test_atom"])
         self._comp_np_mat2(data_bk["test_frame"][idx, :], data["test_frame"])
 
-    def test_reduce(self):
+    def test_reduce(self) -> None:
         dd = DeepmdData(self.data_name).add("test_atomic", 7, atomic=True, must=True)
         dd.reduce("redu", "test_atomic")
         data = dd._load_set(os.path.join(self.data_name, "set.foo"))
@@ -241,7 +241,7 @@ class TestData(unittest.TestCase):
         self.assertEqual(data["find_redu"], 1)
         self._comp_np_mat2(data["redu"], self.redu_atomic)
 
-    def test_reduce_null(self):
+    def test_reduce_null(self) -> None:
         dd = DeepmdData(self.data_name).add("test_atomic_1", 7, atomic=True, must=False)
         dd.reduce("redu", "test_atomic_1")
         data = dd._load_set(os.path.join(self.data_name, "set.foo"))
@@ -252,12 +252,12 @@ class TestData(unittest.TestCase):
         self.assertEqual(data["find_redu"], 0)
         self._comp_np_mat2(data["redu"], np.zeros([self.nframes, 7]))
 
-    def test_load_null_must(self):
+    def test_load_null_must(self) -> None:
         dd = DeepmdData(self.data_name).add("test_atomic_1", 7, atomic=True, must=True)
         with self.assertRaises(RuntimeError):
             data = dd._load_set(os.path.join(self.data_name, "set.foo"))
 
-    def test_avg(self):
+    def test_avg(self) -> None:
         dd = DeepmdData(self.data_name).add("test_frame", 5, atomic=False, must=True)
         favg = dd.avg("test_frame")
         fcmp = np.average(
@@ -268,7 +268,7 @@ class TestData(unittest.TestCase):
         )
         np.testing.assert_almost_equal(favg, fcmp, places)
 
-    def test_check_batch_size(self):
+    def test_check_batch_size(self) -> None:
         dd = DeepmdData(self.data_name)
         ret = dd.check_batch_size(10)
         self.assertEqual(ret, (os.path.join(self.data_name, "set.bar"), 5))
@@ -277,7 +277,7 @@ class TestData(unittest.TestCase):
         ret = dd.check_batch_size(1)
         self.assertEqual(ret, None)
 
-    def test_check_test_size(self):
+    def test_check_test_size(self) -> None:
         dd = DeepmdData(self.data_name)
         ret = dd.check_test_size(10)
         self.assertEqual(ret, (os.path.join(self.data_name, "set.bar"), 5))
@@ -286,7 +286,7 @@ class TestData(unittest.TestCase):
         ret = dd.check_test_size(1)
         self.assertEqual(ret, None)
 
-    def test_get_batch(self):
+    def test_get_batch(self) -> None:
         dd = DeepmdData(self.data_name)
         data = dd.get_batch(5)
         self._comp_np_mat2(
@@ -305,7 +305,7 @@ class TestData(unittest.TestCase):
         data = dd.get_batch(5)
         self._comp_np_mat2(np.sort(data["coord"], axis=0), np.sort(self.coord, axis=0))
 
-    def test_get_test(self):
+    def test_get_test(self) -> None:
         dd = DeepmdData(self.data_name)
         data = dd.get_test()
         expected_coord = np.concatenate(
@@ -315,14 +315,14 @@ class TestData(unittest.TestCase):
             np.sort(data["coord"], axis=0), np.sort(expected_coord, axis=0)
         )
 
-    def test_get_nbatch(self):
+    def test_get_nbatch(self) -> None:
         dd = DeepmdData(self.data_name)
         nb = dd.get_numb_batch(1, 0)
         self.assertEqual(nb, 5)
         nb = dd.get_numb_batch(2, 0)
         self.assertEqual(nb, 2)
 
-    def test_get_tensor(self):
+    def test_get_tensor(self) -> None:
         dd_natoms = (
             DeepmdData(self.data_name)
             .add(
@@ -374,20 +374,20 @@ class TestData(unittest.TestCase):
             data_nsel["tensor_natoms"],
         )
 
-    def _comp_np_mat2(self, first, second):
+    def _comp_np_mat2(self, first, second) -> None:
         np.testing.assert_almost_equal(first, second, places)
 
 
 class TestH5Data(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.data_name = str(tests_path / "test.hdf5")
 
-    def test_init(self):
+    def test_init(self) -> None:
         dd = DeepmdData(self.data_name)
         self.assertEqual(dd.idx_map[0], 0)
         self.assertEqual(dd.type_map, ["X"])
         self.assertEqual(dd.dirs[0], self.data_name + "#/set.000")
 
-    def test_get_batch(self):
+    def test_get_batch(self) -> None:
         dd = DeepmdData(self.data_name)
         data = dd.get_batch(5)

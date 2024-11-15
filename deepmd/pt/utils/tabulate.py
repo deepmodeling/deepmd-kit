@@ -293,7 +293,7 @@ class DPTabulate(BaseTabulate):
         t = torch.cat([x, x], dim=1)
         return t, self.activation_fn(torch.matmul(x, w) + b) + t
 
-    def _get_descrpt_type(self):
+    def _get_descrpt_type(self) -> str:
         if isinstance(
             self.descrpt,
             (
@@ -423,7 +423,7 @@ class DPTabulate(BaseTabulate):
     def _get_matrix(self):
         return self._get_network_variable("w")
 
-    def _convert_numpy_to_tensor(self):
+    def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to torch.Tensor."""
         for ii in self.data:
             self.data[ii] = torch.tensor(self.data[ii], device=env.DEVICE)  # pylint: disable=no-explicit-dtype

@@ -38,7 +38,7 @@ from deepmd.tf.nvnmd.entrypoints.train import (
 __all__ = ["main", "parse_args", "get_ll", "main_parser"]
 
 
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
+def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
     """DeePMD-Kit entry point.
 
     Parameters

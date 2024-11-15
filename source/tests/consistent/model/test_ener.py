@@ -132,7 +132,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         )
 
     @property
-    def skip_jax(self):
+    def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
     def pass_data_to_cls(self, cls, data) -> Any:
@@ -141,12 +141,14 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         if cls is EnergyModelDP:
             return get_model_dp(data)
         elif cls is EnergyModelPT:
-            return get_model_pt(data)
+            model = get_model_pt(data)
+            model.atomic_model.out_bias.uniform_()
+            return model
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2
@@ -323,12 +325,12 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError("No available reference")
 
     @property
-    def skip_tf(self):
+    def skip_tf(self) -> bool:
         # TF does not have lower interface
         return True
 
     @property
-    def skip_jax(self):
+    def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
     def pass_data_to_cls(self, cls, data) -> Any:
@@ -342,7 +344,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

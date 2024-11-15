@@ -23,7 +23,7 @@ from deepmd.pt.infer.deep_eval import (
 
 
 class TestDeepPot(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -47,12 +47,12 @@ class TestDeepPot(unittest.TestCase):
         trainer.wrapper(**input_dict, label=label_dict, cur_lr=1.0)
         self.model = "model.pt"
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f in ["lcurve.out", self.input_json]:
                 os.remove(f)
 
-    def test_dp_test(self):
+    def test_dp_test(self) -> None:
         dp = DeepPot(str(self.model))
         cell = np.array(
             [
@@ -102,12 +102,12 @@ class TestDeepPot(unittest.TestCase):
         self.assertEqual(dp.get_dim_aparam(), 0)
         self.assertEqual(dp.deep_eval.model_type, DeepPot)
 
-    def test_uni(self):
+    def test_uni(self) -> None:
         dp = DeepPotUni("model.pt")
         self.assertIsInstance(dp, DeepPot)
         # its methods has been tested in test_dp_test
 
-    def test_eval_typeebd(self):
+    def test_eval_typeebd(self) -> None:
         dp = DeepPot(str(self.model))
         eval_typeebd = dp.eval_typeebd()
         self.assertEqual(
@@ -117,7 +117,7 @@ class TestDeepPot(unittest.TestCase):
 
 
 class TestDeepPotFrozen(TestDeepPot):
-    def setUp(self):
+    def setUp(self) -> None:
         super().setUp()
         frozen_model = "frozen_model.pth"
         freeze(
@@ -132,7 +132,7 @@ class TestDeepPotFrozen(TestDeepPot):
     @unittest.skipIf(not torch.cuda.is_available(), "CUDA not available")
     @unittest.mock.patch("deepmd.pt.utils.env.DEVICE", torch.device("cpu"))
     @unittest.mock.patch("deepmd.pt.infer.deep_eval.DEVICE", torch.device("cpu"))
-    def test_dp_test_cpu(self):
+    def test_dp_test_cpu(self) -> None:
         self.test_dp_test()
 
 

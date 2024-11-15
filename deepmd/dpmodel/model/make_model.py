@@ -159,7 +159,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             # underscore to prevent conflict with normal inputs
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
-        ):
+        ) -> None:
             BaseModel.__init__(self)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_

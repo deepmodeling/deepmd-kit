@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    NoReturn,
     Optional,
 )
 
@@ -62,7 +63,7 @@ def make_base_fitting(
             """Calculate fitting."""
             pass
 
-        def compute_output_stats(self, merged):
+        def compute_output_stats(self, merged) -> NoReturn:
             """Update the output bias for fitting net."""
             raise NotImplementedError
 

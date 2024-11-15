@@ -26,7 +26,7 @@ else:
 
 class TestDipoleCharge(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("dipolecharge_d.pbtxt")),
             "dipolecharge_d.pb",
@@ -35,7 +35,7 @@ class TestDipoleCharge(unittest.TestCase):
             "dipolecharge_d.pb", [-1.0, -3.0], [1.0, 1.0, 1.0, 1.0, 1.0], 4.0, 0.2
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 4.6067455554,
@@ -117,16 +117,16 @@ class TestDipoleCharge(unittest.TestCase):
         self.coords = self.coords.reshape([-1, self.natoms, 3])
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("dipolecharge_d.pb")
         cls.dp = None
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 5)
         self.assertAlmostEqual(self.dp.get_rcut(), 4.0, places=default_places)
         self.assertEqual(self.dp.get_type_map(), ["A", "B", "C", "D", "E"])
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee, ff, vv = self.dp.eval(self.coords, self.box, self.atype, eval_fv=True)
         # check shape of the returns
         nframes = 1
@@ -147,7 +147,7 @@ class TestDipoleCharge(unittest.TestCase):
         np.testing.assert_almost_equal(ff, self.expected_f)
         np.testing.assert_almost_equal(vv, self.expected_v)
 
-    def test_2frame(self):
+    def test_2frame(self) -> None:
         nframes = 2
         self.coords = np.tile(self.coords, [nframes, 1, 1])
         self.box = np.tile(self.box, [nframes, 1])

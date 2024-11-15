@@ -137,7 +137,7 @@ class AutoBatchSize(ABC):
                 self._adjust_batch_size(self.factor)
             return n_batch, result
 
-    def _adjust_batch_size(self, factor: float):
+    def _adjust_batch_size(self, factor: float) -> None:
         old_batch_size = self.current_batch_size
         self.current_batch_size = int(self.current_batch_size * factor)
         log.info(

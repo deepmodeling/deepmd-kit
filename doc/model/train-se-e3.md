@@ -64,3 +64,11 @@ The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.m
 ```
 
 The type of the descriptor is set by the key {ref}`type <model[standard]/descriptor/type>`.
+
+## Type embedding
+
+Use [`se_e3_tebd`](./train-se-e3-tebd.md) for type embedding support.
+
+## Model compression
+
+Model compression is supported.

@@ -48,7 +48,7 @@ def get_batch(system, type_map, data_requirement):
 
 
 class LossCommonTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.cur_lr = 1.2
         if not self.spin:
             self.system = str(Path(__file__).parent / "water/data/data_0")
@@ -302,7 +302,7 @@ class LossCommonTest(unittest.TestCase):
 
 
 class TestEnerStdLoss(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -334,7 +334,7 @@ class TestEnerStdLoss(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict
@@ -371,7 +371,7 @@ class TestEnerStdLoss(LossCommonTest):
 
 
 class TestEnerStdLossAePfGf(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -424,7 +424,7 @@ class TestEnerStdLossAePfGf(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict
@@ -461,7 +461,7 @@ class TestEnerStdLossAePfGf(LossCommonTest):
 
 
 class TestEnerStdLossAecoeff(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -495,7 +495,7 @@ class TestEnerStdLossAecoeff(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict
@@ -532,7 +532,7 @@ class TestEnerStdLossAecoeff(LossCommonTest):
 
 
 class TestEnerStdLossRelativeF(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -566,7 +566,7 @@ class TestEnerStdLossRelativeF(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict
@@ -709,7 +709,7 @@ class TestEnerHessStdLoss(LossCommonTest):
 
 
 class TestEnerSpinLoss(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -744,7 +744,7 @@ class TestEnerSpinLoss(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict
@@ -781,7 +781,7 @@ class TestEnerSpinLoss(LossCommonTest):
 
 
 class TestEnerSpinLossAe(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -822,7 +822,7 @@ class TestEnerSpinLossAe(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict
@@ -859,7 +859,7 @@ class TestEnerSpinLossAe(LossCommonTest):
 
 
 class TestEnerSpinLossAecoeff(LossCommonTest):
-    def setUp(self):
+    def setUp(self) -> None:
         self.start_lr = 1.1
         self.start_pref_e = 0.02
         self.limit_pref_e = 1.0
@@ -896,7 +896,7 @@ class TestEnerSpinLossAecoeff(LossCommonTest):
         self.hess = False
         super().setUp()
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         with tf.Session(graph=self.g) as sess:
             tf_loss, tf_more_loss = sess.run(
                 self.tf_loss_sess, feed_dict=self.feed_dict

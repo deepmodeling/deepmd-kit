@@ -16,7 +16,7 @@ from deepmd.utils.path import (
 class PathTest:
     path: DPPath
 
-    def test_numpy(self):
+    def test_numpy(self) -> None:
         numpy_path = self.path / "testcase"
         arr1 = np.ones(3)
         self.assertFalse(numpy_path.is_file())
@@ -25,7 +25,7 @@ class PathTest:
         arr2 = numpy_path.load_numpy()
         np.testing.assert_array_equal(arr1, arr2)
 
-    def test_dir(self):
+    def test_dir(self) -> None:
         dir_path = self.path / "testcase"
         self.assertFalse(dir_path.is_dir())
         dir_path.mkdir()
@@ -33,21 +33,21 @@ class PathTest:
 
 
 class TestOSPath(PathTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
         self.path = DPPath(self.tempdir.name, "a")
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()
 
 
 class TestH5Path(PathTest, unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
         h5file = str((Path(self.tempdir.name) / "testcase.h5").resolve())
         with h5py.File(h5file, "w") as f:
             pass
         self.path = DPPath(h5file, "a")
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()

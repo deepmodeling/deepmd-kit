@@ -11,7 +11,7 @@ from .dp_atomic_model import (
 
 
 class DPEnergyAtomicModel(DPAtomicModel):
-    def __init__(self, descriptor, fitting, type_map, **kwargs):
+    def __init__(self, descriptor, fitting, type_map, **kwargs) -> None:
         assert (
             isinstance(fitting, EnergyFittingNet)
             or isinstance(fitting, EnergyFittingNetDirect)

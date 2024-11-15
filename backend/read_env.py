@@ -131,7 +131,7 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
     )
 
 
-def set_scikit_build_env():
+def set_scikit_build_env() -> None:
     """Set scikit-build environment variables before executing scikit-build."""
     cmake_minimum_required_version, cmake_args, _, _, _, _ = get_argument_from_env()
     os.environ["SKBUILD_CMAKE_MINIMUM_VERSION"] = cmake_minimum_required_version

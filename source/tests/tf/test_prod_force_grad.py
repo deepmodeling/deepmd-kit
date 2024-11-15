@@ -9,7 +9,7 @@ from deepmd.tf.env import (
 
 
 class TestProdForceGrad(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.sess = self.cached_session().__enter__()
         self.nframes = 2
         self.dcoord = [
@@ -1112,7 +1112,7 @@ class TestProdForceGrad(tf.test.TestCase):
         )
         self.tnatoms = tf.placeholder(tf.int32, [None], name="t_natoms")
 
-    def test_prod_force_grad(self):
+    def test_prod_force_grad(self) -> None:
         tgrad_net = op_grads_module.prod_force_se_a_grad(
             self.tgrad,
             self.tnet_deriv,

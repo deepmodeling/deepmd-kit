@@ -29,7 +29,7 @@ class SpinModel(NativeOP):
         self,
         backbone_model,
         spin: Spin,
-    ):
+    ) -> None:
         super().__init__()
         self.backbone_model = backbone_model
         self.spin = spin

@@ -51,7 +51,7 @@ class TestPairTab(unittest.TestCase):
         # nframes=2, nloc=2, nnei=2
         self.nlist = np.array([[[1, 2], [0, 2]], [[1, 2], [0, 3]]])
 
-    def test_without_mask(self):
+    def test_without_mask(self) -> None:
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
@@ -59,7 +59,7 @@ class TestPairTab(unittest.TestCase):
 
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
-    def test_with_mask(self):
+    def test_with_mask(self) -> None:
         self.nlist = np.array([[[1, -1], [0, 2]], [[1, 2], [0, 3]]])
 
         result = self.model.forward_atomic(
@@ -69,7 +69,7 @@ class TestPairTab(unittest.TestCase):
 
         np.testing.assert_allclose(result["energy"], expected_result, 0.0001, 0.0001)
 
-    def test_deserialize(self):
+    def test_deserialize(self) -> None:
         model1 = PairTabAtomicModel.deserialize(self.model.serialize())
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)
         np.testing.assert_allclose(self.model.tab_info, model1.tab_info)

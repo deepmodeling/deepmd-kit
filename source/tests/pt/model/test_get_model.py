@@ -45,7 +45,7 @@ model_se_e2_a = {
 
 
 class TestGetModel(unittest.TestCase):
-    def test_model_attr(self):
+    def test_model_attr(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         self.model = get_model(model_params).to(env.DEVICE)
         atomic_model = self.model.atomic_model
@@ -63,7 +63,7 @@ class TestGetModel(unittest.TestCase):
         self.assertEqual(atomic_model.atom_exclude_types, [1])
         self.assertEqual(atomic_model.pair_exclude_types, [[1, 2]])
 
-    def test_model_attr_energy_float(self):
+    def test_model_attr_energy_float(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         model_params["preset_out_bias"] = {"energy": ["1.", 3, None]}
         self.model = get_model(model_params).to(env.DEVICE)
@@ -82,19 +82,19 @@ class TestGetModel(unittest.TestCase):
         self.assertEqual(atomic_model.atom_exclude_types, [1])
         self.assertEqual(atomic_model.pair_exclude_types, [[1, 2]])
 
-    def test_model_attr_energy_unsupported_type(self):
+    def test_model_attr_energy_unsupported_type(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         model_params["preset_out_bias"] = {"energy": [1.0 + 2.0j, 3, None]}
         with self.assertRaises(ValueError):
             self.model = get_model(model_params).to(env.DEVICE)
 
-    def test_model_attr_energy_unsupported_value(self):
+    def test_model_attr_energy_unsupported_value(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         model_params["preset_out_bias"] = {"energy": ["1.0 + 2.0j", 3, None]}
         with self.assertRaises(ValueError):
             self.model = get_model(model_params).to(env.DEVICE)
 
-    def test_notset_model_attr(self):
+    def test_notset_model_attr(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         model_params.pop("atom_exclude_types")
         model_params.pop("pair_exclude_types")
@@ -106,7 +106,7 @@ class TestGetModel(unittest.TestCase):
         self.assertEqual(atomic_model.atom_exclude_types, [])
         self.assertEqual(atomic_model.pair_exclude_types, [])
 
-    def test_preset_wrong_len(self):
+    def test_preset_wrong_len(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         model_params["preset_out_bias"] = {"energy": [None]}
         with self.assertRaises(ValueError):

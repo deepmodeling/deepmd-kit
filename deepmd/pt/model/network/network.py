@@ -56,7 +56,7 @@ class SimpleLinear(nn.Module):
         use_timestep=False,
         activate=None,
         bias: bool = True,
-    ):
+    ) -> None:
         """Construct a linear layer.
 
         Args:
@@ -99,7 +99,7 @@ class Linear(nn.Linear):
         d_out: int,
         bias: bool = True,
         init: str = "default",
-    ):
+    ) -> None:
         super().__init__(
             d_in,
             d_out,
@@ -129,7 +129,7 @@ class Linear(nn.Linear):
         else:
             raise ValueError("Invalid init method.")
 
-    def _trunc_normal_init(self, scale=1.0):
+    def _trunc_normal_init(self, scale=1.0) -> None:
         # Constant from scipy.stats.truncnorm.std(a=-2, b=2, loc=0., scale=1.)
         TRUNCATED_NORMAL_STDDEV_FACTOR = 0.87962566103423978
         _, fan_in = self.weight.shape
@@ -137,22 +137,22 @@ class Linear(nn.Linear):
         std = (scale**0.5) / TRUNCATED_NORMAL_STDDEV_FACTOR
         nn.init.trunc_normal_(self.weight, mean=0.0, std=std)
 
-    def _glorot_uniform_init(self):
+    def _glorot_uniform_init(self) -> None:
         nn.init.xavier_uniform_(self.weight, gain=1)
 
-    def _zero_init(self, use_bias=True):
+    def _zero_init(self, use_bias=True) -> None:
         with torch.no_grad():
             self.weight.fill_(0.0)
             if use_bias:
                 with torch.no_grad():
                     self.bias.fill_(1.0)
 
-    def _normal_init(self):
+    def _normal_init(self) -> None:
         nn.init.kaiming_normal_(self.weight, nonlinearity="linear")
 
 
 class NonLinearHead(nn.Module):
-    def __init__(self, input_dim, out_dim, activation_fn, hidden=None):
+    def __init__(self, input_dim, out_dim, activation_fn, hidden=None) -> None:
         super().__init__()
         hidden = input_dim if not hidden else hidden
         self.linear1 = SimpleLinear(input_dim, hidden, activate=activation_fn)
@@ -167,7 +167,7 @@ class NonLinearHead(nn.Module):
 class MaskLMHead(nn.Module):
     """Head for masked language modeling."""
 
-    def __init__(self, embed_dim, output_dim, activation_fn, weight=None):
+    def __init__(self, embed_dim, output_dim, activation_fn, weight=None) -> None:
         super().__init__()
         self.dense = SimpleLinear(embed_dim, embed_dim)
         self.activation_fn = ActivationFn(activation_fn)
@@ -199,7 +199,7 @@ class MaskLMHead(nn.Module):
 class ResidualDeep(nn.Module):
     def __init__(
         self, type_id, embedding_width, neuron, bias_atom_e, out_dim=1, resnet_dt=False
-    ):
+    ) -> None:
         """Construct a filter on the given element as neighbor.
 
         Args:
@@ -261,7 +261,7 @@ class TypeEmbedNet(nn.Module):
         use_econf_tebd=False,
         use_tebd_bias: bool = False,
         type_map=None,
-    ):
+    ) -> None:
         """Construct a type embedding net."""
         super().__init__()
         self.type_nums = type_nums
@@ -296,7 +296,7 @@ class TypeEmbedNet(nn.Module):
         """
         return self.embedding(atype.device)[atype]
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -364,7 +364,7 @@ class TypeEmbedNetConsistent(nn.Module):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         """Construct a type embedding net."""
         super().__init__()
         self.ntypes = ntypes

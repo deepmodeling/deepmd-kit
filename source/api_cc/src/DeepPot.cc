@@ -7,11 +7,13 @@
 #include "AtomMap.h"
 #include "common.h"
 #ifdef BUILD_TENSORFLOW
-#include "DeepPotJAX.h"
 #include "DeepPotTF.h"
 #endif
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
+#endif
+#if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
+#include "DeepPotJAX.h"
 #endif
 #include "device.h"
 
@@ -37,17 +39,7 @@ void DeepPot::init(const std::string& model,
               << std::endl;
     return;
   }
-  DPBackend backend;
-  if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
-    backend = deepmd::DPBackend::PyTorch;
-  } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
-    backend = deepmd::DPBackend::TensorFlow;
-  } else if (model.length() >= 11 &&
-             model.substr(model.length() - 11) == ".savedmodel") {
-    backend = deepmd::DPBackend::JAX;
-  } else {
-    throw deepmd::deepmd_exception("Unsupported model file format");
-  }
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dp = std::make_shared<deepmd::DeepPotTF>(model, gpu_rank, file_content);
@@ -63,7 +55,7 @@ void DeepPot::init(const std::string& model,
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");
   } else if (deepmd::DPBackend::JAX == backend) {
-#ifdef BUILD_TENSORFLOW
+#if defined(BUILD_TENSORFLOW) || defined(BUILD_JAX)
     dp = std::make_shared<deepmd::DeepPotJAX>(model, gpu_rank, file_content);
 #else
     throw deepmd::deepmd_exception(

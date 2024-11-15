@@ -269,11 +269,11 @@ class DeepEvalBackend(ABC):
         """Get the number of DOS."""
         raise NotImplementedError
 
-    def get_has_efield(self):
+    def get_has_efield(self) -> bool:
         """Check if the model has efield."""
         return False
 
-    def get_has_spin(self):
+    def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
         return False
 

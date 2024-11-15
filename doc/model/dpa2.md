@@ -31,3 +31,13 @@ See the example `examples/water/lmp/jax_dpa2.lammps`.
 ## Data format
 
 DPA-2 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
+
+## Type embedding
+
+Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[dpa2]/tebd_dim>` argument.
+
+## Model compression
+
+Model compression is supported when {ref}`repinit/tebd_input_mode <model[standard]/descriptor[dpa2]/repinit/tebd_input_mode>` is `strip`, but only the `repinit` part is compressed.
+An example is given in `examples/water/dpa2/input_torch_compressible.json`.
+The performance improvement will be limited if other parts are more expensive.

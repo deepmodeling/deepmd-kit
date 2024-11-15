@@ -66,7 +66,7 @@ def train(
     finetune: Optional[str] = None,
     use_pretrain_script: bool = False,
     **kwargs,
-):
+) -> None:
     """Run DeePMD model training.
 
     Parameters
@@ -185,7 +185,9 @@ def train(
     _do_work(jdata, run_opt, is_compress)
 
 
-def _do_work(jdata: dict[str, Any], run_opt: RunOptions, is_compress: bool = False):
+def _do_work(
+    jdata: dict[str, Any], run_opt: RunOptions, is_compress: bool = False
+) -> None:
     """Run serial model training.
 
     Parameters

@@ -20,7 +20,7 @@ from deepmd.tf.utils.nlist import (
 
 
 class TestNeighList(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.nf = 3
         self.nloc = 2
         self.ns = 5 * 5 * 3
@@ -50,7 +50,7 @@ class TestNeighList(unittest.TestCase):
             ]
         )
 
-    def test_extend_coord(self):
+    def test_extend_coord(self) -> None:
         t_coord = tf.placeholder(
             GLOBAL_TF_FLOAT_PRECISION, [None, None], name="i_coord"
         )

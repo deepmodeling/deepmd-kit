@@ -16,12 +16,12 @@ from .case_single_frame_with_nlist import (
 
 
 class TestDescrptDPA1(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_self_consistency(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
@@ -37,7 +37,7 @@ class TestDescrptDPA1(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for ii in [0, 1, 4]:
             np.testing.assert_allclose(mm0[ii], mm1[ii])
 
-    def test_multiple_frames(self):
+    def test_multiple_frames(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))

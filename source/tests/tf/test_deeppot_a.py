@@ -36,7 +36,7 @@ else:
 
 
 class TestModelMajorCompatability(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         model_file = str(infer_path / os.path.join("deeppot.pbtxt"))
         with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
@@ -53,11 +53,11 @@ class TestModelMajorCompatability(unittest.TestCase):
             fp.write("\n".join(data))
         convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         os.remove(self.version_pbtxt)
         os.remove(self.version_pb)
 
-    def test(self):
+    def test(self) -> None:
         with self.assertRaises(RuntimeError) as context:
             DeepPot(str(self.version_pb))
         self.assertTrue("incompatible" in str(context.exception))
@@ -66,7 +66,7 @@ class TestModelMajorCompatability(unittest.TestCase):
 
 
 class TestModelMinorCompatability(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         model_file = str(infer_path / os.path.join("deeppot.pbtxt"))
         with open(model_file) as fp:
             # data = fp.read().replace('\n', '')
@@ -83,11 +83,11 @@ class TestModelMinorCompatability(unittest.TestCase):
             fp.write("\n".join(data))
         convert_pbtxt_to_pb(self.version_pbtxt, self.version_pb)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         os.remove(self.version_pbtxt)
         os.remove(self.version_pb)
 
-    def test(self):
+    def test(self) -> None:
         with self.assertRaises(RuntimeError) as context:
             DeepPot(self.version_pb)
         self.assertTrue("incompatible" in str(context.exception))
@@ -99,7 +99,7 @@ class TestModelMinorCompatability(unittest.TestCase):
 
 
 class TestModelConvert(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -125,7 +125,7 @@ class TestModelConvert(unittest.TestCase):
         self.atype = [0, 1, 1, 0, 1, 1]
         self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    def test_convert_012(self):
+    def test_convert_012(self) -> None:
         old_model = "deeppot.pb"
         new_model = "deeppot-new.pb"
         convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
@@ -135,7 +135,7 @@ class TestModelConvert(unittest.TestCase):
         os.remove(old_model)
         os.remove(new_model)
 
-    def test_convert(self):
+    def test_convert(self) -> None:
         old_model = "deeppot.pb"
         new_model = "deeppot-new.pb"
         convert_pbtxt_to_pb(str(infer_path / "sea_012.pbtxt"), old_model)
@@ -145,7 +145,7 @@ class TestModelConvert(unittest.TestCase):
         os.remove(old_model)
         os.remove(new_model)
 
-    def test_detect(self):
+    def test_detect(self) -> None:
         old_model = "deeppot.pb"
         new_model_txt = "deeppot_new.pbtxt"
         new_model_pb = "deeppot_new.pb"
@@ -184,14 +184,14 @@ class TestModelConvert(unittest.TestCase):
 
 class TestTypeEmbed(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("se_e2_a_tebd.pbtxt")),
             "se_e2_a_tebd.pb",
         )
         cls.dp = DeepPot("se_e2_a_tebd.pb")
 
-    def test_eval_typeebd(self):
+    def test_eval_typeebd(self) -> None:
         expected_typeebd = np.array(
             [
                 [

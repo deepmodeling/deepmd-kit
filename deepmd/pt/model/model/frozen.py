@@ -2,6 +2,7 @@
 import json
 import tempfile
 from typing import (
+    NoReturn,
     Optional,
 )
 
@@ -31,7 +32,7 @@ class FrozenModel(BaseModel):
         The path to the frozen model
     """
 
-    def __init__(self, model_file: str, **kwargs):
+    def __init__(self, model_file: str, **kwargs) -> None:
         super().__init__(**kwargs)
         self.model_file = model_file
         if model_file.endswith(".pth"):
@@ -157,7 +158,7 @@ class FrozenModel(BaseModel):
         return model.serialize()
 
     @classmethod
-    def deserialize(cls, data: dict):
+    def deserialize(cls, data: dict) -> NoReturn:
         raise RuntimeError("Should not touch here.")
 
     @torch.jit.export

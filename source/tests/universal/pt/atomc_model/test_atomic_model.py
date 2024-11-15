@@ -97,7 +97,7 @@ from ..backend import (
 )
 class TestEnergyAtomicModelPT(unittest.TestCase, EnerAtomicModelTest, PTTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         EnerAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
@@ -163,7 +163,7 @@ class TestEnergyAtomicModelPT(unittest.TestCase, EnerAtomicModelTest, PTTestCase
 )
 class TestDosAtomicModelPT(unittest.TestCase, DosAtomicModelTest, PTTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         DosAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
@@ -224,7 +224,7 @@ class TestDosAtomicModelPT(unittest.TestCase, DosAtomicModelTest, PTTestCase):
 )
 class TestDipoleAtomicModelPT(unittest.TestCase, DipoleAtomicModelTest, PTTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         DipoleAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
@@ -286,7 +286,7 @@ class TestDipoleAtomicModelPT(unittest.TestCase, DipoleAtomicModelTest, PTTestCa
 )
 class TestPolarAtomicModelPT(unittest.TestCase, PolarAtomicModelTest, PTTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         PolarAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
@@ -346,7 +346,7 @@ class TestPolarAtomicModelPT(unittest.TestCase, PolarAtomicModelTest, PTTestCase
 )
 class TestZBLAtomicModelPT(unittest.TestCase, ZBLAtomicModelTest, PTTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         ZBLAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]
@@ -423,7 +423,7 @@ class TestZBLAtomicModelPT(unittest.TestCase, ZBLAtomicModelTest, PTTestCase):
 )
 class TestPropertyAtomicModelPT(unittest.TestCase, PropertyAtomicModelTest, PTTestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         PropertyAtomicModelTest.setUpClass()
         (DescriptorParam, Descrpt) = cls.param[0]
         (FittingParam, Fitting) = cls.param[1]

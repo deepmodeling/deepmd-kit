@@ -65,7 +65,7 @@ sp.check_output(
 )
 
 
-def setup_module():
+def setup_module() -> None:
     write_lmp_data(box, coord, type_OH, data_file)
     # TODO
     # write_lmp_data(box, coord, type_HO, data_type_map_file)
@@ -77,7 +77,7 @@ def setup_module():
     )
 
 
-def teardown_module():
+def teardown_module() -> None:
     os.remove(data_file)
     # os.remove(data_type_map_file)
     os.remove(data_file_si)
@@ -135,7 +135,7 @@ def lammps_si():
     lmp.close()
 
 
-def test_compute_deeptensor_atom(lammps):
+def test_compute_deeptensor_atom(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.compute(f"tensor all deeptensor/atom {pb_file2.resolve()}")
@@ -148,7 +148,7 @@ def test_compute_deeptensor_atom(lammps):
     )
 
 
-def test_compute_deeptensor_atom_si(lammps_si):
+def test_compute_deeptensor_atom_si(lammps_si) -> None:
     lammps_si.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_si.pair_coeff("* *")
     lammps_si.compute(f"tensor all deeptensor/atom {pb_file2.resolve()}")

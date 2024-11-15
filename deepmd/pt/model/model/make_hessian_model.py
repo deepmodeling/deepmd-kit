@@ -36,7 +36,7 @@ def make_hessian_model(T_Model):
             self,
             *args,
             **kwargs,
-        ):
+        ) -> None:
             super().__init__(
                 *args,
                 **kwargs,
@@ -46,7 +46,7 @@ def make_hessian_model(T_Model):
         def requires_hessian(
             self,
             keys: Union[str, list[str]],
-        ):
+        ) -> None:
             """Set which output variable(s) requires hessian."""
             if isinstance(keys, str):
                 keys = [keys]
@@ -188,7 +188,7 @@ def make_hessian_model(T_Model):
             box: Optional[torch.Tensor],
             fparam: Optional[torch.Tensor],
             aparam: Optional[torch.Tensor],
-        ):
+        ) -> None:
             self.atype, self.box, self.fparam, self.aparam = atype, box, fparam, aparam
             self.ci = ci
             self.obj = obj

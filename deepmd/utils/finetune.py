@@ -12,7 +12,7 @@ class FinetuneRuleItem:
         model_branch: str = "Default",
         random_fitting: bool = False,
         resuming: bool = False,
-    ):
+    ) -> None:
         """
         The rules for fine-tuning the model from pretrained model.
 

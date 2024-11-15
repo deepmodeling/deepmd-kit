@@ -38,10 +38,10 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
 )
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
 
-    def test_model(self):
+    def test_model(self) -> None:
         jfile = "polar_se_a_tebd.json"
         jdata = j_loader(jfile)
 

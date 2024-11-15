@@ -48,7 +48,7 @@ from .common import (
 
 class TestNvnmdEntrypointsV0(tf.test.TestCase):
     @pytest.mark.run(order=0)
-    def test_mapt_cnn_v0(self):
+    def test_mapt_cnn_v0(self) -> None:
         config_file = str(tests_path / "nvnmd" / "ref" / "config_v0_cnn.npy")
         weight_file = str(tests_path / "nvnmd" / "ref" / "weight_v0_cnn.npy")
         map_file = str(tests_path / "nvnmd" / "out" / "map_v0_cnn.npy")
@@ -393,7 +393,7 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         np.testing.assert_almost_equal(pred, ref_dout, 8)
 
     @pytest.mark.run(order=1)
-    def test_model_qnn_v0(self):
+    def test_model_qnn_v0(self) -> None:
         # without calling test_mapt_cnn_v0, this test will fail when running individually
         self.test_mapt_cnn_v0()
 
@@ -512,14 +512,14 @@ class TestNvnmdEntrypointsV0(tf.test.TestCase):
         ref_dout = -62.60181403
         np.testing.assert_almost_equal(pred, ref_dout, 8)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         # close
         nvnmd_cfg.enable = False
 
 
 class TestNvnmdEntrypointsV1(tf.test.TestCase):
     @pytest.mark.run(order=0)
-    def test_mapt_cnn_v1(self):
+    def test_mapt_cnn_v1(self) -> None:
         config_file = str(tests_path / "nvnmd" / "ref" / "config_v1_cnn.npy")
         weight_file = str(tests_path / "nvnmd" / "ref" / "weight_v1_cnn.npy")
         map_file = str(tests_path / "nvnmd" / "out" / "map_v1_cnn.npy")
@@ -705,7 +705,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         np.testing.assert_almost_equal(pred, ref_dout, 8)
 
     @pytest.mark.run(order=1)
-    def test_model_qnn_v1(self):
+    def test_model_qnn_v1(self) -> None:
         # without calling test_mapt_cnn_v1, this test will fail when running individually
         self.test_mapt_cnn_v1()
 
@@ -856,7 +856,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
             np.testing.assert_almost_equal(pred, ref_dout, 8)
 
     @pytest.mark.run(order=2)
-    def test_wrap_qnn_v1(self):
+    def test_wrap_qnn_v1(self) -> None:
         # without calling test_mapt_cnn_v1, this test will fail when running individually
         self.test_mapt_cnn_v1()
 
@@ -875,7 +875,7 @@ class TestNvnmdEntrypointsV1(tf.test.TestCase):
         red_dout = [249, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 254, 95, 24, 176]
         np.testing.assert_equal(pred, red_dout)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         # close
         nvnmd_cfg.enable = False
 

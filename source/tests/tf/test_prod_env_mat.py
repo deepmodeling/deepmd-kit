@@ -10,7 +10,7 @@ from deepmd.tf.env import (
 
 
 class TestProdEnvMat(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.sess = self.cached_session().__enter__()
         self.nframes = 2
         self.dcoord = [
@@ -1027,7 +1027,7 @@ class TestProdEnvMat(tf.test.TestCase):
         self.t_avg = tf.constant(davg.astype(GLOBAL_NP_FLOAT_PRECISION))
         self.t_std = tf.constant(dstd.astype(GLOBAL_NP_FLOAT_PRECISION))
 
-    def test_pbc_self_built_nlist(self):
+    def test_pbc_self_built_nlist(self) -> None:
         tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
             self.tcoord,
             self.ttype,
@@ -1059,7 +1059,7 @@ class TestProdEnvMat(tf.test.TestCase):
         for ff in range(self.nframes):
             np.testing.assert_almost_equal(dem[ff], self.pbc_expected_output, 5)
 
-    def test_pbc_self_built_nlist_deriv(self):
+    def test_pbc_self_built_nlist_deriv(self) -> None:
         hh = 1e-4
         tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
             self.tcoord,
@@ -1078,7 +1078,7 @@ class TestProdEnvMat(tf.test.TestCase):
         self.sess.run(tf.global_variables_initializer())
         self.check_deriv_numerical_deriv(hh, tem, tem_deriv, trij, tnlist)
 
-    def test_nopbc_self_built_nlist(self):
+    def test_nopbc_self_built_nlist(self) -> None:
         tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
             self.tcoord,
             self.ttype,
@@ -1110,7 +1110,7 @@ class TestProdEnvMat(tf.test.TestCase):
         for ff in range(self.nframes):
             np.testing.assert_almost_equal(dem[ff], self.nopbc_expected_output, 5)
 
-    def test_nopbc_self_built_nlist_deriv(self):
+    def test_nopbc_self_built_nlist_deriv(self) -> None:
         hh = 1e-4
         tem, tem_deriv, trij, tnlist = op_module.prod_env_mat_a(
             self.tcoord,
@@ -1129,7 +1129,7 @@ class TestProdEnvMat(tf.test.TestCase):
         self.sess.run(tf.global_variables_initializer())
         self.check_deriv_numerical_deriv(hh, tem, tem_deriv, trij, tnlist)
 
-    def check_deriv_numerical_deriv(self, hh, tem, tem_deriv, trij, tnlist):
+    def check_deriv_numerical_deriv(self, hh, tem, tem_deriv, trij, tnlist) -> None:
         dem_, dem_deriv_, drij_, dnlist_ = self.sess.run(
             [tem, tem_deriv, trij, tnlist],
             feed_dict={

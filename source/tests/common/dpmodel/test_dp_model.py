@@ -23,12 +23,12 @@ from .case_single_frame_with_nlist import (
 
 
 class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_self_consistency(
         self,
-    ):
+    ) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -52,7 +52,7 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(ret0["energy"], ret1["energy"])
         np.testing.assert_allclose(ret0["energy_redu"], ret1["energy_redu"])
 
-    def test_prec_consistency(self):
+    def test_prec_consistency(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
@@ -101,10 +101,10 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithoutNlist.setUp(self)
 
-    def test_prec_consistency(self):
+    def test_prec_consistency(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc = self.atype.shape
         ds = DescrptSeA(

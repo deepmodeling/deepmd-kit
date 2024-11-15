@@ -160,7 +160,7 @@ class PolarFittingSeA(Fitting):
         """Get the output size. Should be 9."""
         return 9
 
-    def compute_output_stats(self, all_stat):
+    def compute_output_stats(self, all_stat) -> None:
         """Compute the output statistics.
 
         Parameters

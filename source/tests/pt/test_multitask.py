@@ -36,7 +36,7 @@ from .model.test_permutation import (
 )
 
 
-def setUpModule():
+def setUpModule() -> None:
     global multitask_template
     multitask_template_json = str(Path(__file__).parent / "water/multitask.json")
     with open(multitask_template_json) as f:
@@ -44,7 +44,7 @@ def setUpModule():
 
 
 class MultiTaskTrainTest:
-    def test_multitask_train(self):
+    def test_multitask_train(self) -> None:
         # test multitask training
         self.config = update_deepmd_input(self.config, warning=True)
         self.config = normalize(self.config, multi_task=True)
@@ -174,7 +174,7 @@ class MultiTaskTrainTest:
         trainer_finetune.run()
         self.tearDown()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)
@@ -185,7 +185,7 @@ class MultiTaskTrainTest:
 
 
 class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         multitask_se_e2_a = deepcopy(multitask_template)
         multitask_se_e2_a["model"]["shared_dict"]["my_descriptor"] = model_se_e2_a[
             "descriptor"
@@ -224,7 +224,7 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
 
 
 class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         multitask_DPA1 = deepcopy(multitask_template)
         multitask_DPA1["model"]["shared_dict"]["my_descriptor"] = model_dpa1[
             "descriptor"
@@ -263,7 +263,7 @@ class TestMultiTaskDPA1(unittest.TestCase, MultiTaskTrainTest):
 
 
 class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         multitask_DPA2 = deepcopy(multitask_template)
         multitask_DPA2["model"]["shared_dict"]["my_descriptor"] = model_dpa2[
             "descriptor"
@@ -302,7 +302,7 @@ class TestMultiTaskDPA2(unittest.TestCase, MultiTaskTrainTest):
 
 
 class TestMultiTaskDPA2Tebd(unittest.TestCase, MultiTaskTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         multitask_DPA2 = deepcopy(multitask_template)
         multitask_DPA2["model"]["shared_dict"]["my_descriptor"] = model_dpa2tebd[
             "descriptor"

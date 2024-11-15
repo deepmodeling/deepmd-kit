@@ -45,7 +45,7 @@ class EnergyFittingNet(InvarFitting):
         exclude_types: list[int] = [],
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__(
             var_name="energy",
             ntypes=ntypes,

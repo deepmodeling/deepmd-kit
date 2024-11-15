@@ -123,7 +123,7 @@ def train_nvnmd(
     step: str,
     skip_neighbor_stat: bool = False,
     **kwargs,
-):
+) -> None:
     # test input
     if not os.path.exists(INPUT):
         log.warning(f"The input script {INPUT} does not exist")

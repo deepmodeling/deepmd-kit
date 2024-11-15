@@ -48,55 +48,55 @@ class AtomicModelTestCase:
     epsilon_dict: dict[str, Optional[float]]
     """Dictionary of epsilons in each test."""
 
-    def test_get_type_map(self):
+    def test_get_type_map(self) -> None:
         """Test get_type_map."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_type_map(), self.expected_type_map)
 
-    def test_get_rcut(self):
+    def test_get_rcut(self) -> None:
         """Test get_rcut."""
         for module in self.modules_to_test:
             self.assertAlmostEqual(module.get_rcut(), self.expected_rcut)
 
-    def test_get_dim_fparam(self):
+    def test_get_dim_fparam(self) -> None:
         """Test get_dim_fparam."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_dim_fparam(), self.expected_dim_fparam)
 
-    def test_get_dim_aparam(self):
+    def test_get_dim_aparam(self) -> None:
         """Test get_dim_aparam."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_dim_aparam(), self.expected_dim_aparam)
 
-    def test_get_sel_type(self):
+    def test_get_sel_type(self) -> None:
         """Test get_sel_type."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_sel_type(), self.expected_sel_type)
 
-    def test_is_aparam_nall(self):
+    def test_is_aparam_nall(self) -> None:
         """Test is_aparam_nall."""
         for module in self.modules_to_test:
             self.assertEqual(module.is_aparam_nall(), self.expected_aparam_nall)
 
-    def test_get_nnei(self):
+    def test_get_nnei(self) -> None:
         """Test get_nnei."""
         expected_nnei = sum(self.expected_sel)
         for module in self.modules_to_test:
             self.assertEqual(module.get_nnei(), expected_nnei)
 
-    def test_get_ntypes(self):
+    def test_get_ntypes(self) -> None:
         """Test get_ntypes."""
         for module in self.modules_to_test:
             self.assertEqual(module.get_ntypes(), len(self.expected_type_map))
 
-    def test_has_message_passing(self):
+    def test_has_message_passing(self) -> None:
         """Test has_message_passing."""
         for module in self.modules_to_test:
             self.assertEqual(
                 module.has_message_passing(), self.expected_has_message_passing
             )
 
-    def test_forward(self):
+    def test_forward(self) -> None:
         """Test forward."""
         nf = 1
         rng = np.random.default_rng(GLOBAL_SEED)

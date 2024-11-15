@@ -35,10 +35,10 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
 
-    def test_model(self):
+    def test_model(self) -> None:
         jfile = "polar_se_a.json"
         jdata = j_loader(jfile)
 
@@ -200,7 +200,7 @@ class TestModel(tf.test.TestCase):
         places = 10
         np.testing.assert_almost_equal(pv, spv, places)
 
-    def test_data_stat(self):
+    def test_data_stat(self) -> None:
         jfile = "polar_se_a.json"
         jdata = j_loader(jfile)
 

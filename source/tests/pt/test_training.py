@@ -30,7 +30,7 @@ from .model.test_permutation import (
 
 
 class DPTrainTest:
-    def test_dp_train(self):
+    def test_dp_train(self) -> None:
         # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
@@ -100,7 +100,7 @@ class DPTrainTest:
         trainer_finetune_empty.run()
         trainer_finetune_random.run()
 
-    def test_trainable(self):
+    def test_trainable(self) -> None:
         fix_params = deepcopy(self.config)
         fix_params["model"]["descriptor"]["trainable"] = False
         fix_params["model"]["fitting_net"]["trainable"] = False
@@ -128,7 +128,7 @@ class DPTrainTest:
                 model_dict_before_training[key], model_dict_after_training[key]
             )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)
@@ -139,7 +139,7 @@ class DPTrainTest:
 
 
 class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -155,7 +155,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
 
 
 class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -173,7 +173,7 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
 
 
 class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/zbl.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -191,7 +191,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
 class TestFparam(unittest.TestCase, DPTrainTest):
     """Test if `fparam` can be loaded correctly."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -211,7 +211,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
 
 
 class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -227,7 +227,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
 
 
 class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -244,7 +244,7 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
 
 @unittest.skip("hybrid not supported at the moment")
 class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -260,7 +260,7 @@ class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
 
 
 class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -289,7 +289,7 @@ class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
 
 
 class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -318,7 +318,7 @@ class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
 
 
 class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -347,7 +347,7 @@ class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
 
 
 class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -381,7 +381,7 @@ class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
 
 
 class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -415,7 +415,7 @@ class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
 
 
 class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -449,7 +449,7 @@ class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
 
 
 class TestPropFintuFromEnerModel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -471,7 +471,7 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         self.config_property["training"]["numb_steps"] = 1
         self.config_property["training"]["save_freq"] = 1
 
-    def test_dp_train(self):
+    def test_dp_train(self) -> None:
         # test training from scratch
         trainer = get_trainer(deepcopy(self.config))
         trainer.run()
@@ -506,7 +506,7 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         # check running
         trainer_finetune.run()
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):
                 os.remove(f)

@@ -91,7 +91,7 @@ class DipoleFittingNet(GeneralFitting):
         c_differentiable: bool = True,
         type_map: Optional[list[str]] = None,
         **kwargs,
-    ):
+    ) -> None:
         self.embedding_width = embedding_width
         self.r_differentiable = r_differentiable
         self.c_differentiable = c_differentiable
@@ -149,7 +149,7 @@ class DipoleFittingNet(GeneralFitting):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -180,6 +180,8 @@ class DipoleFittingNet(GeneralFitting):
     ):
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
+        # cast the input to internal precsion
+        gr = gr.to(self.prec)
         # (nframes, nloc, m1)
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name

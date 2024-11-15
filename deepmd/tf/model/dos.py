@@ -90,7 +90,7 @@ class DOSModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data):
+    def data_stat(self, data) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(
@@ -99,7 +99,7 @@ class DOSModel(StandardModel):
         # self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False):
+    def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
                 all_stat["coord"],
@@ -122,7 +122,7 @@ class DOSModel(StandardModel):
             )
         self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat, mixed_type=False):
+    def _compute_output_stat(self, all_stat, mixed_type=False) -> None:
         if mixed_type:
             self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
         else:

@@ -9,7 +9,7 @@ from deepmd.tf.env import (
 
 
 class TestProdVirial(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.sess = self.cached_session().__enter__()
         self.nframes = 2
         self.dcoord = [
@@ -1495,7 +1495,7 @@ class TestProdVirial(tf.test.TestCase):
         )
         self.tnatoms = tf.placeholder(tf.int32, [None], name="t_natoms")
 
-    def test_prod_virial(self):
+    def test_prod_virial(self) -> None:
         tvirial, tatom_virial = op_module.prod_virial_se_a(
             self.tnet_deriv,
             self.tem_deriv,

@@ -13,7 +13,7 @@ def show(
     INPUT: str,
     ATTRIBUTES: list[str],
     **kwargs,
-):
+) -> None:
     model = DeepEval(INPUT, head=0)
     model_params = model.get_model_def_script()
     model_is_multi_task = "model_dict" in model_params
