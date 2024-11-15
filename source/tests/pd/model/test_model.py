@@ -19,6 +19,7 @@ from pathlib import (
     Path,
 )
 
+from deepmd.dpmodel.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.pd.loss import (
     EnergyStdLoss,
 )
@@ -31,7 +32,6 @@ from deepmd.pd.utils.dataloader import (
 from deepmd.pd.utils.env import (
     DEVICE,
 )
-from deepmd.dpmodel.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.tf.common import (
     expand_sys_str,
 )
