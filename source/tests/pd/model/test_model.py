@@ -31,7 +31,7 @@ from deepmd.pd.utils.dataloader import (
 from deepmd.pd.utils.env import (
     DEVICE,
 )
-from deepmd.pd.utils.learning_rate import LearningRateExp as MyLRExp
+from deepmd.dpmodel.utils.learning_rate import LearningRateExp as MyLRExp
 from deepmd.tf.common import (
     expand_sys_str,
 )

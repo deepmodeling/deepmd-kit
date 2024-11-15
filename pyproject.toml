@@ -439,7 +439,6 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/jax2tf_tests/**" = ["TID253"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
-
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
 
 [tool.pytest.ini_options]
