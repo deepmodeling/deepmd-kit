@@ -23,17 +23,11 @@ from deepmd import (
 from deepmd.common import (
     expand_sys_str,
 )
-from deepmd.env import (
-    GLOBAL_CONFIG,
-)
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
 from deepmd.main import (
     parse_args,
-)
-from deepmd.pd.cxx_op import (
-    ENABLE_CUSTOMIZED_OP,
 )
 from deepmd.pd.infer import (
     inference,
@@ -216,18 +210,11 @@ class SummaryPrinter(BaseSummaryPrinter):
 
     def get_backend_info(self) -> dict:
         """Get backend information."""
-        if ENABLE_CUSTOMIZED_OP:
-            op_info = {
-                "build with PD ver": GLOBAL_CONFIG["pd_version"],
-                "build with PD inc": GLOBAL_CONFIG["pd_include_dir"].replace(";", "\n"),
-                "build with PD lib": GLOBAL_CONFIG["pd_libs"].replace(";", "\n"),
-            }
-        else:
-            op_info = {}
+        op_info = {}
         return {
             "Backend": "Paddle",
             "PD ver": f"v{paddle.__version__}-g{paddle.version.commit[:11]}",
-            "Enable custom OP": ENABLE_CUSTOMIZED_OP,
+            "Enable custom OP": False,
             **op_info,
         }
 

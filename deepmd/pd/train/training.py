@@ -32,6 +32,9 @@ from paddle.io import (
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.dpmodel.utils.learning_rate import (
+    LearningRateExp,
+)
 from deepmd.loggers.training import (
     format_training_message_per_task,
 )
@@ -58,9 +61,6 @@ from deepmd.pd.utils.env import (
     NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
-)
-from deepmd.pd.utils.learning_rate import (
-    LearningRateExp,
 )
 from deepmd.pd.utils.stat import (
     make_stat_input,
