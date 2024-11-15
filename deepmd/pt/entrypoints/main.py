@@ -38,6 +38,9 @@ from deepmd.main import (
 from deepmd.pt.cxx_op import (
     ENABLE_CUSTOMIZED_OP,
 )
+from deepmd.pt.entrypoints.compress import (
+    enable_compression,
+)
 from deepmd.pt.infer import (
     inference,
 )
@@ -249,7 +252,7 @@ def train(
     use_pretrain_script: bool = False,
     force_load: bool = False,
     output: str = "out.json",
-):
+) -> None:
     log.info("Configuration path: %s", input_file)
     SummaryPrinter()()
     with open(input_file) as fin:
@@ -346,10 +349,14 @@ def train(
     # save min_nbor_dist
     if min_nbor_dist is not None:
         if not multi_task:
-            trainer.model.min_nbor_dist = min_nbor_dist
+            trainer.model.min_nbor_dist = torch.tensor(
+                min_nbor_dist, dtype=torch.float64, device=DEVICE
+            )
         else:
             for model_item in min_nbor_dist:
-                trainer.model[model_item].min_nbor_dist = min_nbor_dist[model_item]
+                trainer.model[model_item].min_nbor_dist = torch.tensor(
+                    min_nbor_dist[model_item], dtype=torch.float64, device=DEVICE
+                )
     trainer.run()
 
 
@@ -357,7 +364,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.pth",
     head: Optional[str] = None,
-):
+) -> None:
     model = inference.Tester(model, head=head).model
     model.eval()
     model = torch.jit.script(model)
@@ -379,7 +386,7 @@ def change_bias(
     numb_batch: int = 0,
     model_branch: Optional[str] = None,
     output: Optional[str] = None,
-):
+) -> None:
     if input_file.endswith(".pt"):
         old_state_dict = torch.load(
             input_file, map_location=env.DEVICE, weights_only=True
@@ -502,7 +509,7 @@ def change_bias(
 
 
 @record
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
+def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:
@@ -548,6 +555,17 @@ def main(args: Optional[Union[list[str], argparse.Namespace]] = None):
             numb_batch=FLAGS.numb_batch,
             model_branch=FLAGS.model_branch,
             output=FLAGS.output,
+        )
+    elif FLAGS.command == "compress":
+        FLAGS.input = str(Path(FLAGS.input).with_suffix(".pth"))
+        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
+        enable_compression(
+            input_file=FLAGS.input,
+            output=FLAGS.output,
+            stride=FLAGS.step,
+            extrapolate=FLAGS.extrapolate,
+            check_frequency=FLAGS.frequency,
+            training_script=FLAGS.training_script,
         )
     else:
         raise RuntimeError(f"Invalid command {FLAGS.command}!")

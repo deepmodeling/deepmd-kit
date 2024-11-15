@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 class Encode:
     r"""Encoding value as hex, bin, and dec format."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def qr(self, v, nbit: int = 14):
@@ -95,7 +95,7 @@ class Encode:
             hs.append(h)
         return hs
 
-    def check_dec(self, idec, nbit, signed=False, name=""):
+    def check_dec(self, idec, nbit, signed=False, name="") -> None:
         r"""Check whether the data (idec) is in the range
         range is :math:`[0, 2^nbit-1]` for unsigned
         range is :math:`[-2^{nbit-1}, 2^{nbit-1}-1]` for signed.

@@ -22,7 +22,7 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestCaseSingleFrameWithNlist:
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 3
         self.nall = 4
@@ -76,7 +76,7 @@ class TestCaseSingleFrameWithNlist:
 
 
 class TestCaseSingleFrameWithNlistWithVirtual:
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 4
         self.nall = 5
@@ -128,7 +128,7 @@ class TestCaseSingleFrameWithNlistWithVirtual:
 
 
 class TestCaseSingleFrameWithoutNlist:
-    def setUp(self):
+    def setUp(self) -> None:
         # nloc == 3, nall == 4
         self.nloc = 3
         self.nf, self.nt = 1, 2
@@ -153,12 +153,12 @@ class TestCaseSingleFrameWithoutNlist:
 
 # to be merged with the tf test case
 class TestEnvMat(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_consistency(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))

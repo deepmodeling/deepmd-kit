@@ -34,7 +34,7 @@ class TestOutStat(unittest.TestCase):
 
         return super().setUp()
 
-    def test_compute_stats_from_redu(self):
+    def test_compute_stats_from_redu(self) -> None:
         bias, std = compute_stats_from_redu(self.output_redu, self.natoms)
         np.testing.assert_allclose(bias, self.mean, rtol=1e-7)
         reference_std = np.array(
@@ -58,7 +58,7 @@ class TestOutStat(unittest.TestCase):
             rtol=1e-7,
         )
 
-    def test_compute_stats_from_redu_with_assigned_bias(self):
+    def test_compute_stats_from_redu_with_assigned_bias(self) -> None:
         assigned_bias = np.full_like(self.mean, np.nan)
         assigned_bias[0] = self.mean[0]
         bias, std = compute_stats_from_redu(
@@ -89,7 +89,7 @@ class TestOutStat(unittest.TestCase):
             rtol=1e-7,
         )
 
-    def test_compute_stats_from_atomic(self):
+    def test_compute_stats_from_atomic(self) -> None:
         bias, std = compute_stats_from_atomic(self.output, self.atype)
         np.testing.assert_allclose(bias, self.mean)
         reference_std = np.array(

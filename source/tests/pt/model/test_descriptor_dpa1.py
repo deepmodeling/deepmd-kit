@@ -26,7 +26,7 @@ CUR_DIR = os.path.dirname(__file__)
 
 
 class TestDPA1(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         cell = [
             5.122106549439247480e00,
             4.016537340154059388e-01,
@@ -235,7 +235,7 @@ class TestDPA1(unittest.TestCase):
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa1.pth"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
 
-    def test_descriptor_block(self):
+    def test_descriptor_block(self) -> None:
         # torch.manual_seed(0)
         model_dpa1 = self.model_json
         dparams = model_dpa1["descriptor"]
@@ -245,7 +245,11 @@ class TestDPA1(unittest.TestCase):
         des = DescrptBlockSeAtten(
             **dparams,
         ).to(env.DEVICE)
-        des.load_state_dict(torch.load(self.file_model_param, weights_only=True))
+        state_dict = torch.load(self.file_model_param, weights_only=True)
+        # this is an old state dict, modify manually
+        state_dict["compress_info.0"] = des.compress_info[0]
+        state_dict["compress_data.0"] = des.compress_data[0]
+        des.load_state_dict(state_dict)
         coord = self.coord
         atype = self.atype
         box = self.cell
@@ -287,7 +291,7 @@ class TestDPA1(unittest.TestCase):
             descriptor.view(-1), self.ref_d, atol=1e-10, rtol=1e-10
         )
 
-    def test_descriptor(self):
+    def test_descriptor(self) -> None:
         with open(Path(CUR_DIR) / "models" / "dpa1.json") as fp:
             self.model_json = json.load(fp)
         model_dpa2 = self.model_json
@@ -371,5 +375,7 @@ def translate_se_atten_and_type_embd_dicts_to_dpa1(
         tk = "type_embedding." + kk
         record[all_keys.index(tk)] = True
         target_dict[tk] = type_embd_dict[kk]
+    record[all_keys.index("se_atten.compress_data.0")] = True
+    record[all_keys.index("se_atten.compress_info.0")] = True
     assert all(record)
     return target_dict

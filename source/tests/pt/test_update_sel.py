@@ -31,7 +31,7 @@ class TestTrain(unittest.TestCase):
         return super().setUp()
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_one_sel(self, sel_mock):
+    def test_update_one_sel(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
 
         min_nbor_dist, sel = self.update_sel.update_one_sel(None, None, 6, "auto")
@@ -44,7 +44,7 @@ class TestTrain(unittest.TestCase):
         self.assertAlmostEqual(min_nbor_dist, self.mock_min_nbor_dist)
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_hybrid(self, sel_mock):
+    def test_update_sel_hybrid(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
 
         jdata = {
@@ -75,7 +75,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel(self, sel_mock):
+    def test_update_sel(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
 
         jdata = {
@@ -90,7 +90,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_auto(self, sel_mock):
+    def test_update_sel_atten_auto(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 
         jdata = {
@@ -117,7 +117,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_int(self, sel_mock):
+    def test_update_sel_atten_int(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 
         jdata = {
@@ -144,7 +144,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_list(self, sel_mock):
+    def test_update_sel_atten_list(self, sel_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
 
         jdata = {
@@ -170,7 +170,50 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    def test_skip_frozen(self):
+    @patch("deepmd.pt.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_dpa2_auto(self, sel_mock) -> None:
+        sel_mock.return_value = self.mock_min_nbor_dist, [25]
+
+        jdata = {
+            "model": {
+                "descriptor": {
+                    "type": "dpa2",
+                    "repinit": {
+                        "rcut": 6.0,
+                        "nsel": "auto",
+                        "three_body_rcut": 4.0,
+                        "three_body_sel": "auto",
+                    },
+                    "repformer": {
+                        "rcut": 4.0,
+                        "nsel": "auto",
+                    },
+                }
+            },
+            "training": {"training_data": {}},
+        }
+        expected_out = {
+            "model": {
+                "descriptor": {
+                    "type": "dpa2",
+                    "repinit": {
+                        "rcut": 6.0,
+                        "nsel": 28,
+                        "three_body_rcut": 4.0,
+                        "three_body_sel": 28,
+                    },
+                    "repformer": {
+                        "rcut": 4.0,
+                        "nsel": 28,
+                    },
+                }
+            },
+            "training": {"training_data": {}},
+        }
+        jdata = update_sel(jdata)
+        self.assertEqual(jdata, expected_out)
+
+    def test_skip_frozen(self) -> None:
         jdata = {
             "model": {
                 "type": "frozen",
@@ -181,7 +224,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    def test_wrap_up_4(self):
+    def test_wrap_up_4(self) -> None:
         self.assertEqual(self.update_sel.wrap_up_4(12), 3 * 4)
         self.assertEqual(self.update_sel.wrap_up_4(13), 4 * 4)
         self.assertEqual(self.update_sel.wrap_up_4(14), 4 * 4)

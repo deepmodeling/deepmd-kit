@@ -22,6 +22,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)

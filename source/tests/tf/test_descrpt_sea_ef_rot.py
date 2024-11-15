@@ -20,7 +20,7 @@ from ..seed import (
 
 
 class TestEfRot(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.sess = self.cached_session().__enter__()
         self.natoms = [5, 5, 2, 3]
         self.ntypes = 2
@@ -137,7 +137,7 @@ class TestEfRot(tf.test.TestCase):
         ]
         return np.array(r).reshape(3, 3)
 
-    def test_rot_axis(self, suffix=""):
+    def test_rot_axis(self, suffix="") -> None:
         suffix = "_axis"
         t_p_e, t_p_f, t_p_f, t_p_ae, t_p_av = self.build_efv(
             self.coord,
@@ -283,7 +283,7 @@ class TestEfRot(tf.test.TestCase):
                     self.assertNotAlmostEqual(p_ae0[ii], p_ae1[ii])
                     self.assertNotAlmostEqual(v_ae0[ii], v_ae1[ii])
 
-    def test_rot_diff_axis(self, suffix=""):
+    def test_rot_diff_axis(self, suffix="") -> None:
         suffix = "_diff_axis"
         t_p_e, t_p_f, t_p_f, t_p_ae, t_p_av = self.build_efv(
             self.coord,
@@ -398,7 +398,7 @@ class TestEfRot(tf.test.TestCase):
             self.assertNotAlmostEqual(p_ae0[ii], p_ae1[ii])
             self.assertNotAlmostEqual(v_ae0[ii], v_ae1[ii])
 
-    def test_rot_field_corot(self, suffix=""):
+    def test_rot_field_corot(self, suffix="") -> None:
         suffix = "_field_corot"
         t_p_e, t_p_f, t_p_f, t_p_ae, t_p_av = self.build_efv(
             self.coord,

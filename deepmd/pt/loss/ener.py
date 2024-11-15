@@ -42,7 +42,7 @@ class EnergyStdLoss(TaskLoss):
         use_l1_all: bool = False,
         inference=False,
         **kwargs,
-    ):
+    ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
 
         Parameters

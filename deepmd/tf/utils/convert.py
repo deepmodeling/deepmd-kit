@@ -59,7 +59,9 @@ def detect_model_version(input_model: str):
     return version
 
 
-def convert_to_21(input_model: str, output_model: str, version: Optional[str] = None):
+def convert_to_21(
+    input_model: str, output_model: str, version: Optional[str] = None
+) -> None:
     """Convert DP graph to 2.1 graph.
 
     Parameters
@@ -99,7 +101,7 @@ def convert_to_21(input_model: str, output_model: str, version: Optional[str] = 
     )
 
 
-def convert_13_to_21(input_model: str, output_model: str):
+def convert_13_to_21(input_model: str, output_model: str) -> None:
     """Convert DP 1.3 graph to 2.1 graph.
 
     Parameters
@@ -112,7 +114,7 @@ def convert_13_to_21(input_model: str, output_model: str):
     convert_to_21(input_model, output_model, version="1.3")
 
 
-def convert_12_to_21(input_model: str, output_model: str):
+def convert_12_to_21(input_model: str, output_model: str) -> None:
     """Convert DP 1.2 graph to 2.1 graph.
 
     Parameters
@@ -125,7 +127,7 @@ def convert_12_to_21(input_model: str, output_model: str):
     convert_to_21(input_model, output_model, version="1.2")
 
 
-def convert_10_to_21(input_model: str, output_model: str):
+def convert_10_to_21(input_model: str, output_model: str) -> None:
     """Convert DP 1.0 graph to 2.1 graph.
 
     Parameters
@@ -138,7 +140,7 @@ def convert_10_to_21(input_model: str, output_model: str):
     convert_to_21(input_model, output_model, version="1.0")
 
 
-def convert_012_to_21(input_model: str, output_model: str):
+def convert_012_to_21(input_model: str, output_model: str) -> None:
     """Convert DP 0.12 graph to 2.1 graph.
 
     Parameters
@@ -151,7 +153,7 @@ def convert_012_to_21(input_model: str, output_model: str):
     convert_to_21(input_model, output_model, version="0.12")
 
 
-def convert_20_to_21(input_model: str, output_model: str):
+def convert_20_to_21(input_model: str, output_model: str) -> None:
     """Convert DP 2.0 graph to 2.1 graph.
 
     Parameters
@@ -164,7 +166,7 @@ def convert_20_to_21(input_model: str, output_model: str):
     convert_to_21(input_model, output_model, version="2.0")
 
 
-def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
+def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str) -> None:
     """Convert DP graph to graph text.
 
     Parameters
@@ -181,7 +183,7 @@ def convert_pb_to_pbtxt(pbfile: str, pbtxtfile: str):
         tf.train.write_graph(graph_def, "./", pbtxtfile, as_text=True)
 
 
-def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
+def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str) -> None:
     """Convert DP graph text to graph.
 
     Parameters
@@ -199,7 +201,7 @@ def convert_pbtxt_to_pb(pbtxtfile: str, pbfile: str):
         tf.train.write_graph(graph_def, "./", pbfile, as_text=False)
 
 
-def convert_dp012_to_dp10(file: str):
+def convert_dp012_to_dp10(file: str) -> None:
     """Convert DP 0.12 graph text to 1.0 graph text.
 
     Parameters
@@ -302,7 +304,7 @@ def convert_dp012_to_dp10(file: str):
         fp.write(file_content)
 
 
-def convert_dp10_to_dp11(file: str):
+def convert_dp10_to_dp11(file: str) -> None:
     """Convert DP 1.0 graph text to 1.1 graph text.
 
     Parameters
@@ -339,7 +341,7 @@ def convert_dp10_to_dp11(file: str):
         )
 
 
-def convert_dp12_to_dp13(file: str):
+def convert_dp12_to_dp13(file: str) -> None:
     """Convert DP 1.2 graph text to 1.3 graph text.
 
     Parameters
@@ -373,7 +375,7 @@ def convert_dp12_to_dp13(file: str):
         f.write(file_data)
 
 
-def convert_dp13_to_dp20(fname: str):
+def convert_dp13_to_dp20(fname: str) -> None:
     """Convert DP 1.3 graph text to 2.0 graph text.
 
     Parameters
@@ -415,7 +417,7 @@ def convert_dp13_to_dp20(fname: str):
         fp.write(file_content)
 
 
-def convert_dp20_to_dp21(fname: str):
+def convert_dp20_to_dp21(fname: str) -> None:
     with open(fname) as fp:
         file_content = fp.read()
     old_model_version_node = textwrap.dedent(

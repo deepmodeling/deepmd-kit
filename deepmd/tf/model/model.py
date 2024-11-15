@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from abc import (
     ABC,
     abstractmethod,
@@ -8,6 +7,7 @@ from enum import (
     Enum,
 )
 from typing import (
+    NoReturn,
     Optional,
     Union,
 )
@@ -16,6 +16,9 @@ import numpy as np
 
 from deepmd.common import (
     j_get_type,
+)
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
@@ -378,7 +381,7 @@ class Model(ABC, make_plugin_registry("model")):
             sub_graph_def, input_map=feed_dict, return_elements=return_elements, name=""
         )
 
-    def enable_mixed_precision(self, mixed_prec: dict):
+    def enable_mixed_precision(self, mixed_prec: dict) -> NoReturn:
         """Enable mixed precision for the model.
 
         Parameters
@@ -416,7 +419,7 @@ class Model(ABC, make_plugin_registry("model")):
         """
         raise RuntimeError("Not supported")
 
-    def enable_compression(self, suffix: str = ""):
+    def enable_compression(self, suffix: str = "") -> NoReturn:
         """Enable compression.
 
         Parameters
@@ -700,7 +703,7 @@ class StandardModel(Model):
         else:
             self.typeebd = None
 
-    def enable_mixed_precision(self, mixed_prec: dict):
+    def enable_mixed_precision(self, mixed_prec: dict) -> None:
         """Enable mixed precision for the model.
 
         Parameters
@@ -711,7 +714,7 @@ class StandardModel(Model):
         self.descrpt.enable_mixed_precision(mixed_prec)
         self.fitting.enable_mixed_precision(mixed_prec)
 
-    def enable_compression(self, suffix: str = ""):
+    def enable_compression(self, suffix: str = "") -> None:
         """Enable compression.
 
         Parameters
@@ -803,14 +806,46 @@ class StandardModel(Model):
         -------
         Descriptor
             The deserialized descriptor
+
+        Raises
+        ------
+        ValueError
+            If both fitting/@variables/bias_atom_e and @variables/out_bias are non-zero
         """
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 2), 2, 1)
         descriptor = Descriptor.deserialize(data.pop("descriptor"), suffix=suffix)
+        if data["fitting"].get("@variables", {}).get("bias_atom_e") is not None:
+            # careful: copy each level and don't modify the input array,
+            # otherwise it will affect the original data
+            # deepcopy is not used for performance reasons
+            data["fitting"] = data["fitting"].copy()
+            data["fitting"]["@variables"] = data["fitting"]["@variables"].copy()
+            if (
+                int(np.any(data["fitting"]["@variables"]["bias_atom_e"]))
+                + int(np.any(data["@variables"]["out_bias"]))
+                > 1
+            ):
+                raise ValueError(
+                    "fitting/@variables/bias_atom_e and @variables/out_bias should not be both non-zero"
+                )
+            data["fitting"]["@variables"]["bias_atom_e"] = data["fitting"][
+                "@variables"
+            ]["bias_atom_e"] + data["@variables"]["out_bias"].reshape(
+                data["fitting"]["@variables"]["bias_atom_e"].shape
+            )
         fitting = Fitting.deserialize(data.pop("fitting"), suffix=suffix)
+        # pass descriptor type embedding to model
+        if descriptor.explicit_ntypes:
+            type_embedding = descriptor.type_embedding
+            fitting.dim_descrpt -= type_embedding.neuron[-1]
+        else:
+            type_embedding = None
         # BEGINE not supported keys
-        data.pop("atom_exclude_types")
-        data.pop("pair_exclude_types")
+        if len(data.pop("atom_exclude_types")) > 0:
+            raise NotImplementedError("atom_exclude_types is not supported")
+        if len(data.pop("pair_exclude_types")) > 0:
+            raise NotImplementedError("pair_exclude_types is not supported")
         data.pop("rcond", None)
         data.pop("preset_out_bias", None)
         data.pop("@variables", None)
@@ -818,6 +853,7 @@ class StandardModel(Model):
         return cls(
             descriptor=descriptor,
             fitting_net=fitting,
+            type_embedding=type_embedding,
             **data,
         )
 
@@ -835,12 +871,28 @@ class StandardModel(Model):
             Name suffix to identify this descriptor
         """
         if self.typeebd is not None:
-            raise NotImplementedError("type embedding is not supported")
+            if not self.descrpt.explicit_ntypes:
+                raise RuntimeError(
+                    "type embedding for descriptors without mixed types is not supported in other backends"
+                )
+            self.descrpt.type_embedding = self.typeebd
+            self.fitting.tebd_dim = self.typeebd.neuron[-1]
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
 
         ntypes = len(self.get_type_map())
         dict_fit = self.fitting.serialize(suffix=suffix)
+        if dict_fit.get("@variables", {}).get("bias_atom_e") is not None:
+            out_bias = dict_fit["@variables"]["bias_atom_e"].reshape(
+                [1, ntypes, dict_fit["dim_out"]]
+            )
+            dict_fit["@variables"]["bias_atom_e"] = np.zeros_like(
+                dict_fit["@variables"]["bias_atom_e"]
+            )
+        else:
+            out_bias = np.zeros(
+                [1, ntypes, dict_fit["dim_out"]], dtype=GLOBAL_NP_FLOAT_PRECISION
+            )
         return {
             "@class": "Model",
             "type": "standard",
@@ -854,7 +906,7 @@ class StandardModel(Model):
             "rcond": None,
             "preset_out_bias": None,
             "@variables": {
-                "out_bias": np.zeros([1, ntypes, dict_fit["dim_out"]]),  # pylint: disable=no-explicit-dtype
+                "out_bias": out_bias,
                 "out_std": np.ones([1, ntypes, dict_fit["dim_out"]]),  # pylint: disable=no-explicit-dtype
             },
         }

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from copy import (
-    deepcopy,
-)
 from typing import (
     Optional,
 )
@@ -33,18 +30,18 @@ class PolarModel(DPModelCommon, DPPolarModel_):
         self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         DPModelCommon.__init__(self)
         DPPolarModel_.__init__(self, *args, **kwargs)
 
     def translated_output_def(self):
         out_def_data = self.model_output_def().get_data()
         output_def = {
-            "polar": deepcopy(out_def_data["polarizability"]),
-            "global_polar": deepcopy(out_def_data["polarizability_redu"]),
+            "polar": out_def_data["polarizability"],
+            "global_polar": out_def_data["polarizability_redu"],
         }
         if "mask" in out_def_data:
-            output_def["mask"] = deepcopy(out_def_data["mask"])
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(

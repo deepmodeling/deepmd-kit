@@ -59,7 +59,7 @@ def build_eval_tf(sess, obj, natoms, coords, atype, box, suffix):
 
 
 class TestDescriptorSeA(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.device = "cpu"
         self.seed = 21
         self.sel = [9, 10]
@@ -117,7 +117,7 @@ class TestDescriptorSeA(unittest.TestCase):
 
     def test_tf_pt_consistent(
         self,
-    ):
+    ) -> None:
         with tf.Session(config=default_tf_session_config) as sess:
             graph = tf.get_default_graph()
             ret = build_eval_tf(

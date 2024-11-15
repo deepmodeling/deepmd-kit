@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from typing import (
     Optional,
@@ -102,7 +101,7 @@ class InvarFitting(GeneralFitting):
         type_map: Optional[list[str]] = None,
         use_aparam_as_mask: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         self.dim_out = dim_out
         self.atom_ener = atom_ener
         super().__init__(
@@ -141,7 +140,7 @@ class InvarFitting(GeneralFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         return super().deserialize(data)
 
@@ -178,7 +177,10 @@ class InvarFitting(GeneralFitting):
         -------
         - `torch.Tensor`: Total energy with shape [nframes, natoms[0]].
         """
-        return self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
+            self.var_name
+        ]
+        return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
 
     # make jit happy with torch 2.0.0
     exclude_types: list[int]

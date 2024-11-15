@@ -15,6 +15,8 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     CommonTest,
     parameterized,
@@ -28,6 +30,16 @@ if INSTALLED_PT:
 else:
     DescrptSeTTebdPT = None
 DescrptSeTTebdTF = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdJAX
+else:
+    DescrptSeTTebdJAX = None
+if INSTALLED_ARRAY_API_STRICT:
+    from ...array_api_strict.descriptor.se_t_tebd import (
+        DescrptSeTTebd as DescrptSeTTebdStrict,
+    )
+else:
+    DescrptSeTTebdStrict = None
 from deepmd.utils.argcheck import (
     descrpt_se_e3_tebd_args,
 )
@@ -134,12 +146,17 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return True
 
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
     tf_class = DescrptSeTTebdTF
     dp_class = DescrptSeTTebdDP
     pt_class = DescrptSeTTebdPT
+    jax_class = DescrptSeTTebdJAX
+    array_api_strict_class = DescrptSeTTebdStrict
     args = descrpt_se_e3_tebd_args().append(Argument("ntypes", int, optional=False))
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2
@@ -209,6 +226,26 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        return self.eval_array_api_strict_descriptor(
+            array_api_strict_obj,
             self.natoms,
             self.coords,
             self.atype,

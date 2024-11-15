@@ -64,7 +64,7 @@ class TestPairTab(unittest.TestCase):
             [[[1, 2], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
         )
 
-    def test_without_mask(self):
+    def test_without_mask(self) -> None:
         result = self.model.forward_atomic(
             self.extended_coord, self.extended_atype, self.nlist
         )
@@ -78,7 +78,7 @@ class TestPairTab(unittest.TestCase):
             result["energy"], expected_result, rtol=0.0001, atol=0.0001
         )
 
-    def test_with_mask(self):
+    def test_with_mask(self) -> None:
         self.nlist = torch.tensor(
             [[[1, -1], [0, 2]], [[1, 2], [0, 3]]], device=env.DEVICE
         )
@@ -96,13 +96,13 @@ class TestPairTab(unittest.TestCase):
             result["energy"], expected_result, rtol=0.0001, atol=0.0001
         )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         model = torch.jit.script(self.model)
         # atomic model no more export methods
         # self.assertEqual(model.get_rcut(), 0.02)
         # self.assertEqual(model.get_type_map(), ["H", "O"])
 
-    def test_deserialize(self):
+    def test_deserialize(self) -> None:
         model1 = PairTabAtomicModel.deserialize(self.model.serialize())
         torch.testing.assert_close(self.model.tab_data, model1.tab_data)
         torch.testing.assert_close(self.model.tab_info, model1.tab_info)
@@ -126,7 +126,7 @@ class TestPairTab(unittest.TestCase):
         # self.assertEqual(model1.get_rcut(), 0.02)
         # self.assertEqual(model1.get_type_map(), ["H", "O"])
 
-    def test_cross_deserialize(self):
+    def test_cross_deserialize(self) -> None:
         model_dict = self.model.serialize()  # pytorch model to dict
         model1 = DPPairTabAtomicModel.deserialize(model_dict)  # dict to numpy model
         np.testing.assert_allclose(self.model.tab_data, model1.tab_data)

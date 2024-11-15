@@ -1,7 +1,7 @@
-# Descriptor `"se_e3_tebd"` {{ pytorch_icon }} {{ dpmodel_icon }}
+# Descriptor `"se_e3_tebd"` {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
 The notation of `se_e3_tebd` is short for the three-body embedding descriptor with type embeddings, where the notation `se` denotes the Deep Potential Smooth Edition (DeepPot-SE).
@@ -76,3 +76,11 @@ The training input script is very similar to that of [`se_e2_a`](train-se-e2-a.m
 ```
 
 The type of the descriptor is set by the key {ref}`type <model[standard]/descriptor/type>`.
+
+## Type embedding
+
+Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[se_e3_tebd]/tebd_dim>` argument.
+
+## Model compression
+
+Model compression is not supported.

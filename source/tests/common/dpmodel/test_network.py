@@ -8,6 +8,9 @@ from copy import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    get_xp_precision,
+)
 from deepmd.dpmodel.utils import (
     EmbeddingNet,
     FittingNet,
@@ -20,7 +23,7 @@ from deepmd.dpmodel.utils import (
 
 
 class TestNativeLayer(unittest.TestCase):
-    def test_serialize_deserize(self):
+    def test_serialize_deserize(self) -> None:
         for (
             ni,
             no,
@@ -46,10 +49,12 @@ class TestNativeLayer(unittest.TestCase):
             inp_shap = [ni]
             if ashp is not None:
                 inp_shap = ashp + inp_shap
-            inp = np.arange(np.prod(inp_shap)).reshape(inp_shap)
+            inp = np.arange(
+                np.prod(inp_shap), dtype=get_xp_precision(np, prec)
+            ).reshape(inp_shap)
             np.testing.assert_allclose(nl0.call(inp), nl1.call(inp))
 
-    def test_shape_error(self):
+    def test_shape_error(self) -> None:
         self.w0 = np.full((2, 3), 3.0)
         self.b0 = np.full((2,), 4.0)
         self.b1 = np.full((3,), 4.0)
@@ -81,7 +86,7 @@ class TestNativeNet(unittest.TestCase):
         self.w1 = np.full((3, 4), 3.0)
         self.b1 = np.full((4,), 4.0)
 
-    def test_serialize(self):
+    def test_serialize(self) -> None:
         network = NativeNet(
             [
                 NativeLayer(2, 3).serialize(),
@@ -106,7 +111,7 @@ class TestNativeNet(unittest.TestCase):
         np.testing.assert_array_equal(jdata["layers"][0]["resnet"], True)
         np.testing.assert_array_equal(jdata["layers"][1]["resnet"], True)
 
-    def test_deserialize(self):
+    def test_deserialize(self) -> None:
         network = NativeNet.deserialize(
             {
                 "layers": [
@@ -132,7 +137,7 @@ class TestNativeNet(unittest.TestCase):
         np.testing.assert_array_equal(network[0]["resnet"], True)
         np.testing.assert_array_equal(network[1]["resnet"], True)
 
-    def test_shape_error(self):
+    def test_shape_error(self) -> None:
         with self.assertRaises(ValueError) as context:
             NativeNet.deserialize(
                 {
@@ -154,7 +159,7 @@ class TestNativeNet(unittest.TestCase):
 
 
 class TestEmbeddingNet(unittest.TestCase):
-    def test_embedding_net(self):
+    def test_embedding_net(self) -> None:
         for ni, act, idt, prec in itertools.product(
             [1, 10],
             ["tanh", "none"],
@@ -168,12 +173,12 @@ class TestEmbeddingNet(unittest.TestCase):
                 resnet_dt=idt,
             )
             en1 = EmbeddingNet.deserialize(en0.serialize())
-            inp = np.ones([ni])
+            inp = np.ones([ni], dtype=get_xp_precision(np, prec))
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
 
 
 class TestFittingNet(unittest.TestCase):
-    def test_fitting_net(self):
+    def test_fitting_net(self) -> None:
         for ni, no, act, idt, prec, bo in itertools.product(
             [1, 10],
             [1, 7],
@@ -191,7 +196,7 @@ class TestFittingNet(unittest.TestCase):
                 bias_out=bo,
             )
             en1 = FittingNet.deserialize(en0.serialize())
-            inp = np.ones([ni])
+            inp = np.ones([ni], dtype=get_xp_precision(np, prec))
             en0.call(inp)
             en1.call(inp)
             np.testing.assert_allclose(en0.call(inp), en1.call(inp))
@@ -218,7 +223,7 @@ class TestNetworkCollection(unittest.TestCase):
             ],
         }
 
-    def test_two_dim(self):
+    def test_two_dim(self) -> None:
         networks = NetworkCollection(ndim=2, ntypes=2)
         networks[(0, 0)] = self.network
         networks[(1, 1)] = self.network
@@ -235,7 +240,7 @@ class TestNetworkCollection(unittest.TestCase):
             networks[(0, 0)].serialize(), networks.serialize()["networks"][0]
         )
 
-    def test_one_dim(self):
+    def test_one_dim(self) -> None:
         networks = NetworkCollection(ndim=1, ntypes=2)
         networks[(0,)] = self.network
         with self.assertRaises(RuntimeError):
@@ -250,7 +255,7 @@ class TestNetworkCollection(unittest.TestCase):
             networks[(0,)].serialize(), networks.serialize()["networks"][0]
         )
 
-    def test_zero_dim(self):
+    def test_zero_dim(self) -> None:
         networks = NetworkCollection(ndim=0, ntypes=2)
         networks[()] = self.network
         networks.check_completeness()
@@ -285,14 +290,14 @@ class TestSaveLoadDPModel(unittest.TestCase):
         self.filename = "test_dp_dpmodel.dp"
         self.filename_yaml = "test_dp_dpmodel.yaml"
 
-    def test_save_load_model(self):
+    def test_save_load_model(self) -> None:
         save_dp_model(self.filename, {"model": deepcopy(self.model_dict)})
         model = load_dp_model(self.filename)
         np.testing.assert_equal(model["model"], self.model_dict)
         assert "software" in model
         assert "version" in model
 
-    def test_save_load_model_yaml(self):
+    def test_save_load_model_yaml(self) -> None:
         save_dp_model(self.filename_yaml, {"model": deepcopy(self.model_dict)})
         model = load_dp_model(self.filename_yaml)
         np.testing.assert_equal(model["model"], self.model_dict)

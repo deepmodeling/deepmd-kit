@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from abc import (
     abstractmethod,
 )
@@ -120,7 +119,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         remove_vaccum_contribution: Optional[list[bool]] = None,
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         self.var_name = var_name
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
@@ -245,7 +244,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ["bias_atom_e"]:
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
@@ -280,7 +279,7 @@ class GeneralFitting(NativeOP, BaseFitting):
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
@@ -320,7 +319,7 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -440,18 +439,22 @@ class GeneralFitting(NativeOP, BaseFitting):
                 ):
                     assert xx_zeros is not None
                     atom_property -= self.nets[(type_i,)](xx_zeros)
-                atom_property = atom_property + self.bias_atom_e[type_i, ...]
-                atom_property = atom_property * xp.astype(mask, atom_property.dtype)
+                atom_property = xp.where(
+                    mask, atom_property, xp.zeros_like(atom_property)
+                )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
-            outs = self.nets[()](xx) + xp.reshape(
-                xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
-                [nf, nloc, net_dim_out],
-            )
+            outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
+        outs += xp.reshape(
+            xp.take(
+                xp.astype(self.bias_atom_e, outs.dtype), xp.reshape(atype, [-1]), axis=0
+            ),
+            [nf, nloc, net_dim_out],
+        )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
-        outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
-        return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}
+        outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
+        return {self.var_name: outs}

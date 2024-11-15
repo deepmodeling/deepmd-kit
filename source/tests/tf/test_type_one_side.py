@@ -20,10 +20,10 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data(nframes=2)
 
-    def test_descriptor_one_side_exclude_types(self):
+    def test_descriptor_one_side_exclude_types(self) -> None:
         """When we enable type_one_side, the descriptor should be the same
         for different types, when its environments are the same.
 
@@ -140,7 +140,7 @@ class TestModel(tf.test.TestCase):
                 model_dout1_failed[0], model_dout2_failed[0], 10
             )
 
-    def test_se_r_one_side_exclude_types(self):
+    def test_se_r_one_side_exclude_types(self) -> None:
         """se_r."""
         jfile = "water_se_r.json"
         jdata = j_loader(jfile)

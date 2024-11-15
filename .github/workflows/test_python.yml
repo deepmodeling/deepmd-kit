@@ -25,19 +25,23 @@ jobs:
         python-version: ${{ matrix.python }}
     - run: python -m pip install -U uv
     - run: |
-        source/install/uv_with_retry.sh pip install --system mpich
+        source/install/uv_with_retry.sh pip install --system openmpi tensorflow-cpu
         source/install/uv_with_retry.sh pip install --system torch -i https://download.pytorch.org/whl/cpu
+        export TENSORFLOW_ROOT=$(python -c 'import tensorflow;print(tensorflow.__path__[0])')
         export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
-        source/install/uv_with_retry.sh pip install --system --only-binary=horovod -e .[cpu,test,jax] horovod[tensorflow-cpu] mpi4py
+        source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py
+        source/install/uv_with_retry.sh pip install --system horovod --no-build-isolation
       env:
         # Please note that uv has some issues with finding
         # existing TensorFlow package. Currently, it uses
         # TensorFlow in the build dependency, but if it
         # changes, setting `TENSORFLOW_ROOT`.
-        TENSORFLOW_VERSION: 2.16.1
         DP_ENABLE_PYTORCH: 1
         DP_BUILD_TESTING: 1
-        UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/njzjz/simple https://pypi.anaconda.org/mpi4py/simple"
+        UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/mpi4py/simple"
+        HOROVOD_WITH_TENSORFLOW: 1
+        HOROVOD_WITHOUT_PYTORCH: 1
+        HOROVOD_WITH_MPI: 1
     - run: dp --version
     - name: Get durations from cache
       uses: actions/cache@v4
@@ -50,9 +54,16 @@ jobs:
         restore-keys: |
           test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
           test2-durations-combined-${{ matrix.python }}
-    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations --splitting-algorithm least_duration
+    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
+    - name: Test TF2 eager mode
+      run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests --durations=0
+      env:
+        NUM_WORKERS: 0
+        DP_TEST_TF2_ONLY: 1
+        DP_DTYPE_PROMOTION_STRICT: 1
+      if: matrix.group == 1
     - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations
       uses: actions/upload-artifact@v4

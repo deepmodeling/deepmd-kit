@@ -121,7 +121,7 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     array_api_strict_class = DescrptSeRArrayAPIStrict
     args = descrpt_se_r_args()
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

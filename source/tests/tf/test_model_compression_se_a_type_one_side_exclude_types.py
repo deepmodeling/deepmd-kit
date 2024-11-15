@@ -25,7 +25,7 @@ else:
     default_places = 10
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.isdir(file):
         os.rmdir(file)
     elif os.path.isfile(file):
@@ -56,7 +56,7 @@ def _init_models():
 
 class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         INPUT, FROZEN_MODEL, COMPRESSED_MODEL = _init_models()
 
         cls.dp_original = DeepPot(FROZEN_MODEL)
@@ -86,7 +86,7 @@ class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
         cls.atype = [0, 1, 1, 0, 1, 1]
         cls.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp_original.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp_original.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp_original.get_type_map(), ["O", "H"])
@@ -101,7 +101,7 @@ class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
         self.assertEqual(self.dp_compressed.get_dim_fparam(), 0)
         self.assertEqual(self.dp_compressed.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee0, ff0, vv0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=False
         )
@@ -122,7 +122,7 @@ class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -149,7 +149,7 @@ class TestDeepPotAPBCTypeOneSideExcludeTypes(unittest.TestCase):
         np.testing.assert_almost_equal(ee0, ee1, default_places)
         np.testing.assert_almost_equal(vv0, vv1, default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         ee0, ff0, vv0, ae0, av0 = self.dp_original.eval(

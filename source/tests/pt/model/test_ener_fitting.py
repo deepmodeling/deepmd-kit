@@ -30,12 +30,12 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_consistency(
         self,
-    ):
+    ) -> None:
         # ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 1600 is different from 1604)
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
@@ -107,7 +107,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         for od, mixed_types, nfp, nap, et, use_aparam_as_mask in itertools.product(
             [1, 3],
             [True, False],
@@ -130,7 +130,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ).to(env.DEVICE)
             torch.jit.script(ft0)
 
-    def test_get_set(self):
+    def test_get_set(self) -> None:
         ifn0 = InvarFitting(
             "energy",
             self.nt,
@@ -152,7 +152,7 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 foo, np.reshape(ifn0[ii].detach().cpu().numpy(), foo.shape)
             )
 
-    def test_use_aparam_as_mask(self):
+    def test_use_aparam_as_mask(self) -> None:
         nap = 4
         dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 

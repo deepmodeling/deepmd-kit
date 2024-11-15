@@ -53,7 +53,7 @@ def list_to_doc(xx):
     return "".join(items)
 
 
-def make_link(content, ref_key):
+def make_link(content, ref_key) -> str:
     return (
         f"`{content} <{ref_key}_>`_"
         if not dargs.RAW_ANCHOR
@@ -70,7 +70,7 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: Optional[dict]):
+    def deprecate_something(data: Optional[dict]) -> bool:
         if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
@@ -940,7 +940,9 @@ def dpa2_repinit_args():
     # repinit args
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
-    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_nsel = 'Maximally possible number of selected neighbors. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_neuron = (
         "Number of neurons in each hidden layers of the embedding net."
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
@@ -972,7 +974,9 @@ def dpa2_repinit_args():
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
         "a skip connection is built."
     )
-    doc_three_body_sel = "Maximally possible number of selected neighbors in the three-body representation."
+    doc_three_body_sel = 'Maximally possible number of selected neighbors in the three-body representation. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_three_body_rcut = "The cut-off radius in the three-body representation."
     doc_three_body_rcut_smth = "Where to start smoothing in the three-body representation. For example the 1/r term is smoothed from `three_body_rcut` to `three_body_rcut_smth`."
 
@@ -980,7 +984,7 @@ def dpa2_repinit_args():
         # repinit args
         Argument("rcut", float, doc=doc_rcut),
         Argument("rcut_smth", float, doc=doc_rcut_smth),
-        Argument("nsel", int, doc=doc_nsel),
+        Argument("nsel", [int, str], doc=doc_nsel),
         Argument(
             "neuron",
             list,
@@ -1066,7 +1070,11 @@ def dpa2_repinit_args():
             doc=doc_three_body_rcut_smth,
         ),
         Argument(
-            "three_body_sel", int, optional=True, default=40, doc=doc_three_body_sel
+            "three_body_sel",
+            [int, str],
+            optional=True,
+            default=40,
+            doc=doc_three_body_sel,
         ),
     ]
 
@@ -1076,7 +1084,9 @@ def dpa2_repformer_args():
     # repformer args
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
-    doc_nsel = "Maximally possible number of selected neighbors."
+    doc_nsel = 'Maximally possible number of selected neighbors. It can be:\n\n\
+    - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_nlayers = "The number of repformer layers."
     doc_g1_dim = "The dimension of invariant single-atom representation."
     doc_g2_dim = "The dimension of invariant pair-atom representation."
@@ -1139,7 +1149,7 @@ def dpa2_repformer_args():
         # repformer args
         Argument("rcut", float, doc=doc_rcut),
         Argument("rcut_smth", float, doc=doc_rcut_smth),
-        Argument("nsel", int, doc=doc_nsel),
+        Argument("nsel", [int, str], doc=doc_nsel),
         Argument(
             "nlayers",
             int,
@@ -1762,7 +1772,7 @@ def model_args(exclude_hybrid=False):
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
     doc_data_bias_nsample = "The number of training samples in a system to compute and change the energy bias."
-    doc_type_embedding = "The type embedding."
+    doc_type_embedding = "The type embedding. In other backends, the type embedding is already included in the descriptor."
     doc_modifier = "The modifier of model output."
     doc_use_srtab = "The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly."
     doc_smin_alpha = "The short-range tabulated interaction will be switched according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided."
@@ -2074,7 +2084,7 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 
 
 #  --- Loss configurations: --- #
-def start_pref(item, label=None, abbr=None):
+def start_pref(item, label=None, abbr=None) -> str:
     if label is None:
         label = item
     if abbr is None:
@@ -2082,7 +2092,7 @@ def start_pref(item, label=None, abbr=None):
     return f"The prefactor of {item} loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the {label} label should be provided by file {label}.npy in each data system. If both start_pref_{abbr} and limit_pref_{abbr} are set to 0, then the {item} will be ignored."
 
 
-def limit_pref(item):
+def limit_pref(item) -> str:
     return f"The prefactor of {item} loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity."
 
 

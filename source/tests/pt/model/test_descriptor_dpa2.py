@@ -22,7 +22,7 @@ CUR_DIR = os.path.dirname(__file__)
 
 
 class TestDPA2(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         cell = [
             5.122106549439247480e00,
             4.016537340154059388e-01,
@@ -109,7 +109,7 @@ class TestDPA2(unittest.TestCase):
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pth"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
 
-    def test_descriptor(self):
+    def test_descriptor(self) -> None:
         with open(Path(CUR_DIR) / "models" / "dpa2.json") as fp:
             self.model_json = json.load(fp)
         model_dpa2 = self.model_json
@@ -194,5 +194,7 @@ def translate_type_embd_dicts_to_dpa2(
         tk = "type_embedding." + kk
         record[all_keys.index(tk)] = True
         target_dict[tk] = type_embd_dict[kk]
+    record[all_keys.index("repinit.compress_data.0")] = True
+    record[all_keys.index("repinit.compress_info.0")] = True
     assert all(record)
     return target_dict

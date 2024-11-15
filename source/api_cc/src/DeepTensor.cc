@@ -30,8 +30,7 @@ void DeepTensor::init(const std::string &model,
               << std::endl;
     return;
   }
-  // TODO: To implement detect_backend
-  DPBackend backend = deepmd::DPBackend::TensorFlow;
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dt = std::make_shared<deepmd::DeepTensorTF>(model, gpu_rank, name_scope_);

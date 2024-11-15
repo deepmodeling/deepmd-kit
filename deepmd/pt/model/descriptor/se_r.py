@@ -7,6 +7,7 @@ from typing import (
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
@@ -32,8 +33,14 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
+)
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -51,6 +58,22 @@ from deepmd.utils.version import (
 from .base_descriptor import (
     BaseDescriptor,
 )
+
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_r"):
+
+    def tabulate_fusion_se_r(
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: int,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_r is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for model compression for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be runned using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_r = tabulate_fusion_se_r
 
 
 @BaseDescriptor.register("se_e2_r")
@@ -72,7 +95,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         seed: Optional[Union[int, list[int]]] = None,
         type_map: Optional[list[str]] = None,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.rcut = float(rcut)
         self.rcut_smth = float(rcut_smth)
@@ -123,8 +146,24 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self.filter_layers = filter_layers
         self.stats = None
         # set trainable
+        self.trainable = trainable
         for param in self.parameters():
             param.requires_grad = trainable
+
+        # add for compression
+        self.compress = False
+        self.compress_info = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device="cpu"))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
+        self.compress_data = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(0, dtype=self.prec, device=env.DEVICE))
+                for _ in range(len(self.filter_layers.networks))
+            ]
+        )
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -186,7 +225,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -243,7 +282,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -290,7 +329,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             )
         return self.stats
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -309,9 +348,73 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        data = self.serialize()
+        table = DPTabulate(
+            self,
+            data["neuron"],
+            data["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["activation_function"]),
+        )
+        table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        lower, upper = table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+        table_data = table.data
+
+        for ii, ll in enumerate(self.filter_layers.networks):
+            net = "filter_-1_net_" + str(ii)
+            info_ii = torch.as_tensor(
+                [
+                    lower[net],
+                    upper[net],
+                    upper[net] * table_config[0],
+                    table_config[1],
+                    table_config[2],
+                    table_config[3],
+                ],
+                dtype=self.prec,
+                device="cpu",
+            )
+            tensor_data_ii = table_data[net].to(device=env.DEVICE, dtype=self.prec)
+            self.compress_data[ii] = tensor_data_ii
+            self.compress_info[ii] = info_ii
+
+        self.compress = True
 
     def forward(
         self,
@@ -353,7 +456,9 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        del mapping
+        # cast the input to internal precsion
+        coord_ext = coord_ext.to(dtype=self.prec)
+        del mapping, comm_dict
         nf = nlist.shape[0]
         nloc = nlist.shape[1]
         atype = atype_ext[:, :nloc]
@@ -371,7 +476,6 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         assert self.filter_layers is not None
         dmatrix = dmatrix.view(-1, self.nnei, 1)
-        dmatrix = dmatrix.to(dtype=self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         xyz_scatter = torch.zeros(
@@ -380,26 +484,43 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
 
         # nfnl x nnei
         exclude_mask = self.emask(nlist, atype_ext).view(nfnl, self.nnei)
-        for ii, ll in enumerate(self.filter_layers.networks):
+        xyz_scatter_total = []
+        for ii, (ll, compress_data_ii, compress_info_ii) in enumerate(
+            zip(self.filter_layers.networks, self.compress_data, self.compress_info)
+        ):
             # nfnl x nt
             mm = exclude_mask[:, self.sec[ii] : self.sec[ii + 1]]
             # nfnl x nt x 1
             ss = dmatrix[:, self.sec[ii] : self.sec[ii + 1], :]
             ss = ss * mm[:, :, None]
-            # nfnl x nt x ng
-            gg = ll.forward(ss)
-            gg = torch.mean(gg, dim=1).unsqueeze(1)
-            xyz_scatter += gg * (self.sel[ii] / self.nnei)
+            if self.compress:
+                ss = ss.squeeze(-1)
+                xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_r(
+                    compress_data_ii.contiguous(),
+                    compress_info_ii.cpu().contiguous(),
+                    ss,
+                    self.filter_neuron[-1],
+                )[0]
+                xyz_scatter_total.append(xyz_scatter)
+            else:
+                # nfnl x nt x ng
+                gg = ll.forward(ss)
+                gg = torch.mean(gg, dim=1).unsqueeze(1)
+                xyz_scatter += gg * (self.sel[ii] / self.nnei)
 
         res_rescale = 1.0 / 5.0
-        result = xyz_scatter * res_rescale
+        if self.compress:
+            xyz_scatter = torch.cat(xyz_scatter_total, dim=1)
+            result = torch.mean(xyz_scatter, dim=1) * res_rescale
+        else:
+            result = xyz_scatter * res_rescale
         result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
             result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
             None,
             None,
             None,
-            sw,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
         )
 
     def set_stat_mean_and_stddev(

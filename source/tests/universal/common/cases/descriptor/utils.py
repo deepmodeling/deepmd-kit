@@ -24,10 +24,10 @@ from ..cases import (
 class DescriptorTestCase(TestCaseSingleFrameWithNlist):
     """Common test case for descriptor."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def test_forward_consistency(self):
+    def test_forward_consistency(self) -> None:
         ret = []
         for module in self.modules_to_test:
             module = self.forward_wrapper(module)
@@ -57,7 +57,7 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
 
     def test_exclude_types(
         self,
-    ):
+    ) -> None:
         coord_ext_device = self.coord_ext
         atype_ext_device = self.atype_ext
         nlist_device = self.nlist
@@ -95,7 +95,7 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
             )
             np.testing.assert_allclose(rd0, rd_ex)
 
-    def test_change_type_map(self):
+    def test_change_type_map(self) -> None:
         if (
             not self.module.mixed_types()
             or getattr(self.module, "sel_no_mixed_types", None) is not None
@@ -180,7 +180,7 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
             )
             np.testing.assert_allclose(rd_old_tm, rd_new_tm)
 
-    def test_change_type_map_extend_stat(self):
+    def test_change_type_map_extend_stat(self) -> None:
         if (
             not self.module.mixed_types()
             or getattr(self.module, "sel_no_mixed_types", None) is not None
@@ -317,7 +317,9 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
         std_rand = self.convert_from_numpy(std_rand)
         return mean_rand, std_rand
 
-    def check_expect_stat(self, type_index_map, stat_small, stat_large, stat_result):
+    def check_expect_stat(
+        self, type_index_map, stat_small, stat_large, stat_result
+    ) -> None:
         if not isinstance(stat_small, list):
             self.check_expect_stat_item(
                 type_index_map, stat_small, stat_large, stat_result
@@ -330,7 +332,7 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
 
     def check_expect_stat_item(
         self, type_index_map, stat_small, stat_large, stat_result
-    ):
+    ) -> None:
         stat_small = self.convert_to_numpy(stat_small)
         stat_large = self.convert_to_numpy(stat_large)
         stat_result = self.convert_to_numpy(stat_result)

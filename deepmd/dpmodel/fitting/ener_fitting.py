@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -46,7 +45,7 @@ class EnergyFittingNet(InvarFitting):
         exclude_types: list[int] = [],
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__(
             var_name="energy",
             ntypes=ntypes,
@@ -73,7 +72,7 @@ class EnergyFittingNet(InvarFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("var_name")
         data.pop("dim_out")

@@ -34,9 +34,6 @@ from deepmd.infer.deep_pot import (
 from deepmd.infer.deep_property import (
     DeepProperty,
 )
-from deepmd.infer.deep_wfc import (
-    DeepWFC,
-)
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DeepmdData,
@@ -48,6 +45,9 @@ from deepmd.utils.weight_avg import (
 if TYPE_CHECKING:
     from deepmd.infer.deep_tensor import (
         DeepTensor,
+    )
+    from deepmd.infer.deep_wfc import (
+        DeepWFC,
     )
 
 __all__ = ["test"]
@@ -67,7 +67,7 @@ def test(
     atomic: bool,
     head: Optional[str] = None,
     **kwargs,
-):
+) -> None:
     """Test model predictions.
 
     Parameters
@@ -236,7 +236,7 @@ def rmse(diff: np.ndarray) -> float:
 
 def save_txt_file(
     fname: Path, data: np.ndarray, header: str = "", append: bool = False
-):
+) -> None:
     """Save numpy array to test file.
 
     Parameters
@@ -561,7 +561,7 @@ def test_ener(
         }
 
 
-def print_ener_sys_avg(avg: dict[str, float]):
+def print_ener_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for energy type potential.
 
     Parameters
@@ -733,7 +733,7 @@ def test_dos(
     }
 
 
-def print_dos_sys_avg(avg: dict[str, float]):
+def print_dos_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for DOS type potential.
 
     Parameters
@@ -887,7 +887,7 @@ def test_property(
     }
 
 
-def print_property_sys_avg(avg: dict[str, float]):
+def print_property_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for Property type potential.
 
     Parameters
@@ -983,7 +983,7 @@ def test_wfc(
     return {"rmse": (rmse_f, wfc.size)}
 
 
-def print_wfc_sys_avg(avg):
+def print_wfc_sys_avg(avg) -> None:
     """Print errors summary for wfc type potential.
 
     Parameters
@@ -1125,7 +1125,7 @@ def test_polar(
     return {"rmse": (rmse_f, polar.size)}
 
 
-def print_polar_sys_avg(avg):
+def print_polar_sys_avg(avg) -> None:
     """Print errors summary for polar type potential.
 
     Parameters
@@ -1239,7 +1239,7 @@ def test_dipole(
     return {"rmse": (rmse_f, dipole.size)}
 
 
-def print_dipole_sys_avg(avg):
+def print_dipole_sys_avg(avg) -> None:
     """Print errors summary for dipole type potential.
 
     Parameters

@@ -17,7 +17,7 @@ from ..backend import (
 
 
 class TestTypeEmbd(unittest.TestCase, TypeEmbdTest, PTTestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         TypeEmbdTest.setUp(self)
         self.module_class = TypeEmbedNetConsistent
         self.module = TypeEmbedNetConsistent(**self.input_dict)

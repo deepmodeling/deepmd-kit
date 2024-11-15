@@ -21,7 +21,7 @@ from ..cases import (
 class FittingTestCase(TestCaseSingleFrameWithNlist):
     """Common test case for descriptor."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.input_dict = {
             "ntypes": self.nt,
@@ -30,7 +30,7 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             "type_map": ["O", "H"],
         }
 
-    def test_forward_consistency(self):
+    def test_forward_consistency(self) -> None:
         serialize_dict = self.module.serialize()
         # set random bias
         rng = np.random.default_rng()
@@ -66,7 +66,7 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
 
     def test_exclude_types(
         self,
-    ):
+    ) -> None:
         atype_device = self.atype_ext[:, : self.nloc]
         serialize_dict = self.module.serialize()
         # set random bias
@@ -104,7 +104,7 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             )[var_name]
             np.testing.assert_allclose(rd, rd_ex)
 
-    def test_change_type_map(self):
+    def test_change_type_map(self) -> None:
         if not self.module.mixed_types:
             # skip if not mixed_types
             return

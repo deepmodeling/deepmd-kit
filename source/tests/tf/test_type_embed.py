@@ -11,7 +11,7 @@ from deepmd.tf.utils.type_embed import (
 
 
 class TestTypeEbd(tf.test.TestCase):
-    def test_embed_atom_type(self):
+    def test_embed_atom_type(self) -> None:
         ntypes = 3
         natoms = tf.constant([5, 5, 3, 0, 2])
         type_embedding = tf.constant(
@@ -27,7 +27,7 @@ class TestTypeEbd(tf.test.TestCase):
         atom_embed = sess.run(atom_embed)
         np.testing.assert_almost_equal(atom_embed, expected_out, 10)
 
-    def test_type_embed_net(self):
+    def test_type_embed_net(self) -> None:
         ten = TypeEmbedNet(
             ntypes=2, neuron=[2, 4, 8], seed=1, uniform_seed=True, use_tebd_bias=True
         )

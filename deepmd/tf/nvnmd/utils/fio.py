@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 class Fio:
     r"""Basic class for FIO."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def exits(self, file_name=""):
@@ -20,11 +20,11 @@ class Fio:
             return True
         return os.path.exists(file_name)
 
-    def mkdir(self, path_name=""):
+    def mkdir(self, path_name="") -> None:
         if not self.exits(path_name):
             os.makedirs(path_name)
 
-    def create_file_path(self, file_name=""):
+    def create_file_path(self, file_name="") -> None:
         pars = file_name.split("/")
         if len(pars) > 0:
             path_name = "/".join(pars[:-1])
@@ -68,7 +68,7 @@ class FioDic:
         else:
             return FioNpyDic().load(file_name, default_value)
 
-    def save(self, file_name="", dic={}):
+    def save(self, file_name="", dic={}) -> None:
         if file_name.endswith(".json"):
             FioJsonDic().save(file_name, dic)
         elif file_name.endswith(".npy"):
@@ -104,7 +104,7 @@ class FioDic:
 class FioNpyDic:
     r"""Input and output for .npy file containing dictionary."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def load(self, file_name="", default_value={}):
@@ -116,7 +116,7 @@ class FioNpyDic:
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name="", dic={}):
+    def save(self, file_name="", dic={}) -> None:
         Fio().create_file_path(file_name)
         np.save(file_name, [dic])
 
@@ -124,7 +124,7 @@ class FioNpyDic:
 class FioJsonDic:
     r"""Input and output for .json file containing dictionary."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def load(self, file_name="", default_value={}):
@@ -139,7 +139,7 @@ class FioJsonDic:
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name="", dic={}):
+    def save(self, file_name="", dic={}) -> None:
         r"""Save dict into .json file."""
         log.info(f"write jdata to {file_name}")
         Fio().create_file_path(file_name)
@@ -150,7 +150,7 @@ class FioJsonDic:
 class FioBin:
     r"""Input and output for binary file."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def load(self, file_name="", default_value=""):
@@ -165,7 +165,7 @@ class FioBin:
             log.warning(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str, data: list[str]):
+    def save(self, file_name: str, data: list[str]) -> None:
         r"""Save hex string into binary file."""
         log.info(f"write binary to {file_name}")
         Fio().create_file_path(file_name)
@@ -183,7 +183,7 @@ class FioBin:
 class FioTxt:
     r"""Input and output for .txt file with string."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def load(self, file_name="", default_value=[]):
@@ -198,7 +198,7 @@ class FioTxt:
             log.info(f"can not find {file_name}")
             return default_value
 
-    def save(self, file_name: str = "", data: list = []):
+    def save(self, file_name: str = "", data: list = []) -> None:
         r"""Save string list into .txt file."""
         log.info(f"write string to txt file {file_name}")
         Fio().create_file_path(file_name)

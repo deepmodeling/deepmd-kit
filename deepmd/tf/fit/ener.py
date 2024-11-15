@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    TYPE_CHECKING,
     Optional,
 )
 
@@ -66,9 +65,6 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
-
-if TYPE_CHECKING:
-    pass
 
 log = logging.getLogger(__name__)
 
@@ -242,6 +238,7 @@ class EnerFitting(Fitting):
                 len(self.layer_name) == len(self.n_neuron) + 1
             ), "length of layer_name should be that of n_neuron + 1"
         self.mixed_types = mixed_types
+        self.tebd_dim = 0
 
     def get_numb_fparam(self) -> int:
         """Get the number of frame parameters."""
@@ -754,6 +751,8 @@ class EnerFitting(Fitting):
             outs = tf.reshape(outs, [-1])
 
         tf.summary.histogram("fitting_net_output", outs)
+        # recover original dim_descrpt, which needs to be serialized
+        self.dim_descrpt = original_dim_descrpt
         return tf.reshape(outs, [-1])
 
     def init_variables(
@@ -908,7 +907,7 @@ class EnerFitting(Fitting):
             "@version": 2,
             "var_name": "energy",
             "ntypes": self.ntypes,
-            "dim_descrpt": self.dim_descrpt,
+            "dim_descrpt": self.dim_descrpt + self.tebd_dim,
             "mixed_types": self.mixed_types,
             "dim_out": 1,
             "neuron": self.n_neuron,
@@ -930,6 +929,7 @@ class EnerFitting(Fitting):
                 ndim=0 if self.mixed_types else 1,
                 in_dim=(
                     self.dim_descrpt
+                    + self.tebd_dim
                     + self.numb_fparam
                     + (0 if self.use_aparam_as_mask else self.numb_aparam)
                 ),

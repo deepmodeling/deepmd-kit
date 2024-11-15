@@ -1,7 +1,7 @@
-# Descriptor DPA-2 {{ pytorch_icon }} {{ dpmodel_icon }}
+# Descriptor DPA-2 {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 :::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+**Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
 The DPA-2 model implementation. See https://arxiv.org/abs/2312.15492 for more details.
@@ -18,6 +18,26 @@ If one runs LAMMPS with MPI, the customized OP library for the C++ interface sho
 If one runs LAMMPS with MPI and CUDA devices, it is recommended to compile the customized OP library for the C++ interface with a [CUDA-Aware MPI](https://developer.nvidia.com/mpi-solutions-gpus) library and CUDA,
 otherwise the communication between GPU cards falls back to the slower CPU implementation.
 
+## Limiations of the JAX backend with LAMMPS {{ jax_icon }}
+
+When using the JAX backend, 2 or more MPI ranks are not supported. One must set `map` to `yes` using the [`atom_modify`](https://docs.lammps.org/atom_modify.html) command.
+
+```lammps
+atom_modify map yes
+```
+
+See the example `examples/water/lmp/jax_dpa2.lammps`.
+
 ## Data format
 
 DPA-2 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
+
+## Type embedding
+
+Type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[dpa2]/tebd_dim>` argument.
+
+## Model compression
+
+Model compression is supported when {ref}`repinit/tebd_input_mode <model[standard]/descriptor[dpa2]/repinit/tebd_input_mode>` is `strip`, but only the `repinit` part is compressed.
+An example is given in `examples/water/dpa2/input_torch_compressible.json`.
+The performance improvement will be limited if other parts are more expensive.

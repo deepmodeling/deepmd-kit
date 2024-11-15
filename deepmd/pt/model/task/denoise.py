@@ -32,7 +32,7 @@ class DenoiseNet(Fitting):
         prefactor=[0.5, 0.5],
         activation_function="gelu",
         **kwargs,
-    ):
+    ) -> None:
         """Construct a denoise net.
 
         Args:

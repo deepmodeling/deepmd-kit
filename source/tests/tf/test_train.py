@@ -23,14 +23,14 @@ class TestTrain(unittest.TestCase):
         self.mock_min_nbor_dist = random.Random(GLOBAL_SEED).random()
         return super().setUp()
 
-    def test_train_parse_auto_sel(self):
+    def test_train_parse_auto_sel(self) -> None:
         self.assertTrue(self.update_sel.parse_auto_sel("auto"))
         self.assertTrue(self.update_sel.parse_auto_sel("auto:12"))
         self.assertTrue(self.update_sel.parse_auto_sel("auto:12:13"))
         self.assertFalse(self.update_sel.parse_auto_sel([1, 2]))
         self.assertFalse(self.update_sel.parse_auto_sel("abc:12:13"))
 
-    def test_train_parse_auto_sel_ratio(self):
+    def test_train_parse_auto_sel_ratio(self) -> None:
         self.assertEqual(self.update_sel.parse_auto_sel_ratio("auto"), 1.1)
         self.assertEqual(self.update_sel.parse_auto_sel_ratio("auto:1.2"), 1.2)
         with self.assertRaises(RuntimeError):
@@ -42,7 +42,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_one_sel(self, sel_mock, get_data_mock):
+    def test_update_one_sel(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
         get_data_mock.return_value = None
         min_nbor_dist, sel = self.update_sel.update_one_sel(None, None, 6, "auto")
@@ -56,7 +56,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_hybrid(self, sel_mock, get_data_mock):
+    def test_update_sel_hybrid(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
         get_data_mock.return_value = None
         jdata = {
@@ -88,7 +88,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel(self, sel_mock, get_data_mock):
+    def test_update_sel(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [10, 20]
         get_data_mock.return_value = None
         jdata = {
@@ -104,7 +104,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_auto(self, sel_mock, get_data_mock):
+    def test_update_sel_atten_auto(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
         get_data_mock.return_value = None
         jdata = {
@@ -132,7 +132,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_int(self, sel_mock, get_data_mock):
+    def test_update_sel_atten_int(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
         get_data_mock.return_value = None
         jdata = {
@@ -160,7 +160,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_nbor_stat")
-    def test_update_sel_atten_list(self, sel_mock, get_data_mock):
+    def test_update_sel_atten_list(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist, [25]
         get_data_mock.return_value = None
         jdata = {
@@ -187,7 +187,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.tf.entrypoints.train.get_data")
-    def test_skip_loc_frame(self, get_data_mock):
+    def test_skip_loc_frame(self, get_data_mock) -> None:
         get_data_mock.return_value = None
         jdata = {
             "model": {
@@ -211,7 +211,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.tf.entrypoints.train.get_data")
-    def test_skip_frozen(self, get_data_mock):
+    def test_skip_frozen(self, get_data_mock) -> None:
         get_data_mock.return_value = None
         jdata = {
             "model": {
@@ -224,7 +224,7 @@ class TestTrain(unittest.TestCase):
         self.assertEqual(jdata, expected_out)
 
     @patch("deepmd.tf.entrypoints.train.get_data")
-    def test_skip_linear_frozen(self, get_data_mock):
+    def test_skip_linear_frozen(self, get_data_mock) -> None:
         get_data_mock.return_value = None
         jdata = {
             "model": {
@@ -244,7 +244,7 @@ class TestTrain(unittest.TestCase):
 
     @patch("deepmd.tf.entrypoints.train.get_data")
     @patch("deepmd.tf.utils.update_sel.UpdateSel.get_min_nbor_dist")
-    def test_pairwise_dprc(self, sel_mock, get_data_mock):
+    def test_pairwise_dprc(self, sel_mock, get_data_mock) -> None:
         sel_mock.return_value = self.mock_min_nbor_dist
         get_data_mock.return_value = None
         jdata = {
@@ -263,7 +263,7 @@ class TestTrain(unittest.TestCase):
         jdata = update_sel(jdata)
         self.assertEqual(jdata, expected_out)
 
-    def test_wrap_up_4(self):
+    def test_wrap_up_4(self) -> None:
         self.assertEqual(self.update_sel.wrap_up_4(12), 3 * 4)
         self.assertEqual(self.update_sel.wrap_up_4(13), 4 * 4)
         self.assertEqual(self.update_sel.wrap_up_4(14), 4 * 4)

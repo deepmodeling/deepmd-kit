@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from typing import (
     Optional,
@@ -89,7 +88,7 @@ class PropertyFittingNet(InvarFitting):
         mixed_types: bool = True,
         seed: Optional[int] = None,
         **kwargs,
-    ):
+    ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
         self.bias_method = bias_method
@@ -129,7 +128,7 @@ class PropertyFittingNet(InvarFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("dim_out")
         data.pop("var_name")

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from typing import (
     Optional,
@@ -57,7 +56,7 @@ class DOSFittingNet(InvarFitting):
         exclude_types: list[int] = [],
         mixed_types: bool = True,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         if bias_dos is not None:
             self.bias_dos = bias_dos
         else:
@@ -99,7 +98,7 @@ class DOSFittingNet(InvarFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         data.pop("@class", None)
         data.pop("var_name", None)

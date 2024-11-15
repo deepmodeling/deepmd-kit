@@ -21,7 +21,7 @@ from .common import (
 
 
 class Inter:
-    def setUp(self, data, pbc=True, sess=None):
+    def setUp(self, data, pbc=True, sess=None) -> None:
         self.sess = sess
         self.data = data
         self.natoms = self.data.get_natoms()
@@ -152,21 +152,21 @@ class TestSmooth(Inter, tf.test.TestCase):
     #     tf.test.TestCase.__init__(self, *args, **kwargs)
     #     self.controller = object()
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.places = 5
         data = Data()
         Inter.setUp(self, data, sess=self.cached_session().__enter__())
 
-    def test_force(self):
+    def test_force(self) -> None:
         force_test(self, self, suffix="_sea_ef_para")
 
-    def test_virial(self):
+    def test_virial(self) -> None:
         virial_test(self, self, suffix="_sea_ef_para")
 
-    def test_force_dw(self):
+    def test_force_dw(self) -> None:
         force_dw_test(self, self, suffix="_sea_ef_para")
 
-    def test_virial_dw(self):
+    def test_virial_dw(self) -> None:
         virial_dw_test(self, self, suffix="_sea_ef_para")
 
 

@@ -123,6 +123,8 @@ def _make_node_names(
             "o_atom_energy",
             "o_atom_virial",
             "spin_attr/ntypes_spin",
+            "spin_attr/virtual_len",
+            "spin_attr/spin_norm",
             "fitting_attr/dfparam",
             "fitting_attr/daparam",
             "fitting_attr/aparam_nall",
@@ -228,7 +230,7 @@ def freeze_graph(
     out_graph_name,
     node_names=None,
     out_suffix="",
-):
+) -> None:
     """Freeze the single graph with chosen out_suffix.
 
     Parameters
@@ -258,6 +260,8 @@ def freeze_graph(
         "train_attr/min_nbor_dist",
         "fitting_attr/aparam_nall",
         "spin_attr/ntypes_spin",
+        "spin_attr/virtual_len",
+        "spin_attr/spin_norm",
     ]
     different_set = set(output_node) - set(input_node)
     if different_set:
@@ -296,7 +300,7 @@ def freeze(
     node_names: Optional[str] = None,
     nvnmd_weight: Optional[str] = None,
     **kwargs,
-):
+) -> None:
     """Freeze the graph in supplied folder.
 
     Parameters

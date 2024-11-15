@@ -191,6 +191,28 @@ def make_base_model() -> type[object]:
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
 
+        def enable_compression(
+            self,
+            table_extrapolate: float = 5,
+            table_stride_1: float = 0.01,
+            table_stride_2: float = 0.1,
+            check_frequency: int = -1,
+        ) -> None:
+            """Enable model compression by tabulation.
+
+            Parameters
+            ----------
+            table_extrapolate
+                The scale of model extrapolation
+            table_stride_1
+                The uniform stride of the first table
+            table_stride_2
+                The uniform stride of the second table
+            check_frequency
+                The overflow check frequency
+            """
+            raise NotImplementedError("This atomic model doesn't support compression!")
+
         @classmethod
         def get_model(cls, model_params: dict) -> "BaseBaseModel":
             """Get the model by the parameters.

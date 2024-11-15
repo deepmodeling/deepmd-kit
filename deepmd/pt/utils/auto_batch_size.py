@@ -22,7 +22,7 @@ class AutoBatchSize(AutoBatchSizeBase):
         self,
         initial_batch_size: int = 1024,
         factor: float = 2.0,
-    ):
+    ) -> None:
         super().__init__(
             initial_batch_size=initial_batch_size,
             factor=factor,

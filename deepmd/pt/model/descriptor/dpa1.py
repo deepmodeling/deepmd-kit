@@ -22,10 +22,17 @@ from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
+    PRECISION_DICT,
     RESERVED_PRECISON_DICT,
+)
+from deepmd.pt.utils.tabulate import (
+    DPTabulate,
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt.utils.utils import (
+    ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -245,7 +252,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         # not implemented
         spin=None,
         type: Optional[str] = None,
-    ):
+    ) -> None:
         super().__init__()
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is not None:
@@ -260,6 +267,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         #  to keep consistent with default value in this backends
         if ln_eps is None:
             ln_eps = 1e-5
+
+        self.tebd_input_mode = tebd_input_mode
 
         del type, spin, attn_mask
         self.se_atten = DescrptBlockSeAtten(
@@ -293,6 +302,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        self.compress = False
         self.type_embedding = TypeEmbedNet(
             ntypes,
             tebd_dim,
@@ -302,6 +312,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
         )
+        self.prec = PRECISION_DICT[precision]
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
@@ -367,7 +378,7 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -551,6 +562,84 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         )
         return obj
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+
+        Parameters
+        ----------
+        min_nbor_dist
+            The nearest distance between atoms
+        table_extrapolate
+            The scale of model extrapolation
+        table_stride_1
+            The uniform stride of the first table
+        table_stride_2
+            The uniform stride of the second table
+        check_frequency
+            The overflow check frequency
+        """
+        # do some checks before the mocel compression process
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        assert (
+            not self.se_atten.resnet_dt
+        ), "Model compression error: descriptor resnet_dt must be false!"
+        for tt in self.se_atten.exclude_types:
+            if (tt[0] not in range(self.se_atten.ntypes)) or (
+                tt[1] not in range(self.se_atten.ntypes)
+            ):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_atten.ntypes)
+                    + "!"
+                )
+        if (
+            self.se_atten.ntypes * self.se_atten.ntypes
+            - len(self.se_atten.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Empty embedding-nets are not supported in model compression!"
+            )
+
+        if self.se_atten.attn_layer != 0:
+            raise RuntimeError("Cannot compress model when attention layer is not 0.")
+
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Cannot compress model when tebd_input_mode == 'concat'")
+
+        data = self.serialize()
+        self.table = DPTabulate(
+            self,
+            data["neuron"],
+            data["type_one_side"],
+            data["exclude_types"],
+            ActivationFn(data["activation_function"]),
+        )
+        self.table_config = [
+            table_extrapolate,
+            table_stride_1,
+            table_stride_2,
+            check_frequency,
+        ]
+        self.lower, self.upper = self.table.build(
+            min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+        )
+
+        self.se_atten.enable_compression(
+            self.table.data, self.table_config, self.lower, self.upper
+        )
+        self.compress = True
+
     def forward(
         self,
         extended_coord: torch.Tensor,
@@ -591,6 +680,8 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # cast the input to internal precsion
+        extended_coord = extended_coord.to(dtype=self.prec)
         del mapping
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
@@ -606,7 +697,13 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
 
-        return g1, rot_mat, g2, h2, sw
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            g2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if g2 is not None else None,
+            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     @classmethod
     def update_sel(

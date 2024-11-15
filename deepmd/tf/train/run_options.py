@@ -115,7 +115,7 @@ class RunOptions:
         log_path: Optional[str] = None,
         log_level: int = 0,
         mpi_log: str = "master",
-    ):
+    ) -> None:
         self._try_init_distrib()
 
         # model init options
@@ -145,7 +145,7 @@ class RunOptions:
         """Whether my rank is 0."""
         return self.my_rank == 0
 
-    def print_resource_summary(self):
+    def print_resource_summary(self) -> None:
         """Print build and current running cluster configuration summary."""
         SummaryPrinter(self.my_device, len(self.gpus or []))()
 
@@ -154,7 +154,7 @@ class RunOptions:
         log_path: Optional[Path],
         log_level: int,
         mpi_log: Optional[str],
-    ):
+    ) -> None:
         """Set up package loggers.
 
         Parameters
@@ -183,7 +183,7 @@ class RunOptions:
                 f"reset them{', especially when running with MPI!' if self._HVD else ''}"
             )
 
-    def _try_init_distrib(self):
+    def _try_init_distrib(self) -> None:
         try:
             import horovod.tensorflow as HVD
 
@@ -201,7 +201,7 @@ class RunOptions:
             self._init_serial()
             self._HVD = None
 
-    def _init_distributed(self, HVD: "HVD"):
+    def _init_distributed(self, HVD: "HVD") -> None:
         """Initialize  settings for distributed training.
 
         Parameters
@@ -231,7 +231,7 @@ class RunOptions:
         else:
             self.my_device = "cpu:0"
 
-    def _init_serial(self):
+    def _init_serial(self) -> None:
         """Initialize setting for serial training."""
         nodename, _, gpus = get_resource()
 

@@ -6,6 +6,9 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
 from deepmd.utils.argcheck import (
     type_embedding_args,
@@ -97,7 +100,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             "type_map": ["O", "H"] if use_econf_tebd else None,
         }
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2
@@ -130,7 +133,8 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         out = array_api_strict_obj()
         return [
-            np.asarray(x) if hasattr(x, "__array_namespace__") else x for x in (out,)
+            to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
+            for x in (out,)
         ]
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:

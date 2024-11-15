@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_JAX,
     INSTALLED_PT,
     SKIP_FLAG,
     CommonTest,
@@ -27,6 +28,11 @@ if INSTALLED_PT:
     from deepmd.pt.model.model.dp_zbl_model import DPZBLModel as DPZBLModelPT
 else:
     DPZBLModelPT = None
+if INSTALLED_JAX:
+    from deepmd.jax.model.dp_zbl_model import DPZBLModel as DPZBLModelJAX
+    from deepmd.jax.model.model import get_model as get_model_jax
+else:
+    DPZBLModelJAX = None
 import os
 
 from deepmd.utils.argcheck import (
@@ -86,6 +92,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
 
     dp_class = DPZBLModelDP
     pt_class = DPZBLModelPT
+    jax_class = DPZBLModelJAX
     args = model_args()
 
     def get_reference_backend(self):
@@ -104,12 +111,12 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError("No available reference")
 
     @property
-    def skip_tf(self):
+    def skip_tf(self) -> bool:
         return True
 
     @property
-    def skip_jax(self):
-        return True
+    def skip_jax(self) -> bool:
+        return not INSTALLED_JAX
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
@@ -118,9 +125,11 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is DPZBLModelPT:
             return get_model_pt(data)
+        elif cls is DPZBLModelJAX:
+            return get_model_jax(data)
         return cls(**data, **self.additional_data)
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

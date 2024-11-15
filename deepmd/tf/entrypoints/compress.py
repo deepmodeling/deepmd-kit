@@ -61,7 +61,7 @@ def compress(
     log_path: Optional[str],
     log_level: int,
     **kwargs,
-):
+) -> None:
     """Compress model.
 
     The table is composed of fifth-order polynomial coefficients and is assembled from
@@ -147,6 +147,8 @@ def compress(
         10 * step,
         int(frequency),
     ]
+    jdata.setdefault("training", {"numb_steps": 0})
+    jdata.setdefault("learning_rate", {})
     jdata["training"]["save_ckpt"] = os.path.join("model-compression", "model.ckpt")
     jdata = update_deepmd_input(jdata)
     jdata = normalize(jdata)
@@ -197,7 +199,7 @@ def compress(
         ) from e
 
 
-def _check_compress_type(graph: tf.Graph):
+def _check_compress_type(graph: tf.Graph) -> None:
     try:
         t_model_type = bytes.decode(get_tensor_by_name_from_graph(graph, "model_type"))
     except GraphWithoutTensorError as e:

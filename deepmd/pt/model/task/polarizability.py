@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from typing import (
     Optional,
@@ -97,7 +96,7 @@ class PolarFittingNet(GeneralFitting):
         shift_diag: bool = True,
         type_map: Optional[list[str]] = None,
         **kwargs,
-    ):
+    ) -> None:
         self.embedding_width = embedding_width
         self.fit_diag = fit_diag
         self.scale = scale
@@ -147,7 +146,7 @@ class PolarFittingNet(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
@@ -202,7 +201,7 @@ class PolarFittingNet(GeneralFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
+        data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("var_name", None)
         return super().deserialize(data)
@@ -234,11 +233,14 @@ class PolarFittingNet(GeneralFitting):
         assert (
             gr is not None
         ), "Must provide the rotation matrix for polarizability fitting."
+        # cast the input to internal precsion
+        gr = gr.to(self.prec)
         # (nframes, nloc, _net_out_dim)
         out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
             self.var_name
         ]
-        out = out * (self.scale.to(atype.device))[atype]
+        out = out * (self.scale.to(atype.device).to(self.prec))[atype]
+
         gr = gr.view(nframes * nloc, self.embedding_width, 3)  # (nframes * nloc, m1, 3)
 
         if self.fit_diag:

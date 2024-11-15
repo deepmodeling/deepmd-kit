@@ -26,7 +26,7 @@ from .common import (
 
 
 class TestGetPotential(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.work_dir = infer_path
 
         convert_pbtxt_to_pb(
@@ -56,11 +56,11 @@ class TestGetPotential(unittest.TestCase):
             f.flush()
             convert_pbtxt_to_pb(f.name, str(self.work_dir / "deep_wfc.pb"))
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in self.work_dir.glob("*.pb"):
             f.unlink()
 
-    def test_factory(self):
+    def test_factory(self) -> None:
         msg = "Returned wrong type of potential. Expected: {}, got: {}"
 
         dp = DeepPotential(self.work_dir / "deep_dipole.pb")

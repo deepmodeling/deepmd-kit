@@ -26,14 +26,14 @@ else:
     default_places = 10
 
 
-def _file_delete(file):
+def _file_delete(file) -> None:
     if os.path.exists(file):
         os.remove(file)
 
 
 class TestTransform(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.old_model = str(tests_path / "dp-old.pb")
         cls.raw_model = str(tests_path / "dp-raw.pb")
         cls.new_model = str(tests_path / "dp-new.pb")
@@ -170,19 +170,19 @@ class TestTransform(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         _file_delete(cls.old_model)
         _file_delete(cls.raw_model)
         _file_delete(cls.new_model)
 
-    def test_attrs(self):
+    def test_attrs(self) -> None:
         self.assertEqual(self.dp.get_ntypes(), 2)
         self.assertAlmostEqual(self.dp.get_rcut(), 6.0, places=default_places)
         self.assertEqual(self.dp.get_type_map(), ["O", "H"])
         self.assertEqual(self.dp.get_dim_fparam(), 0)
         self.assertEqual(self.dp.get_dim_aparam(), 0)
 
-    def test_1frame(self):
+    def test_1frame(self) -> None:
         ee, ff, vv = self.dp.eval(self.coords, self.box, self.atype, atomic=False)
         # check shape of the returns
         nframes = 1
@@ -199,7 +199,7 @@ class TestTransform(unittest.TestCase):
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
-    def test_1frame_atm(self):
+    def test_1frame_atm(self) -> None:
         ee, ff, vv, ae, av = self.dp.eval(
             self.coords, self.box, self.atype, atomic=True
         )
@@ -226,7 +226,7 @@ class TestTransform(unittest.TestCase):
         expected_sv = np.sum(self.expected_v.reshape([nframes, -1, 9]), axis=1)
         np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), default_places)
 
-    def test_2frame_atm(self):
+    def test_2frame_atm(self) -> None:
         coords2 = np.concatenate((self.coords, self.coords))
         box2 = np.concatenate((self.box, self.box))
         ee, ff, vv, ae, av = self.dp.eval(coords2, box2, self.atype, atomic=True)

@@ -69,7 +69,7 @@ class BackendOption(argparse.Action):
 
 class DeprecateAction(argparse.Action):
     # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         self.call_count = 0
         if "help" in kwargs:
             kwargs["help"] = f'[DEPRECATED] {kwargs["help"]}'
@@ -424,29 +424,30 @@ def main_parser() -> argparse.ArgumentParser:
     parser_compress = subparsers.add_parser(
         "compress",
         parents=[parser_log, parser_mpi_log],
-        help="(Supported backend: TensorFlow) compress a model",
+        help="Compress a model",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
         examples:
             dp compress
-            dp compress -i graph.pb -o compressed.pb
+            dp --tf compress -i frozen_model.pb -o compressed_model.pb
+            dp --pt compress -i frozen_model.pth -o compressed_model.pth
         """
         ),
     )
     parser_compress.add_argument(
         "-i",
         "--input",
-        default="frozen_model.pb",
+        default="frozen_model",
         type=str,
-        help="The original frozen model, which will be compressed by the code",
+        help="The original frozen model, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
     )
     parser_compress.add_argument(
         "-o",
         "--output",
-        default="frozen_model_compressed.pb",
+        default="frozen_model_compressed",
         type=str,
-        help="The compressed model",
+        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
     )
     parser_compress.add_argument(
         "-s",
@@ -877,7 +878,7 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main(args: Optional[list[str]] = None):
+def main(args: Optional[list[str]] = None) -> None:
     """DeePMD-kit new entry point.
 
     Parameters

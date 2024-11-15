@@ -39,11 +39,11 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
     f"The current tf version {tf.__version__} is too low to run the new testing model.",
 )
 class TestDataLargeBatch(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data(mixed_type=True)
         self.filename = __file__
 
-    def test_data_mixed_type(self):
+    def test_data_mixed_type(self) -> None:
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
@@ -242,7 +242,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         np.testing.assert_almost_equal(v, refv, places)
         sess.close()
 
-    def test_stripped_data_mixed_type(self):
+    def test_stripped_data_mixed_type(self) -> None:
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 
@@ -441,7 +441,7 @@ class TestDataLargeBatch(tf.test.TestCase):
         np.testing.assert_almost_equal(f, reff, places)
         np.testing.assert_almost_equal(v, refv, places)
 
-    def test_compressible_data_mixed_type(self):
+    def test_compressible_data_mixed_type(self) -> None:
         jfile = "water_se_atten_mixed_type.json"
         jdata = j_loader(jfile)
 

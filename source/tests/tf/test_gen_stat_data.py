@@ -46,7 +46,7 @@ def gen_sys(nframes, atom_types):
 
 
 class TestGenStatData(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         data0 = gen_sys(20, [0, 1, 0, 2, 1])
         data1 = gen_sys(30, [0, 1, 0, 0])
         sys0 = dpdata.LabeledSystem()
@@ -56,14 +56,14 @@ class TestGenStatData(unittest.TestCase):
         sys0.to_deepmd_npy("system_0", set_size=10)
         sys1.to_deepmd_npy("system_1", set_size=10)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree("system_0")
         shutil.rmtree("system_1")
 
-    def _comp_data(self, d0, d1):
+    def _comp_data(self, d0, d1) -> None:
         np.testing.assert_almost_equal(d0, d1)
 
-    def test_merge_all_stat(self):
+    def test_merge_all_stat(self) -> None:
         dp_random.seed(0)
         data0 = DeepmdDataSystem(["system_0", "system_1"], 5, 10, 1.0)
         data0.add("energy", 1, must=True)
@@ -103,7 +103,7 @@ class TestGenStatData(unittest.TestCase):
 
 
 class TestEnerShift(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         data0 = gen_sys(30, [0, 1, 0, 2, 1])
         data1 = gen_sys(30, [0, 1, 0, 0])
         sys0 = dpdata.LabeledSystem()
@@ -113,11 +113,11 @@ class TestEnerShift(unittest.TestCase):
         sys0.to_deepmd_npy("system_0", set_size=10)
         sys1.to_deepmd_npy("system_1", set_size=10)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree("system_0")
         shutil.rmtree("system_1")
 
-    def test_ener_shift(self):
+    def test_ener_shift(self) -> None:
         dp_random.seed(0)
         data = DeepmdDataSystem(["system_0", "system_1"], 5, 10, 1.0)
         data.add("energy", 1, must=True)
@@ -133,7 +133,7 @@ class TestEnerShift(unittest.TestCase):
         ener_shift1 = fitting._compute_output_stats(all_stat, rcond=1)
         np.testing.assert_almost_equal(ener_shift0, ener_shift1)
 
-    def test_ener_shift_assigned(self):
+    def test_ener_shift_assigned(self) -> None:
         dp_random.seed(0)
         ae0 = dp_random.random()
         data = DeepmdDataSystem(["system_0"], 5, 10, 1.0)

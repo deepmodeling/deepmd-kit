@@ -184,7 +184,7 @@ class DescrptHybrid(Descriptor):
                 **kwargs,
             )
 
-    def merge_input_stats(self, stat_dict):
+    def merge_input_stats(self, stat_dict) -> None:
         """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
@@ -461,6 +461,8 @@ class DescrptHybrid(Descriptor):
         return local_jdata_cpy, min_nbor_dist
 
     def serialize(self, suffix: str = "") -> dict:
+        if hasattr(self, "type_embedding"):
+            raise NotImplementedError("hybrid + type embedding is not supported")
         return {
             "@class": "Descriptor",
             "type": "hybrid",
@@ -485,4 +487,8 @@ class DescrptHybrid(Descriptor):
                 for idx, ii in enumerate(data["list"])
             ],
         )
+        # search for type embedding
+        for ii in obj.descrpt_list:
+            if hasattr(ii, "type_embedding"):
+                raise NotImplementedError("hybrid + type embedding is not supported")
         return obj

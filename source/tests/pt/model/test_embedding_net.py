@@ -124,7 +124,7 @@ def base_se_a(descriptor, coord, atype, natoms, box):
 
 
 class TestSeA(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         dp_random.seed(0)
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
@@ -149,7 +149,7 @@ class TestSeA(unittest.TestCase):
         self.axis_neuron = model_config["descriptor"]["axis_neuron"]
         self.np_batch, self.torch_batch = get_single_batch(ds)
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         dp_d = DescrptSeA_tf(
             rcut=self.rcut,
             rcut_smth=self.rcut_smth,

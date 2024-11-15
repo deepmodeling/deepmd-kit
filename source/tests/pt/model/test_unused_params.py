@@ -25,7 +25,7 @@ dtype = torch.float64
 
 
 class TestUnusedParamsDPA2(unittest.TestCase):
-    def test_unused(self):
+    def test_unused(self) -> None:
         import itertools
 
         for conv, drrd, grrg, attn1, g1g1, attn2, h2 in itertools.product(
@@ -56,7 +56,7 @@ class TestUnusedParamsDPA2(unittest.TestCase):
             model["fitting_net"]["neuron"] = [12, 12, 12]
             self._test_unused(model)
 
-    def _test_unused(self, model_params):
+    def _test_unused(self, model_params) -> None:
         self.model = get_model(model_params).to(env.DEVICE)
         natoms = 5
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
@@ -86,7 +86,8 @@ class TestUnusedParamsDPA2(unittest.TestCase):
         contributing_parameters = set(get_contributing_params(ret0["energy"]))
         all_parameters = set(self.model.parameters())
         non_contributing = all_parameters - contributing_parameters
-        self.assertEqual(len(non_contributing), 0)
+        # 2 for compression
+        self.assertEqual(len(non_contributing), 2)
 
 
 if __name__ == "__main__":

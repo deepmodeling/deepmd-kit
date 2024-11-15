@@ -1,7 +1,7 @@
-# Compress a model {{ tensorflow_icon }}
+# Compress a model {{ tensorflow_icon }} {{ pytorch_icon }}
 
 :::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
 :::
 
 ## Theory
@@ -64,9 +64,24 @@ In the compressed DP model, the number of neighbors is precisely indexed at the 
 
 Once the frozen model is obtained from DeePMD-kit, we can get the neural network structure and its parameters (weights, biases, etc.) from the trained model, and compress it in the following way:
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
 dp compress -i graph.pb -o graph-compress.pb
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+dp compress -i model.pth -o model-compress.pth
+```
+
+:::
+::::
 
 where `-i` gives the original frozen model, `-o` gives the compressed model. Several other command line options can be passed to `dp compress`, which can be checked with
 
@@ -97,9 +112,8 @@ The model compression interface requires the version of DeePMD-kit used in the o
 
 **Acceptable descriptor type**
 
-Descriptors with `se_e2_a`, `se_e3`, `se_e2_r` and `se_atten_v2` types are supported by the model compression feature. `Hybrid` mixed with the above descriptors is also supported.
-
-Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` set to 0.
+Not any descriptor supports model compression.
+See the documentation of a specific descriptor to see whether it supports model compression.
 
 **Available activation functions for descriptor:**
 
@@ -109,3 +123,9 @@ Notice: Model compression for the `se_atten_v2` descriptor is exclusively design
 - relu6
 - softplus
 - sigmoid
+
+## Requirements of installation {{ pytorch_icon }}
+
+When compressing models in the PyTorch backend, the customized OP library for the Python interface must be installed when [freezing the model](../freeze/freeze.md).
+
+The customized OP library for the Python interface can be installed by setting environment variable {envvar}`DP_ENABLE_PYTORCH` to `1` during [installation](../install/install-from-source.md).

@@ -97,7 +97,7 @@ def base_se_a(rcut, rcut_smth, sel, batch, mean, stddev):
 
 
 class TestSeA(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         dp_random.seed(20)
         with open(str(Path(__file__).parent / "water/se_e2_a.json")) as fin:
             content = fin.read()
@@ -123,7 +123,7 @@ class TestSeA(unittest.TestCase):
         self.ntypes = len(self.sel)
         self.nnei = sum(self.sel)
 
-    def test_consistency(self):
+    def test_consistency(self) -> None:
         avg_zero = torch.zeros(
             [self.ntypes, self.nnei * 4],
             dtype=GLOBAL_PT_FLOAT_PRECISION,
