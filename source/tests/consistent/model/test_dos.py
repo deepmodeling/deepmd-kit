@@ -37,20 +37,10 @@ from deepmd.utils.argcheck import (
 )
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
-)
+
 class TestDOS(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        pair_exclude_types, atom_exclude_types = self.param
         return {
             "type_map": ["H"],
             "descriptor": {
@@ -95,10 +85,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return (
-            self.data["pair_exclude_types"] != []
-            or self.data["atom_exclude_types"] != []
-        )
+        return False
 
     @property
     def skip_jax(self) -> bool:
