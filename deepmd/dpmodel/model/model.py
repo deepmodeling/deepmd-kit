@@ -55,7 +55,7 @@ def get_standard_model(data: dict) -> EnergyModel:
             **data["fitting_net"],
         )
     else:
-        raise ValueError(f"Unknown fitting type {fitting_type}") #fix 
+        raise ValueError(f"Unknown fitting type {fitting_type}")  # fix
     return EnergyModel(
         descriptor=descriptor,
         fitting=fitting,

@@ -15,7 +15,6 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_PT,
     INSTALLED_TF,
-    SKIP_FLAG,
     CommonTest,
 )
 from .common import (
@@ -46,7 +45,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
                 "sel": [20, 20],
                 "rcut_smth": 1.8,
                 "rcut": 6.0,
-                "neuron": [2,4,8],
+                "neuron": [2, 4, 8],
                 "resnet_dt": False,
                 "axis_neuron": 8,
                 "precision": "float64",
@@ -55,7 +54,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
             "fitting_net": {
                 "type": "dos",
                 "numb_dos": 250,
-                "neuron": [4,4,4],
+                "neuron": [4, 4, 4],
                 "resnet_dt": True,
                 "numb_fparam": 0,
                 "precision": "float64",
