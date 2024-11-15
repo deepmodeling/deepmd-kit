@@ -16,6 +16,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    cast_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -29,9 +30,6 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
-)
-from deepmd.env import (
-    GLOBAL_NP_FLOAT_PRECISION,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -343,6 +341,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    @cast_precision
     def call(
         self,
         coord_ext,
@@ -418,9 +417,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         # nf x nloc x ng x ng1
         grrg = np.einsum("flid,fljd->flij", gr, gr1)
         # nf x nloc x (ng x ng1)
-        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron).astype(
-            GLOBAL_NP_FLOAT_PRECISION
-        )
+        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron)
         return grrg, gr[..., 1:], None, None, ww
 
     def serialize(self) -> dict:
@@ -509,6 +506,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
 
 class DescrptSeAArrayAPI(DescrptSeA):
+    @cast_precision
     def call(
         self,
         coord_ext,
@@ -588,7 +586,5 @@ class DescrptSeAArrayAPI(DescrptSeA):
         # grrg = xp.einsum("flid,fljd->flij", gr, gr1)
         grrg = xp.sum(gr[:, :, :, None, :] * gr1[:, :, None, :, :], axis=4)
         # nf x nloc x (ng x ng1)
-        grrg = xp.astype(
-            xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron)), input_dtype
-        )
+        grrg = xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron))
         return grrg, gr[..., 1:], None, None, ww

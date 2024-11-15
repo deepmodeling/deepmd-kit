@@ -439,18 +439,22 @@ class GeneralFitting(NativeOP, BaseFitting):
                 ):
                     assert xx_zeros is not None
                     atom_property -= self.nets[(type_i,)](xx_zeros)
-                atom_property = atom_property + self.bias_atom_e[type_i, ...]
-                atom_property = atom_property * xp.astype(mask, atom_property.dtype)
+                atom_property = xp.where(
+                    mask, atom_property, xp.zeros_like(atom_property)
+                )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
         else:
-            outs = self.nets[()](xx) + xp.reshape(
-                xp.take(self.bias_atom_e, xp.reshape(atype, [-1]), axis=0),
-                [nf, nloc, net_dim_out],
-            )
+            outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
+        outs += xp.reshape(
+            xp.take(
+                xp.astype(self.bias_atom_e, outs.dtype), xp.reshape(atype, [-1]), axis=0
+            ),
+            [nf, nloc, net_dim_out],
+        )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         # nf x nloc x nod
-        outs = outs * xp.astype(exclude_mask[:, :, None], outs.dtype)
-        return {self.var_name: xp.astype(outs, get_xp_precision(xp, "global"))}
+        outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
+        return {self.var_name: outs}

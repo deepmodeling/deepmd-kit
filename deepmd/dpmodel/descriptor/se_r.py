@@ -15,6 +15,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    cast_precision,
     get_xp_precision,
     to_numpy_array,
 )
@@ -292,6 +293,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         gg = self.embeddings[(ll,)].call(ss)
         return gg
 
+    @cast_precision
     def call(
         self,
         coord_ext,
@@ -355,7 +357,6 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         res_rescale = 1.0 / 5.0
         res = xyz_scatter * res_rescale
         res = xp.reshape(res, (nf, nloc, ng))
-        res = xp.astype(res, get_xp_precision(xp, "global"))
         return res, None, None, None, ww
 
     def serialize(self) -> dict:

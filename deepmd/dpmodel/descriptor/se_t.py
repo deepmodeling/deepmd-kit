@@ -15,6 +15,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.common import (
+    cast_precision,
     get_xp_precision,
     to_numpy_array,
 )
@@ -267,6 +268,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    @cast_precision
     def call(
         self,
         coord_ext,
@@ -320,7 +322,6 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         # we don't require atype is the same in all frames
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
         rr = xp.reshape(rr, (nf * nloc, nnei, 4))
-        rr = xp.astype(rr, get_xp_precision(xp, self.precision))
 
         for embedding_idx in itertools.product(
             range(self.ntypes), repeat=self.embeddings.ndim
@@ -352,7 +353,6 @@ class DescrptSeT(NativeOP, BaseDescriptor):
                 result += res_ij
         # nf x nloc x ng
         result = xp.reshape(result, (nf, nloc, ng))
-        result = xp.astype(result, get_xp_precision(xp, "global"))
         return result, None, None, None, ww
 
     def serialize(self) -> dict:
