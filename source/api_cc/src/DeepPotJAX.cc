@@ -64,7 +64,11 @@ inline TF_DataType get_data_tensor_type(const std::vector<int64_t>& data) {
   return TF_INT64;
 }
 
-struct tf_function_not_found : public deepmd::deepmd_exception {};
+struct tf_function_not_found : public deepmd::deepmd_exception {
+ public:
+  tf_function_not_found() : deepmd_exception() {};
+  tf_function_not_found(const std::string& msg) : deepmd_exception(msg) {};
+};
 
 inline TFE_Op* get_func_op(TFE_Context* ctx,
                            const std::string func_name,
