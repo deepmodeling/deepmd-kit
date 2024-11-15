@@ -40,13 +40,13 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
         return {
-            "type_map": ["H"],
+            "type_map": ["O", "H"],
             "descriptor": {
                 "type": "se_e2_a",
-                "sel": [90],
+                "sel": [20, 20],
                 "rcut_smth": 1.8,
                 "rcut": 6.0,
-                "neuron": [25, 50, 100],
+                "neuron": [2,4,8],
                 "resnet_dt": False,
                 "axis_neuron": 8,
                 "precision": "float64",
@@ -55,7 +55,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
             "fitting_net": {
                 "type": "dos",
                 "numb_dos": 250,
-                "neuron": [120, 120, 120],
+                "neuron": [4,4,4],
                 "resnet_dt": True,
                 "numb_fparam": 0,
                 "precision": "float64",
@@ -180,26 +180,17 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
         # shape not matched. ravel...
         if backend is self.RefBackend.DP:
             return (
-                ret["energy_redu"].ravel(),
-                ret["energy"].ravel(),
-                SKIP_FLAG,
-                SKIP_FLAG,
-                SKIP_FLAG,
+                ret["dos_redu"].ravel(),
+                ret["dos"].ravel(),
             )
         elif backend is self.RefBackend.PT:
             return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                ret["atom_virial"].ravel(),
+                ret["dos"].ravel(),
+                ret["atom_dos"].ravel(),
             )
         elif backend is self.RefBackend.TF:
             return (
                 ret[0].ravel(),
                 ret[1].ravel(),
-                ret[2].ravel(),
-                ret[3].ravel(),
-                ret[4].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
