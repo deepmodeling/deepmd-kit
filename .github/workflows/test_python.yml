@@ -36,7 +36,7 @@ jobs:
         DP_BUILD_TESTING: 1
     - run: |
         source/install/uv_with_retry.sh pip install --system mpi4py
-        source/install/uv_with_retry.sh pip install --system --no-build-isolation horovod mpi4py
+        source/install/uv_with_retry.sh pip install --system --no-build-isolation horovod
       if: ${{ matrix.tf == '' }}
       env:
         HOROVOD_WITH_TENSORFLOW: 1
