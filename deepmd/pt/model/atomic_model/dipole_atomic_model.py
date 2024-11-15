@@ -16,6 +16,7 @@ class DPDipoleAtomicModel(DPAtomicModel):
         if not isinstance(fitting, DipoleFittingNet):
             raise TypeError(
                 "fitting must be an instance of DipoleFittingNet for DPDipoleAtomicModel"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def apply_out_stat(
