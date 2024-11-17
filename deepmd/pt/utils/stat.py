@@ -546,7 +546,11 @@ def compute_output_stats_atomic(
         ]
         for kk in keys
     }
-    # shape: (nframes, nloc, ndim)
+    # reshape outputs [nframes, nloc * ndim] --> reshape to [nframes * nloc, 1, ndim] for concatenation
+    # reshape natoms [nframes, nloc] --> reshape to [nframes * nolc, 1] for concatenation
+    natoms = {k: [sys_v.reshape(-1,1) for sys_v in v] for k, v in natoms.items()}
+    outputs = {k: [sys.reshape(natoms[k][sys_idx].shape[0], 1, -1) for sys_idx, sys in enumerate(v)] for k, v in outputs.items()}
+
     merged_output = {
         kk: to_numpy_array(torch.cat(outputs[kk]))
         for kk in keys
