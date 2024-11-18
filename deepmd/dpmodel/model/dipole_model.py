@@ -4,7 +4,7 @@
 from deepmd.dpmodel.atomic_model import (
     DPDipoleAtomicModel,
 )
-from deepmd.dpmodel.model.model import (
+from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
 

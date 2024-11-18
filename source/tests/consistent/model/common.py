@@ -66,6 +66,16 @@ class ModelTest:
                 ret["dos"],
                 ret["atom_dos"],
             ]
+        elif ret_key == "dipole":
+            ret_list = [
+                ret["global_dipole"],
+                ret["dipole"],
+            ]
+        elif ret_key == "polar":
+            ret_list = [
+                ret["polar"],
+                ret["global_polar"],
+            ]
         else:
             raise NotImplementedError
         return ret_list, {

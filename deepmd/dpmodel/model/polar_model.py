@@ -3,7 +3,7 @@
 from deepmd.dpmodel.atomic_model import (
     DPPolarAtomicModel,
 )
-from deepmd.dpmodel.model.model import (
+from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
 
