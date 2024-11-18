@@ -34,7 +34,7 @@ if INSTALLED_JAX:
 class ModelTest:
     """Useful utilities for model tests."""
 
-    def build_tf_model(self, obj, natoms, coords, atype, box, suffix):
+    def build_tf_model(self, obj, natoms, coords, atype, box, suffix, ret_key:str="energy"):
         t_coord = tf.placeholder(
             GLOBAL_TF_FLOAT_PRECISION, [None, None, None], name="i_coord"
         )
@@ -51,13 +51,22 @@ class ModelTest:
             {},
             suffix=suffix,
         )
-        return [
-            ret["energy"],
-            ret["atom_ener"],
-            ret["force"],
-            ret["virial"],
-            ret["atom_virial"],
-        ], {
+        if ret_key == "energy":
+            ret_list = [
+                ret["energy"],
+                ret["atom_ener"],
+                ret["force"],
+                ret["virial"],
+                ret["atom_virial"],
+            ]
+        elif ret_key == "dos":
+            ret_list = [
+                ret["dos"],
+                ret["atom_dos"],
+            ]
+        else:
+            raise NotImplementedError
+        return ret_list, {
             t_coord: coords,
             t_type: atype,
             t_natoms: natoms,

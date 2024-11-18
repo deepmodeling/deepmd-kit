@@ -11,6 +11,9 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
 )
+from deepmd.dpmodel.fitting.dos_fitting import (
+    DOSFittingNet
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -49,6 +52,13 @@ def get_standard_model(data: dict) -> EnergyModel:
     )
     if fitting_type == "ener":
         fitting = EnergyFittingNet(
+            ntypes=descriptor.get_ntypes(),
+            dim_descrpt=descriptor.get_dim_out(),
+            mixed_types=descriptor.mixed_types(),
+            **data["fitting_net"],
+        )
+    elif fitting_type == "dos":
+        fitting = DOSFittingNet(
             ntypes=descriptor.get_ntypes(),
             dim_descrpt=descriptor.get_dim_out(),
             mixed_types=descriptor.mixed_types(),
