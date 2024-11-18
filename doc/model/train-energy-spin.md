@@ -79,6 +79,10 @@ $$L = p_e L_e + p_{fr} L_{fr} + p_{fm} L_{fm} + p_v L_v$$
 
 where $L_e$, $L_{fr}$, $L_{fm}$ and $L_v$ denote the loss in energy, atomic force, magnatic force and virial, respectively. $p_e$, $p_{fr}$, $p_{fm}$ and $p_v$ give the prefactors of the energy, atomic force, magnatic force and virial losses.
 
+:::{note}
+Please note that the virial and atomic virial are not currently supported in spin models.
+:::
+
 The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the atomic force prefactor for example, at training step $t$, it is given by
 
 $$p_{fr}(t) = p_{fr}^0 \frac{ \alpha(t) }{ \alpha(0) } + p_{fr}^\infty ( 1 - \frac{ \alpha(t) }{ \alpha(0) })$$

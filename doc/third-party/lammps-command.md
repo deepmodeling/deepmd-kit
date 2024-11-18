@@ -37,9 +37,12 @@ where `$deepmd_root` is the directory to [install C++ interface](../install/inst
 
 The built-in mode doesn't need this step.
 
-## pair_style `deepmd`
+## pair_styles `deepmd` and `deepspin`
 
-The DeePMD-kit package provides the pair_style `deepmd`
+The DeePMD-kit package provides two pair styles: `deepmd` and `deepspin`.
+The `deepmd` pair style is intended for traditional simulations involving interactions between atoms without spin,
+whereas the `deepspin` pair style is specifically designed for simulations within systems that include spin.
+For further details, please refer to the examples [`deepmd`](../../examples/water/lmp/in.lammps) and [`deepspin`](../../examples/spin/lmp/in.force).
 
 ```lammps
 pair_style deepmd models ... keyword value ...
@@ -66,7 +69,8 @@ pair_style deepmd models ... keyword value ...
     <i>relative</i> value = level
         level = The level parameter for computing the relative model deviation of the force
     <i>relative_v</i> value = level
-        level = The level parameter for computing the relative model deviation of the virial
+        level = The level parameter for computing the relative model deviation of the virial.
+        (Note: the virial is not currently supported in spin models.)
     <i>aparam</i> value = parameters
         parameters = one or more atomic parameters of each atom required for model evaluation
     <i>ttm</i> value = id
@@ -87,15 +91,18 @@ compute    TEMP all temp
 
 pair_style deepmd ener.pb aparam_from_compute 1
 compute    1 all ke/atom
+
+pair_style deepspin spin.pb
+pair_style deepspin spin_0.pb spin_1.pb spin_2.pb out_file md.out out_freq 100
 ```
 
 ### Description
 
 Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction.
 
-This pair style takes the deep potential defined in a model file that usually has the .pb extension. The model can be trained and frozen by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
+These two pair styles take the deep potential or deep spin models defined in model files that usually have .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
-The model deviation evaluates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the key `atomic` is set, then the model deviation of force prediction of each atom will be output.
+The model deviation evaluates the consistency of the force predictions from multiple models. By default, only the maximal, minimal and average model deviations are output. If the `atomic` key is set, the model deviation of force prediction will be output for each atom. For spin models, this includes both force and magnetic force predictions.
 The unit follows [LAMMPS units](#units) and the [scale factor](https://docs.lammps.org/pair_hybrid.html) is not applied.
 
 By default, the model deviation is output in absolute value. If the keyword `relative` is set, then the relative model deviation of the force will be output, including values output by the keyword `atomic`. The relative model deviation of the force on atom $i$ is defined by
@@ -103,7 +110,7 @@ By default, the model deviation is output in absolute value. If the keyword `rel
 $$E_{f_i}=\frac{\left|D_{f_i}\right|}{\left|f_i\right|+l}$$
 
 where $D_{f_i}$ is the absolute model deviation of the force on atom $i$, $f_i$ is the norm of the force and $l$ is provided as the parameter of the keyword `relative`.
-If the keyword `relative_v` is set, then the relative model deviation of the virial will be output instead of the absolute value, with the same definition of that of the force:
+If the keyword `relative_v` is set in pair style `deepmd`, then the relative model deviation of the virial will be output instead of the absolute value, with the same definition of that of the force:
 
 $$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
 
@@ -118,11 +125,9 @@ If atom names are not set in the `pair_coeff` command, the training parameter {r
 If a mapping value is specified as `NULL`, the mapping is not performed. This can be used when a deepmd potential is used as part of the hybrid pair style. The `NULL` values are placeholders for atom types that will be used with other potentials.
 If the training parameter {ref}`type_map <model/type_map>` is not set, atom names in the `pair_coeff` command cannot be set. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map to LAMMPS atom types.
 
-Spin is specified by keywords `virtual_len` and `spin_norm`. If the keyword `virtual_len` is set, the distance between virtual atom and its corresponding real atom for each type of magnetic atoms will be fed to the model as the spin parameters. If the keyword `spin_norm` is set, the magnitude of the magnetic moment for each type of magnetic atoms will be fed to the model as the spin parameters.
-
 ### Restrictions
 
-- The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+- The `deepmd` and `deepspin` pair styles are provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 
 ## Compute tensorial properties
 
