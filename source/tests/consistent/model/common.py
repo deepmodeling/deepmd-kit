@@ -34,7 +34,9 @@ if INSTALLED_JAX:
 class ModelTest:
     """Useful utilities for model tests."""
 
-    def build_tf_model(self, obj, natoms, coords, atype, box, suffix, ret_key:str="energy"):
+    def build_tf_model(
+        self, obj, natoms, coords, atype, box, suffix, ret_key: str = "energy"
+    ):
         t_coord = tf.placeholder(
             GLOBAL_TF_FLOAT_PRECISION, [None, None, None], name="i_coord"
         )

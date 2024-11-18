@@ -82,7 +82,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_tf(self):
-        return True # need to fix tf consistency
+        return True  # need to fix tf consistency
 
     @property
     def skip_jax(self) -> bool:
@@ -140,13 +140,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_model(
-            obj,
-            self.natoms,
-            self.coords,
-            self.atype,
-            self.box,
-            suffix,
-            ret_key = "dos"
+            obj, self.natoms, self.coords, self.atype, self.box, suffix, ret_key="dos"
         )
 
     def eval_dp(self, dp_obj: Any) -> Any:

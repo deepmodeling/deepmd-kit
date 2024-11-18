@@ -8,11 +8,11 @@ from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.dpmodel.fitting.dos_fitting import (
+    DOSFittingNet,
+)
 from deepmd.dpmodel.fitting.ener_fitting import (
     EnergyFittingNet,
-)
-from deepmd.dpmodel.fitting.dos_fitting import (
-    DOSFittingNet
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
