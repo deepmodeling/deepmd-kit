@@ -248,8 +248,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         nframes, nloc, nnei = nlist.shape
-        if self.do_grad_r() or self.do_grad_c():
-            extended_coord.requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
@@ -258,6 +256,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             sorted_rcuts,
             sorted_sels,
         )
+        if self.do_grad_r() or self.do_grad_c():
+            extended_coord.requires_grad_(True)
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
