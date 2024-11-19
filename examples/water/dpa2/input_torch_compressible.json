@@ -52,6 +52,7 @@
         "g1_out_conv": true,
         "g1_out_mlp": true
       },
+      "precision": "float64",
       "add_tebd_to_repinit_out": false
     },
     "fitting_net": {
@@ -61,6 +62,7 @@
         240
       ],
       "resnet_dt": true,
+      "precision": "float64",
       "seed": 1,
       "_comment": " that's all"
     },
