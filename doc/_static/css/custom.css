@@ -18,5 +18,7 @@ html[data-theme="dark"] {
   }
   img.platform-icon {
     filter: invert(1);
+    /* otherwise the backgorund is black */
+    background-color: transparent !important;
   }
 }
