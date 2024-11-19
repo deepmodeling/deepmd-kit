@@ -39,7 +39,7 @@ The built-in mode doesn't need this step.
 
 ## pair_style `deepmd`
 
-The DeePMD-kit package provides the pair_style `deepmd`, the standard potential energy model. For an example LAMMPS input one may check [the example input file for pair_style `deepmd`](../../examples/water/lmp/in.lammps).  To use a `deepspin` model one is referred to [pair_style `deepspin`](#pair_style-deepspin).
+The DeePMD-kit package provides the pair_style `deepmd`, the standard potential energy model. For an example LAMMPS input one may check [the example input file for pair_style `deepmd`](../../examples/water/lmp/in.lammps). To use a `deepspin` model one is referred to [pair_style `deepspin`](#pair_style-deepspin).
 
 ```lammps
 pair_style deepmd models ... keyword value ...
@@ -117,7 +117,6 @@ Only a single `pair_coeff` command is used with the deepmd style which specifies
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.
 If a mapping value is specified as `NULL`, the mapping is not performed. This can be used when a deepmd potential is used as part of the hybrid pair style. The `NULL` values are placeholders for atom types that will be used with other potentials.
 If the training parameter {ref}`type_map <model/type_map>` is not set, atom names in the `pair_coeff` command cannot be set. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map to LAMMPS atom types.
-
 
 ### Restrictions
 
