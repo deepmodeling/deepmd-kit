@@ -42,7 +42,10 @@ class DPPolarAtomicModel(DPAtomicModel):
             for kk in self.bias_keys:
                 ntypes = out_bias[kk].shape[0]
                 temp = np.zeros(ntypes, dtype=dtype)
-                temp = np.mean(np.diagonal(out_bias[kk].reshape(ntypes, 3, 3), axis1=1, axis2=2), axis=1)
+                temp = np.mean(
+                    np.diagonal(out_bias[kk].reshape(ntypes, 3, 3), axis1=1, axis2=2),
+                    axis=1,
+                )
                 modified_bias = temp[atype]
 
                 # (nframes, nloc, 1)
