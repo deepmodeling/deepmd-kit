@@ -132,7 +132,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # luckily, .* (prefix matching) defined in PEP 440 can match any local version
             # https://peps.python.org/pep-0440/#version-matching
             f"torch=={Version(pt_version).base_version}.*",
-            # https://github.com/pytorch/pytorch/commit/241f586919b9f370e3cc6aea657f96a23adac554
+            # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
             "torch>=2.1.0",
         ],
     }
