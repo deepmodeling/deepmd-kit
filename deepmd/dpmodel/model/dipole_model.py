@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+
+
 from deepmd.dpmodel.atomic_model import (
-    DPEnergyAtomicModel,
+    DPDipoleAtomicModel,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
@@ -13,15 +15,17 @@ from .make_model import (
     make_model,
 )
 
-DPEnergyModel_ = make_model(DPEnergyAtomicModel)
+DPDipoleModel_ = make_model(DPDipoleAtomicModel)
 
 
-@BaseModel.register("ener")
-class EnergyModel(DPModelCommon, DPEnergyModel_):
+@BaseModel.register("dipole")
+class DipoleModel(DPModelCommon, DPDipoleModel_):
+    model_type = "dipole"
+
     def __init__(
         self,
         *args,
         **kwargs,
-    ) -> None:
+    ):
         DPModelCommon.__init__(self)
-        DPEnergyModel_.__init__(self, *args, **kwargs)
+        DPDipoleModel_.__init__(self, *args, **kwargs)

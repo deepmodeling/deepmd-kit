@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd.pt.model.task.dos import (
+from deepmd.dpmodel.fitting.dos_fitting import (
     DOSFittingNet,
 )
 
