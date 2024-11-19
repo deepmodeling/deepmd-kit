@@ -95,6 +95,7 @@ class DeepmdDataSystem:
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.data_systems = []
+        self._default_mesh = None
         for ii in self.system_dirs:
             self.data_systems.append(
                 DeepmdData(
@@ -233,12 +234,18 @@ class DeepmdDataSystem:
     @lru_cache(maxsize=None)
     def default_mesh(self) -> List[np.ndarray]:
         """Mesh for each system."""
-        return [
-            make_default_mesh(
-                self.data_systems[ii].pbc, self.data_systems[ii].mixed_type
-            )
-            for ii in range(self.nsystems)
-        ]
+        if self._default_mesh is None:
+            self._default_mesh = [
+                make_default_mesh(
+                    self.data_systems[ii].pbc, self.data_systems[ii].mixed_type
+                )
+                for ii in range(self.nsystems)
+            ]
+        return self._default_mesh
+
+    @default_mesh.setter
+    def default_mesh(self, value: List[np.ndarray]):
+        self._default_mesh = value
 
     def compute_energy_shift(self, rcond=None, key="energy"):
         sys_ener = []
