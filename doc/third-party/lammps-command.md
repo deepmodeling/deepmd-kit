@@ -138,7 +138,7 @@ pair_style deepspin models ... keyword value ...
 - models = frozen model(s) to compute the interaction.
   If multiple models are provided, then only the first model serves to provide energy, force and magnetic force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative or \_aparam_ or _ttm_
+- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _aparam_ or _ttm_
 
 :::{note}
 Please note that the virial and atomic virial are not currently supported in spin models.
