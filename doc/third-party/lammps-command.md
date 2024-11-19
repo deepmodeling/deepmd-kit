@@ -118,7 +118,6 @@ If atom names are not set in the `pair_coeff` command, the training parameter {r
 If a mapping value is specified as `NULL`, the mapping is not performed. This can be used when a deepmd potential is used as part of the hybrid pair style. The `NULL` values are placeholders for atom types that will be used with other potentials.
 If the training parameter {ref}`type_map <model/type_map>` is not set, atom names in the `pair_coeff` command cannot be set. In this case, atom type indexes in [`type.raw`](../data/system.md) (integers from 0 to Ntypes-1) will map to LAMMPS atom types.
 
-For systems involving spin, please utilize the `deepspin` pair style as demonstrated [below](#pair_style-deepspin).
 
 ### Restrictions
 
