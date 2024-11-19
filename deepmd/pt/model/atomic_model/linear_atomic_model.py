@@ -258,7 +258,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             sorted_rcuts,
             sorted_sels,
         )
-        
+
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
