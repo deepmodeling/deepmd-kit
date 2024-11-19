@@ -39,8 +39,7 @@ The built-in mode doesn't need this step.
 
 ## pair_style `deepmd`
 
-The DeePMD-kit package provides the pair_style `deepmd`, which is intended for traditional simulations involving interactions between atoms without spin.
-For further details, please refer to the examples [`deepmd`](../../examples/water/lmp/in.lammps).
+The DeePMD-kit package provides the pair_style `deepmd`, the standard potential energy model. For an example LAMMPS input one may check [the example input file for pair_style `deepmd`](../../examples/water/lmp/in.lammps).  To use a `deepspin` model one is referred to [pair_style `deepspin`](#pair_style-deepspin).
 
 ```lammps
 pair_style deepmd models ... keyword value ...
