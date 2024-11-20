@@ -177,7 +177,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 self.get_sel(),
                 # types will be distinguished in the lower interface,
                 # so it doesn't need to be distinguished here
-                mixed_types=False,
+                mixed_types=True,
                 box=bb,
             )
             model_predict_lower = self.forward_common_lower(
