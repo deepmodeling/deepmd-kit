@@ -100,6 +100,11 @@ The construction of the descriptor is given by section {ref}`descriptor <model[s
 Type embdding is only supported in the TensorFlow backends.
 `se_e2_a` with type embedding and [`se_atten`](./train-se-atten.md) (or its updated version) without any attention layer are mathematically equivalent, so `se_atten` can be a substitute in other backends.
 
+## Difference among different backends
+
+In the TensorFlow backend, {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` cannot be set to a non-zero value.
+In the JAX backend, {ref}`type_one_side <model[standard]/descriptor[se_e2_a]/type_one_side>` cannot be set to `false`.
+
 ## Model compression
 
 Model compression is supported when type embedding is not used.
