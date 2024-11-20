@@ -60,32 +60,6 @@ Maintainers will build packages in the conda-forge organization together with ot
 :::
 ::::
 
-One may create an environment that contains the CPU version of DeePMD-kit and LAMMPS:
-
-```bash
-conda create -n deepmd deepmd-kit=*=*cpu libdeepmd=*=*cpu lammps -c https://conda.deepmodeling.com -c defaults
-```
-
-Or one may want to create a GPU environment containing [CUDA Toolkit](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#binary-compatibility__table-toolkit-driver):
-
-```bash
-conda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com -c defaults
-```
-
-One could change the CUDA Toolkit version from `10.2` or `11.6`.
-
-One may specify the DeePMD-kit version such as `2.2.9` using
-
-```bash
-conda create -n deepmd deepmd-kit=2.2.9=*cpu libdeepmd=2.2.9=*cpu lammps horovod -c https://conda.deepmodeling.com -c defaults
-```
-
-One may enable the environment using
-
-```bash
-conda activate deepmd
-```
-
 ## Install with docker
 
 A docker for installing the DeePMD-kit is available [here](https://github.com/deepmodeling/deepmd-kit/pkgs/container/deepmd-kit).
