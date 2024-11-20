@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 #ifdef BUILD_PYTORCH
 #include "DeepSpinPT.h"
 
