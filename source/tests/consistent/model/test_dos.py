@@ -13,6 +13,7 @@ from deepmd.env import (
 )
 
 from ..common import (
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -30,6 +31,11 @@ if INSTALLED_TF:
     from deepmd.tf.model.dos import DOSModel as DOSModelTF
 else:
     DOSModelTF = None
+if INSTALLED_JAX:
+    from deepmd.jax.model.dos_model import DOSModel as DOSModelJAX
+    from deepmd.jax.model.model import get_model as get_model_jax
+else:
+    DOSModelJAX = None
 from deepmd.utils.argcheck import (
     model_args,
 )
@@ -49,6 +55,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
                 "resnet_dt": False,
                 "axis_neuron": 8,
                 "precision": "float64",
+                "type_one_side": True,
                 "seed": 1,
             },
             "fitting_net": {
@@ -65,6 +72,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
     tf_class = DOSModelTF
     dp_class = DOSModelDP
     pt_class = DOSModelPT
+    jax_class = DOSModelJAX
     args = model_args()
 
     def get_reference_backend(self):
@@ -86,7 +94,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
 
     @property
     def skip_jax(self) -> bool:
-        return True
+        return not INSTALLED_JAX
 
     def pass_data_to_cls(self, cls, data) -> Any:
         """Pass data to the class."""
@@ -97,6 +105,8 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
             model = get_model_pt(data)
             model.atomic_model.out_bias.uniform_()
             return model
+        elif cls is DOSModelJAX:
+            return get_model_jax(data)
         return cls(**data, **self.additional_data)
 
     def setUp(self) -> None:
@@ -172,7 +182,7 @@ class TestDOS(CommonTest, ModelTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend is self.RefBackend.DP:
+        if backend in {self.RefBackend.DP, self.RefBackend.JAX}:
             return (
                 ret["dos_redu"].ravel(),
                 ret["dos"].ravel(),

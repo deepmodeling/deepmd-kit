@@ -47,6 +47,8 @@ def get_standard_model(data: dict):
     descriptor = BaseDescriptor.get_class_by_type(descriptor_type)(
         **data["descriptor"],
     )
+    if fitting_type in {"dipole", "polar"}:
+        data["fitting_net"]["embedding_width"] = descriptor.get_dim_emb()
     fitting = BaseFitting.get_class_by_type(fitting_type)(
         ntypes=descriptor.get_ntypes(),
         dim_descrpt=descriptor.get_dim_out(),
