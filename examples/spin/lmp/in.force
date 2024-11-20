@@ -6,7 +6,7 @@ atom_modify       map array
 box               tilt large
 read_data         init.data
 
-pair_style        deepmd model.pb virtual_len 0.4 spin_norm 1.2737
+pair_style        deepspin model.pb
 pair_coeff        * *
 
 neighbor          0.1 bin
