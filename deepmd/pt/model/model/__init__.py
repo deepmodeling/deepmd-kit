@@ -130,7 +130,7 @@ def get_spin_model(model_params):
         "env_protection" not in model_params["descriptor"]
         or model_params["descriptor"]["env_protection"] == 0.0
     ):
-        model_params["descriptor"]["env_protection"] = 1e-6
+        model_params["descriptor"]["env_protection"] = 0.01
     if model_params["descriptor"]["type"] in ["se_e2_a"]:
         # only expand sel for se_e2_a
         model_params["descriptor"]["sel"] += model_params["descriptor"]["sel"]
