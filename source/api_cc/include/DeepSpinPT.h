@@ -257,7 +257,7 @@ class DeepSpinPT : public DeepSpinBackend {
   NeighborListData nlist_data;
   int max_num_neighbors;
   int gpu_id;
-  int do_message_passing;  // 1:dpa2 model 0:others
+  bool do_message_passing;  // 1:dpa2 model 0:others
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;
