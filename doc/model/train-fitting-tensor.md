@@ -30,7 +30,8 @@ $deepmd_source_dir/examples/water_tensor/polar/polar_input_torch.json
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
-Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit a tensor, one needs to modify {ref}`model[standard]/fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
+Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md).
+To fit a tensor, one needs to modify {ref}`fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
 
 ## Theory
 
@@ -241,3 +242,8 @@ One may notice that in each step, some of the local loss and global loss will be
 ```
 
 During training, at each step when the `lcurve.out` is printed, the system used for evaluating the training (validation) error may be either with only global or only atomic labels, thus the corresponding atomic or global errors are missing and are printed as zeros.
+
+## Difference among different backends
+
+To only fit against a subset of atomic types, in the TensorFlow backend, {ref}`fitting_net/sel_type <model[standard]/fitting_net[dipole]/sel_type>` should be set to selected types;
+in other backends, {ref}`atom_exclude_types <model/atom_exclude_types>` should be set to excluded types.
