@@ -15,7 +15,7 @@ from deepmd.dpmodel.array_api import (
 )
 
 
-@support_array_api(version="2022.12")
+@support_array_api(version="2023.12")
 def compute_smooth_weight(
     distance: np.ndarray,
     rmin: float,
