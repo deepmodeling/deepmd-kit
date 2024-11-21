@@ -4,7 +4,9 @@
 **Supported backends**: PyTorch {{ pytorch_icon }}
 :::
 
-<!-- we plan to drop TensorFlow backend multi-task training. Replace with the PyTorch one -->
+:::{warning}
+We have deprecated TensorFlow backend multi-task training, please use the PyTorch one.
+:::
 
 ## Theory
 
