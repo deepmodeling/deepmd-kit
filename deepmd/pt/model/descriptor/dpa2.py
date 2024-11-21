@@ -757,7 +757,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         # nlists
         nlist_dict = build_multiple_neighbor_list(
-            extended_coord,
+            extended_coord.detach(),
             nlist,
             self.rcut_list,
             self.nsel_list,
