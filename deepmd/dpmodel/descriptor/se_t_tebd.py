@@ -737,7 +737,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             assert type_embedding is not None
             ntypes_with_padding = type_embedding.shape[0]
             # nf x (nl x nnei)
-            nlist_index = nlist_masked.reshape(nf, nloc * nnei)
+            nlist_index = xp.reshape(nlist_masked, (nf, nloc * nnei))
             # nf x (nl x nnei)
             nei_type = xp_take_along_axis(atype_ext, nlist_index, axis=1)
             # nfnl x nnei
