@@ -567,7 +567,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 gg_t = torch.gather(tt_full, dim=0, index=nei_type_index)
             else:
                 idx_i = torch.tile(
-                    atype.view(-1, 1) * ntypes_with_padding, [1, nnei]
+                    atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
                 ).view(-1)
                 idx_j = nei_type
                 # (nf x nl x nnei) x ng
