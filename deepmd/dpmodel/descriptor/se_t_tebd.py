@@ -775,7 +775,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             gg_t = xp_take_along_axis(tt_full, idx, axis=0)
 
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = gg_t.reshape(nf * nloc, nnei, nnei, ng)
+            gg_t = xp.reshape(gg_t, (nf * nloc, nnei, nnei, ng))
             if self.smooth:
                 gg_t = (
                     gg_t
