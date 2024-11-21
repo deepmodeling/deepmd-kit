@@ -346,6 +346,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             atype_ext,
             atype_embd_ext,
             mapping=None,
+            type_embedding=type_embedding,
         )
         # nf x nloc x (ng + tebd_dim)
         if self.concat_output_tebd:
