@@ -296,6 +296,9 @@ class TypeEmbedNet(nn.Module):
         """
         return self.embedding(atype.device)[atype]
 
+    def get_full_embedding(self, device: torch.device):
+        return self.embedding(device)
+
     def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.

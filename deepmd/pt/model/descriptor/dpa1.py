@@ -687,12 +687,17 @@ class DescrptDPA1(BaseDescriptor, torch.nn.Module):
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
+        if self.tebd_input_mode in ["strip"]:
+            type_embedding = self.type_embedding.get_full_embedding(g1_ext.device)
+        else:
+            type_embedding = None
         g1, g2, h2, rot_mat, sw = self.se_atten(
             nlist,
             extended_coord,
             extended_atype,
             g1_ext,
             mapping=None,
+            type_embedding=type_embedding,
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)

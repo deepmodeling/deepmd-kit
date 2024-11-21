@@ -332,9 +332,10 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         del mapping
         nf, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
+        type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(self.type_embedding.call(), xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -667,6 +668,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         atype_ext: np.ndarray,
         atype_embd_ext: Optional[np.ndarray] = None,
         mapping: Optional[np.ndarray] = None,
+        type_embedding: Optional[np.ndarray] = None,
     ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
@@ -703,20 +705,26 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         env_ij = xp.sum(rr_i[:, :, None, :] * rr_j[:, None, :, :], axis=-1)
         # nfnl x nt_i x nt_j x 1
         ss = env_ij[..., None]
-
         nlist_masked = xp.where(nlist_mask, nlist, xp.zeros_like(nlist))
-        index = xp.tile(xp.reshape(nlist_masked, (nf, -1, 1)), (1, 1, self.tebd_dim))
-        # nfnl x nnei x tebd_dim
-        atype_embd_nlist = xp_take_along_axis(atype_embd_ext, index, axis=1)
-        atype_embd_nlist = xp.reshape(
-            atype_embd_nlist, (nf * nloc, nnei, self.tebd_dim)
-        )
-        # nfnl x nt_i x nt_j x tebd_dim
-        nlist_tebd_i = xp.tile(atype_embd_nlist[:, :, None, :], (1, 1, self.nnei, 1))
-        nlist_tebd_j = xp.tile(atype_embd_nlist[:, None, :, :], (1, self.nnei, 1, 1))
         ng = self.neuron[-1]
+        nt = self.tebd_dim
 
         if self.tebd_input_mode in ["concat"]:
+            index = xp.tile(
+                xp.reshape(nlist_masked, (nf, -1, 1)), (1, 1, self.tebd_dim)
+            )
+            # nfnl x nnei x tebd_dim
+            atype_embd_nlist = xp_take_along_axis(atype_embd_ext, index, axis=1)
+            atype_embd_nlist = xp.reshape(
+                atype_embd_nlist, (nf * nloc, nnei, self.tebd_dim)
+            )
+            # nfnl x nt_i x nt_j x tebd_dim
+            nlist_tebd_i = xp.tile(
+                atype_embd_nlist[:, :, None, :], (1, 1, self.nnei, 1)
+            )
+            nlist_tebd_j = xp.tile(
+                atype_embd_nlist[:, None, :, :], (1, self.nnei, 1, 1)
+            )
             # nfnl x nt_i x nt_j x (1 + tebd_dim * 2)
             ss = xp.concat([ss, nlist_tebd_i, nlist_tebd_j], axis=-1)
             # nfnl x nt_i x nt_j x ng
@@ -725,10 +733,48 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             # nfnl x nt_i x nt_j x ng
             gg_s = self.cal_g(ss, 0)
             assert self.embeddings_strip is not None
-            # nfnl x nt_i x nt_j x (tebd_dim * 2)
-            tt = xp.concat([nlist_tebd_i, nlist_tebd_j], axis=-1)
-            # nfnl x nt_i x nt_j x ng
-            gg_t = self.cal_g_strip(tt, 0)
+            assert type_embedding is not None
+            ntypes_with_padding = type_embedding.shape[0]
+            # nf x (nl x nnei)
+            nlist_index = nlist_masked.reshape(nf, nloc * nnei)
+            # nf x (nl x nnei)
+            nei_type = xp_take_along_axis(atype_ext, nlist_index, axis=1)
+            # nfnl x nnei
+            nei_type = xp.reshape(nei_type, (nf * nloc, nnei))
+
+            # nfnl x nnei x nnei
+            nei_type_i = xp.tile(nei_type[:, :, np.newaxis], (1, 1, nnei))
+            nei_type_j = xp.tile(nei_type[:, np.newaxis, :], (1, nnei, 1))
+
+            idx_i = nei_type_i * ntypes_with_padding
+            idx_j = nei_type_j
+
+            # (nf x nl x nt_i x nt_j) x ng
+            idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+
+            # ntypes * (ntypes) * nt
+            type_embedding_i = xp.tile(
+                xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
+                (1, ntypes_with_padding, 1),
+            )
+
+            # (ntypes) * ntypes * nt
+            type_embedding_j = xp.tile(
+                xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
+                (ntypes_with_padding, 1, 1),
+            )
+
+            # (ntypes * ntypes) * (nt+nt)
+            two_side_type_embedding = xp.reshape(
+                xp.concat([type_embedding_i, type_embedding_j], axis=-1), (-1, nt * 2)
+            )
+            tt_full = self.cal_g_strip(two_side_type_embedding, 0)
+
+            # (nfnl x nt_i x nt_j) x ng
+            gg_t = xp_take_along_axis(tt_full, idx, axis=0)
+
+            # (nfnl x nt_i x nt_j) x ng
+            gg_t = gg_t.reshape(nf * nloc, nnei, nnei, ng)
             if self.smooth:
                 gg_t = (
                     gg_t
