@@ -965,7 +965,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                     ),
                     (-1),
                 )
-                idx_j = nei_type
+                idx_j = xp.reshape(nei_type, (-1,))
                 # (nf x nl x nnei) x ng
                 idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
                 # (ntypes) * ntypes * nt

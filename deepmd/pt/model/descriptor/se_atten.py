@@ -569,7 +569,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 idx_i = torch.tile(
                     atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
                 ).view(-1)
-                idx_j = nei_type
+                idx_j = nei_type.view(-1)
                 # (nf x nl x nnei) x ng
                 idx = (
                     (idx_i + idx_j)
