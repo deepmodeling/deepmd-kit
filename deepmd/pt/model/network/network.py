@@ -297,6 +297,20 @@ class TypeEmbedNet(nn.Module):
         return self.embedding(atype.device)[atype]
 
     def get_full_embedding(self, device: torch.device):
+        """
+        Get the type embeddings of all types.
+
+        Parameters
+        ----------
+        device : torch.device
+            The device on which to perform the computation.
+
+        Returns
+        -------
+        type_embedding : torch.Tensor
+            The full type embeddings of all types. The last index corresponds to the zero padding.
+            Shape: (ntypes + 1) x tebd_dim
+        """
         return self.embedding(device)
 
     def share_params(self, base_class, shared_level, resume=False) -> None:
