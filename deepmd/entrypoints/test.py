@@ -28,14 +28,14 @@ from deepmd.infer.deep_polar import (
     DeepGlobalPolar,
     DeepPolar,
 )
-from deepmd.infer.deep_wfc import (
-    DeepWFC,
-)
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
 from deepmd.infer.deep_property import (
     DeepProperty,
+)
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
