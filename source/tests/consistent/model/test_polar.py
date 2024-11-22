@@ -62,8 +62,7 @@ class TestPolar(CommonTest, ModelTest, unittest.TestCase):
                 "type": "polar",
                 "neuron": [4, 4, 4],
                 "resnet_dt": True,
-                # TODO: add numb_fparam argument to polar fitting
-                "_numb_fparam": 0,
+                "numb_fparam": 0,
                 "precision": "float64",
                 "seed": 1,
             },

@@ -247,3 +247,4 @@ During training, at each step when the `lcurve.out` is printed, the system used 
 
 To only fit against a subset of atomic types, in the TensorFlow backend, {ref}`fitting_net/sel_type <model[standard]/fitting_net[dipole]/sel_type>` should be set to selected types;
 in other backends, {ref}`atom_exclude_types <model/atom_exclude_types>` should be set to excluded types.
+The TensorFlow backend does not support {ref}`numb_fparam <model[standard]/fitting_net[dipole]/numb_fparam>` and {ref}`numb_aparam <model[standard]/fitting_net[dipole]/numb_aparam>`.
