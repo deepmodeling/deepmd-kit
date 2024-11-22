@@ -71,6 +71,14 @@ See `se_e2_a` examples in `$deepmd_source_dir/examples/spin/se_e2_a/input_torch.
   List of float values with shape of `ntypes` or `ntypes_spin` or one single float value for all types,
   only used when {ref}`use_spin <model/spin[ener_spin]/use_spin>` is True for each atom type.
 
+:::{note}
+It should be noted that the spin models in PyTorch/DP are capable of addressing scenarios where the spin approaches zero
+(indicating the virtual atom is in close proximity to the real atom) by adjusting the non-zero
+{ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` parameter within the descriptor.
+This parameter is set to 0.01 by default in the spin model. It appears that a value of 0.01 is generally sufficient for maintaining model stability.
+For systems with nearly zero spin, users can also consider tuning this parameter to potentially enhance stability.
+:::
+
 ## Spin Loss
 
 The spin loss function $L$ for training energy is given by
