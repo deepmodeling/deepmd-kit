@@ -24,7 +24,7 @@ $ dp --pt freeze -o model.pth
 
 in the folder where the model is trained. The output model is called `model.pth`.
 
-In [multi-task mode](../train/multi-task-training-pt.md), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
+In [multi-task mode](../train/multi-task-training), you need to choose one available heads (e.g. `CHOSEN_BRANCH`) by `--head`
 to specify which model branch you want to freeze:
 
 ```bash

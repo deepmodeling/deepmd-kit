@@ -129,7 +129,7 @@ Then, prepare a suitable input script for multitask fine-tuning `multi_input.jso
 
 - Suppose the new dataset for fine-tuning is named `DOWNSTREAM_DATA`, and the datasets to be retained from multitask pre-trained model are `PRE_DATA1` and `PRE_DATA2`. One can:
 
-1. Refer to the [`multi-task-training`](./multi-task-training-pt.md) document to prepare a multitask training script for two systems,
+1. Refer to the [`multi-task-training`](./multi-task-training) document to prepare a multitask training script for two systems,
    ideally extracting parts (i.e. {ref}`model_dict <model/model_dict>`, {ref}`loss_dict <loss_dict>`, {ref}`data_dict <training/data_dict>` and {ref}`model_prob <training/model_prob>` parts) corresponding to `PRE_DATA1` and `PRE_DATA2` directly from the training script of the pre-trained model.
 2. For `DOWNSTREAM_DATA`, select a desired branch to fine-tune from (e.g., `PRE_DATA1`), copy the configurations of `PRE_DATA1` as the configuration for `DOWNSTREAM_DATA` and insert the corresponding data path into the {ref}`data_dict <training/data_dict>`,
    thereby generating a three-system multitask training script.
