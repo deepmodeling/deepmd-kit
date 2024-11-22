@@ -196,7 +196,7 @@ def test(
         print_polar_sys_avg(avg_err)
     elif isinstance(dp, DeepGlobalPolar):
         print_polar_sys_avg(avg_err)
-    elif isinstance(dp, DeepGlobalPolar):
+    elif isinstance(dp, DeepWFC):
         print_wfc_sys_avg(avg_err)
     log.info("# ----------------------------------------------- ")
 
