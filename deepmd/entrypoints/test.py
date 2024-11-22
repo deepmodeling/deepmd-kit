@@ -182,24 +182,23 @@ def test(
     if len(all_sys) != len(err_coll):
         log.warning("Not all systems are tested! Check if the systems are valid")
 
-    if len(all_sys) > 1:
-        log.info("# ----------weighted average of errors----------- ")
-        log.info(f"# number of systems : {len(all_sys)}")
-        if isinstance(dp, DeepPot):
-            print_ener_sys_avg(avg_err)
-        elif isinstance(dp, DeepDOS):
-            print_dos_sys_avg(avg_err)
-        elif isinstance(dp, DeepProperty):
-            print_property_sys_avg(avg_err)
-        elif isinstance(dp, DeepDipole):
-            print_dipole_sys_avg(avg_err)
-        elif isinstance(dp, DeepPolar):
-            print_polar_sys_avg(avg_err)
-        elif isinstance(dp, DeepGlobalPolar):
-            print_polar_sys_avg(avg_err)
-        elif isinstance(dp, DeepGlobalPolar):
-            print_wfc_sys_avg(avg_err)
-        log.info("# ----------------------------------------------- ")
+    log.info("# ----------weighted average of errors----------- ")
+    log.info(f"# number of systems : {len(all_sys)}")
+    if isinstance(dp, DeepPot):
+        print_ener_sys_avg(avg_err)
+    elif isinstance(dp, DeepDOS):
+        print_dos_sys_avg(avg_err)
+    elif isinstance(dp, DeepProperty):
+        print_property_sys_avg(avg_err)
+    elif isinstance(dp, DeepDipole):
+        print_dipole_sys_avg(avg_err)
+    elif isinstance(dp, DeepPolar):
+        print_polar_sys_avg(avg_err)
+    elif isinstance(dp, DeepGlobalPolar):
+        print_polar_sys_avg(avg_err)
+    elif isinstance(dp, DeepGlobalPolar):
+        print_wfc_sys_avg(avg_err)
+    log.info("# ----------------------------------------------- ")
 
 
 def mae(diff: np.ndarray) -> float:
