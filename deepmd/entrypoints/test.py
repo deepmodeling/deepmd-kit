@@ -28,6 +28,9 @@ from deepmd.infer.deep_polar import (
     DeepGlobalPolar,
     DeepPolar,
 )
+from deepmd.infer.deep_wfc import (
+    DeepWFC,
+)
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
@@ -45,9 +48,6 @@ from deepmd.utils.weight_avg import (
 if TYPE_CHECKING:
     from deepmd.infer.deep_tensor import (
         DeepTensor,
-    )
-    from deepmd.infer.deep_wfc import (
-        DeepWFC,
     )
 
 __all__ = ["test"]
