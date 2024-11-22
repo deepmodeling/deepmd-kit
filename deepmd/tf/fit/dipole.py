@@ -117,7 +117,7 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = None
         self.mixed_types = mixed_types
         self.type_map = type_map
-        self.numb_aparam = numb_fparam
+        self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         if numb_fparam > 0:
             raise ValueError("numb_fparam is not supported in the dipole fitting")
