@@ -89,10 +89,7 @@ void DeepPotPT::init(const std::string& model,
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
   module.eval();
-  const std::vector<std::string>& preserved_attrs = {
-      "forward_lower",  "has_message_passing", "get_rcut",
-      "get_ntypes",     "get_dim_fparam",      "get_dim_aparam",
-      "is_aparam_nall", "get_type_map"};
+  const std::vector<std::string>& preserved_attrs = {"forward_lower", "has_message_passing", "get_rcut", "get_ntypes", "get_dim_fparam", "get_dim_aparam", "is_aparam_nall", "get_type_map"};
   module = torch::jit::freeze(module, preserved_attrs);
   do_message_passing = module.run_method("has_message_passing").toBool();
   torch::jit::FusionStrategy strategy;
