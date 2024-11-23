@@ -1595,6 +1595,8 @@ def fitting_property():
 
 @fitting_args_plugin.register("polar", doc=doc_polar)
 def fitting_polar():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -1609,6 +1611,20 @@ def fitting_polar():
     doc_shift_diag = "Whether to shift the diagonal of polar, which is beneficial to training. Default is true."
 
     return [
+        Argument(
+            "numb_fparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_fparam,
+        ),
+        Argument(
+            "numb_aparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
         Argument(
             "neuron",
             list[int],
@@ -1649,6 +1665,8 @@ def fitting_polar():
 
 @fitting_args_plugin.register("dipole", doc=doc_dipole)
 def fitting_dipole():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -1656,6 +1674,20 @@ def fitting_dipole():
     doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     return [
+        Argument(
+            "numb_fparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_fparam,
+        ),
+        Argument(
+            "numb_aparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
         Argument(
             "neuron",
             list[int],
