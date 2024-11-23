@@ -143,6 +143,7 @@ class DeepEval(DeepEvalBackend):
                 self.model_def_script = {}
         else:
             raise ValueError("Unknown model file format!")
+        self.dp.eval()
         self.rcut = self.dp.model["Default"].get_rcut()
         self.type_map = self.dp.model["Default"].get_type_map()
         if isinstance(auto_batch_size, bool):
