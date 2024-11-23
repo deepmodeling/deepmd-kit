@@ -88,6 +88,7 @@ void DeepSpinPT::init(const std::string& model,
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
+  module.eval();
   do_message_passing = module.run_method("has_message_passing").toBool();
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
