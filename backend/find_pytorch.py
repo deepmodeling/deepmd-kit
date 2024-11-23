@@ -133,7 +133,8 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # https://peps.python.org/pep-0440/#version-matching
             f"torch=={Version(pt_version).base_version}.*"
             if pt_version != ""
-            else "torch>=2a",
+            # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
+            else "torch>=2.1.0"
         ],
     }
 

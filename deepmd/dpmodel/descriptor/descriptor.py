@@ -123,6 +123,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
         extended_atype: np.ndarray,
         extended_atype_embd: Optional[np.ndarray] = None,
         mapping: Optional[np.ndarray] = None,
+        type_embedding: Optional[np.ndarray] = None,
     ):
         """Calculate DescriptorBlock."""
         pass

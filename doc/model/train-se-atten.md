@@ -152,10 +152,15 @@ In the TensorFlow backend, the {ref}`type_embedding <model/type_embedding>` sect
 
 In other backends, type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[se_atten_v2]/tebd_dim>` argument.
 
-## Difference between TensorFlow and other backends
+## Difference among different backends
 
 TensorFlow and other backends have different implementations for {ref}`smooth_type_embedding <model[standard]/descriptor[se_atten_v2]/smooth_type_embedding>`.
 The results are inconsistent when `smooth_type_embedding` is `true`.
+
+In the TensorFlow backend, {ref}`scaling_factor <model[standard]/descriptor[se_atten]/scaling_factor>` cannot set to a value other than `1.0`;
+{ref}`normalize <model[standard]/descriptor[se_atten]/normalize>` cannot be set to `false`;
+{ref}`temperature <model[standard]/descriptor[se_atten]/temperature>` cannot be set;
+{ref}`concat_output_tebd <model[standard]/descriptor[se_atten]/concat_output_tebd>` cannot be set to `false`.
 
 ## Type map
 

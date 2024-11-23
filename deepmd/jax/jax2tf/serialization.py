@@ -294,6 +294,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             )
 
         tf_model.get_model_def_script = get_model_def_script
+
+        @tf.function
+        def has_message_passing() -> tf.Tensor:
+            return tf.constant(model.has_message_passing(), dtype=tf.bool)
+
+        tf_model.has_message_passing = has_message_passing
         tf.saved_model.save(
             tf_model,
             model_file,

@@ -69,6 +69,10 @@ The type of the descriptor is set by the key {ref}`type <model[standard]/descrip
 
 Use [`se_e3_tebd`](./train-se-e3-tebd.md) for type embedding support.
 
+## Difference among different backends
+
+In the TensorFlow backend, {ref}`env_protection <model[standard]/descriptor[se_e3]/env_protection>` cannot be set to a non-zero value.
+
 ## Model compression
 
 Model compression is supported.

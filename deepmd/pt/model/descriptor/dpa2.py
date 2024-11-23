@@ -162,6 +162,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
 
         self.repinit_args = init_subclass_params(repinit, RepinitArgs)
         self.repformer_args = init_subclass_params(repformer, RepformerArgs)
+        self.tebd_input_mode = self.repinit_args.tebd_input_mode
 
         self.repinit = DescrptBlockSeAtten(
             self.repinit_args.rcut,
@@ -757,7 +758,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         # nlists
         nlist_dict = build_multiple_neighbor_list(
-            extended_coord,
+            extended_coord.detach(),
             nlist,
             self.rcut_list,
             self.nsel_list,
@@ -765,6 +766,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         # repinit
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
+        if self.tebd_input_mode in ["strip"]:
+            type_embedding = self.type_embedding.get_full_embedding(g1_ext.device)
+        else:
+            type_embedding = None
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
                 get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
@@ -773,6 +778,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             extended_atype,
             g1_ext,
             mapping,
+            type_embedding,
         )
         if use_three_body:
             assert self.repinit_three_body is not None
@@ -787,6 +793,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 extended_atype,
                 g1_ext,
                 mapping,
+                type_embedding,
             )
             g1 = torch.cat([g1, g1_three_body], dim=-1)
         # linear to change shape
@@ -813,7 +820,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             extended_atype,
             g1,
             mapping,
-            comm_dict,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)

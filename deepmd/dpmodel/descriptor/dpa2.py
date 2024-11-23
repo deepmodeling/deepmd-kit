@@ -811,9 +811,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             self.rcut_list,
             self.nsel_list,
         )
+        type_embedding = self.type_embedding.call()
         # repinit
         g1_ext = xp.reshape(
-            xp.take(self.type_embedding.call(), xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
             (nframes, nall, self.tebd_dim),
         )
         g1_inp = g1_ext[:, :nloc, :]
@@ -825,6 +826,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             atype_ext,
             g1_ext,
             mapping,
+            type_embedding=type_embedding,
         )
         if use_three_body:
             assert self.repinit_three_body is not None
@@ -839,6 +841,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
                 atype_ext,
                 g1_ext,
                 mapping,
+                type_embedding=type_embedding,
             )
             g1 = xp.concat([g1, g1_three_body], axis=-1)
         # linear to change shape

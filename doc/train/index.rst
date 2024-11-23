@@ -8,8 +8,7 @@ Training
    training-advanced
    train-input
    parallel-training
-   multi-task-training-tf
-   multi-task-training-pt
+   multi-task-training
    tensorboard
    gpu-limitations
    finetuning

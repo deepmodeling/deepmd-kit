@@ -253,11 +253,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord = extended_coord.view(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
-            extended_coord,
+            extended_coord.detach(),
             nlist,
             sorted_rcuts,
             sorted_sels,
         )
+
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
