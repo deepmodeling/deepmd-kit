@@ -447,6 +447,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
+        type_embedding: Optional[torch.Tensor] = None,
     ):
         """Compute the descriptor.
 
@@ -462,6 +463,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
             The extended type embedding of atoms. shape: nf x nall
         mapping
             The index mapping, not required by this descriptor.
+        type_embedding
+            Full type embeddings. shape: (ntypes+1) x nt
+            Required for stripped type embeddings.
 
         Returns
         -------
@@ -502,23 +506,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         nlist_mask = nlist != -1
         nlist = torch.where(nlist == -1, 0, nlist)
         sw = torch.squeeze(sw, -1)
-        # nf x nloc x nt -> nf x nloc x nnei x nt
-        atype_tebd = extended_atype_embd[:, :nloc, :]
-        atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)  # i
         # nf x nall x nt
         nt = extended_atype_embd.shape[-1]
-        atype_tebd_ext = extended_atype_embd
-        # nb x (nloc x nnei) x nt
-        index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
-        # nb x (nloc x nnei) x nt
-        atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)  # j
-        # nb x nloc x nnei x nt
-        atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
         # beyond the cutoff sw should be 0.0
         sw = sw.masked_fill(~nlist_mask, 0.0)
         # (nb x nloc) x nnei
         exclude_mask = exclude_mask.view(nb * nloc, nnei)
-
         # nfnl x nnei x 4
         dmatrix = dmatrix.view(-1, self.nnei, 4)
         nfnl = dmatrix.shape[0]
@@ -526,9 +519,21 @@ class DescrptBlockSeAtten(DescriptorBlock):
         rr = dmatrix
         rr = rr * exclude_mask[:, :, None]
         ss = rr[:, :, :1]
-        nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
-        atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
         if self.tebd_input_mode in ["concat"]:
+            atype_tebd_ext = extended_atype_embd
+            # nb x (nloc x nnei) x nt
+            index = nlist.reshape(nb, nloc * nnei).unsqueeze(-1).expand(-1, -1, nt)
+            # nb x (nloc x nnei) x nt
+            atype_tebd_nlist = torch.gather(atype_tebd_ext, dim=1, index=index)  # j
+            # nb x nloc x nnei x nt
+            atype_tebd_nlist = atype_tebd_nlist.view(nb, nloc, nnei, nt)
+
+            # nf x nloc x nt -> nf x nloc x nnei x nt
+            atype_tebd = extended_atype_embd[:, :nloc, :]
+            atype_tebd_nnei = atype_tebd.unsqueeze(2).expand(-1, -1, self.nnei, -1)  # i
+
+            nlist_tebd = atype_tebd_nlist.reshape(nfnl, nnei, self.tebd_dim)
+            atype_tebd = atype_tebd_nnei.reshape(nfnl, nnei, self.tebd_dim)
             if not self.type_one_side:
                 # nfnl x nnei x (1 + tebd_dim * 2)
                 ss = torch.concat([ss, nlist_tebd, atype_tebd], dim=2)
@@ -546,23 +551,56 @@ class DescrptBlockSeAtten(DescriptorBlock):
             # nfnl x 4 x ng
             xyz_scatter = torch.matmul(rr.permute(0, 2, 1), gg)
         elif self.tebd_input_mode in ["strip"]:
+            assert self.filter_layers_strip is not None
+            assert type_embedding is not None
+            ng = self.filter_neuron[-1]
+            ntypes_with_padding = type_embedding.shape[0]
+            # nf x (nl x nnei)
+            nlist_index = nlist.reshape(nb, nloc * nnei)
+            # nf x (nl x nnei)
+            nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
+            # (nf x nl x nnei) x ng
+            nei_type_index = nei_type.view(-1, 1).expand(-1, ng).type(torch.long)
+            if self.type_one_side:
+                tt_full = self.filter_layers_strip.networks[0](type_embedding)
+                # (nf x nl x nnei) x ng
+                gg_t = torch.gather(tt_full, dim=0, index=nei_type_index)
+            else:
+                idx_i = torch.tile(
+                    atype.reshape(-1, 1) * ntypes_with_padding, [1, nnei]
+                ).view(-1)
+                idx_j = nei_type.view(-1)
+                # (nf x nl x nnei) x ng
+                idx = (
+                    (idx_i + idx_j)
+                    .view(-1, 1)
+                    .expand(-1, ng)
+                    .type(torch.long)
+                    .to(torch.long)
+                )
+                # (ntypes) * ntypes * nt
+                type_embedding_nei = torch.tile(
+                    type_embedding.view(1, ntypes_with_padding, nt),
+                    [ntypes_with_padding, 1, 1],
+                )
+                # ntypes * (ntypes) * nt
+                type_embedding_center = torch.tile(
+                    type_embedding.view(ntypes_with_padding, 1, nt),
+                    [1, ntypes_with_padding, 1],
+                )
+                # (ntypes * ntypes) * (nt+nt)
+                two_side_type_embedding = torch.cat(
+                    [type_embedding_nei, type_embedding_center], -1
+                ).reshape(-1, nt * 2)
+                tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
+                # (nf x nl x nnei) x ng
+                gg_t = torch.gather(tt_full, dim=0, index=idx)
+            # (nf x nl) x nnei x ng
+            gg_t = gg_t.reshape(nfnl, nnei, ng)
+            if self.smooth:
+                gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
             if self.compress:
                 ss = ss.reshape(-1, 1)
-                # nfnl x nnei x ng
-                # gg_s = self.filter_layers.networks[0](ss)
-                assert self.filter_layers_strip is not None
-                if not self.type_one_side:
-                    # nfnl x nnei x (tebd_dim * 2)
-                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)  # dynamic, index
-                else:
-                    # nfnl x nnei x tebd_dim
-                    tt = nlist_tebd
-                # nfnl x nnei x ng
-                gg_t = self.filter_layers_strip.networks[0](tt)
-                if self.smooth:
-                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
-                # nfnl x nnei x ng
-                # gg = gg_s * gg_t + gg_s
                 gg_t = gg_t.reshape(-1, gg_t.size(-1))
                 xyz_scatter = torch.ops.deepmd.tabulate_fusion_se_atten(
                     self.compress_data[0].contiguous(),
@@ -585,17 +623,6 @@ class DescrptBlockSeAtten(DescriptorBlock):
             else:
                 # nfnl x nnei x ng
                 gg_s = self.filter_layers.networks[0](ss)
-                assert self.filter_layers_strip is not None
-                if not self.type_one_side:
-                    # nfnl x nnei x (tebd_dim * 2)
-                    tt = torch.concat([nlist_tebd, atype_tebd], dim=2)  # dynamic, index
-                else:
-                    # nfnl x nnei x tebd_dim
-                    tt = nlist_tebd
-                # nfnl x nnei x ng
-                gg_t = self.filter_layers_strip.networks[0](tt)
-                if self.smooth:
-                    gg_t = gg_t * sw.reshape(-1, self.nnei, 1)
                 # nfnl x nnei x ng
                 gg = gg_s * gg_t + gg_s
                 input_r = torch.nn.functional.normalize(

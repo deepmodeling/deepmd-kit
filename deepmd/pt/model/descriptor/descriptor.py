@@ -174,6 +174,7 @@ class DescriptorBlock(torch.nn.Module, ABC, make_plugin_registry("DescriptorBloc
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
+        type_embedding: Optional[torch.Tensor] = None,
     ):
         """Calculate DescriptorBlock."""
         pass
