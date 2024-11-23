@@ -1,4 +1,8 @@
-# Fit electronic density of states (DOS)
+# Fit electronic density of states (DOS) {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+:::
 
 Here we present an API to DeepDOS model, which can be used to fit electronic density of state (DOS) (which is a vector).
 
@@ -12,11 +16,11 @@ $deepmd_source_dir/examples/dos/input.json
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
-Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit the `dos`, one needs to modify {ref}`model/fitting_net <model/fitting_net>` and {ref}`loss <loss>`.
+Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit the `dos`, one needs to modify {ref}`model[standard]/fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
 
 ## The fitting Network
 
-The {ref}`fitting_net <model/fitting_net>` section tells DP which fitting net to use.
+The {ref}`fitting_net <model[standard]/fitting_net>` section tells DP which fitting net to use.
 
 The JSON of `dos` type should be provided like
 
@@ -32,9 +36,9 @@ The JSON of `dos` type should be provided like
 	},
 ```
 
--   `type` specifies which type of fitting net should be used. It should be `dos`.
--   `numb_dos` specifies the length of output vector (density of states), which the same as the `NEDOS` set in VASP software, this argument defines the output length of the neural network. We note that the length of `dos` provided in training set should be the same.
--   The rest arguments have the same meaning as they do in `ener` mode.
+- `type` specifies which type of fitting net should be used. It should be `dos`.
+- `numb_dos` specifies the length of output vector (density of states), which the same as the `NEDOS` set in VASP software, this argument defines the output length of the neural network. We note that the length of `dos` provided in training set should be the same.
+- The rest arguments have the same meaning as they do in `ener` mode.
 
 ## Loss
 
@@ -62,12 +66,11 @@ The loss section should be provided like
 	},
 ```
 
--   {ref}`type <loss/type>` should be written as `dos` as a distinction from `ener` mode.
--   `pref_dos` and `pref_ados`, respectively specify the weight of global and atomic loss. If set to 0, the corresponding label will not be included in the training process.
--   We also provides a combination training of vector and its cumulative distribution function `cdf`, which can be defined as
+- {ref}`type <loss/type>` should be written as `dos` as a distinction from `ener` mode.
+- `pref_dos` and `pref_ados`, respectively specify the weight of global and atomic loss. If set to 0, the corresponding label will not be included in the training process.
+- We also provides a combination training of vector and its cumulative distribution function `cdf`, which can be defined as
 
 $$D(\epsilon) = \int_{e_{min}}^{\epsilon} g(\epsilon')d\epsilon'$$
-
 
 ## Training Data Preparation
 
@@ -79,9 +82,25 @@ To prepare the data, we recommend shifting the DOS data by the Fermi level.
 
 The training command is the same as `ener` mode, i.e.
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
-dp train input.json
+dp --tf train input.json
 ```
+
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+dp --pt train input.json
+```
+
+:::
+
+::::
 
 The detailed loss can be found in `lcurve.out`:
 
@@ -114,14 +133,33 @@ The detailed loss can be found in `lcurve.out`:
 
 In this earlier version, we can use `dp test` to infer the electronic density of state for given frames.
 
+::::{tab-set}
+
+:::{tab-item} TensorFlow {{ tensorflow_icon }}
+
 ```bash
 
-$DP freeze -o frozen_model.pb
+dp --tf freeze -o frozen_model.pb
 
-$DP test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
+dp --tf test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
 
-if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame is output in the working directory
+:::
+
+:::{tab-item} PyTorch {{ pytorch_icon }}
+
+```bash
+
+dp --pt freeze -o frozen_model.pth
+
+dp --pt test -m frozen_model.pth -s ../data/111/$k -d ${output_prefix} -a -n 100
+```
+
+:::
+
+::::
+
+if `dp test -d ${output_prefix} -a` is specified, the predicted DOS and atomic DOS for each frame are output in the working directory
 
 ```
 ${output_prefix}.ados.out.0   ${output_prefix}.ados.out.1  ${output_prefix}.ados.out.2  ${output_prefix}.ados.out.3

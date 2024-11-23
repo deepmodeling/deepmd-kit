@@ -1,286 +1,294 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Collection of functions and classes used throughout the whole package."""
-
+import glob
+import json
+import os
+import platform
+import shutil
 import warnings
-from functools import (
-    wraps,
+from hashlib import (
+    sha1,
+)
+from pathlib import (
+    Path,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
+    TypeVar,
     Union,
+    get_args,
 )
 
-import tensorflow
-from tensorflow.python.framework import (
-    tensor_util,
-)
+try:
+    from typing import Literal  # python >=3.8
+except ImportError:
+    from typing_extensions import Literal  # type: ignore
+
+import numpy as np
+import yaml
 
 from deepmd.env import (
-    GLOBAL_TF_FLOAT_PRECISION,
-    op_module,
-    tf,
+    GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd_utils.common import (
-    add_data_requirement,
-    data_requirement,
-    expand_sys_str,
-    get_np_precision,
-    j_loader,
-    j_must_have,
-    make_default_mesh,
-    select_idx_map,
+from deepmd.utils.path import (
+    DPPath,
 )
-
-if TYPE_CHECKING:
-    from deepmd_utils.common import (
-        _ACTIVATION,
-        _PRECISION,
-    )
 
 __all__ = [
-    # from deepmd_utils.common
-    "data_requirement",
-    "add_data_requirement",
     "select_idx_map",
     "make_default_mesh",
-    "j_must_have",
     "j_loader",
     "expand_sys_str",
     "get_np_precision",
-    # from self
-    "PRECISION_DICT",
-    "gelu",
-    "gelu_tf",
-    "ACTIVATION_FN_DICT",
-    "get_activation_func",
-    "get_precision",
-    "safe_cast_tensor",
-    "cast_precision",
-    "clear_session",
+    "VALID_PRECISION",
+    "VALID_ACTIVATION",
 ]
 
-# define constants
-PRECISION_DICT = {
-    "default": GLOBAL_TF_FLOAT_PRECISION,
-    "float16": tf.float16,
-    "float32": tf.float32,
-    "float64": tf.float64,
-    "bfloat16": tf.bfloat16,
-}
+_PRECISION = Literal["default", "float16", "float32", "float64"]
+_ACTIVATION = Literal[
+    "relu",
+    "relu6",
+    "softplus",
+    "sigmoid",
+    "tanh",
+    "gelu",
+    "gelu_tf",
+    "none",
+    "linear",
+]
+# get_args is new in py38
+VALID_PRECISION: set[_PRECISION] = set(get_args(_PRECISION))
+VALID_ACTIVATION: set[_ACTIVATION] = set(get_args(_ACTIVATION))
+
+if TYPE_CHECKING:
+    _DICT_VAL = TypeVar("_DICT_VAL")
+    __all__ += [
+        "_DICT_VAL",
+        "_PRECISION",
+        "_ACTIVATION",
+    ]
 
 
-def gelu(x: tf.Tensor) -> tf.Tensor:
-    """Gaussian Error Linear Unit.
-
-    This is a smoother version of the RELU, implemented by custom operator.
+def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarray:
+    """Build map of indices for element supplied element types from all atoms list.
 
     Parameters
     ----------
-    x : tf.Tensor
-        float Tensor to perform activation
+    atom_types : np.ndarray
+        array specifying type for each atoms as integer
+    select_types : np.ndarray
+        types of atoms you want to find indices for
 
     Returns
     -------
-    tf.Tensor
-        `x` with the GELU activation applied
+    np.ndarray
+        indices of types of atoms defined by `select_types` in `atom_types` array
 
-    References
-    ----------
-    Original paper
-    https://arxiv.org/abs/1606.08415
+    Warnings
+    --------
+    `select_types` array will be sorted before finding indices in `atom_types`
     """
-    return op_module.gelu_custom(x)
+    sort_select_types = np.sort(select_types)
+    idx_map = []
+    for ii in sort_select_types:
+        idx_map.append(np.where(atom_types == ii)[0])
+    return np.concatenate(idx_map)
 
 
-def gelu_tf(x: tf.Tensor) -> tf.Tensor:
-    """Gaussian Error Linear Unit.
+def make_default_mesh(pbc: bool, mixed_type: bool) -> np.ndarray:
+    """Make mesh.
 
-    This is a smoother version of the RELU, implemented by TF.
+    Only the size of mesh matters, not the values:
+    * 6 for PBC, no mixed types
+    * 0 for no PBC, no mixed types
+    * 7 for PBC, mixed types
+    * 1 for no PBC, mixed types
 
     Parameters
     ----------
-    x : tf.Tensor
-        float Tensor to perform activation
+    pbc : bool
+        if True, the mesh will be made for periodic boundary conditions
+    mixed_type : bool
+        if True, the mesh will be made for mixed types
 
     Returns
     -------
-    tf.Tensor
-        `x` with the GELU activation applied
-
-    References
-    ----------
-    Original paper
-    https://arxiv.org/abs/1606.08415
+    np.ndarray
+        mesh
     """
-
-    def gelu_wrapper(x):
-        try:
-            return tensorflow.nn.gelu(x, approximate=True)
-        except AttributeError:
-            warnings.warn(
-                "TensorFlow does not provide an implementation of gelu, please upgrade your TensorFlow version. Fallback to the custom gelu operator."
-            )
-            return op_module.gelu_custom(x)
-
-    return (lambda x: gelu_wrapper(x))(x)
+    mesh_size = int(pbc) * 6 + int(mixed_type)
+    default_mesh = np.zeros(mesh_size, dtype=np.int32)
+    return default_mesh
 
 
-ACTIVATION_FN_DICT = {
-    "relu": tf.nn.relu,
-    "relu6": tf.nn.relu6,
-    "softplus": tf.nn.softplus,
-    "sigmoid": tf.sigmoid,
-    "tanh": tf.nn.tanh,
-    "gelu": gelu,
-    "gelu_tf": gelu_tf,
-    "None": None,
-    "none": None,
-}
-
-
-def get_activation_func(
-    activation_fn: Union["_ACTIVATION", None],
-) -> Union[Callable[[tf.Tensor], tf.Tensor], None]:
-    """Get activation function callable based on string name.
+def j_deprecated(
+    jdata: dict[str, "_DICT_VAL"], key: str, deprecated_key: list[str] = []
+) -> "_DICT_VAL":
+    """Assert that supplied dictionary contains specified key.
 
     Parameters
     ----------
-    activation_fn : _ACTIVATION
-        one of the defined activation functions
+    jdata : dict[str, _DICT_VAL]
+        dictionary to check
+    key : str
+        key to check
+    deprecated_key : list[str], optional
+        list of deprecated keys, by default []
 
     Returns
     -------
-    Callable[[tf.Tensor], tf.Tensor]
-        correspondingg TF callable
+    _DICT_VAL
+        value that was store unde supplied key
 
     Raises
     ------
     RuntimeError
-        if unknown activation function is specified
+        if the key is not present
     """
-    if activation_fn is None:
-        return None
-    if activation_fn not in ACTIVATION_FN_DICT:
-        raise RuntimeError(f"{activation_fn} is not a valid activation function")
-    return ACTIVATION_FN_DICT[activation_fn]
+    if key not in jdata.keys():
+        for ii in deprecated_key:
+            if ii in jdata.keys():
+                warnings.warn(f"the key {ii} is deprecated, please use {key} instead")
+                return jdata[ii]
+        else:
+            raise RuntimeError(f"json database must provide key {key}")
+    else:
+        return jdata[key]
 
 
-def get_precision(precision: "_PRECISION") -> Any:
-    """Convert str to TF DType constant.
+def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
+    """Load yaml or json settings file.
+
+    Parameters
+    ----------
+    filename : Union[str, Path]
+        path to file
+
+    Returns
+    -------
+    dict[str, Any]
+        loaded dictionary
+
+    Raises
+    ------
+    TypeError
+        if the supplied file is of unsupported type
+    """
+    filepath = Path(filename)
+    if filepath.suffix.endswith("json"):
+        with filepath.open() as fp:
+            return json.load(fp)
+    elif filepath.suffix.endswith(("yml", "yaml")):
+        with filepath.open() as fp:
+            return yaml.safe_load(fp)
+    else:
+        raise TypeError("config file must be json, or yaml/yml")
+
+
+def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
+    """Recursively iterate over directories taking those that contain `type.raw` file.
+
+    Parameters
+    ----------
+    root_dir : Union[str, Path]
+        starting directory
+
+    Returns
+    -------
+    list[str]
+        list of string pointing to system directories
+    """
+    root_dir = DPPath(root_dir)
+    matches = [str(d) for d in root_dir.rglob("*") if (d / "type.raw").is_file()]
+    if (root_dir / "type.raw").is_file():
+        matches.append(str(root_dir))
+    return matches
+
+
+def get_np_precision(precision: "_PRECISION") -> np.dtype:
+    """Get numpy precision constant from string.
 
     Parameters
     ----------
     precision : _PRECISION
-        one of the allowed precisions
+        string name of numpy constant or default
 
     Returns
     -------
-    tf.python.framework.dtypes.DType
-        appropriate TF constant
+    np.dtype
+        numpy precision constant
 
     Raises
     ------
     RuntimeError
-        if supplied precision string does not have acorresponding TF constant
+        if string is invalid
     """
-    if precision not in PRECISION_DICT:
+    if precision == "default":
+        return GLOBAL_NP_FLOAT_PRECISION
+    elif precision == "float16":
+        return np.float16
+    elif precision == "float32":
+        return np.float32
+    elif precision == "float64":
+        return np.float64
+    else:
         raise RuntimeError(f"{precision} is not a valid precision")
-    return PRECISION_DICT[precision]
 
 
-def safe_cast_tensor(
-    input: tf.Tensor, from_precision: tf.DType, to_precision: tf.DType
-) -> tf.Tensor:
-    """Convert a Tensor from a precision to another precision.
+def symlink_prefix_files(old_prefix: str, new_prefix: str) -> None:
+    """Create symlinks from old checkpoint prefix to new one.
 
-    If input is not a Tensor or without the specific precision, the method will not
-    cast it.
+    On Windows this function will copy files instead of creating symlinks.
 
     Parameters
     ----------
-    input : tf.Tensor
-        input tensor
-    from_precision : tf.DType
-        Tensor data type that is casted from
-    to_precision : tf.DType
-        Tensor data type that casts to
-
-    Returns
-    -------
-    tf.Tensor
-        casted Tensor
+    old_prefix : str
+        old checkpoint prefix, all files with this prefix will be symlinked
+    new_prefix : str
+        new checkpoint prefix
     """
-    if tensor_util.is_tensor(input) and input.dtype == from_precision:
-        return tf.cast(input, to_precision)
-    return input
-
-
-def cast_precision(func: Callable) -> Callable:
-    """A decorator that casts and casts back the input
-    and output tensor of a method.
-
-    The decorator should be used in a classmethod.
-
-    The decorator will do the following thing:
-    (1) It casts input Tensors from `GLOBAL_TF_FLOAT_PRECISION`
-    to precision defined by property `precision`.
-    (2) It casts output Tensors from `precision` to
-    `GLOBAL_TF_FLOAT_PRECISION`.
-    (3) It checks inputs and outputs and only casts when
-    input or output is a Tensor and its dtype matches
-    `GLOBAL_TF_FLOAT_PRECISION` and `precision`, respectively.
-    If it does not match (e.g. it is an integer), the decorator
-    will do nothing on it.
-
-    Returns
-    -------
-    Callable
-        a decorator that casts and casts back the input and
-        output tensor of a method
-
-    Examples
-    --------
-    >>> class A:
-    ...   @property
-    ...   def precision(self):
-    ...     return tf.float32
-    ...
-    ...   @cast_precision
-    ...   def f(x: tf.Tensor, y: tf.Tensor) -> tf.Tensor:
-    ...     return x ** 2 + y
-    """
-
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        # only convert tensors
-        returned_tensor = func(
-            self,
-            *[
-                safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision)
-                for vv in args
-            ],
-            **{
-                kk: safe_cast_tensor(vv, GLOBAL_TF_FLOAT_PRECISION, self.precision)
-                for kk, vv in kwargs.items()
-            },
-        )
-        if isinstance(returned_tensor, tuple):
-            return tuple(
-                safe_cast_tensor(vv, self.precision, GLOBAL_TF_FLOAT_PRECISION)
-                for vv in returned_tensor
-            )
+    original_files = glob.glob(old_prefix + ".*")
+    for ori_ff in original_files:
+        new_ff = new_prefix + ori_ff[len(old_prefix) :]
+        try:
+            # remove old one
+            os.remove(new_ff)
+        except OSError:
+            pass
+        if platform.system() != "Windows":
+            # by default one does not have access to create symlink on Windows
+            os.symlink(os.path.relpath(ori_ff, os.path.dirname(new_ff)), new_ff)
         else:
-            return safe_cast_tensor(
-                returned_tensor, self.precision, GLOBAL_TF_FLOAT_PRECISION
-            )
-
-    return wrapper
+            shutil.copyfile(ori_ff, new_ff)
 
 
-def clear_session():
-    """Reset all state generated by DeePMD-kit."""
-    tf.reset_default_graph()
-    # TODO: remove this line when data_requirement is not a global variable
-    data_requirement.clear()
+def get_hash(obj) -> str:
+    """Get hash of object.
+
+    Parameters
+    ----------
+    obj
+        object to hash
+    """
+    return sha1(json.dumps(obj).encode("utf-8")).hexdigest()
+
+
+def j_get_type(data: dict, class_name: str = "object") -> str:
+    """Get the type from the data.
+
+    Parameters
+    ----------
+    data : dict
+        the data
+    class_name : str, optional
+        the name of the class for error message, by default "object"
+
+    Returns
+    -------
+    str
+        the type
+    """
+    try:
+        return data["type"]
+    except KeyError as e:
+        raise KeyError(f"the type of the {class_name} should be set by `type`") from e

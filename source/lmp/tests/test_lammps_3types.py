@@ -245,27 +245,19 @@ type_HO = np.array([2, 1, 1, 2, 1, 1, 3])
 nktv2p = 1.6021765e6
 
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        pbtxt_file.resolve(),
-        pb_file.resolve(),
-    ).split()
+    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
 )
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        pbtxt_file2.resolve(),
-        pb_file2.resolve(),
-    ).split()
+    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
 )
 
 
-def setup_module():
+def setup_module() -> None:
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
 
 
-def teardown_module():
+def teardown_module() -> None:
     os.remove(data_file)
     os.remove(data_type_map_file)
 
@@ -300,7 +292,7 @@ def lammps_type_map():
     lmp.close()
 
 
-def test_pair_deepmd(lammps):
+def test_pair_deepmd(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -312,7 +304,7 @@ def test_pair_deepmd(lammps):
     lammps.run(1)
 
 
-def test_pair_deepmd_virial(lammps):
+def test_pair_deepmd_virial(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")
@@ -335,11 +327,9 @@ def test_pair_deepmd_virial(lammps):
         ) / nktv2p == pytest.approx(expected_v[idx_map, ii])
 
 
-def test_pair_deepmd_model_devi(lammps):
+def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve()
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -363,11 +353,9 @@ def test_pair_deepmd_model_devi(lammps):
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-def test_pair_deepmd_model_devi_virial(lammps):
+def test_pair_deepmd_model_devi_virial(lammps) -> None:
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve()
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic"
     )
     lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")
@@ -403,12 +391,10 @@ def test_pair_deepmd_model_devi_virial(lammps):
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-def test_pair_deepmd_model_devi_atomic_relative(lammps):
+def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic relative {}".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative {relative}"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -434,12 +420,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps):
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
+def test_pair_deepmd_model_devi_atomic_relative_v(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
-        "deepmd {} {} out_file {} out_freq 1 atomic relative_v {}".format(
-            pb_file.resolve(), pb_file2.resolve(), md_file.resolve(), relative
-        )
+        f"deepmd {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1 atomic relative_v {relative}"
     )
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -469,7 +453,7 @@ def test_pair_deepmd_model_devi_atomic_relative_v(lammps):
     assert md[3] == pytest.approx(np.sqrt(np.mean(np.square(expected_md_v))))
 
 
-def test_pair_deepmd_type_map(lammps_type_map):
+def test_pair_deepmd_type_map(lammps_type_map) -> None:
     lammps_type_map.pair_style(f"deepmd {pb_file.resolve()}")
     lammps_type_map.pair_coeff("* * H O")
     lammps_type_map.run(0)

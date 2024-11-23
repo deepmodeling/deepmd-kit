@@ -4,7 +4,7 @@ OP API
 op_module
 ---------
 
-.. automodule:: deepmd.env.op_module
+.. automodule:: deepmd.tf.env.op_module
    :members:
    :imported-members:
    :show-inheritance:
@@ -13,7 +13,7 @@ op_module
 op_grads_module
 ---------------
 
-.. automodule:: deepmd.env.op_grads_module
+.. automodule:: deepmd.tf.env.op_grads_module
    :members:
    :imported-members:
    :show-inheritance:

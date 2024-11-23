@@ -5,7 +5,11 @@
 #include "DeepPot.h"
 namespace deepmd_compat = deepmd;
 #else
+#ifdef DP_GMX_PLUGIN_INTERNAL
 #include "deepmd.hpp"
+#else
+#include "deepmd/deepmd.hpp"
+#endif
 namespace deepmd_compat = deepmd::hpp;
 #endif
 

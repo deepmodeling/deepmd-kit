@@ -42,9 +42,11 @@ class FixDPLR : public Fix {
   int setmask() override;
   void init() override;
   void setup(int) override;
+  void setup_pre_exchange() override;
   void setup_pre_force(int) override;
+  void setup_post_neighbor() override;
   void min_setup(int) override;
-  void post_integrate() override;
+  void pre_exchange() override;
   void pre_force(int) override;
   void post_force(int) override;
   void min_pre_exchange() override;
@@ -72,7 +74,7 @@ class FixDPLR : public Fix {
   std::vector<double> efield;
   std::vector<double> efield_fsum, efield_fsum_all;
   int efield_force_flag;
-  void get_valid_pairs(std::vector<std::pair<int, int> > &pairs);
+  void get_valid_pairs(std::vector<std::pair<int, int> > &pairs, bool is_setup);
   int varflag;
   char *xstr, *ystr, *zstr;
   int xvar, yvar, zvar, xstyle, ystyle, zstyle;
@@ -80,6 +82,9 @@ class FixDPLR : public Fix {
   void update_efield_variables();
   enum { NONE, CONSTANT, EQUAL };
   std::vector<int> type_idx_map;
+  /* The index of deepmd pair index, which starts from 1. By default 0, which
+   * works only when there is one deepmd pair. */
+  int pair_deepmd_index;
 };
 }  // namespace LAMMPS_NS
 

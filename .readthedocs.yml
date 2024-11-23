@@ -2,7 +2,13 @@ version: 2
 build:
   os: ubuntu-20.04
   tools:
-    python: mambaforge-4.10
-conda:
-  environment: doc/environment.yml
-formats: all
+    python: "3.11"
+  jobs:
+    post_create_environment:
+      - pip install uv
+    post_install:
+      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
+  apt_packages:
+    - inkscape
+formats:
+  - pdf

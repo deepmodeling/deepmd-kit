@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test LAMMPS fparam and aparam input."""
+
 import os
 import subprocess as sp
 import sys
@@ -134,19 +135,15 @@ type_OH = np.array([1, 1, 1, 1, 1, 1])
 
 
 sp.check_output(
-    "{} -m deepmd convert-from pbtxt -i {} -o {}".format(
-        sys.executable,
-        pbtxt_file.resolve(),
-        pb_file.resolve(),
-    ).split()
+    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
 )
 
 
-def setup_module():
+def setup_module() -> None:
     write_lmp_data(box, coord, type_OH, data_file)
 
 
-def teardown_module():
+def teardown_module() -> None:
     os.remove(data_file)
 
 
@@ -188,7 +185,7 @@ def lammps():
     lmp.close()
 
 
-def test_pair_deepmd(lammps):
+def test_pair_deepmd(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()} fparam 0.25852028 aparam 0.25852028")
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -200,7 +197,7 @@ def test_pair_deepmd(lammps):
     lammps.run(1)
 
 
-def test_pair_deepmd_virial(lammps):
+def test_pair_deepmd_virial(lammps) -> None:
     lammps.pair_style(f"deepmd {pb_file.resolve()} fparam 0.25852028 aparam 0.25852028")
     lammps.pair_coeff("* *")
     lammps.compute("virial all centroid/stress/atom NULL pair")

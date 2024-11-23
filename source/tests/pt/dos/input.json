@@ -1,0 +1,81 @@
+{
+  "model": {
+    "type_map": [
+      "H"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        90
+      ],
+      "rcut_smth": 1.8,
+      "rcut": 6.0,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 8,
+      "precision": "float64",
+      "seed": 1
+    },
+    "fitting_net": {
+      "type": "dos",
+      "numb_dos": 250,
+      "neuron": [
+        120,
+        120,
+        120
+      ],
+      "resnet_dt": true,
+      "numb_fparam": 0,
+      "precision": "float64",
+      "seed": 1
+    }
+  },
+  "loss": {
+    "type": "dos",
+    "start_pref_dos": 1.0,
+    "limit_pref_dos": 1.0,
+    "start_pref_cdf": 0.0,
+    "limit_pref_cdf": 0.0,
+    "start_pref_ados": 1.0,
+    "limit_pref_ados": 1.0,
+    "start_pref_acdf": 0.0,
+    "limit_pref_acdf": 0.0
+  },
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 0.001,
+    "decay_steps": 5000,
+    "stop_lr": 1e-08
+  },
+  "training": {
+    "stop_batch": 100000,
+    "seed": 1,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 1000,
+    "save_ckpt": "model",
+    "disp_training": true,
+    "time_training": true,
+    "profiling": false,
+    "profiling_file": "timeline.json",
+    "training_data": {
+      "systems": [
+        "pt/dos/data/atomic_system/",
+        "pt/dos/data/global_system/"
+      ],
+      "batch_size": 1
+    },
+    "validation_data": {
+      "systems": [
+        "pt/dos/data/atomic_system/",
+        "pt/dos/data/global_system/"
+      ],
+      "batch_size": 1
+    }
+  },
+  "_comment1": "that's all"
+}

@@ -11,8 +11,23 @@ add_library(${libname} SHARED ${LIB_SRC})
 
 # link: libdeepmd libdeepmd_op libtensorflow_cc libtensorflow_framework
 target_link_libraries(${libname} PUBLIC ${LIB_DEEPMD})
-target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_cc
-                                         TensorFlow::tensorflow_framework)
+if(ENABLE_TENSORFLOW)
+  target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_cc
+                                           TensorFlow::tensorflow_framework)
+  target_compile_definitions(${libname} PRIVATE BUILD_TENSORFLOW)
+endif()
+if(ENABLE_PYTORCH
+   AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}"
+       # LAMMPS and i-PI in the Python package are not ready - needs more work
+   AND NOT BUILD_PY_IF)
+  target_link_libraries(${libname} PRIVATE "${TORCH_LIBRARIES}")
+  target_compile_definitions(${libname} PRIVATE BUILD_PYTORCH)
+endif()
+if(ENABLE_JAX)
+  target_link_libraries(${libname} PRIVATE TensorFlow::tensorflow_c)
+  target_compile_definitions(${libname} PRIVATE BUILD_JAX)
+endif()
+
 target_include_directories(
   ${libname}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -25,8 +40,10 @@ if(Protobuf_LIBRARY)
 endif()
 
 set_target_properties(
-  ${libname} PROPERTIES INSTALL_RPATH "$ORIGIN;${TensorFlow_LIBRARY_PATH}"
-                        BUILD_RPATH "$ORIGIN/../op")
+  ${libname}
+  PROPERTIES INSTALL_RPATH "$ORIGIN;${BACKEND_LIBRARY_PATH}"
+             INSTALL_RPATH_USE_LINK_PATH TRUE
+             BUILD_RPATH "$ORIGIN/../op/tf;$ORIGIN/../op/pt")
 target_compile_definitions(${libname} PRIVATE TF_PRIVATE)
 if(CMAKE_TESTING_ENABLED)
   target_link_libraries(${libname} PRIVATE coverage_config)
@@ -55,3 +72,14 @@ ${CMAKE_INSTALL_PREFIX}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}${libname}${LOW_PREC_V
     add_subdirectory(tests)
   endif()
 endif(BUILD_PY_IF)
+
+if(BUILD_TESTING)
+  # A compilation test to make sure api_cc can compile without any backend
+  add_library(deepmd_cc_test_no_backend SHARED ${LIB_SRC})
+  target_link_libraries(deepmd_cc_test_no_backend PUBLIC ${LIB_DEEPMD})
+  target_include_directories(
+    deepmd_cc_test_no_backend
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+           $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+           $<INSTALL_INTERFACE:include>)
+endif()

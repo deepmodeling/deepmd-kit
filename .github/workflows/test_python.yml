@@ -1,50 +1,107 @@
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
   pull_request:
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 name: Test Python
 jobs:
   testpython:
     name: Test Python
     runs-on: ubuntu-22.04
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - python: 3.7
-            tf: 1.14
-          - python: 3.8
-            tf:
-          - python: "3.11"
-            tf:
+        group: [1, 2, 3, 4, 5, 6]
+        python: ["3.9", "3.12"]
 
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python }}
-        cache: 'pip'
-    - uses: mpi4py/setup-mpi@v1
-      if: ${{ matrix.tf == '' }}
-      with:
-        mpi: openmpi
-    # https://github.com/pypa/pip/issues/11770
-    - run: python -m pip install -U "pip>=21.3.1,!=23.0.0"
-    - run: pip install -e .[cpu,test]
+    - run: python -m pip install -U uv
+    - run: |
+        source/install/uv_with_retry.sh pip install --system openmpi tensorflow-cpu
+        source/install/uv_with_retry.sh pip install --system torch -i https://download.pytorch.org/whl/cpu
+        export TENSORFLOW_ROOT=$(python -c 'import tensorflow;print(tensorflow.__path__[0])')
+        export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
+        source/install/uv_with_retry.sh pip install --system -e .[test,jax] mpi4py
+        source/install/uv_with_retry.sh pip install --system horovod --no-build-isolation
       env:
-        TENSORFLOW_VERSION: ${{ matrix.tf }}
+        # Please note that uv has some issues with finding
+        # existing TensorFlow package. Currently, it uses
+        # TensorFlow in the build dependency, but if it
+        # changes, setting `TENSORFLOW_ROOT`.
+        DP_ENABLE_PYTORCH: 1
         DP_BUILD_TESTING: 1
-    - run: pip install horovod mpi4py
-      if: ${{ matrix.tf == '' }}
-      env:
+        UV_EXTRA_INDEX_URL: "https://pypi.anaconda.org/mpi4py/simple"
         HOROVOD_WITH_TENSORFLOW: 1
-        HOROVOD_WITHOUT_GLOO: 1
+        HOROVOD_WITHOUT_PYTORCH: 1
+        HOROVOD_WITH_MPI: 1
     - run: dp --version
-    - run: pytest --cov=deepmd --cov=deepmd_utils source/tests --durations=0
-    - uses: codecov/codecov-action@v3
+    - name: Get durations from cache
+      uses: actions/cache@v4
       with:
-        gcov: true
+        path: .test_durations
+        # the key must never match, even when restarting workflows, as that
+        # will cause durations to get out of sync between groups, the
+        # combined durations will be loaded if available
+        key: test2-durations-split-${{ github.run_id }}-${{ github.run_number}}-${{ matrix.python }}-${{ matrix.group }}
+        restore-keys: |
+          test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
+          test2-durations-combined-${{ matrix.python }}
+    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
+      env:
+        NUM_WORKERS: 0
+    - name: Test TF2 eager mode
+      run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests --durations=0
+      env:
+        NUM_WORKERS: 0
+        DP_TEST_TF2_ONLY: 1
+        DP_DTYPE_PROMOTION_STRICT: 1
+      if: matrix.group == 1
+    - run: mv .test_durations .test_durations_${{ matrix.group }}
+    - name: Upload partial durations
+      uses: actions/upload-artifact@v4
+      with:
+        name: split-${{ matrix.python }}-${{ matrix.group }}
+        path: .test_durations_${{ matrix.group }}
+        include-hidden-files: true
+    - uses: codecov/codecov-action@v5
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+  update_durations:
+    name: Combine and update integration test durations
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    needs: testpython
+    steps:
+    - name: Get durations from cache
+      uses: actions/cache@v4
+      with:
+        path: .test_durations
+        # key won't match during the first run for the given commit, but
+        # restore-key will if there's a previous stored durations file,
+        # so cache will both be loaded and stored
+        key: test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
+        restore-keys: test2-durations-combined-${{ matrix.python }}
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: split-${{ matrix.python }}-*
+        merge-multiple: true
+    - name: Combine test durations
+      run: jq -s add .test_durations_* > .test_durations
   pass:
     name: Pass testing Python
-    needs: [testpython]
+    needs: [testpython, update_durations]
     runs-on: ubuntu-latest
     if: always()
     steps:

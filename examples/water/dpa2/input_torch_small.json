@@ -1,0 +1,114 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa2",
+      "repinit": {
+        "tebd_dim": 8,
+        "rcut": 6.0,
+        "rcut_smth": 0.5,
+        "nsel": 120,
+        "neuron": [
+          25,
+          50,
+          100
+        ],
+        "axis_neuron": 12,
+        "activation_function": "tanh",
+        "three_body_sel": 48,
+        "three_body_rcut": 4.0,
+        "three_body_rcut_smth": 3.5,
+        "use_three_body": true
+      },
+      "repformer": {
+        "rcut": 4.0,
+        "rcut_smth": 3.5,
+        "nsel": 48,
+        "nlayers": 3,
+        "g1_dim": 128,
+        "g2_dim": 32,
+        "attn2_hidden": 32,
+        "attn2_nhead": 4,
+        "attn1_hidden": 128,
+        "attn1_nhead": 4,
+        "axis_neuron": 4,
+        "update_h2": false,
+        "update_g1_has_conv": true,
+        "update_g1_has_grrg": true,
+        "update_g1_has_drrd": true,
+        "update_g1_has_attn": false,
+        "update_g2_has_g1g1": false,
+        "update_g2_has_attn": false,
+        "update_style": "res_residual",
+        "update_residual": 0.01,
+        "update_residual_init": "norm",
+        "attn2_has_gate": true,
+        "use_sqrt_nnei": true,
+        "g1_out_conv": true,
+        "g1_out_mlp": true
+      },
+      "precision": "float64",
+      "add_tebd_to_repinit_out": false
+    },
+    "fitting_net": {
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "precision": "float64",
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-08,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0,
+    "_comment": " that's all"
+  },
+  "training": {
+    "stat_file": "./dpa2.hdf5",
+    "training_data": {
+      "systems": [
+        "../data/data_0",
+        "../data/data_1",
+        "../data/data_2"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1000000,
+    "warmup_steps": 0,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 2000,
+    "_comment": "that's all"
+  }
+}

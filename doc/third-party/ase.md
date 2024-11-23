@@ -1,6 +1,11 @@
 # Use deep potential with ASE
 
+:::{note}
+See [Environment variables](../env.md) for the runtime environment variables.
+:::
+
 Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
+
 ```python
 from ase import Atoms
 from deepmd.calculator import DP
@@ -16,6 +21,7 @@ print(water.get_forces())
 ```
 
 Optimization is also available:
+
 ```python
 from ase.optimize import BFGS
 

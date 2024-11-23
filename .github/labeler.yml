@@ -1,39 +1,38 @@
 Python:
-- changed-files:
-  - any-glob-to-any-file:
-    - deepmd/**/*
-    - deepmd_utils/**/*
-    - source/tests/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - deepmd/**/*
+          - source/tests/**/*
 Docs:
-- changed-files:
-  - any-glob-to-any-file: doc/**/*
+  - changed-files:
+      - any-glob-to-any-file: doc/**/*
 Examples:
-- changed-files:
-  - any-glob-to-any-file: examples/**/*
+  - changed-files:
+      - any-glob-to-any-file: examples/**/*
 Core:
-- changed-files:
-  - any-glob-to-any-file: source/lib/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/lib/**/*
 CUDA:
-- changed-files:
-  - any-glob-to-any-file: source/lib/src/gpu/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/lib/src/gpu/**/*
 ROCM:
-- changed-files:
-  - any-glob-to-any-file: source/lib/src/gpu/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/lib/src/gpu/**/*
 OP:
-- changed-files:
-  - any-glob-to-any-file: source/op/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/op/**/*
 C++:
-- changed-files:
-  - any-glob-to-any-file: source/api_cc/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/api_cc/**/*
 C:
-- changed-files:
-  - any-glob-to-any-file: source/api_c/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/api_c/**/*
 LAMMPS:
-- changed-files:
-  - any-glob-to-any-file: source/lmp/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/lmp/**/*
 Gromacs:
-- changed-files:
-  - any-glob-to-any-file: source/gmx/**/*
-i-Pi:
-- changed-files:
-  - any-glob-to-any-file: source/ipi/**/*
+  - changed-files:
+      - any-glob-to-any-file: source/gmx/**/*
+i-PI:
+  - changed-files:
+      - any-glob-to-any-file: source/ipi/**/*

@@ -1,4 +1,8 @@
-## Linear model
+## Linear model {{ tensorflow_icon }} {{ pytorch_icon }}
+
+:::{note}
+**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
+:::
 
 One can linearly combine existing models with arbitrary coefficients:
 

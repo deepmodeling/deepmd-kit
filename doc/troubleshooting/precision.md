@@ -14,12 +14,13 @@ Some common reasons are listed below.
 The unit of training data should follow what is listed in [data section](../data/system.md).
 Usually, the package to calculate the training data has different units from those of the DeePMD-kit.
 It is noted that some software label the energy gradient as forces, instead of the negative energy gradient.
-It is neccessary to check them carefully to avoid inconsistent data.
+It is necessary to check them carefully to avoid inconsistent data.
 
 ### SCF coverage and data accuracy
 
 The accuracy of models will not exceed the accuracy of training data, so the training data should reach enough accuracy.
 Here is a checklist for the accuracy of data:
+
 - SCF should converge to a suitable threshold for all points in the training data.
 - The convergence of the energy, force and virial with respect to the energy cutoff and k-spacing sample is checked.
 - Sometimes, QM software may generate unstable outliers, which should be removed.
@@ -28,7 +29,7 @@ Here is a checklist for the accuracy of data:
 ### Enough data
 
 If the model performs good on the training data, but has bad accuracy on another data, this means some data space is not covered by the training data.
-It can be validated by evaluting the [model deviation](../test/model-deviation.md) with multiple models.
+It can be validated by evaluating the [model deviation](../test/model-deviation.md) with multiple models.
 If the model deviation of these data is high for some data, try to collect more data using [DP-GEN](../third-party/out-of-deepmd-kit.md#dp-gen).
 
 ### Values of data
@@ -59,6 +60,7 @@ See [FAQ: How to tune Fitting/embedding-net size](./howtoset_netsize.md) for det
 
 In some cases, one may want to use the FP32 precision to make the model faster.
 For some applications, FP32 is enough and thus is recommended, but one should still be aware that the precision of FP32 is not as high as that of FP64.
+See [Floating-point precision of the model](../model/precision.md) section for how to set the precision.
 
 ## Training
 

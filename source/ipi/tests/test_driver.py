@@ -18,7 +18,7 @@ from ase.calculators.socketio import (
     SocketIOCalculator,
 )
 
-from deepmd.utils.convert import (
+from deepmd.tf.utils.convert import (
     convert_pbtxt_to_pb,
 )
 
@@ -27,7 +27,7 @@ default_places = 6
 
 
 class DPiPICalculator(FileIOCalculator):
-    def __init__(self, model: str, use_unix: bool = True, **kwargs):
+    def __init__(self, model: str, use_unix: bool = True, **kwargs) -> None:
         self.xyz_file = "test_ipi.xyz"
         self.config_file = "config.json"
         config = {
@@ -49,20 +49,20 @@ class DPiPICalculator(FileIOCalculator):
             self, command=command, label=self.config_file, **kwargs
         )
 
-    def write_input(self, atoms, **kwargs):
+    def write_input(self, atoms, **kwargs) -> None:
         atoms.write(self.xyz_file, format="xyz")
 
 
-class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
+class TestDPIPI(unittest.TestCase):
     # copy from test_deeppot_a.py
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.model_file = "deeppot.pb"
         convert_pbtxt_to_pb(
             str(tests_path / os.path.join("infer", "deeppot.pbtxt")), "deeppot.pb"
         )
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.coords = np.array(
             [
                 12.83,
@@ -179,11 +179,11 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls) -> None:
         os.remove("deeppot.pb")
         cls.dp = None
 
-    def test_ase_unix(self):
+    def test_ase_unix(self) -> None:
         with SocketIOCalculator(
             DPiPICalculator(self.model_file), log=sys.stdout, unixsocket="localhost"
         ) as calc:
@@ -193,8 +193,8 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 cell=self.box.reshape((3, 3)),
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places
@@ -202,7 +202,7 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
 
-    def test_ase_nounix(self):
+    def test_ase_nounix(self) -> None:
         with SocketIOCalculator(
             DPiPICalculator(self.model_file, use_unix=False),
             log=sys.stdout,
@@ -213,11 +213,146 @@ class TestDeepPotALargeBoxNoPBC(unittest.TestCase):
                 cell=self.box.reshape((3, 3)),
                 calculator=calc,
             )
-        ee = water.get_potential_energy()
-        ff = water.get_forces()
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
         nframes = 1
         np.testing.assert_almost_equal(
             ff.ravel(), self.expected_f.ravel(), default_places
         )
         expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+
+    def test_normalize_coords(self) -> None:
+        # coordinate nomarlization should happen inside the interface
+        cell = self.box.reshape((3, 3))
+        coord = self.coords.reshape((-1, 3))
+        # random unwrap coords
+        coord[0] += np.array([3, 0, 0]) @ cell
+        coord[1] += np.array([0, -3, 0]) @ cell
+        coord[2] += np.array([0, 0, 3]) @ cell
+        coord[3] += np.array([-3, 0, 0]) @ cell
+        coord[4] += np.array([0, 3, 0]) @ cell
+        coord[5] += np.array([0, 0, -3]) @ cell
+        with SocketIOCalculator(
+            DPiPICalculator(self.model_file, use_unix=False),
+            log=sys.stdout,
+        ) as calc:
+            water = Atoms(
+                "OHHOHH",
+                positions=coord,
+                cell=cell,
+                calculator=calc,
+            )
+            ee = water.get_potential_energy()
+            ff = water.get_forces()
+        nframes = 1
+        np.testing.assert_almost_equal(
+            ff.ravel(), self.expected_f.ravel(), default_places
+        )
+        expected_se = np.sum(self.expected_e.reshape([nframes, -1]), axis=1)
+        np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
+
+
+class TestDPIPIPt(TestDPIPI):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.model_file = str(tests_path / "infer" / "deeppot_sea.pth")
+
+    def setUp(self) -> None:
+        super().setUp()
+
+        self.box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0])
+        self.expected_e = np.array(
+            [
+                -93.016873944029,
+                -185.923296645958,
+                -185.927096544970,
+                -93.019371018039,
+                -185.926179995548,
+                -185.924351901852,
+            ]
+        )
+        self.expected_f = np.array(
+            [
+                0.006277522211,
+                -0.001117962774,
+                0.000618580445,
+                0.009928999655,
+                0.003026035654,
+                -0.006941982227,
+                0.000667853212,
+                -0.002449963843,
+                0.006506463508,
+                -0.007284129115,
+                0.000530662205,
+                -0.000028806821,
+                0.000068097781,
+                0.006121331983,
+                -0.009019754602,
+                -0.009658343745,
+                -0.006110103225,
+                0.008865499697,
+            ]
+        )
+        self.expected_v = np.array(
+            [
+                -0.000155238009,
+                0.000116605516,
+                -0.007869862476,
+                0.000465578340,
+                0.008182547185,
+                -0.002398713212,
+                -0.008112887338,
+                -0.002423738425,
+                0.007210716605,
+                -0.019203504012,
+                0.001724938709,
+                0.009909211091,
+                0.001153857542,
+                -0.001600015103,
+                -0.000560024090,
+                0.010727836276,
+                -0.001034836404,
+                -0.007973454377,
+                -0.021517399106,
+                -0.004064359664,
+                0.004866398692,
+                -0.003360038617,
+                -0.007241406162,
+                0.005920941051,
+                0.004899151657,
+                0.006290788591,
+                -0.006478820311,
+                0.001921504710,
+                0.001313470921,
+                -0.000304091236,
+                0.001684345981,
+                0.004124109256,
+                -0.006396084465,
+                -0.000701095618,
+                -0.006356507032,
+                0.009818550859,
+                -0.015230664587,
+                -0.000110244376,
+                0.000690319396,
+                0.000045953023,
+                -0.005726548770,
+                0.008769818495,
+                -0.000572380210,
+                0.008860603423,
+                -0.013819348050,
+                -0.021227082558,
+                -0.004977781343,
+                0.006646239696,
+                -0.005987066507,
+                -0.002767831232,
+                0.003746502525,
+                0.007697590397,
+                0.003746130152,
+                -0.005172634748,
+            ]
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.dp = None

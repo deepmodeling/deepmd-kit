@@ -2,14 +2,18 @@ name: "CodeQL"
 
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
   pull_request:
   schedule:
     - cron: '45 2 * * 2'
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
   analyze:
     name: Analyze
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-22.04' }}
     timeout-minutes: ${{ (matrix.language == 'swift' && 120) || 360 }}
     permissions:
       actions: read
@@ -37,6 +41,8 @@ jobs:
          && sudo apt-get update \
          && sudo apt-get -y install cuda-cudart-dev-12-2 cuda-nvcc-12-2
         python -m pip install tensorflow
+        wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
+        unzip libtorch.zip
       env:
         DEBIAN_FRONTEND: noninteractive
     # Initializes the CodeQL tools for scanning.
@@ -46,7 +52,9 @@ jobs:
         languages: ${{ matrix.language }}
         queries: security-extended,security-and-quality
     - name: "Run, Build Application using script"
-      run: source/install/build_cc.sh
+      run: |
+        export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+        source/install/build_cc.sh
       env:
         DP_VARIANT: cuda
         DOWNLOAD_TENSORFLOW: "FALSE"

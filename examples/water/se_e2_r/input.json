@@ -19,6 +19,7 @@
         20
       ],
       "resnet_dt": false,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1,
       "_comment2": " that's all"

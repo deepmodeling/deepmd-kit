@@ -30,6 +30,7 @@ static bool is_key(const string &input) {
   keys.push_back("type_associate");
   keys.push_back("bond_type");
   keys.push_back("efield");
+  keys.push_back("pair_deepmd_index");
   for (int ii = 0; ii < keys.size(); ++ii) {
     if (input == keys[ii]) {
       return true;
@@ -56,10 +57,13 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
 #endif
 
   scalar_flag = 1;
+  extscalar = 1;
   vector_flag = 1;
+  extvector = 1;
   size_vector = 3;
   qe2f = force->qe2f;
   xstyle = ystyle = zstyle = NONE;
+  pair_deepmd_index = 0;
 
   if (strcmp(update->unit_style, "lj") == 0) {
     error->all(FLERR,
@@ -123,6 +127,12 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
       }
       sort(bond_type.begin(), bond_type.end());
       iarg = iend;
+    } else if (string(arg[iarg]) == string("pair_deepmd_index")) {
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal pair_deepmd_index, not provided");
+      }
+      pair_deepmd_index = atoi(arg[iarg + 1]);
+      iarg += 2;
     } else {
       break;
     }
@@ -139,7 +149,7 @@ FixDPLR::FixDPLR(LAMMPS *lmp, int narg, char **arg)
     error->one(FLERR, e.what());
   }
 
-  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1);
+  pair_deepmd = (PairDeepMD *)force->pair_match("deepmd", 1, pair_deepmd_index);
   if (!pair_deepmd) {
     error->all(FLERR, "pair_style deepmd should be set before this fix\n");
   }
@@ -226,7 +236,8 @@ int FixDPLR::setmask() {
   // THERMO_ENERGY removed in lammps/lammps#2560
   mask |= THERMO_ENERGY;
 #endif
-  mask |= POST_INTEGRATE;
+  mask |= PRE_EXCHANGE;
+  mask |= POST_NEIGHBOR;
   mask |= PRE_FORCE;
   mask |= POST_FORCE;
   mask |= MIN_PRE_EXCHANGE;
@@ -238,19 +249,9 @@ int FixDPLR::setmask() {
 /* ---------------------------------------------------------------------- */
 
 void FixDPLR::init() {
-  // double **xx = atom->x;
-  // double **vv = atom->v;
-  // int nlocal = atom->nlocal;
-  // for (int ii = 0; ii < nlocal; ++ii){
-  //   cout << xx[ii][0] << " "
-  // 	 << xx[ii][1] << " "
-  // 	 << xx[ii][2] << "   "
-  // 	 << vv[ii][0] << " "
-  // 	 << vv[ii][1] << " "
-  // 	 << vv[ii][2] << " "
-  // 	 << endl;
-  // }
-  // check variables
+  if (atom->map_style == Atom::MAP_NONE) {
+    error->all(FLERR, "Fix dplr requires an atom map, see atom_modify");
+  }
 
   if (xstr) {
     xvar = input->variable->find(xstr);
@@ -303,22 +304,53 @@ void FixDPLR::init() {
 
 /* ---------------------------------------------------------------------- */
 
+void FixDPLR::setup_post_neighbor() {
+  double **x = atom->x;
+
+  vector<pair<int, int> > valid_pairs;
+  get_valid_pairs(valid_pairs, true);
+
+  for (int ii = 0; ii < valid_pairs.size(); ++ii) {
+    int idx0 = valid_pairs[ii].first;
+    int idx1 = valid_pairs[ii].second;
+    int idx0_local = atom->map(atom->tag[idx0]);
+    int idx1_local = atom->map(atom->tag[idx1]);
+
+    for (int dd = 0; dd < 3; ++dd) {
+      x[idx1][dd] = x[idx0][dd];
+      x[idx0_local][dd] = x[idx0][dd];
+      x[idx1_local][dd] = x[idx0][dd];
+    }
+  }
+  int triclinic;
+  triclinic = domain->triclinic;
+  if (triclinic) {
+    domain->x2lamda(atom->nlocal);
+  }
+  domain->pbc();
+  domain->reset_box();
+  comm->setup();
+  neighbor->setup_bins();
+  comm->exchange();
+  comm->borders();
+  if (triclinic) {
+    domain->lamda2x(atom->nlocal + atom->nghost);
+  }
+
+  neighbor->build(1);
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixDPLR::setup_pre_exchange() {}
+
+/* ---------------------------------------------------------------------- */
+
 void FixDPLR::setup_pre_force(int vflag) { pre_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::setup(int vflag) {
-  // if (strstr(update->integrate_style,"verlet"))
-  post_force(vflag);
-  // else {
-  //   error->all(FLERR, "respa is not supported by this fix");
-  // }
-  if (vflag) {
-    v_setup(vflag);
-  } else {
-    evflag = 0;
-  }
-}
+void FixDPLR::setup(int vflag) { post_force(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
@@ -326,7 +358,7 @@ void FixDPLR::min_setup(int vflag) { setup(vflag); }
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
+void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs, bool is_setup) {
   pairs.clear();
 
   int nlocal = atom->nlocal;
@@ -393,7 +425,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
         error->all(FLERR, str);
       }
     }
-    if (!(idx0 < nlocal && idx1 < nlocal)) {
+    if (!(idx0 < nlocal && idx1 < nlocal) && (!is_setup)) {
       error->all(FLERR,
                  "find a bonded pair that is not on the same processor, "
                  "something should not happen");
@@ -404,7 +436,7 @@ void FixDPLR::get_valid_pairs(vector<pair<int, int> > &pairs) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::post_integrate() {
+void FixDPLR::pre_exchange() {
   double **x = atom->x;
   double **v = atom->v;
   int *type = atom->type;
@@ -413,7 +445,7 @@ void FixDPLR::post_integrate() {
   int nall = nlocal + nghost;
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs);
+  get_valid_pairs(valid_pairs, false);
 
   for (int ii = 0; ii < valid_pairs.size(); ++ii) {
     int idx0 = valid_pairs[ii].first;
@@ -434,6 +466,14 @@ void FixDPLR::pre_force(int vflag) {
   int nlocal = atom->nlocal;
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
+
+  // mapping (for DPA-2 JAX)
+  std::vector<int> mapping_vec(nall, -1);
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    for (size_t ii = 0; ii < nall; ++ii) {
+      mapping_vec[ii] = atom->map(atom->tag[ii]);
+    }
+  }
 
   // if (eflag_atom) {
   //   error->all(FLERR,"atomic energy calculation is not supported by this
@@ -466,6 +506,10 @@ void FixDPLR::pre_force(int vflag) {
   NeighList *list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                      list->firstneigh);
+  lmp_list.set_mask(NEIGHMASK);
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    lmp_list.set_mapping(mapping_vec.data());
+  }
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute
@@ -513,7 +557,7 @@ void FixDPLR::pre_force(int vflag) {
   // vector<int> & sort_fwd_map(atom_map.get_fwd_map());
 
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs);
+  get_valid_pairs(valid_pairs, false);
 
   int odim = dpt.output_dim();
   assert(odim == 3);
@@ -527,6 +571,7 @@ void FixDPLR::pre_force(int vflag) {
     // int res_idx = sort_fwd_map[sel_fwd[idx0]];
     int res_idx = sel_fwd[idx0];
     // int ret_idx = dpl_bwd[res_idx];
+    atom->image[idx1] = atom->image[idx0];
     for (int dd = 0; dd < 3; ++dd) {
       x[idx1][dd] =
           x[idx0][dd] + tensor[res_idx * 3 + dd] * dist_unit_cvt_factor;
@@ -635,7 +680,7 @@ void FixDPLR::post_force(int vflag) {
                                      list->firstneigh);
   // bonded pairs
   vector<pair<int, int> > valid_pairs;
-  get_valid_pairs(valid_pairs);
+  get_valid_pairs(valid_pairs, false);
   // output vects
   vector<FLOAT_PREC> dfcorr, dvcorr;
   // compute
@@ -721,7 +766,7 @@ void FixDPLR::post_force(int vflag) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixDPLR::min_pre_exchange() { post_integrate(); }
+void FixDPLR::min_pre_exchange() { pre_exchange(); }
 
 /* ---------------------------------------------------------------------- */
 

@@ -2,8 +2,15 @@ name: Build C library
 
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
+    tags:
+      - "v*"
   pull_request:
-
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 jobs:
   build_c:
     name: Build C library
@@ -11,7 +18,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - tensorflow_build_version: "2.15"
+          - tensorflow_build_version: "2.18"
             tensorflow_version: ""
             filename: libdeepmd_c.tar.gz
           - tensorflow_build_version: "2.14"
@@ -19,6 +26,8 @@ jobs:
             filename: libdeepmd_c_cu11.tar.gz
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Package C library
         run: ./source/install/docker_package_c.sh
         env:
@@ -35,7 +44,7 @@ jobs:
       - name: Test C library
         run: ./source/install/docker_test_package_c.sh
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ matrix.filename }}

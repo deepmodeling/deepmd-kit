@@ -5,22 +5,23 @@ import os
 from functools import (
     lru_cache,
 )
-from typing import (
-    Tuple,
-)
 
 from packaging.version import (
     Version,
 )
 
+from .find_pytorch import (
+    find_pytorch,
+    get_pt_version,
+)
 from .find_tensorflow import (
     find_tensorflow,
     get_tf_version,
 )
 
 
-@lru_cache()
-def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
+@lru_cache
+def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
     """Get the arguments from environment variables.
 
     The environment variables are assumed to be not changed during the build.
@@ -37,10 +38,12 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         The extra scripts to be installed.
     str
         The TensorFlow version.
+    str
+        The PyTorch version.
     """
     cmake_args = []
     extra_scripts = {}
-    # get variant option from the environment varibles, available: cpu, cuda, rocm
+    # get variant option from the environment variables, available: cpu, cuda, rocm
     dp_variant = os.environ.get("DP_VARIANT", "cpu").lower()
     if dp_variant == "cpu" or dp_variant == "":
         cmake_minimum_required_version = "3.16"
@@ -54,13 +57,15 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         cmake_minimum_required_version = "3.21"
         cmake_args.append("-DUSE_ROCM_TOOLKIT:BOOL=TRUE")
         rocm_root = os.environ.get("ROCM_ROOT")
+        if not rocm_root:
+            rocm_root = os.environ.get("ROCM_PATH")
         if rocm_root:
             cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT:STRING={rocm_root}")
         hipcc_flags = os.environ.get("HIP_HIPCC_FLAGS")
         if hipcc_flags is not None:
             os.environ["HIPFLAGS"] = os.environ.get("HIPFLAGS", "") + " " + hipcc_flags
     else:
-        raise RuntimeError("Unsupported DP_VARIANT option: %s" % dp_variant)
+        raise RuntimeError(f"Unsupported DP_VARIANT option: {dp_variant}")
 
     if os.environ.get("DP_BUILD_TESTING", "0") == "1":
         cmake_args.append("-DBUILD_TESTING:BOOL=TRUE")
@@ -78,18 +83,41 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
     if dp_ipi == "1":
         cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
-        extra_scripts["dp_ipi"] = "deepmd.entrypoints.ipi:dp_ipi"
+        extra_scripts["dp_ipi"] = "deepmd.tf.entrypoints.ipi:dp_ipi"
 
-    tf_install_dir, _ = find_tensorflow()
-    tf_version = get_tf_version(tf_install_dir)
-    if tf_version == "" or Version(tf_version) >= Version("2.12"):
-        find_libpython_requires = []
+    if os.environ.get("DP_ENABLE_TENSORFLOW", "1") == "1":
+        tf_install_dir, _ = find_tensorflow()
+        tf_version = get_tf_version(tf_install_dir)
+        if tf_version == "" or Version(tf_version) >= Version("2.12"):
+            find_libpython_requires = []
+        else:
+            find_libpython_requires = ["find_libpython"]
+        cmake_args.extend(
+            [
+                "-DENABLE_TENSORFLOW=ON",
+                f"-DTENSORFLOW_VERSION={tf_version}",
+                f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
+            ]
+        )
     else:
-        find_libpython_requires = ["find_libpython"]
-    cmake_args.append(f"-DTENSORFLOW_VERSION={tf_version}")
+        find_libpython_requires = []
+        cmake_args.append("-DENABLE_TENSORFLOW=OFF")
+        tf_version = None
+
+    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
+        pt_install_dir, _ = find_pytorch()
+        pt_version = get_pt_version(pt_install_dir)
+        cmake_args.extend(
+            [
+                "-DENABLE_PYTORCH=ON",
+                f"-DCMAKE_PREFIX_PATH={pt_install_dir}",
+            ]
+        )
+    else:
+        cmake_args.append("-DENABLE_PYTORCH=OFF")
+        pt_version = None
 
     cmake_args = [
-        f"-DTENSORFLOW_ROOT:PATH={tf_install_dir}",
         "-DBUILD_PY_IF:BOOL=TRUE",
         *cmake_args,
     ]
@@ -99,11 +127,12 @@ def get_argument_from_env() -> Tuple[str, list, list, dict, str]:
         find_libpython_requires,
         extra_scripts,
         tf_version,
+        pt_version,
     )
 
 
-def set_scikit_build_env():
+def set_scikit_build_env() -> None:
     """Set scikit-build environment variables before executing scikit-build."""
-    cmake_minimum_required_version, cmake_args, _, _, _ = get_argument_from_env()
+    cmake_minimum_required_version, cmake_args, _, _, _, _ = get_argument_from_env()
     os.environ["SKBUILD_CMAKE_MINIMUM_VERSION"] = cmake_minimum_required_version
     os.environ["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)

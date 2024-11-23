@@ -21,6 +21,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 16,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1,
       "_comment2": " that's all"
@@ -62,16 +63,16 @@
   "training": {
     "training_data": {
       "systems": [
-        "./training_data/atomic_system",
-        "./training_data/global_system"
+        "./training_data_reformat/atomic_system",
+        "./training_data_reformat/global_system"
       ],
       "batch_size": "auto",
       "_comment8": "that's all"
     },
     "validation_data": {
       "systems": [
-        "./validation_data/atomic_system",
-        "./validation_data/global_system"
+        "./validation_data_reformat/atomic_system",
+        "./validation_data_reformat/global_system"
       ],
       "batch_size": 1,
       "numb_btch": 3,

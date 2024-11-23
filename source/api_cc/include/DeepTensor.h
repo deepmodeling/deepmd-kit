@@ -15,8 +15,8 @@ class DeepTensorBase {
   /**
    * @brief Deep Tensor constructor without initialization.
    **/
-  DeepTensorBase(){};
-  virtual ~DeepTensorBase(){};
+  DeepTensorBase() {};
+  virtual ~DeepTensorBase() {};
   /**
    * @brief Deep Tensor constructor with initialization..
    * @param[in] model The name of the frozen model file.
@@ -37,7 +37,7 @@ class DeepTensorBase {
                     const std::string& name_scope = "") = 0;
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -75,7 +75,7 @@ class DeepTensorBase {
   /** @} */
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -180,7 +180,8 @@ class DeepTensor {
 
   /**
    * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
+   * @param[out] value The value to evaluate, usually would be the atomic
+   *tensor.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
@@ -193,7 +194,8 @@ class DeepTensor {
                const std::vector<VALUETYPE>& box);
   /**
    * @brief Evaluate the value by using this model.
-   * @param[out] value The value to evalute, usually would be the atomic tensor.
+   * @param[out] value The value to evaluate, usually would be the atomic
+   *tensor.
    * @param[in] coord The coordinates of atoms. The array should be of size
    *natoms x 3.
    * @param[in] atype The atom types. The list should contain natoms ints.
@@ -210,7 +212,7 @@ class DeepTensor {
                const InputNlist& inlist);
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -229,7 +231,7 @@ class DeepTensor {
                const std::vector<VALUETYPE>& box);
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -252,7 +254,7 @@ class DeepTensor {
                const InputNlist& inlist);
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size
@@ -277,7 +279,7 @@ class DeepTensor {
                const std::vector<VALUETYPE>& box);
   /**
    * @brief Evaluate the global tensor and component-wise force and virial.
-   * @param[out] global_tensor The global tensor to evalute.
+   * @param[out] global_tensor The global tensor to evaluate.
    * @param[out] force The component-wise force of the global tensor, size odim
    *x natoms x 3.
    * @param[out] virial The component-wise virial of the global tensor, size

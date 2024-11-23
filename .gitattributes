@@ -1,2 +1,4 @@
 # do not show up detailed difference on GitHub
 source/3rdparty/* linguist-generated=true
+source/3rdparty/README.md linguist-generated=false
+.git_archival.txt  export-subst

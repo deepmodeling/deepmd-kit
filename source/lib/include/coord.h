@@ -18,7 +18,7 @@ void normalize_coord_cpu(FPTYPE* coord,
 //	in_c, in_t, nloc, mem_nall, rc, region
 //	mem_nall is the size of allocated memory for out_c, out_t, mapping
 // returns
-//	0: succssful
+//	0: successful
 //	1: the memory is not large enough to hold all copied coords and types.
 //	   i.e. nall > mem_nall
 template <typename FPTYPE>
@@ -66,7 +66,7 @@ void normalize_coord_gpu(FPTYPE* coord,
 // box_info 	mem_nall is the size of allocated memory for out_c, out_t,
 // mapping
 // returns
-//	0: succssful
+//	0: successful
 //	1: the memory is not large enough to hold all copied coords and types.
 //	   i.e. nall > mem_nall
 template <typename FPTYPE>

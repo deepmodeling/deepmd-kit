@@ -13,6 +13,7 @@
       "neuron": [
         8
       ],
+      "activation_function": "linear",
       "precision": "float32"
     },
     "descriptor": {

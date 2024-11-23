@@ -1,0 +1,172 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import numpy as np
+
+from deepmd.tf.descriptor import (
+    DescrptSeA,
+)
+from deepmd.tf.env import (
+    tf,
+)
+from deepmd.tf.fit import (
+    EnerFitting,
+)
+from deepmd.tf.model import (
+    EnerModel,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+
+from .common import (
+    DataSystem,
+    gen_data,
+    j_loader,
+)
+
+GLOBAL_ENER_FLOAT_PRECISION = tf.float64
+GLOBAL_TF_FLOAT_PRECISION = tf.float64
+GLOBAL_NP_FLOAT_PRECISION = np.float64
+
+
+class TestModel(tf.test.TestCase):
+    def setUp(self) -> None:
+        gen_data()
+
+    def test_model(self) -> None:
+        jfile = "water_se_a_aparam.json"
+        jdata = j_loader(jfile)
+        systems = jdata["systems"]
+        set_pfx = "set"
+        batch_size = jdata["batch_size"]
+        test_size = jdata["numb_test"]
+        batch_size = 1
+        test_size = 1
+        rcut = jdata["model"]["descriptor"]["rcut"]
+
+        data = DataSystem(systems, set_pfx, batch_size, test_size, rcut, run_opt=None)
+
+        test_data = data.get_test()
+        # manually set aparam
+        test_data["aparam"] = np.load("system/set.000/aparam.npy")
+        numb_test = 1
+
+        jdata["model"]["descriptor"].pop("type", None)
+        descrpt = DescrptSeA(**jdata["model"]["descriptor"], uniform_seed=True)
+        jdata["model"]["fitting_net"]["ntypes"] = descrpt.get_ntypes()
+        jdata["model"]["fitting_net"]["dim_descrpt"] = descrpt.get_dim_out()
+        jdata["model"]["fitting_net"]["dim_rot_mat_1"] = descrpt.get_dim_rot_mat_1()
+        fitting = EnerFitting(**jdata["model"]["fitting_net"], uniform_seed=True)
+        model = EnerModel(descrpt, fitting)
+
+        # model._compute_dstats([test_data['coord']], [test_data['box']], [test_data['type']], [test_data['natoms_vec']], [test_data['default_mesh']])
+        input_data = {
+            "coord": [test_data["coord"]],
+            "box": [test_data["box"]],
+            "type": [test_data["type"]],
+            "natoms_vec": [test_data["natoms_vec"]],
+            "default_mesh": [test_data["default_mesh"]],
+            "aparam": [test_data["aparam"]],
+        }
+        model._compute_input_stat(input_data)
+        model.descrpt.bias_atom_e = data.compute_energy_shift()
+
+        t_prop_c = tf.placeholder(tf.float32, [5], name="t_prop_c")
+        t_energy = tf.placeholder(GLOBAL_ENER_FLOAT_PRECISION, [None], name="t_energy")
+        t_force = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_force")
+        t_virial = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_virial")
+        t_atom_ener = tf.placeholder(
+            GLOBAL_TF_FLOAT_PRECISION, [None], name="t_atom_ener"
+        )
+        t_coord = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_coord")
+        t_type = tf.placeholder(tf.int32, [None], name="i_type")
+        t_natoms = tf.placeholder(tf.int32, [model.ntypes + 2], name="i_natoms")
+        t_box = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None, 9], name="i_box")
+        t_mesh = tf.placeholder(tf.int32, [None], name="i_mesh")
+        t_aparam = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="i_aparam")
+        is_training = tf.placeholder(tf.bool)
+        input_dict = {}
+        input_dict["aparam"] = t_aparam
+
+        model_pred = model.build(
+            t_coord,
+            t_type,
+            t_natoms,
+            t_box,
+            t_mesh,
+            input_dict,
+            suffix="se_a_aparam",
+            reuse=False,
+        )
+        energy = model_pred["energy"]
+        force = model_pred["force"]
+        virial = model_pred["virial"]
+        atom_ener = model_pred["atom_ener"]
+
+        feed_dict_test = {
+            t_prop_c: test_data["prop_c"],
+            t_energy: test_data["energy"][:numb_test],
+            t_force: np.reshape(test_data["force"][:numb_test, :], [-1]),
+            t_virial: np.reshape(test_data["virial"][:numb_test, :], [-1]),
+            t_atom_ener: np.reshape(test_data["atom_ener"][:numb_test, :], [-1]),
+            t_coord: np.reshape(test_data["coord"][:numb_test, :], [-1]),
+            t_box: test_data["box"][:numb_test, :],
+            t_type: np.reshape(test_data["type"][:numb_test, :], [-1]),
+            t_natoms: test_data["natoms_vec"],
+            t_mesh: test_data["default_mesh"],
+            t_aparam: np.reshape(test_data["aparam"][:numb_test, :], [-1]),
+            is_training: False,
+        }
+
+        sess = self.cached_session().__enter__()
+        sess.run(tf.global_variables_initializer())
+        [e, f, v] = sess.run([energy, force, virial], feed_dict=feed_dict_test)
+
+        e = e.reshape([-1])
+        f = f.reshape([-1])
+        v = v.reshape([-1])
+        refe = [61.35473702079649]
+        reff = [
+            7.789591210641927388e-02,
+            9.411176646369459609e-02,
+            3.785806413688173194e-03,
+            1.430830954178063386e-01,
+            1.146964190520970150e-01,
+            -1.320340288927138173e-02,
+            -7.308720494747594776e-02,
+            6.508269338140809657e-02,
+            5.398739145542804643e-04,
+            5.863268336973800898e-02,
+            -1.603409523950408699e-01,
+            -5.083084610994957619e-03,
+            -2.551569799443983988e-01,
+            3.087934885732580501e-02,
+            1.508590526622844222e-02,
+            4.863249399791078065e-02,
+            -1.444292753594846324e-01,
+            -1.125098094204559241e-03,
+        ]
+        refv = [
+            -6.069498397488943819e-01,
+            1.101778888191114192e-01,
+            1.981907430646132409e-02,
+            1.101778888191114608e-01,
+            -3.315612988100872793e-01,
+            -5.999739184898976799e-03,
+            1.981907430646132756e-02,
+            -5.999739184898974197e-03,
+            -1.198656608172396325e-03,
+        ]
+        refe = np.reshape(refe, [-1])
+        reff = np.reshape(reff, [-1])
+        refv = np.reshape(refv, [-1])
+
+        places = 10
+        np.testing.assert_almost_equal(e, refe, places)
+        np.testing.assert_almost_equal(f, reff, places)
+        np.testing.assert_almost_equal(v, refv, places)
+
+        # test input requirement for the model
+        self.assertCountEqual(
+            model.input_requirement,
+            [DataRequirementItem("aparam", 2, atomic=True, must=True, high_prec=False)],
+        )

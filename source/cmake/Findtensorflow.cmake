@@ -3,7 +3,7 @@
 # Output: TensorFlow_FOUND TensorFlow_INCLUDE_DIRS TensorFlow_LIBRARY
 # TensorFlow_LIBRARY_PATH TensorFlowFramework_LIBRARY
 # TensorFlowFramework_LIBRARY_PATH TENSORFLOW_LINK_LIBPYTHON : whether
-# Tensorflow::tensorflow_cc links libpython
+# TensorFlow::tensorflow_cc links libpython
 #
 # Target: TensorFlow::tensorflow_framework TensorFlow::tensorflow_cc
 
@@ -366,7 +366,7 @@ elseif(NOT DEFINED OP_CXX_ABI)
            AND ${CPP_CXX_ABI_COMPILE_RESULT_VAR1})
       message(
         WARNING
-          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. For convience, we set _GLIBCXX_USE_CXX11_ABI=1."
+          "Both _GLIBCXX_USE_CXX11_ABI=0 and 1 work. The reason may be that your C++ compiler (e.g. Red Hat Developer Toolset) does not support the custom cxx11 abi flag. For convenience, we set _GLIBCXX_USE_CXX11_ABI=1."
       )
       set(OP_CXX_ABI 1)
     else()

@@ -1,11 +1,20 @@
 on:
   push:
+    branches-ignore:
+      - "gh-readonly-queue/**"
   pull_request:
+  merge_group:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
 name: Test C++
 jobs:
   testcc:
     name: Test C++
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        check_memleak: [true, false]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
@@ -17,29 +26,41 @@ jobs:
       with:
         mpi: mpich
     - uses: lukka/get-cmake@latest
-    - run: python -m pip install tensorflow
-    - run: source/install/test_cc_local.sh
+    - run: python -m pip install uv
+    - name: Install Python dependencies
+      run: |
+        source/install/uv_with_retry.sh pip install --system tensorflow-cpu
+        export TENSORFLOW_ROOT=$(python -c 'import importlib,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
+        source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py
+    - name: Convert models
+      run: source/tests/infer/convert-models.sh
+    - name: Download libtorch
+      run: |
+         wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcpu.zip -O libtorch.zip
+         unzip libtorch.zip
+    # https://github.com/actions/runner-images/issues/9491
+    - name: Fix kernel mmap rnd bits
+      run: sudo sysctl vm.mmap_rnd_bits=28
+      if: ${{ matrix.check_memleak }}
+    - run: |
+         export CMAKE_PREFIX_PATH=$GITHUB_WORKSPACE/libtorch
+         source/install/test_cc_local.sh
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LMP_CXX11_ABI_0: 1
         CMAKE_GENERATOR: Ninja
+        CXXFLAGS: ${{ matrix.check_memleak && '-fsanitize=leak' || '' }}
     # test lammps
-    # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
-    # TODO: remove ase version when ase has new release
-    - run: |
-        python -m pip install -U pip
-        python -m pip install -e .[cpu,test,lmp] "ase @ https://gitlab.com/ase/ase/-/archive/8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f/ase-8c5aa5fd6448c5cfb517a014dccf2b214a9dfa8f.tar.gz"
-      env:
-        DP_BUILD_TESTING: 1
     - run: pytest --cov=deepmd source/lmp/tests
       env:
         OMP_NUM_THREADS: 1
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         LAMMPS_PLUGIN_PATH: ${{ github.workspace }}/dp_test/lib/deepmd_lmp
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
+      if: ${{ !matrix.check_memleak }}
     # test ipi
     - run: pytest --cov=deepmd source/ipi/tests
       env:
@@ -47,10 +68,11 @@ jobs:
         TF_INTRA_OP_PARALLELISM_THREADS: 1
         TF_INTER_OP_PARALLELISM_THREADS: 1
         PATH: ${{ github.workspace }}/dp_test/bin:$PATH
-        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib
-    - uses: codecov/codecov-action@v3
-      with:
-        gcov: true
+        LD_LIBRARY_PATH: ${{ github.workspace }}/dp_test/lib:${{ github.workspace }}/libtorch/lib
+      if: ${{ !matrix.check_memleak }}
+    - uses: codecov/codecov-action@v5
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   pass:
     name: Pass testing C++
     needs: [testcc]

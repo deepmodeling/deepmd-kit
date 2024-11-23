@@ -8,7 +8,7 @@ import os.path
 import numpy as np
 
 
-def copy(in_dir, out_dir, ncopies=[1, 1, 1]):
+def copy(in_dir, out_dir, ncopies=[1, 1, 1]) -> None:
     has_energy = os.path.isfile(in_dir + "/energy.raw")
     has_force = os.path.isfile(in_dir + "/force.raw")
     has_virial = os.path.isfile(in_dir + "/virial.raw")
@@ -71,7 +71,7 @@ def copy(in_dir, out_dir, ncopies=[1, 1, 1]):
     np.savetxt(out_dir + "/ncopies.raw", ncopies, fmt="%d")
 
 
-def _main():
+def _main() -> None:
     parser = argparse.ArgumentParser(description="parse copy raw args")
     parser.add_argument("INPUT", default=".", help="input dir of raw files")
     parser.add_argument("OUTPUT", default=".", help="output dir of copied raw files")
@@ -85,7 +85,7 @@ def _main():
     )
     args = parser.parse_args()
 
-    print("# copy the system by %s copies" % args.ncopies)
+    print(f"# copy the system by {args.ncopies} copies")  # noqa: T201
     assert np.all(
         np.array(args.ncopies, dtype=int) >= np.array([1, 1, 1], dtype=int)
     ), "number of copies should be larger than or equal to 1"

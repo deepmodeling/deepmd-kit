@@ -3,7 +3,9 @@
 
 #include <memory>
 
+#ifdef BUILD_TENSORFLOW
 #include "DeepTensorTF.h"
+#endif
 #include "common.h"
 
 using namespace deepmd;
@@ -28,11 +30,13 @@ void DeepTensor::init(const std::string &model,
               << std::endl;
     return;
   }
-  // TODO: To implement detect_backend
-  DPBackend backend = deepmd::DPBackend::TensorFlow;
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
-    // TODO: throw errors if TF backend is not built, without mentioning TF
+#ifdef BUILD_TENSORFLOW
     dt = std::make_shared<deepmd::DeepTensorTF>(model, gpu_rank, name_scope_);
+#else
+    throw deepmd::deepmd_exception("TensorFlow backend is not built.");
+#endif
   } else if (deepmd::DPBackend::PyTorch == backend) {
     throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
   } else if (deepmd::DPBackend::Paddle == backend) {

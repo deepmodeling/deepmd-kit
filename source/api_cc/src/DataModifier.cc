@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "DataModifier.h"
 
+#ifdef BUILD_TENSORFLOW
 #include "DataModifierTF.h"
+#endif
 #include "common.h"
 
 using namespace deepmd;
@@ -15,7 +17,7 @@ DipoleChargeModifier::DipoleChargeModifier(const std::string& model,
   init(model, gpu_rank, name_scope_);
 }
 
-DipoleChargeModifier::~DipoleChargeModifier(){};
+DipoleChargeModifier::~DipoleChargeModifier() {};
 
 void DipoleChargeModifier::init(const std::string& model,
                                 const int& gpu_rank,
@@ -26,12 +28,14 @@ void DipoleChargeModifier::init(const std::string& model,
               << std::endl;
     return;
   }
-  // TODO: To implement detect_backend
-  DPBackend backend = deepmd::DPBackend::TensorFlow;
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
-    // TODO: throw errors if TF backend is not built, without mentioning TF
+#ifdef BUILD_TENSORFLOW
     dcm = std::make_shared<deepmd::DipoleChargeModifierTF>(model, gpu_rank,
                                                            name_scope_);
+#else
+    throw deepmd::deepmd_exception("TensorFlow backend is not built");
+#endif
   } else if (deepmd::DPBackend::PyTorch == backend) {
     throw deepmd::deepmd_exception("PyTorch backend is not supported yet");
   } else if (deepmd::DPBackend::Paddle == backend) {
@@ -87,6 +91,6 @@ double DipoleChargeModifier::cutoff() const { return dcm->cutoff(); }
 
 int DipoleChargeModifier::numb_types() const { return dcm->numb_types(); }
 
-std::vector<int> DipoleChargeModifier::sel_types() const {
+const std::vector<int>& DipoleChargeModifier::sel_types() const {
   return dcm->sel_types();
 }

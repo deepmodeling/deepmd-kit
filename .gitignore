@@ -13,6 +13,7 @@
 *.bz2
 *.pyc
 *.pb
+*.DS_Store
 tmp*
 CMakeCache.txt
 CMakeFiles
@@ -43,3 +44,9 @@ build_cc_tests
 build_c_tests
 build_c/
 libdeepmd_c/
+.uv/
+libtorch/
+uv.lock
+buildcxx/
+node_modules/
+*.bib.original

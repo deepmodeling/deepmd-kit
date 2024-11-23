@@ -7,153 +7,34 @@
 
 # -- Path setup --------------------------------------------------------------
 
+import datetime
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
 import sys
-from datetime import (
-    date,
-)
 
-from deepmd.common import (
+from deepmd.utils.argcheck import (
     ACTIVATION_FN_DICT,
     PRECISION_DICT,
-)
-from deepmd.utils.argcheck import (
     list_to_doc,
 )
 
 sys.path.append(os.path.dirname(__file__))
 import sphinx_contrib_exhale_multiproject  # noqa: F401
 
-
-def mkindex(dirname):
-    dirname = dirname + "/"
-    oldfindex = open(dirname + "index.md")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    for entry in oldlist:
-        _name = entry[entry.find("(") + 1 : entry.find(")")]
-        oldnames.append(_name)
-
-    newfindex = open(dirname + "index.md", "a")
-    for root, dirs, files in os.walk(dirname, topdown=False):
-        newnames = [
-            name for name in files if "index.md" not in name and name not in oldnames
-        ]
-        for name in newnames:
-            f = open(dirname + name)
-            _lines = f.readlines()
-            for _headline in _lines:
-                _headline = _headline.strip("#")
-                headline = _headline.strip()
-                if len(headline) == 0 or headline[0] == "." or headline[0] == "=":
-                    continue
-                else:
-                    break
-            longname = "- [" + headline + "]" + "(" + name + ")\n"
-            newfindex.write(longname)
-
-    newfindex.close()
-
-
-def classify_index_TS():
-    dirname = "troubleshooting/"
-    oldfindex = open(dirname + "index.md")
-    oldlist = oldfindex.readlines()
-    oldfindex.close()
-
-    oldnames = []
-    sub_titles = []
-    heads = []
-    while len(oldlist) > 0:
-        entry = oldlist.pop(0)
-        if entry.find("(") >= 0:
-            _name = entry[entry.find("(") + 1 : entry.find(")")]
-            oldnames.append(_name)
-            continue
-        if entry.find("##") >= 0:
-            _name = entry[entry.find("##") + 3 : -1]
-            sub_titles.append(_name)
-            continue
-        entry.strip()
-        if entry != "\n":
-            heads.append(entry)
-
-    newfindex = open(dirname + "index.md", "w")
-    for entry in heads:
-        newfindex.write(entry)
-    newfindex.write("\n")
-    sub_lists = [[], []]
-    for root, dirs, files in os.walk(dirname, topdown=False):
-        newnames = [name for name in files if "index.md" not in name]
-        for name in newnames:
-            f = open(dirname + name)
-            _lines = f.readlines()
-            f.close()
-            for _headline in _lines:
-                _headline = _headline.strip("#")
-                headline = _headline.strip()
-                if len(headline) == 0 or headline[0] == "." or headline[0] == "=":
-                    continue
-                else:
-                    break
-            longname = "- [" + headline + "]" + "(" + name + ")\n"
-            if "howtoset_" in name:
-                sub_lists[1].append(longname)
-            else:
-                sub_lists[0].append(longname)
-
-    newfindex.write("## Trouble shooting\n")
-    for entry in sub_lists[0]:
-        newfindex.write(entry)
-    newfindex.write("\n")
-    newfindex.write("## Parameters setting\n")
-    for entry in sub_lists[1]:
-        newfindex.write(entry)
-    newfindex.close()
-
-
 # -- Project information -----------------------------------------------------
 
 project = "DeePMD-kit"
-copyright = "2017-%d, DeepModeling" % date.today().year
+copyright = (
+    "2017-%d, DeepModeling" % datetime.datetime.now(tz=datetime.timezone.utc).year
+)
 author = "DeepModeling"
 
-
-def run_apidoc(_):
-    import sys
-
-    from sphinx.ext.apidoc import (
-        main,
-    )
-
-    sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-    cur_dir = os.path.abspath(os.path.dirname(__file__))
-    module = os.path.join(cur_dir, "..")
-    main(
-        [
-            "-M",
-            "--tocfile",
-            "api_py",
-            "-H",
-            "Python API",
-            "-o",
-            os.path.join(cur_dir, "api_py"),
-            module,
-            "source/*",
-            "--force",
-        ]
-    )
-
-
-def setup(app):
-    # Add hook for building doxygen xml when needed
-    app.connect("builder-inited", run_apidoc)
+autoapi_dirs = ["../deepmd"]
+autoapi_add_toctree_entry = False
 
 
 # -- General configuration ---------------------------------------------------
@@ -163,24 +44,21 @@ def setup(app):
 # ones.
 # extensions = [
 #     'recommonmark',
-#     "sphinx_rtd_theme",
+#     "sphinx_book_theme",
 #     'myst_parser',
 #     'sphinx_markdown_tables',
 #     'sphinx.ext.autosummary'
 # ]
 
-# mkindex("troubleshooting")
-# mkindex("development")
-# classify_index_TS()
-
 extensions = [
     "deepmodeling_sphinx",
     "dargs.sphinx",
-    "sphinx_rtd_theme",
+    "sphinx_book_theme",
     "myst_nb",
     "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
+    "sphinx.ext.imgconverter",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinxarg.ext",
@@ -188,6 +66,11 @@ extensions = [
     "breathe",
     "exhale",
     "sphinxcontrib.bibtex",
+    "sphinx_design",
+    "autoapi.extension",
+    "sphinxcontrib.programoutput",
+    "sphinxcontrib.moderncmakedomain",
+    "sphinx_remove_toctrees",
 ]
 
 # breathe_domain_by_extension = {
@@ -213,7 +96,10 @@ exhale_args = {
 exhale_projects_args = {
     "cc": {
         "containmentFolder": "./API_CC",
-        "exhaleDoxygenStdin": "INPUT = ../source/api_cc/include/",
+        "exhaleDoxygenStdin": """INPUT = ../source/api_cc/include/
+                                 PREDEFINED += BUILD_TENSORFLOW
+                                               BUILD_PYTORCH
+        """,
         "rootFileTitle": "C++ API",
         "rootFileName": "api_cc.rst",
     },
@@ -260,6 +146,10 @@ intersphinx_mapping = {
         "https://github.com/mr-ubik/tensorflow-intersphinx/raw/master/tf2_py_objects.inv",
     ),
     "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+    "torch": ("https://pytorch.org/docs/master/", None),
+    "dargs": ("https://docs.deepmodeling.com/projects/dargs/en/stable/", None),
+    "h5py": ("https://docs.h5py.org/en/latest/", None),
+    "array_api_compat": ("https://data-apis.org/array-api-compat/", None),
 }
 numpydoc_xref_param_type = True
 
@@ -268,21 +158,34 @@ numpydoc_xref_aliases = {}
 import typing
 
 for typing_type in typing.__all__:
-    numpydoc_xref_aliases[typing_type] = "typing.%s" % typing_type
+    numpydoc_xref_aliases[typing_type] = f"typing.{typing_type}"
 
 rst_epilog = f"""
 .. |ACTIVATION_FN| replace:: {list_to_doc(ACTIVATION_FN_DICT.keys())}
 .. |PRECISION| replace:: {list_to_doc(PRECISION_DICT.keys())}
 """
 
+myst_substitutions = {
+    "tensorflow_icon": """![TensorFlow](/_static/tensorflow.svg){class=platform-icon}""",
+    "pytorch_icon": """![PyTorch](/_static/pytorch.svg){class=platform-icon}""",
+    "jax_icon": """![JAX](/_static/jax.svg){class=platform-icon}""",
+    "dpmodel_icon": """![DP](/_static/logo_icon.svg){class=platform-icon}""",
+}
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "sphinx_rtd_theme"
+html_theme = "sphinx_book_theme"
 html_logo = "_static/logo.svg"
 
+html_theme_options = {
+    "logo": {
+        "image_light": "_static/logo.svg",
+        "image_dark": "_static/logo-dark.svg",
+    }
+}
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
@@ -298,6 +201,8 @@ mathjax_path = (
 myst_enable_extensions = [
     "dollarmath",
     "colon_fence",
+    "substitution",
+    "attrs_inline",
 ]
 myst_fence_as_directive = ("math",)
 # fix emoji issue in pdf
@@ -318,3 +223,5 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 bibtex_bibfiles = ["../CITATIONS.bib"]
+
+remove_from_toctrees = ["autoapi/**/*", "API_CC/*", "api_c/*", "api_core/*"]

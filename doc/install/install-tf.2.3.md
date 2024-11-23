@@ -1,5 +1,7 @@
 # Install TensorFlow's C++ interface
+
 The tensorflow's C++ interface will be compiled from the source code. Firstly one installs bazel. The bazel version 3.1.0 should be used. A full instruction of bazel installation can be found [here](https://docs.bazel.build/versions/master/install.html).
+
 ```bash
 cd /some/workspace
 wget https://github.com/bazelbuild/bazel/releases/download/3.1.0/bazel-3.1.0-installer-linux-x86_64.sh
@@ -9,6 +11,7 @@ export PATH=/some/workspace/bazel/bin:$PATH
 ```
 
 Firstly get the source code of the TensorFlow
+
 ```bash
 git clone https://github.com/tensorflow/tensorflow tensorflow -b v2.3.0 --depth=1
 cd tensorflow
@@ -75,23 +78,30 @@ Configuration finished
 The library path for Python should be set accordingly.
 
 Now build the shared library of tensorflow:
+
 ```bash
 bazel build -c opt --verbose_failures //tensorflow:libtensorflow_cc.so
 ```
-You may want to add options `--copt=-msse4.2`,  `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`.
+
+You may want to add options `--copt=-msse4.2`, `--copt=-mavx`, `--copt=-mavx2` and `--copt=-mfma` to enable SSE4.2, AVX, AVX2 and FMA SIMD accelerations, respectively. It is noted that these options should be chosen according to the CPU architecture. If the RAM becomes an issue of your machine, you may limit the RAM usage by using `--local_resources 2048,.5,1.0`.
 
 Now I assume you want to install TensorFlow in directory `$tensorflow_root`. Create the directory if it does not exist
+
 ```bash
 mkdir -p $tensorflow_root
 ```
+
 Now, copy the libraries to the tensorflow's installation directory:
+
 ```bash
 mkdir -p $tensorflow_root/lib
 cp -d bazel-bin/tensorflow/libtensorflow_cc.so* $tensorflow_root/lib/
 cp -d bazel-bin/tensorflow/libtensorflow_framework.so* $tensorflow_root/lib/
 cp -d $tensorflow_root/lib/libtensorflow_framework.so.2 $tensorflow_root/lib/libtensorflow_framework.so
 ```
+
 Then copy the headers
+
 ```bash
 mkdir -p $tensorflow_root/include/tensorflow
 rsync -avzh --exclude '_virtual_includes/' --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel-bin/ $tensorflow_root/include/
@@ -105,7 +115,9 @@ rsync -avzh --include '*/' --include '*.h' --include '*.inc' --exclude '*' bazel
 ```
 
 # Troubleshooting
+
 ```bash
 git: unknown command -C ...
 ```
+
 This may be an issue with your git version issue. Early versions of git do not support this command, in this case upgrading your git to a newer version may resolve any issues.

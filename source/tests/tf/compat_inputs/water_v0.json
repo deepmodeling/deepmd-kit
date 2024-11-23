@@ -1,0 +1,73 @@
+{
+  "_comment1": " model parameters",
+  "use_smooth": false,
+  "sel_a": [
+    16,
+    32
+  ],
+  "sel_r": [
+    30,
+    60
+  ],
+  "rcut": 6.00,
+  "axis_rule": [
+    0,
+    1,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0
+  ],
+  "_comment2": " default rule: []",
+  "_comment3": " user defined rule: for each type provides two axes, ",
+  "_comment4": "                    for each axis: (a_or_r, type, idx)",
+  "_comment5": "                    if type < 0, exclude type -(type+1)",
+  "_comment6": "                    for water (O:0, H:1) it can be",
+  "_comment7": "                    [0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0]",
+  "fitting_neuron": [
+    240,
+    120,
+    60,
+    30,
+    10
+  ],
+
+  "_comment8": " traing controls",
+  "systems": [
+    "../data/"
+  ],
+  "stop_batch": 1000000,
+  "batch_size": [
+    4
+  ],
+  "start_lr": 0.001,
+  "decay_steps": 5000,
+  "decay_rate": 0.95,
+
+  "start_pref_e": 0.02,
+  "limit_pref_e": 8,
+  "start_pref_f": 1000,
+  "limit_pref_f": 1,
+  "start_pref_v": 0,
+  "limit_pref_v": 0,
+
+  "seed": 1,
+
+  "_comment9": " display and restart",
+  "_comment10": " frequencies counted in batch",
+  "disp_file": "lcurve.out",
+  "disp_freq": 100,
+  "numb_test": 10,
+  "save_freq": 1000,
+  "save_ckpt": "model.ckpt",
+  "disp_training": true,
+  "time_training": true,
+
+  "_comment11": "that's all"
+}

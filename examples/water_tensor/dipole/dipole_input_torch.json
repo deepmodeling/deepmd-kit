@@ -1,0 +1,84 @@
+{
+  "_comment1": " model parameters",
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "atom_exclude_types": [
+      1
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        46,
+        92
+      ],
+      "rcut_smth": 3.80,
+      "rcut": 4.00,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 6,
+      "type_one_side": true,
+      "precision": "float64",
+      "seed": 1,
+      "_comment2": " that's all"
+    },
+    "fitting_net": {
+      "type": "dipole",
+      "neuron": [
+        100,
+        100,
+        100
+      ],
+      "resnet_dt": true,
+      "precision": "float64",
+      "seed": 1,
+      "_comment3": " that's all"
+    },
+    "_comment4": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 0.01,
+    "decay_steps": 5000,
+    "_comment5": "that's all"
+  },
+  "loss": {
+    "type": "tensor",
+    "pref": 1.0,
+    "pref_atomic": 1.0,
+    "_comment6": " that's all"
+  },
+  "_comment7": " traing controls",
+  "training": {
+    "training_data": {
+      "systems": [
+        "./training_data_reformat/atomic_system",
+        "./training_data_reformat/global_system"
+      ],
+      "batch_size": "auto",
+      "_comment8": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "./validation_data_reformat/atomic_system",
+        "./validation_data_reformat/global_system"
+      ],
+      "batch_size": 1,
+      "numb_btch": 3,
+      "_comment9": "that's all"
+    },
+    "numb_steps": 2000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 1000,
+    "_comment10": "that's all"
+  },
+  "_comment11": "that's all"
+}

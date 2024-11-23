@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Optional,
-    Tuple,
     overload,
 )
 
@@ -10,15 +9,11 @@ import numpy as np
 from deepmd.common import (
     expand_sys_str,
 )
-
-from ..utils.batch_size import (
-    AutoBatchSize,
-)
-from ..utils.data import (
-    DeepmdData,
-)
-from .deep_pot import (
+from deepmd.infer.deep_pot import (
     DeepPot,
+)
+from deepmd.utils.data import (
+    DeepmdData,
 )
 
 try:
@@ -32,9 +27,8 @@ def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    atomic: Literal[False] = False,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    ...
+    atomic: Literal[False] = ...,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 @overload
@@ -42,10 +36,17 @@ def calc_model_devi_f(
     fs: np.ndarray,
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-    *,
-    atomic: Literal[True],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    ...
+    atomic: Literal[True] = ...,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: ...
+
+
+@overload
+def calc_model_devi_f(
+    fs: np.ndarray,
+    real_f: Optional[np.ndarray] = None,
+    relative: Optional[float] = None,
+    atomic: bool = False,
+) -> tuple[np.ndarray, ...]: ...
 
 
 def calc_model_devi_f(
@@ -53,7 +54,7 @@ def calc_model_devi_f(
     real_f: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
     atomic: bool = False,
-) -> Tuple[np.ndarray, ...]:
+) -> tuple[np.ndarray, ...]:
     """Calculate model deviation of force.
 
     Parameters
@@ -139,7 +140,7 @@ def calc_model_devi_v(
     vs: np.ndarray,
     real_v: Optional[np.ndarray] = None,
     relative: Optional[float] = None,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Calculate model deviation of virial.
 
     Parameters
@@ -297,19 +298,19 @@ def calc_model_devi(
 
     Examples
     --------
-    >>> from deepmd.infer import calc_model_devi
-    >>> from deepmd.infer import DeepPot as DP
+    >>> from deepmd.tf.infer import calc_model_devi
+    >>> from deepmd.tf.infer import DeepPot as DP
     >>> import numpy as np
-    >>> coord = np.array([[1,0,0], [0,0,1.5], [1,0,3]]).reshape([1, -1])
+    >>> coord = np.array([[1, 0, 0], [0, 0, 1.5], [1, 0, 3]]).reshape([1, -1])
     >>> cell = np.diag(10 * np.ones(3)).reshape([1, -1])
-    >>> atype = [1,0,1]
+    >>> atype = [1, 0, 1]
     >>> graphs = [DP("graph.000.pb"), DP("graph.001.pb")]
     >>> model_devi = calc_model_devi(coord, cell, atype, graphs)
     """
     energies = []
     forces = []
     virials = []
-    natom = atype.shape[-1]
+    natom = np.array(atype).shape[-1]
     for dp in models:
         ret = dp.eval(
             coord,
@@ -327,7 +328,7 @@ def calc_model_devi(
     forces = np.array(forces)
     virials = np.array(virials)
 
-    devi = [np.arange(coord.shape[0]) * frequency]
+    devi = [np.arange(coord.shape[0], dtype=np.int64) * frequency]
     if real_data is None:
         devi += list(calc_model_devi_v(virials, relative=relative_v))
         devi_f = list(calc_model_devi_f(forces, relative=relative, atomic=atomic))
@@ -356,7 +357,6 @@ def make_model_devi(
     *,
     models: list,
     system: str,
-    set_prefix: str,
     output: str,
     frequency: int,
     real_error: bool = False,
@@ -373,14 +373,12 @@ def make_model_devi(
         A list of paths of models to use for making model deviation
     system : str
         The path of system to make model deviation calculation
-    set_prefix : str
-        The set prefix of the system
     output : str
         The output file for model deviation results
     frequency : int
         The number of steps that elapse between writing coordinates
-        in a trajectory by a MD engine (such as Gromacs / Lammps).
-        This paramter is used to determine the index in the output file.
+        in a trajectory by a MD engine (such as Gromacs / LAMMPS).
+        This parameter is used to determine the index in the output file.
     real_error : bool, default: False
         If True, calculate the RMS real error instead of model deviation.
     atomic : bool, default: False
@@ -396,9 +394,8 @@ def make_model_devi(
     **kwargs
         Arbitrary keyword arguments.
     """
-    auto_batch_size = AutoBatchSize()
     # init models
-    dp_models = [DeepPot(model, auto_batch_size=auto_batch_size) for model in models]
+    dp_models = [DeepPot(model, auto_batch_size=True) for model in models]
 
     # check type maps
     tmaps = [dp.get_type_map() for dp in dp_models]
@@ -417,7 +414,7 @@ def make_model_devi(
     for system in all_sys:
         # create data-system
         dp_data = DeepmdData(
-            system, set_prefix, shuffle_test=False, type_map=tmap, sort_atoms=False
+            system, "set", shuffle_test=False, type_map=tmap, sort_atoms=False
         )
         if first_dp.get_dim_fparam() > 0:
             dp_data.add(
@@ -505,7 +502,7 @@ def make_model_devi(
             nframes_tot += coord.shape[0]
             devis.append(devi)
         devis = np.vstack(devis)
-        devis[:, 0] = np.arange(nframes_tot) * frequency
+        devis[:, 0] = np.arange(nframes_tot, dtype=np.int64) * frequency
         write_model_devi_out(devis, output, header=system, atomic=atomic)
         devis_coll.append(devis)
     return devis_coll

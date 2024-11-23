@@ -92,7 +92,7 @@ void PPPMDPLR::compute(int eflag, int vflag) {
     return;
   }
 
-  // convert atoms from box to lamda coords
+  // convert atoms from box to lambda coords
 
   if (triclinic == 0) {
     boxlo = domain->boxlo;
@@ -266,7 +266,7 @@ void PPPMDPLR::compute(int eflag, int vflag) {
     slabcorr();
   }
 
-  // convert atoms back from lamda to box coords
+  // convert atoms back from lambda to box coords
 
   if (triclinic) {
     domain->lamda2x(atom->nlocal);

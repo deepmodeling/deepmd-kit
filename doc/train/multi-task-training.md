@@ -1,141 +1,94 @@
-# Multi-task training
+# Multi-task training {{ pytorch_icon }}
+
+:::{note}
+**Supported backends**: PyTorch {{ pytorch_icon }}
+:::
+
+:::{warning}
+We have deprecated TensorFlow backend multi-task training, please use the PyTorch one.
+:::
 
 ## Theory
 
 The multi-task training process can simultaneously handle different datasets with properties that cannot be fitted in one network (e.g. properties from DFT calculations under different exchange-correlation functionals or different basis sets).
 These datasets are denoted by $\boldsymbol x^{(1)}, \dots, \boldsymbol x^{(n_t)}$.
 For each dataset, a training task is defined as
+
 ```math
     \min_{\boldsymbol \theta}   L^{(t)} (\boldsymbol x^{(t)}; \boldsymbol  \theta^{(t)}, \tau), \quad t=1, \dots, n_t.
 ```
 
-During the multi-task training process, all tasks share one descriptor with trainable parameters $\boldsymbol{\theta}_ {d}$, while each of them has its own fitting network with trainable parameters $\boldsymbol{\theta}_ f^{(t)}$, thus
+In the PyTorch implementation, during the multi-task training process, all tasks can share any portion of the model parameters.
+A typical scenario is that each task shares the same descriptor with trainable parameters $\boldsymbol{\theta}_ {d}$, while each has its own fitting network with trainable parameters $\boldsymbol{\theta}_ f^{(t)}$, thus
 $\boldsymbol{\theta}^{(t)} = \{ \boldsymbol{\theta}_ {d} , \boldsymbol{\theta}_ {f}^{(t)} \}$.
-At each training step, a task is randomly picked from ${1, \dots, n_t}$, and the Adam optimizer is executed to minimize $L^{(t)}$ for one step to update the parameter $\boldsymbol \theta^{(t)}$.
-If different fitting networks have the same architecture, they can share the parameters of some layers
-to improve training efficiency.[^1]
+At each training step, a task will be randomly selected from ${1, \dots, n_t}$ according to the user-specified probability,
+and the Adam optimizer is executed to minimize $L^{(t)}$ for one step to update the parameter $\boldsymbol \theta^{(t)}$.
+In the case of multi-GPU parallel training, different GPUs will independently select their tasks.
+In the DPA-2 model, this multi-task training framework is adopted.[^1]
 
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen,  Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
+[^1]: Duo Zhang, Xinzijian Liu, Xiangyu Zhang, Chengqian Zhang, Chun Cai, Hangrui Bi, Yiming Du, Xuejian Qin, Jiameng Huang, Bowen Li, Yifan Shan, Jinzhe Zeng, Yuzhi Zhang, Siyuan Liu, Yifan Li, Junhan Chang, Xinyan Wang, Shuo Zhou, Jianchuan Liu, Xiaoshan Luo, Zhenyu Wang, Wanrun Jiang, Jing Wu, Yudi Yang, Jiyuan Yang, Manyi Yang, Fu-Qiang Gong, Linshuang Zhang, Mengchao Shi, Fu-Zhi Dai, Darrin M. York, Shi Liu, Tong Zhu, Zhicheng Zhong, Jian Lv, Jun Cheng, Weile Jia, Mohan Chen, Guolin Ke, Weinan E, Linfeng Zhang, Han Wang, [arXiv preprint arXiv:2312.15492 (2023)](https://arxiv.org/abs/2312.15492) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
-## Perform the multi-task training
+Compared with the previous TensorFlow implementation, the new support in PyTorch is more flexible and efficient.
+In particular, it makes multi-GPU parallel training and even tasks beyond DFT possible,
+enabling larger-scale and more general multi-task training to obtain more general pre-trained models.
+
+## Perform the multi-task training using PyTorch
+
 Training on multiple data sets (each data set contains several data systems) can be performed in multi-task mode,
-with one common descriptor and multiple specific fitting nets for each data set.
-One can simply switch the following parameters in training input script to perform multi-task mode:
-- {ref}`fitting_net <model/fitting_net>` --> {ref}`fitting_net_dict <model/fitting_net_dict>`,
-each key of which can be one individual fitting net.
-- {ref}`training_data <training/training_data>`,  {ref}`validation_data <training/validation_data>`
---> {ref}`data_dict <training/data_dict>`, each key of which can be one individual data set contains
-several data systems for corresponding fitting net, the keys must be consistent with those in
-{ref}`fitting_net_dict <model/fitting_net_dict>`.
-- {ref}`loss <loss>` --> {ref}`loss_dict <loss_dict>`, each key of which can be one individual loss setting
-for corresponding fitting net, the keys must be consistent with those in
-{ref}`fitting_net_dict <model/fitting_net_dict>`, if not set, the corresponding fitting net will use the default loss.
-- (Optional) {ref}`fitting_weight <training/fitting_weight>`, each key of which can be a non-negative integer or float,
-deciding the chosen probability for corresponding fitting net in training, if not set or invalid,
-the corresponding fitting net will not be used.
+typically with one common descriptor and multiple specific fitting nets for each data set.
+To proceed, one need to change the representation of the model definition in the input script.
+The core idea is to replace the previous single model definition {ref}`model <model>` with multiple model definitions {ref}`model/model_dict/model_key <model/model_dict/model_key>`,
+define the shared parameters of the model part {ref}`shared_dict <model/shared_dict>`, and then expand other parts for multi-model settings.
+Specifically, there are several parts that need to be modified:
 
-The training procedure will automatically choose single-task or multi-task mode, based on the above parameters.
-Note that parameters of single-task mode and multi-task mode can not be mixed.
+- {ref}`model/shared_dict <model/shared_dict>`: The parameter definition of the shared part, including various descriptors,
+  type maps (or even fitting nets can be shared). Each module can be defined with a user-defined `part_key`, such as `my_descriptor`.
+  The content needs to align with the corresponding definition in the single-task training model component, such as the definition of the descriptor.
 
-An example input for training energy and dipole in water system can be found here: [multi-task input on water](../../examples/water_multi_task/ener_dipole/input.json).
+- {ref}`model/model_dict <model/model_dict>`: The core definition of the model part and the explanation of sharing rules,
+  starting with user-defined model name keys `model_key`, such as `my_model_1`.
+  Each model part needs to align with the components of the single-task training {ref}`model <model>`, but with the following sharing rules:
+- - If you want to share the current model component with other tasks, which should be part of the {ref}`model/shared_dict <model/shared_dict>`,
+    you can directly fill in the corresponding `part_key`, such as
+    `"descriptor": "my_descriptor", `
+    to replace the previous detailed parameters. Here, you can also specify the shared_level, such as
+    `"descriptor": "my_descriptor:shared_level", `
+    and use the user-defined integer `shared_level` in the code to share the corresponding module to varying degrees
+    (default is to share all parameters, i.e., `shared_level`=0).
+    The parts that are exclusive to each model can be written following the previous definition.
 
-The supported descriptors for multi-task mode are listed:
-- {ref}`se_a (se_e2_a) <model/descriptor[se_e2_a]>`
-- {ref}`se_r (se_e2_r) <model/descriptor[se_e2_r]>`
-- {ref}`se_at (se_e3) <model/descriptor[se_e3]>`
-- {ref}`se_atten <model/descriptor[se_atten]>`
-- {ref}`se_atten_v2 <model/descriptor[se_atten_v2]>`
-- {ref}`hybrid <model/descriptor[hybrid]>`
+- {ref}`loss_dict <loss_dict>`: The loss settings corresponding to each task model, specified by the `model_key`.
+  Each {ref}`loss_dict/model_key <loss_dict/model_key>` contains the corresponding loss settings,
+  which are the same as the definition in single-task training {ref}`<loss>`.
 
-The supported fitting nets for multi-task mode are listed:
-- {ref}`ener <model/fitting_net[ener]>`
-- {ref}`dipole <model/fitting_net[dipole]>`
-- {ref}`polar <model/fitting_net[polar]>`
+- {ref}`training/data_dict <training/data_dict>`: The data settings corresponding to each task model, specified by the `model_key`.
+  Each `training/data_dict/model_key` contains the corresponding `training_data` and `validation_data` settings,
+  which are the same as the definition in single-task training {ref}`training_data <training/training_data>` and {ref}`validation_data <training/validation_data>`.
 
-The output of `dp freeze` command in multi-task mode can be seen in [freeze command](../freeze/freeze.md).
+- (Optional) {ref}`training/model_prob <training/model_prob>`: The sampling weight settings corresponding to each `model_key`, i.e., the probability weight in the training step.
+  You can specify any positive real number weight for each task. The higher the weight, the higher the probability of being sampled in each training.
+  This setting is optional, and if not set, tasks will be sampled with equal weights.
 
-## Initialization from pretrained multi-task model
-For advance training in multi-task mode, one can first train the descriptor on several upstream datasets and then transfer it on new downstream ones with newly added fitting nets.
-At the second step, you can also inherit some fitting nets trained on upstream datasets, by merely adding fitting net keys in {ref}`fitting_net_dict <model/fitting_net_dict>` and
-optional fitting net weights in {ref}`fitting_weight <training/fitting_weight>`.
+An example input for multi-task training two models in water system is shown as following:
 
-Take [multi-task input on water](../../examples/water_multi_task/ener_dipole/input.json) again for example.
-You can first train a multi-task model using input script with the following {ref}`model <model>` part:
-```json
-    "model": {
-        "type_map": ["O", "H"],
-        "descriptor": {
-            "type":     "se_e2_a",
-            "sel":      [46, 92],
-            "rcut_smth":    0.5,
-            "rcut":     6.0,
-            "neuron":       [25, 50, 100],
-        },
-        "fitting_net_dict": {
-            "water_dipole": {
-                "type":         "dipole",
-                "neuron":       [100, 100, 100],
-            },
-            "water_ener": {
-                "neuron":       [240, 240, 240],
-                "resnet_dt":    true,
-            }
-        },
-    }
-```
-After training, you can freeze this multi-task model into one unit graph:
-```bash
-$ dp freeze -o graph.pb --united-model
-```
-Then if you want to transfer the trained descriptor and some fitting nets (take `water_ener` for example) to newly added datasets with new fitting net `water_ener_2`,
-you can modify the {ref}`model <model>` part of the new input script in a more simplified way:
-```json
-    "model": {
-        "type_map": ["O", "H"],
-        "descriptor": {},
-        "fitting_net_dict": {
-            "water_ener": {},
-            "water_ener_2": {
-                "neuron":       [240, 240, 240],
-                "resnet_dt":    true,
-            }
-        },
-    }
-```
-It will autocomplete the configurations according to the frozen graph.
-
-Note that for newly added fitting net keys, other parts in the input script, including {ref}`data_dict <training/data_dict>` and {ref}`loss_dict <loss_dict>` (optionally {ref}`fitting_weight <training/fitting_weight>`),
-should be set explicitly. While for old fitting net keys, it will inherit the old configurations if not set.
-
-Finally, you can perform the modified multi-task training from the frozen model with command:
-```bash
-$ dp train input.json --init_frz_model graph.pb
+```{literalinclude} ../../examples/water_multi_task/pytorch_example/input_torch.json
+:language: json
+:linenos:
 ```
 
-## Share layers among energy fitting networks
+## Finetune from the pre-trained multi-task model
 
-The multi-task training can be used to train multiple levels of energies (e.g. DFT and CCSD(T)) at the same time.
-In this situation, one can set {ref}`model/fitting_net[ener]/layer_name>` to share some of layers among fitting networks.
-The architecture of the layers with the same name should be the same.
+To finetune based on the checkpoint `model.pt` after the multi-task pre-training is completed,
+users can refer to [this section](./finetuning.md#fine-tuning-from-a-multi-task-pre-trained-model).
 
-For example, if one want to share the first and the third layers for two three-hidden-layer fitting networks, the following parameters should be set.
-```json
-"fitting_net_dict": {
-    "ccsd": {
-        "neuron": [
-            240,
-            240,
-            240
-        ],
-        "layer_name": ["l0", null, "l2", null]
-    },
-    "wb97m": {
-        "neuron": [
-            240,
-            240,
-            240
-        ],
-        "layer_name": ["l0", null, "l2", null]
-    }
-}
+## Multi-task specific parameters
+
+:::{note}
+Details of some parameters that are the same as [the regular parameters](./train-input.rst) are not shown below.
+:::
+
+```{eval-rst}
+.. dargs::
+   :module: deepmd.utils.argcheck
+   :func: gen_args_multi_task
 ```

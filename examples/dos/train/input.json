@@ -17,6 +17,7 @@
       ],
       "resnet_dt": false,
       "axis_neuron": 8,
+      "type_one_side": true,
       "precision": "float64",
       "seed": 1
     },
@@ -65,7 +66,6 @@
       "systems": [
         "../data/heat-221/"
       ],
-      "set_prefix": "set",
       "batch_size": 1
     }
   },
