@@ -1299,7 +1299,7 @@ def get_dataid_config(_model_params):
         for model_key in sorted_model_keys
     ]
     if not all(item == numb_dataid_list[0] for item in numb_dataid_list):
-        raise AssertionError(
+        raise ValueError(
             f"All models must have the same dimension of data identification, while the settings are: {numb_dataid_list}"
         )
     if numb_dataid_list[0] == 0:
