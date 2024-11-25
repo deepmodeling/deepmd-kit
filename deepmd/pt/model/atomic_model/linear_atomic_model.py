@@ -57,7 +57,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         type_map: list[str],
         weights: Optional[Union[str, list[float]]] = "mean",
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
 
@@ -253,11 +253,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         extended_coord = extended_coord.view(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
-            extended_coord,
+            extended_coord.detach(),
             nlist,
             sorted_rcuts,
             sorted_sels,
         )
+
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
             for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
@@ -459,7 +460,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 
@@ -483,7 +484,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         sampled_func,
         stat_file_path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute or load the statistics parameters of the model,
         such as mean and standard deviation of descriptors or the energy bias of the fitting net.
@@ -533,7 +534,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         type_map: list[str],
         smin_alpha: Optional[float] = 0.1,
         **kwargs,
-    ):
+    ) -> None:
         models = [dp_model, zbl_model]
         kwargs["models"] = models
         kwargs["type_map"] = type_map

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    NoReturn,
     Optional,
     Union,
 )
@@ -14,6 +15,7 @@ from deepmd.dpmodel.array_api import (
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
+    cast_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils import (
@@ -88,7 +90,7 @@ class RepinitArgs:
         three_body_sel: int = 40,
         three_body_rcut: float = 4.0,
         three_body_rcut_smth: float = 0.5,
-    ):
+    ) -> None:
         r"""The constructor for the RepinitArgs class which defines the parameters of the repinit block in DPA2 descriptor.
 
         Parameters
@@ -212,7 +214,7 @@ class RepformerArgs:
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
-    ):
+    ) -> None:
         r"""The constructor for the RepformerArgs class which defines the parameters of the repformer block in DPA2 descriptor.
 
         Parameters
@@ -384,7 +386,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
         Parameters
@@ -594,6 +596,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.rcut = self.repinit.get_rcut()
         self.ntypes = ntypes
         self.sel = self.repinit.sel
+        self.precision = precision
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -656,7 +659,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -728,7 +731,9 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: list[dict], path: Optional[DPPath] = None
+    ) -> NoReturn:
         """Update mean and stddev for descriptor elements."""
         raise NotImplementedError
 
@@ -757,6 +762,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             stddev_list.append(self.repinit_three_body.stddev)
         return mean_list, stddev_list
 
+    @cast_precision
     def call(
         self,
         coord_ext: np.ndarray,
@@ -805,9 +811,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             self.rcut_list,
             self.nsel_list,
         )
+        type_embedding = self.type_embedding.call()
         # repinit
         g1_ext = xp.reshape(
-            xp.take(self.type_embedding.call(), xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
             (nframes, nall, self.tebd_dim),
         )
         g1_inp = g1_ext[:, :nloc, :]
@@ -819,6 +826,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             atype_ext,
             g1_ext,
             mapping,
+            type_embedding=type_embedding,
         )
         if use_three_body:
             assert self.repinit_three_body is not None
@@ -833,6 +841,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
                 atype_ext,
                 g1_ext,
                 mapping,
+                type_embedding=type_embedding,
             )
             g1 = xp.concat([g1, g1_three_body], axis=-1)
         # linear to change shape

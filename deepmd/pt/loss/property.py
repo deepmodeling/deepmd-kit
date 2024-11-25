@@ -25,7 +25,7 @@ class PropertyLoss(TaskLoss):
         metric: list = ["mae"],
         beta: float = 1.00,
         **kwargs,
-    ):
+    ) -> None:
         r"""Construct a layer to compute loss on property.
 
         Parameters

@@ -35,6 +35,10 @@ def get_standard_model(data: dict):
         The data to construct the model.
     """
     data = deepcopy(data)
+    if "type_embedding" in data:
+        raise ValueError(
+            "In the JAX backend, type_embedding is not at the model level, but within the descriptor. See type embedding documentation for details."
+        )
     descriptor_type = data["descriptor"].pop("type")
     data["descriptor"]["type_map"] = data["type_map"]
     data["descriptor"]["ntypes"] = len(data["type_map"])
@@ -43,6 +47,8 @@ def get_standard_model(data: dict):
     descriptor = BaseDescriptor.get_class_by_type(descriptor_type)(
         **data["descriptor"],
     )
+    if fitting_type in {"dipole", "polar"}:
+        data["fitting_net"]["embedding_width"] = descriptor.get_dim_emb()
     fitting = BaseFitting.get_class_by_type(fitting_type)(
         ntypes=descriptor.get_ntypes(),
         dim_descrpt=descriptor.get_dim_out(),

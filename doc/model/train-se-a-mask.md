@@ -84,3 +84,11 @@ And the `loss` section in the training input script should be set as follows.
     "_comment": " that's all"
   }
 ```
+
+## Type embedding
+
+Same as [`se_e2_a`](./train-se-e2-a.md).
+
+## Model compression
+
+Same as [`se_e2_a`](./train-se-e2-a.md).

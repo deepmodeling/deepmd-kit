@@ -169,7 +169,7 @@ class DPTabulate(BaseTabulate):
             tf.import_graph_def(sub_graph_def, name="")
         return sub_graph, sub_graph_def
 
-    def _get_descrpt_type(self):
+    def _get_descrpt_type(self) -> str:
         if isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeAtten):
             return "Atten"
         elif isinstance(self.descrpt, deepmd.tf.descriptor.DescrptSeAEbdV2):
@@ -507,7 +507,7 @@ class DPTabulate(BaseTabulate):
         """Then number of types excluding all types."""
         return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
 
-    def _convert_numpy_to_tensor(self):
+    def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to tf.Tensor."""
         for ii in self.data:
             self.data[ii] = tf.constant(self.data[ii])

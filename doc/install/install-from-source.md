@@ -297,7 +297,9 @@ If one does not need to use DeePMD-kit with LAMMPS or i-PI, then the python inte
 
 ::::{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
+
+The C++ interfaces of both TensorFlow and JAX backends are based on the TensorFlow C++ library.
 
 Since TensorFlow 2.12, TensorFlow C++ library (`libtensorflow_cc`) is packaged inside the Python library. Thus, you can skip building TensorFlow C++ library manually. If that does not work for you, you can still build it manually.
 
@@ -311,6 +313,15 @@ First, the C++ interface of TensorFlow should be installed. It is noted that the
 
 If you have installed PyTorch using pip, you can use libtorch inside the PyTorch Python package.
 You can also download libtorch prebuilt library from the [PyTorch website](https://pytorch.org/get-started/locally/).
+
+:::
+
+:::{tab-item} JAX {{ jax_icon }}
+
+The JAX backend only depends on the TensorFlow C API, which is included in both TensorFlow C++ library and [TensorFlow C library](https://www.tensorflow.org/install/lang_c).
+If you want to use the TensorFlow C++ library, just enable the TensorFlow backend (which depends on the TensorFlow C++ library) and nothing else needs to do.
+If you want to use the TensorFlow C library and disable the TensorFlow backend,
+download the TensorFlow C library from [this page](https://www.tensorflow.org/install/lang_c#download_and_extract).
 
 :::
 
@@ -338,7 +349,7 @@ We recommend using [conda packages](https://docs.deepmodeling.org/faq/conda.html
 
 ::::{tab-set}
 
-:::{tab-item} TensorFlow {{ tensorflow_icon }}
+:::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
 
 I assume you have activated the TensorFlow Python environment and want to install DeePMD-kit into path `$deepmd_root`, then execute CMake
 
@@ -367,6 +378,17 @@ cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$de
 
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+If you want to use the TensorFlow C++ library, just enable the TensorFlow backend and nothing else needs to do.
+If you want to use the TensorFlow C library and disable the TensorFlow backend, set {cmake:variable}`ENABLE_JAX` to `ON` and `CMAKE_PREFIX_PATH` to the root directory of the [TensorFlow C library](https://www.tensorflow.org/install/lang_c).
+
+```bash
+cmake -DENABLE_JAX=ON -D CMAKE_PREFIX_PATH=${tensorflow_c_root} ..
+```
+
+:::
+
 ::::
 
 One may add the following CMake variables to `cmake` using the [`-D <var>=<value>` option](https://cmake.org/cmake/help/latest/manual/cmake.1.html#cmdoption-cmake-D):
@@ -375,7 +397,8 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
-{{ tensorflow_icon }} Whether building the TensorFlow backend.
+{{ tensorflow_icon }} {{ jax_icon }} Whether building the TensorFlow backend and the JAX backend.
+Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
 
 :::
 
@@ -387,11 +410,21 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 
 :::
 
+:::{cmake:variable} ENABLE_JAX
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ jax_icon }} Build the JAX backend.
+If {cmake:variable}`ENABLE_TENSORFLOW` is `ON`, the TensorFlow C++ library is used to build the JAX backend;
+If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is used to build the JAX backend.
+
+:::
+
 :::{cmake:variable} TENSORFLOW_ROOT
 
 **Type**: `PATH`
 
-{{ tensorflow_icon }} The Path to TensorFlow's C++ interface.
+{{ tensorflow_icon }} {{ jax_icon }} The Path to TensorFlow's C++ interface.
 
 :::
 

@@ -411,7 +411,7 @@ class DescrptSeAEfLower(DescrptSeA):
         mesh,
         input_dict,
         **kwargs,
-    ):
+    ) -> None:
         data_efield = input_dict["efield"]
         all_davg = []
         all_dstd = []

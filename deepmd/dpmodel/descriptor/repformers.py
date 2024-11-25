@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Callable,
+    NoReturn,
     Optional,
     Union,
 )
@@ -195,7 +196,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -319,7 +320,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -366,18 +367,18 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> NoReturn:
         """Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data."""
         raise NotImplementedError
 
-    def get_stats(self):
+    def get_stats(self) -> NoReturn:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
 
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
@@ -388,6 +389,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         atype_ext: np.ndarray,
         atype_embd_ext: Optional[np.ndarray] = None,
         mapping: Optional[np.ndarray] = None,
+        type_embedding: Optional[np.ndarray] = None,
     ):
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
@@ -796,7 +798,7 @@ class Atten2Map(NativeOP):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
         self.input_dim = input_dim
@@ -919,7 +921,7 @@ class Atten2MultiHeadApply(NativeOP):
         head_num: int,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
@@ -1007,7 +1009,7 @@ class Atten2EquiVarApply(NativeOP):
         head_num: int,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
@@ -1082,7 +1084,7 @@ class LocalAtten(NativeOP):
         attnw_shift: float = 20.0,
         precision: str = "float64",
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
@@ -1244,7 +1246,7 @@ class RepformerLayer(NativeOP):
         g1_out_mlp: bool = True,
         ln_eps: Optional[float] = 1e-5,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
         self.rcut = rcut

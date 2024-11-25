@@ -13,7 +13,7 @@ from .common import (
 
 
 class TestSingleMachine(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         try:
             import horovod  # noqa: F401
         except ImportError as e:
@@ -22,7 +22,7 @@ class TestSingleMachine(unittest.TestCase):
             ) from e
         self.input_file = str(tests_path / "model_compression" / "input.json")
 
-    def test_two_workers(self):
+    def test_two_workers(self) -> None:
         command = "horovodrun -np 2 dp train -m workers " + self.input_file
         penv = os.environ.copy()
         num_gpus = len(get_gpus() or [])

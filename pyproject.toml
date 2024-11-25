@@ -2,7 +2,7 @@
 requires = [
     # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    "scikit-build-core>=0.5,<0.10,!=0.6.0",
+    "scikit-build-core>=0.5,<0.11,!=0.6.0",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
 ]
@@ -378,6 +378,8 @@ select = [
     "N804", # invalid-first-argument-name-for-class-method
     "N805", # invalid-first-argument-name-for-method
     "DTZ", # datetime
+    "TCH", # flake8-type-checking
+    "PYI", # flake8-pyi
 ]
 
 ignore = [
@@ -417,6 +419,9 @@ banned-module-level-imports = [
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "torch.testing.assert_allclose".msg = "Use `torch.testing.assert_close()` instead, see https://github.com/pytorch/pytorch/issues/61844."
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["torch.nn.Module"]
 
 [tool.ruff.lint.extend-per-file-ignores]
 # Also ignore `E402` in all `__init__.py` files.

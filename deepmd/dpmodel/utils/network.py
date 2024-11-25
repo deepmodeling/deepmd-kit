@@ -35,7 +35,7 @@ from deepmd.utils.version import (
 
 
 class Identity(NativeOP):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def call(self, x: np.ndarray) -> np.ndarray:
@@ -160,7 +160,7 @@ class NativeLayer(NativeOP):
         obj.check_shape_consistency()
         return obj
 
-    def check_shape_consistency(self):
+    def check_shape_consistency(self) -> None:
         if self.b is not None and self.w.shape[1] != self.b.shape[0]:
             raise ValueError(
                 f"dim 1 of w {self.w.shape[1]} is not equal to shape "
@@ -172,10 +172,10 @@ class NativeLayer(NativeOP):
                 f"of idt {self.idt.shape[0]}",
             )
 
-    def check_type_consistency(self):
+    def check_type_consistency(self) -> None:
         precision = self.precision
 
-        def check_var(var):
+        def check_var(var) -> None:
             if var is not None:
                 # array api standard doesn't provide a API to get the dtype name
                 # this is really hacked
@@ -187,7 +187,7 @@ class NativeLayer(NativeOP):
         check_var(self.b)
         check_var(self.idt)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("w", "matrix"):
             self.w = value
         elif key in ("b", "bias"):
@@ -248,6 +248,10 @@ class NativeLayer(NativeOP):
             if self.b is not None
             else xp.matmul(x, self.w)
         )
+        if y.dtype != x.dtype:
+            # workaround for bfloat16
+            # https://github.com/jax-ml/ml_dtypes/issues/235
+            y = xp.astype(y, x.dtype)
         y = fn(y)
         if self.idt is not None:
             y *= self.idt
@@ -421,14 +425,14 @@ class LayerNorm(NativeLayer):
         obj._check_shape_consistency()
         return obj
 
-    def _check_shape_consistency(self):
+    def _check_shape_consistency(self) -> None:
         if self.b is not None and self.w.shape[0] != self.b.shape[0]:
             raise ValueError(
                 f"dim 1 of w {self.w.shape[0]} is not equal to shape "
                 f"of b {self.b.shape[0]}",
             )
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("w", "matrix"):
             self.w = value
         elif key in ("b", "bias"):
@@ -538,11 +542,11 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
             assert isinstance(key, int)
             return self.layers[key]
 
-        def __setitem__(self, key, value):
+        def __setitem__(self, key, value) -> None:
             assert isinstance(key, int)
             self.layers[key] = value
 
-        def check_shape_consistency(self):
+        def check_shape_consistency(self) -> None:
             for ii in range(len(self.layers) - 1):
                 if self.layers[ii].dim_out() != self.layers[ii + 1].dim_in():
                     raise ValueError(
@@ -568,7 +572,7 @@ def make_multilayer_network(T_NetworkLayer, ModuleBase):
                 x = layer(x)
             return x
 
-        def clear(self):
+        def clear(self) -> None:
             """Clear the network parameters to zero."""
             for layer in self.layers:
                 xp = array_api_compat.array_namespace(layer.w)
@@ -616,7 +620,7 @@ def make_embedding_network(T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             seed: Optional[Union[int, list[int]]] = None,
             bias: bool = True,
-        ):
+        ) -> None:
             layers = []
             i_in = in_dim
             for idx, ii in enumerate(neuron):
@@ -721,7 +725,7 @@ def make_fitting_network(T_EmbeddingNet, T_Network, T_NetworkLayer):
             precision: str = DEFAULT_PRECISION,
             bias_out: bool = True,
             seed: Optional[Union[int, list[int]]] = None,
-        ):
+        ) -> None:
             super().__init__(
                 in_dim,
                 neuron=neuron,
@@ -822,7 +826,7 @@ class NetworkCollection:
         ntypes: int,
         network_type: str = "network",
         networks: list[Union[NativeNet, dict]] = [],
-    ):
+    ) -> None:
         self.ndim = ndim
         self.ntypes = ntypes
         self.network_type = self.NETWORK_TYPE_MAP[network_type]
@@ -832,7 +836,7 @@ class NetworkCollection:
         if len(networks):
             self.check_completeness()
 
-    def check_completeness(self):
+    def check_completeness(self) -> None:
         """Check whether the collection is complete.
 
         Raises
@@ -862,7 +866,7 @@ class NetworkCollection:
     def __getitem__(self, key):
         return self._networks[self._convert_key(key)]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if isinstance(value, self.network_type):
             pass
         elif isinstance(value, dict):

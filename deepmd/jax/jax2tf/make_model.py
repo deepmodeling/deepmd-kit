@@ -90,7 +90,9 @@ def model_call_from_call_lower(
         nloc,
         rcut,
         sel,
-        distinguish_types=not mixed_types,
+        # types will be distinguished in the lower interface,
+        # so it doesn't need to be distinguished here
+        distinguish_types=False,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     model_predict_lower = call_lower(

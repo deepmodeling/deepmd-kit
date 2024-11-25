@@ -55,7 +55,7 @@ jobs:
         restore-keys: |
           test2-durations-combined-${{ matrix.python }}-${{ github.sha }}
           test2-durations-combined-${{ matrix.python }}
-    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --durations-path=.test_durations --splitting-algorithm least_duration
+    - run: pytest --cov=deepmd source/tests --durations=0 --splits 6 --group ${{ matrix.group }} --store-durations --clean-durations --durations-path=.test_durations --splitting-algorithm least_duration
       env:
         NUM_WORKERS: 0
     - name: Test TF2 eager mode
@@ -63,6 +63,7 @@ jobs:
       env:
         NUM_WORKERS: 0
         DP_TEST_TF2_ONLY: 1
+        DP_DTYPE_PROMOTION_STRICT: 1
       if: matrix.group == 1
     - run: mv .test_durations .test_durations_${{ matrix.group }}
     - name: Upload partial durations
@@ -71,7 +72,7 @@ jobs:
         name: split-${{ matrix.python }}-${{ matrix.group }}
         path: .test_durations_${{ matrix.group }}
         include-hidden-files: true
-    - uses: codecov/codecov-action@v4
+    - uses: codecov/codecov-action@v5
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   update_durations:

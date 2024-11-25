@@ -62,13 +62,11 @@ VALID_ACTIVATION: set[_ACTIVATION] = set(get_args(_ACTIVATION))
 
 if TYPE_CHECKING:
     _DICT_VAL = TypeVar("_DICT_VAL")
-    __all__.extend(
-        [
-            "_DICT_VAL",
-            "_PRECISION",
-            "_ACTIVATION",
-        ]
-    )
+    __all__ += [
+        "_DICT_VAL",
+        "_PRECISION",
+        "_ACTIVATION",
+    ]
 
 
 def select_idx_map(atom_types: np.ndarray, select_types: np.ndarray) -> np.ndarray:
@@ -237,7 +235,7 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
         raise RuntimeError(f"{precision} is not a valid precision")
 
 
-def symlink_prefix_files(old_prefix: str, new_prefix: str):
+def symlink_prefix_files(old_prefix: str, new_prefix: str) -> None:
     """Create symlinks from old checkpoint prefix to new one.
 
     On Windows this function will copy files instead of creating symlinks.

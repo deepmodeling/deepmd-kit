@@ -60,7 +60,9 @@
     "training_data": {
       "systems": [
         "pt/water_tensor/dipole/atomic_system",
-        "pt/water_tensor/dipole/global_system"
+        "pt/water_tensor/dipole/global_system",
+        "pt/water_tensor/dipole/O78H156",
+        "pt/water_tensor/dipole/O96H192"
       ],
       "batch_size": "auto",
       "_comment8": "that's all"

@@ -109,7 +109,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
             "type_map": ["O", "H"] if use_econf_tebd else None,
         }
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

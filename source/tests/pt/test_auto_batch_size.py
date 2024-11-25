@@ -9,7 +9,7 @@ from deepmd.pt.utils.auto_batch_size import (
 
 
 class TestAutoBatchSize(unittest.TestCase):
-    def test_execute_all(self):
+    def test_execute_all(self) -> None:
         dd0 = np.zeros((10000, 2, 1, 3, 4))
         dd1 = np.ones((10000, 2, 1, 3, 4))
         auto_batch_size = AutoBatchSize(256, 2.0)
@@ -21,7 +21,7 @@ class TestAutoBatchSize(unittest.TestCase):
         np.testing.assert_equal(dd0, dd2[0])
         np.testing.assert_equal(dd1, dd2[1])
 
-    def test_execute_all_dict(self):
+    def test_execute_all_dict(self) -> None:
         dd0 = np.zeros((10000, 2, 1, 3, 4))
         dd1 = np.ones((10000, 2, 1, 3, 4))
         auto_batch_size = AutoBatchSize(256, 2.0)

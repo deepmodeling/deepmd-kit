@@ -13,7 +13,7 @@ from warnings import (
 import yaml
 
 
-def _main():
+def _main() -> None:
     parser = argparse.ArgumentParser(
         description="convert json config file to yaml",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

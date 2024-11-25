@@ -27,6 +27,9 @@ from deepmd.pt.model.network.network import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.env import (
+    PRECISION_DICT,
+)
 from deepmd.pt.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
@@ -96,7 +99,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         type_map: Optional[list[str]] = None,
-    ):
+    ) -> None:
         r"""The DPA-2 descriptor. see https://arxiv.org/abs/2312.15492.
 
         Parameters
@@ -159,6 +162,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
 
         self.repinit_args = init_subclass_params(repinit, RepinitArgs)
         self.repformer_args = init_subclass_params(repformer, RepformerArgs)
+        self.tebd_input_mode = self.repinit_args.tebd_input_mode
 
         self.repinit = DescrptBlockSeAtten(
             self.repinit_args.rcut,
@@ -268,6 +272,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
+        self.prec = PRECISION_DICT[self.precision]
         self.smooth = smooth
         self.exclude_types = exclude_types
         self.env_protection = env_protection
@@ -374,7 +379,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         # the env_protection of repinit is the same as that of the repformer
         return self.repinit.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -490,7 +495,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -745,12 +750,15 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        # cast the input to internal precsion
+        extended_coord = extended_coord.to(dtype=self.prec)
+
         use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.view(nframes, -1).shape[1] // 3
         # nlists
         nlist_dict = build_multiple_neighbor_list(
-            extended_coord,
+            extended_coord.detach(),
             nlist,
             self.rcut_list,
             self.nsel_list,
@@ -758,6 +766,10 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
         # repinit
         g1_ext = self.type_embedding(extended_atype)
         g1_inp = g1_ext[:, :nloc, :]
+        if self.tebd_input_mode in ["strip"]:
+            type_embedding = self.type_embedding.get_full_embedding(g1_ext.device)
+        else:
+            type_embedding = None
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
                 get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
@@ -766,6 +778,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             extended_atype,
             g1_ext,
             mapping,
+            type_embedding,
         )
         if use_three_body:
             assert self.repinit_three_body is not None
@@ -780,6 +793,7 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
                 extended_atype,
                 g1_ext,
                 mapping,
+                type_embedding,
             )
             g1 = torch.cat([g1, g1_three_body], dim=-1)
         # linear to change shape
@@ -806,11 +820,17 @@ class DescrptDPA2(BaseDescriptor, torch.nn.Module):
             extended_atype,
             g1,
             mapping,
-            comm_dict,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             g1 = torch.cat([g1, g1_inp], dim=-1)
-        return g1, rot_mat, g2, h2, sw
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            g2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     @classmethod
     def update_sel(

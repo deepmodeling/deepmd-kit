@@ -13,7 +13,7 @@ GLOBAL_SEED = 20241109
 
 
 class TestRegion(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.cell = tnp.array(
             [[1, 0, 0], [0.4, 0.8, 0], [0.1, 0.3, 2.1]],
         )
@@ -21,7 +21,7 @@ class TestRegion(tf.test.TestCase):
         self.cell = tnp.tile(self.cell, [4, 5, 1, 1])
         self.prec = 1e-8
 
-    def test_inter_to_phys(self):
+    def test_inter_to_phys(self) -> None:
         rng = tf.random.Generator.from_seed(GLOBAL_SEED)
         inter = rng.normal(shape=[4, 5, 3, 3])
         phys = inter2phys(inter, self.cell)
@@ -32,7 +32,7 @@ class TestRegion(tf.test.TestCase):
                     phys[ii, jj], expected_phys, rtol=self.prec, atol=self.prec
                 )
 
-    def test_to_face_dist(self):
+    def test_to_face_dist(self) -> None:
         cell0 = self.cell[0][0]
         vol = tf.linalg.det(cell0)
         # area of surfaces xy, xz, yz

@@ -467,6 +467,14 @@ void FixDPLR::pre_force(int vflag) {
   int nghost = atom->nghost;
   int nall = nlocal + nghost;
 
+  // mapping (for DPA-2 JAX)
+  std::vector<int> mapping_vec(nall, -1);
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    for (size_t ii = 0; ii < nall; ++ii) {
+      mapping_vec[ii] = atom->map(atom->tag[ii]);
+    }
+  }
+
   // if (eflag_atom) {
   //   error->all(FLERR,"atomic energy calculation is not supported by this
   //   fix\n");
@@ -499,6 +507,9 @@ void FixDPLR::pre_force(int vflag) {
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
                                      list->firstneigh);
   lmp_list.set_mask(NEIGHMASK);
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    lmp_list.set_mapping(mapping_vec.data());
+  }
   // declear output
   vector<FLOAT_PREC> tensor;
   // compute

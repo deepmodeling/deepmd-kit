@@ -5,6 +5,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    NoReturn,
     Optional,
 )
 
@@ -77,10 +78,10 @@ class FooFitting(PolarFittingNet):
 
 
 class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.merged_output_stat = [
             {
@@ -144,7 +145,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             pass
         self.stat_file_path = DPPath(h5file, "a")
 
-    def test_output_stat(self):
+    def test_output_stat(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,
@@ -217,7 +218,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         np.testing.assert_almost_equal(to_numpy_array(md0.out_std), expected_std)
 
         # 3. test bias load from file
-        def raise_error():
+        def raise_error() -> NoReturn:
             raise RuntimeError
 
         md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)

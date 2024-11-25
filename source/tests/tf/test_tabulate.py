@@ -15,7 +15,7 @@ from deepmd.tf.env import (
 
 
 class TestDPTabulate(unittest.TestCase):
-    def test_op_tanh(self):
+    def test_op_tanh(self) -> None:
         w = tf.constant(
             [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1, 1.1, 1.2]],
             dtype="double",
@@ -61,7 +61,7 @@ class TestDPTabulate(unittest.TestCase):
         places = 15
         np.testing.assert_almost_equal(dy_array, answer, places)
 
-    def test_op_gelu(self):
+    def test_op_gelu(self) -> None:
         w = tf.constant(
             [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1, 1.1, 1.2]],
             dtype="double",

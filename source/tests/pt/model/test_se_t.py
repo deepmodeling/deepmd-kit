@@ -31,12 +31,12 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 # to be merged with the tf test case
 class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
     def test_consistency(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))
@@ -111,7 +111,7 @@ class TestDescrptSeT(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape
         davg = rng.normal(size=(self.nt, nnei, 4))

@@ -28,8 +28,7 @@ void DipoleChargeModifier::init(const std::string& model,
               << std::endl;
     return;
   }
-  // TODO: To implement detect_backend
-  DPBackend backend = deepmd::DPBackend::TensorFlow;
+  const DPBackend backend = get_backend(model);
   if (deepmd::DPBackend::TensorFlow == backend) {
 #ifdef BUILD_TENSORFLOW
     dcm = std::make_shared<deepmd::DipoleChargeModifierTF>(model, gpu_rank,

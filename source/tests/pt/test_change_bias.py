@@ -51,7 +51,7 @@ current_path = os.getcwd()
 
 
 class TestChangeBias(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
@@ -88,7 +88,7 @@ class TestChangeBias(unittest.TestCase):
             model_name + "user_bias" + ".pt"
         )
 
-    def test_change_bias_with_data(self):
+    def test_change_bias_with_data(self) -> None:
         run_dp(
             f"dp --pt change-bias {self.model_path!s} -s {self.data_file[0]} -o {self.model_path_data_bias!s}"
         )
@@ -108,7 +108,7 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = expected_model.get_out_bias()
         torch.testing.assert_close(updated_bias, expected_bias)
 
-    def test_change_bias_with_data_sys_file(self):
+    def test_change_bias_with_data_sys_file(self) -> None:
         tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
         with open(tmp_file.name, "w") as f:
             f.writelines([sys + "\n" for sys in self.data_file])
@@ -131,7 +131,7 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = expected_model.get_out_bias()
         torch.testing.assert_close(updated_bias, expected_bias)
 
-    def test_change_bias_with_user_defined(self):
+    def test_change_bias_with_user_defined(self) -> None:
         user_bias = [0.1, 3.2, -0.5]
         run_dp(
             f"dp --pt change-bias {self.model_path!s} -b {' '.join([str(_) for _ in user_bias])} -o {self.model_path_user_bias!s}"
@@ -147,7 +147,7 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = to_torch_tensor(np.array(user_bias)).view(updated_bias.shape)
         torch.testing.assert_close(updated_bias, expected_bias)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("change-bias-model") and f.endswith(".pt"):
                 os.remove(f)

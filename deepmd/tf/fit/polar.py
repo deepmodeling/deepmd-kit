@@ -34,6 +34,9 @@ from deepmd.tf.utils.network import (
     one_layer,
     one_layer_rand_seed_shift,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -56,6 +59,10 @@ class PolarFittingSeA(Fitting):
     resnet_dt : bool
             Time-step `dt` in the resnet construction:
             y = x + dt * \phi (Wx + b)
+    numb_fparam
+            Number of frame parameters
+    numb_aparam
+            Number of atomic parameters
     sel_type : list[int]
             The atom types selected to have an atomic polarizability prediction. If is None, all atoms are selected.
     fit_diag : bool
@@ -86,6 +93,8 @@ class PolarFittingSeA(Fitting):
         embedding_width: int,
         neuron: list[int] = [120, 120, 120],
         resnet_dt: bool = True,
+        numb_fparam: int = 0,
+        numb_aparam: int = 0,
         sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
         scale: Optional[list[float]] = None,
@@ -151,6 +160,18 @@ class PolarFittingSeA(Fitting):
         self.mixed_prec = None
         self.mixed_types = mixed_types
         self.type_map = type_map
+        self.numb_fparam = numb_fparam
+        self.numb_aparam = numb_aparam
+        if numb_fparam > 0:
+            raise ValueError("numb_fparam is not supported in the dipole fitting")
+        if numb_aparam > 0:
+            raise ValueError("numb_aparam is not supported in the dipole fitting")
+        self.fparam_avg = None
+        self.fparam_std = None
+        self.fparam_inv_std = None
+        self.aparam_avg = None
+        self.aparam_std = None
+        self.aparam_inv_std = None
 
     def get_sel_type(self) -> list[int]:
         """Get selected atom types."""
@@ -160,7 +181,7 @@ class PolarFittingSeA(Fitting):
         """Get the output size. Should be 9."""
         return 9
 
-    def compute_output_stats(self, all_stat):
+    def compute_output_stats(self, all_stat) -> None:
         """Compute the output statistics.
 
         Parameters
@@ -565,6 +586,8 @@ class PolarFittingSeA(Fitting):
             "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
+            "numb_fparam": self.numb_fparam,
+            "numb_aparam": self.numb_aparam,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": [],
@@ -777,3 +800,29 @@ class GlobalPolarFittingSeA:
             atomic=False,
             label_name="polarizability",
         )
+
+    @property
+    def input_requirement(self) -> list[DataRequirementItem]:
+        """Return data requirements needed for the model input."""
+        data_requirement = []
+        if self.numb_fparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "fparam", self.numb_fparam, atomic=False, must=True, high_prec=False
+                )
+            )
+        if self.numb_aparam > 0:
+            data_requirement.append(
+                DataRequirementItem(
+                    "aparam", self.numb_aparam, atomic=True, must=True, high_prec=False
+                )
+            )
+        return data_requirement
+
+    def get_numb_fparam(self) -> int:
+        """Get the number of frame parameters."""
+        return self.numb_fparam
+
+    def get_numb_aparam(self) -> int:
+        """Get the number of atomic parameters."""
+        return self.numb_aparam

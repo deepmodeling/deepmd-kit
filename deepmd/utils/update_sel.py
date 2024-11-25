@@ -55,7 +55,7 @@ class BaseUpdateSel(ABC):
                     )
         return min_nbor_dist, sel
 
-    def parse_auto_sel(self, sel):
+    def parse_auto_sel(self, sel) -> bool:
         if not isinstance(sel, str):
             return False
         words = sel.split(":")

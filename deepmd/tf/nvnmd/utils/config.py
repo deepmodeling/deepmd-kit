@@ -41,7 +41,7 @@ class NvnmdConfig:
     DOI: 10.1038/s41524-022-00773-z
     """
 
-    def __init__(self, jdata: dict):
+    def __init__(self, jdata: dict) -> None:
         self.version = 0
         self.enable = False
         self.map = {}
@@ -50,7 +50,7 @@ class NvnmdConfig:
         self.weight = {}
         self.init_from_jdata(jdata)
 
-    def init_from_jdata(self, jdata: dict = {}):
+    def init_from_jdata(self, jdata: dict = {}) -> None:
         r"""Initialize this class with `jdata` loaded from input script."""
         if jdata == {}:
             return None
@@ -78,7 +78,7 @@ class NvnmdConfig:
             # if load the file, set net_size
             self.init_net_size()
 
-    def init_value(self):
+    def init_value(self) -> None:
         r"""Initialize member with dict."""
         self.dscp = self.config["dscp"]
         self.fitn = self.config["fitn"]
@@ -87,7 +87,7 @@ class NvnmdConfig:
         self.ctrl = self.config["ctrl"]
         self.nbit = self.config["nbit"]
 
-    def update_config(self):
+    def update_config(self) -> None:
         r"""Update config from dict."""
         self.config["dscp"] = self.dscp
         self.config["fitn"] = self.fitn
@@ -96,7 +96,7 @@ class NvnmdConfig:
         self.config["ctrl"] = self.ctrl
         self.config["nbit"] = self.nbit
 
-    def init_train_mode(self, mod="cnn"):
+    def init_train_mode(self, mod="cnn") -> None:
         r"""Configure for taining cnn or qnn."""
         if mod == "cnn":
             self.restore_descriptor = False
@@ -109,7 +109,7 @@ class NvnmdConfig:
             self.quantize_descriptor = True
             self.quantize_fitting_net = True
 
-    def init_from_config(self, jdata):
+    def init_from_config(self, jdata) -> None:
         r"""Initialize member element one by one."""
         if "ctrl" in jdata.keys():
             if "VERSION" in jdata["ctrl"].keys():
@@ -128,7 +128,7 @@ class NvnmdConfig:
         self.config["nbit"] = self.init_nbit(self.config["nbit"], self.config)
         self.init_value()
 
-    def init_config_by_version(self, version, max_nnei):
+    def init_config_by_version(self, version, max_nnei) -> None:
         r"""Initialize version-dependent parameters."""
         self.version = version
         self.max_nnei = max_nnei
@@ -152,13 +152,13 @@ class NvnmdConfig:
             else:
                 log.error("The max_nnei only can be set as 128|256 for version 1")
 
-    def init_net_size(self):
+    def init_net_size(self) -> None:
         r"""Initialize net_size."""
         self.net_size = self.config["fitn"]["neuron"][0]
         if self.enable:
             self.config["fitn"]["neuron"] = [self.net_size] * 3
 
-    def init_from_deepmd_input(self, jdata):
+    def init_from_deepmd_input(self, jdata) -> None:
         r"""Initialize members with input script of deepmd."""
         fioObj = FioDic()
         self.config["dscp"] = fioObj.update(jdata["descriptor"], self.config["dscp"])
@@ -269,7 +269,7 @@ class NvnmdConfig:
         jdata["NBIT_SEL"] = int(np.ceil(np.log2(NSEL)))
         return jdata
 
-    def save(self, file_name=None):
+    def save(self, file_name=None) -> None:
         r"""Save all configuration to file."""
         if file_name is None:
             file_name = self.save_path
@@ -278,13 +278,13 @@ class NvnmdConfig:
         self.update_config()
         FioDic().save(file_name, self.config)
 
-    def set_ntype(self, ntype):
+    def set_ntype(self, ntype) -> None:
         r"""Set the number of type."""
         self.dscp["ntype"] = ntype
         self.config["dscp"]["ntype"] = ntype
         nvnmd_cfg.save()
 
-    def get_s_range(self, davg, dstd):
+    def get_s_range(self, davg, dstd) -> None:
         r"""Get the range of switch function."""
         rmin = nvnmd_cfg.dscp["rcut_smth"]
         rmax = nvnmd_cfg.dscp["rcut"]
@@ -380,7 +380,7 @@ class NvnmdConfig:
             dic[key2] = self.weight[key]
         return dic
 
-    def disp_message(self):
+    def disp_message(self) -> None:
         r"""Display the log of NVNMD."""
         NVNMD_CONFIG = (
             f"enable: {self.enable}",

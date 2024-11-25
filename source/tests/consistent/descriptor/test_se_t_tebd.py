@@ -156,7 +156,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     array_api_strict_class = DescrptSeTTebdStrict
     args = descrpt_se_e3_tebd_args().append(Argument("ntypes", int, optional=False))
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

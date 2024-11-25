@@ -34,10 +34,10 @@ dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -74,7 +74,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret1["energy"]),
             )
 
-    def test_dp_consistency(self):
+    def test_dp_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(
             self.rcut,
@@ -102,7 +102,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             to_numpy_array(ret1["energy"]),
         )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
@@ -122,7 +122,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(md0.get_rcut(), self.rcut)
         self.assertEqual(md0.get_type_map(), type_map)
 
-    def test_excl_consistency(self):
+    def test_excl_consistency(self) -> None:
         type_map = ["foo", "bar"]
 
         # test the case of exclusion
@@ -190,13 +190,13 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
 
 class TestDPAtomicModelVirtualConsistency(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.case0 = TestCaseSingleFrameWithNlist()
         self.case1 = TestCaseSingleFrameWithNlistWithVirtual()
         self.case0.setUp()
         self.case1.setUp()
 
-    def test_virtual_consistency(self):
+    def test_virtual_consistency(self) -> None:
         nf, _, _ = self.case0.nlist.shape
         ds = DescrptSeA(
             self.case0.rcut,

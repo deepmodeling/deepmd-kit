@@ -10,6 +10,9 @@ from jax.experimental import (
     jax2tf,
 )
 
+from deepmd.jax.jax2tf.format_nlist import (
+    format_nlist,
+)
 from deepmd.jax.jax2tf.make_model import (
     model_call_from_call_lower,
 )
@@ -76,7 +79,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             input_signature=[
                 tf.TensorSpec([None, None, 3], tf.float64),
                 tf.TensorSpec([None, None], tf.int32),
-                tf.TensorSpec([None, None, model.get_nnei()], tf.int64),
+                tf.TensorSpec([None, None, None], tf.int64),
                 tf.TensorSpec([None, None], tf.int64),
                 tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
@@ -85,6 +88,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         def call_lower_without_atomic_virial(
             coord, atype, nlist, mapping, fparam, aparam
         ):
+            nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
                 lambda: exported_whether_do_atomic_virial(
@@ -102,13 +106,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             input_signature=[
                 tf.TensorSpec([None, None, 3], tf.float64),
                 tf.TensorSpec([None, None], tf.int32),
-                tf.TensorSpec([None, None, model.get_nnei()], tf.int64),
+                tf.TensorSpec([None, None, None], tf.int64),
                 tf.TensorSpec([None, None], tf.int64),
                 tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
                 tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
             ],
         )
         def call_lower_with_atomic_virial(coord, atype, nlist, mapping, fparam, aparam):
+            nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
             return tf.cond(
                 tf.shape(coord)[1] == tf.shape(nlist)[1],
                 lambda: exported_whether_do_atomic_virial(
@@ -289,6 +294,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             )
 
         tf_model.get_model_def_script = get_model_def_script
+
+        @tf.function
+        def has_message_passing() -> tf.Tensor:
+            return tf.constant(model.has_message_passing(), dtype=tf.bool)
+
+        tf_model.has_message_passing = has_message_passing
         tf.saved_model.save(
             tf_model,
             model_file,

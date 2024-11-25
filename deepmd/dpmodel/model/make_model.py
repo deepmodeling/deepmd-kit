@@ -108,7 +108,9 @@ def model_call_from_call_lower(
         nloc,
         rcut,
         sel,
-        distinguish_types=not mixed_types,
+        # types will be distinguished in the lower interface,
+        # so it doesn't need to be distinguished here
+        distinguish_types=False,
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     model_predict_lower = call_lower(
@@ -159,7 +161,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             # underscore to prevent conflict with normal inputs
             atomic_model_: Optional[T_AtomicModel] = None,
             **kwargs,
-        ):
+        ) -> None:
             BaseModel.__init__(self)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_

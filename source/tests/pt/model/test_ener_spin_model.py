@@ -57,7 +57,7 @@ def reduce_tensor(extended_tensor, mapping, nloc: int):
 
 
 class SpinTest:
-    def setUp(self):
+    def setUp(self) -> None:
         self.prec = 1e-10
         natoms = 5
         self.ntypes = 3  # ["O", "H", "B"] for test
@@ -95,7 +95,7 @@ class SpinTest:
 
     def test_output_shape(
         self,
-    ):
+    ) -> None:
         result = self.model(
             self.coord,
             self.atype,
@@ -111,7 +111,7 @@ class SpinTest:
         torch.testing.assert_close(result["force"].shape, [nframes, nloc, 3])
         torch.testing.assert_close(result["force_mag"].shape, [nframes, nloc, 3])
 
-    def test_input_output_process(self):
+    def test_input_output_process(self) -> None:
         nframes, nloc = self.coord.shape[:2]
         self.real_ntypes = self.model.spin.get_ntypes_real()
         # 1. test forward input process
@@ -278,13 +278,13 @@ class SpinTest:
                 force_mag, force_all_switched[:, nall:] * virtual_scale.unsqueeze(-1)
             )
 
-    def test_jit(self):
+    def test_jit(self) -> None:
         model = torch.jit.script(self.model)
         self.assertEqual(model.get_rcut(), self.rcut)
         self.assertEqual(model.get_nsel(), self.nsel)
         self.assertEqual(model.get_type_map(), self.type_map)
 
-    def test_self_consistency(self):
+    def test_self_consistency(self) -> None:
         if hasattr(self, "serial_test") and not self.serial_test:
             # not implement serialize and deserialize
             return
@@ -307,7 +307,7 @@ class SpinTest:
             )
         model1 = torch.jit.script(model1)
 
-    def test_dp_consistency(self):
+    def test_dp_consistency(self) -> None:
         if hasattr(self, "serial_test") and not self.serial_test:
             # not implement serialize and deserialize
             return
@@ -384,7 +384,7 @@ class SpinTest:
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, SpinTest):
-    def setUp(self):
+    def setUp(self) -> None:
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_se_e2_a["descriptor"])
@@ -395,7 +395,7 @@ class TestEnergyModelSpinSeA(unittest.TestCase, SpinTest):
 
 
 class TestEnergyModelSpinDPA1(unittest.TestCase, SpinTest):
-    def setUp(self):
+    def setUp(self) -> None:
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa1["descriptor"])
@@ -408,7 +408,7 @@ class TestEnergyModelSpinDPA1(unittest.TestCase, SpinTest):
 
 
 class TestEnergyModelSpinDPA2(unittest.TestCase, SpinTest):
-    def setUp(self):
+    def setUp(self) -> None:
         SpinTest.setUp(self)
         model_params = copy.deepcopy(model_spin)
         model_params["descriptor"] = copy.deepcopy(model_dpa2["descriptor"])

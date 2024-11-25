@@ -4,8 +4,6 @@
 **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
 :::
 
-## DPA-1: Pretraining of Attention-based Deep Potential Model for Molecular Simulation
-
 ![ALT](../images/model_se_atten.png "model_se_atten")
 
 Here we propose DPA-1, a Deep Potential model with a novel attention mechanism, which is highly effective for representing the conformation and chemical spaces of atomic systems and learning the PES.
@@ -68,11 +66,9 @@ Then layer normalization is added in a residual way to finally obtain the self-a
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
-## Introduction to new features of DPA-1
+## Descriptor `"se_atten"`
 
-Next, we will list the detailed settings in input.json and the data format, especially for large systems with dozens of elements. An example of DPA-1 input can be found [here](../../examples/water/se_atten/input.json).
-
-### Descriptor `"se_atten"`
+Next, we will list the detailed settings in input.json and the data format, especially for large systems with dozens of elements. An example of DPA-1 input can be found in `examples/water/se_atten/input.json`.
 
 The notation of `se_atten` is short for the smooth edition of Deep Potential with an attention mechanism.
 This descriptor was described in detail in [the DPA-1 paper](https://arxiv.org/abs/2208.08236) and the images above.
@@ -126,7 +122,7 @@ We highly recommend using the version 2.0 of the attention-based descriptor `"se
       "set_davg_zero": false
 ```
 
-You can use descriptor `"se_atten_v2"` and do not need to set `tebd_input_mode` and `smooth_type_embedding`. In `"se_atten_v2"`, `tebd_input_mode` is forced to be `"strip"` and `smooth_type_embedding` is forced to be `"true"`. When `tebd_input_mode` is `"strip"`, the embedding matrix $\mathcal{G}^i$ is constructed as:
+You can use descriptor `"se_atten_v2"` and is not allowed to set `tebd_input_mode` and `smooth_type_embedding`. In `"se_atten_v2"`, `tebd_input_mode` is forced to be `"strip"` and `smooth_type_embedding` is forced to be `"true"`. When `tebd_input_mode` is `"strip"`, the embedding matrix $\mathcal{G}^i$ is constructed as:
 
 ```math
    (\mathcal{G}^i)_j = \mathcal{N}_{e,2}(s(r_{ij})) + \mathcal{N}_{e,2}(s(r_{ij})) \odot ({N}_{e,2}(\{\mathcal{A}^i, \mathcal{A}^j\}) \odot s(r_{ij})) \quad \mathrm{or}
@@ -140,25 +136,33 @@ Practical evidence demonstrates that `"se_atten_v2"` offers better and more stab
 
 Notice: Model compression for the `se_atten_v2` descriptor is exclusively designed for models with the training parameter {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` set to 0.
 
-### Fitting `"ener"`
+## Type embedding
 
-DPA-1 only supports `"ener"` fitting type, and you can refer [here](train-energy.md) for detailed information.
+DPA-1 only supports models with type embeddings.
 
-### Type embedding
-
-DPA-1 only supports models with type embeddings. And the default setting is as follows:
+In the TensorFlow backend, the {ref}`type_embedding <model/type_embedding>` section will be used. If it is not set, the following default parameters will be used:
 
 ```json
 "type_embedding":{
-            "neuron":           [8],
-            "resnet_dt":        false,
-            "seed":             1
-        }
+    "neuron":           [8],
+    "resnet_dt":        false,
+    "seed":             1
+}
 ```
 
-You can add these settings in input.json if you want to change the default ones, see [here](train-se-e2-a-tebd.md) for detailed information.
+In other backends, type embedding is within this descriptor with the {ref}`tebd_dim <model[standard]/descriptor[se_atten_v2]/tebd_dim>` argument.
 
-### Type map
+## Difference among different backends
+
+TensorFlow and other backends have different implementations for {ref}`smooth_type_embedding <model[standard]/descriptor[se_atten_v2]/smooth_type_embedding>`.
+The results are inconsistent when `smooth_type_embedding` is `true`.
+
+In the TensorFlow backend, {ref}`scaling_factor <model[standard]/descriptor[se_atten]/scaling_factor>` cannot set to a value other than `1.0`;
+{ref}`normalize <model[standard]/descriptor[se_atten]/normalize>` cannot be set to `false`;
+{ref}`temperature <model[standard]/descriptor[se_atten]/temperature>` cannot be set;
+{ref}`concat_output_tebd <model[standard]/descriptor[se_atten]/concat_output_tebd>` cannot be set to `false`.
+
+## Type map
 
 For training large systems, especially those with dozens of elements, the {ref}`type <model/type_map>` determines the element index of training data:
 
@@ -175,6 +179,10 @@ which should include all the elements in the dataset you want to train on.
 ## Data format
 
 DPA-1 supports both the [standard data format](../data/system.md) and the [mixed type data format](../data/system.md#mixed-type).
+
+## Model compression
+
+Model compression is supported only when there is no attention layer (`attn_layer` is 0) and `tebd_input_mode` is `strip`.
 
 ## Training example
 

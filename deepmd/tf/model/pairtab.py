@@ -68,7 +68,7 @@ class PairTabModel(Model):
 
     def __init__(
         self, tab_file: str, rcut: float, sel: Union[int, list[int]], **kwargs
-    ):
+    ) -> None:
         super().__init__()
         self.tab_file = tab_file
         self.tab = PairTab(self.tab_file, rcut=rcut)
@@ -255,7 +255,7 @@ class PairTabModel(Model):
         """Get the number of types."""
         return self.ntypes
 
-    def data_stat(self, data: dict):
+    def data_stat(self, data: dict) -> None:
         """Data staticis."""
         # nothing needs to do
 

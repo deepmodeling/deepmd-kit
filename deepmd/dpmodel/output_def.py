@@ -8,7 +8,7 @@ from enum import (
 def check_shape(
     shape: list[int],
     def_shape: list[int],
-):
+) -> None:
     """Check if the shape satisfies the defined shape."""
     assert len(shape) == len(def_shape)
     if def_shape[-1] == -1:
@@ -19,7 +19,7 @@ def check_shape(
             raise ValueError(f"{shape} shape not matching def {def_shape}")
 
 
-def check_var(var, var_def):
+def check_var(var, var_def) -> None:
     if var_def.atomic:
         # var.shape == [nf, nloc, *var_def.shape]
         if len(var.shape) != len(var_def.shape) + 2:
@@ -47,7 +47,7 @@ def model_check_output(cls):
             self,
             *args,
             **kwargs,
-        ):
+        ) -> None:
             super().__init__(*args, **kwargs)
             self.md = self.output_def()
 
@@ -89,7 +89,7 @@ def fitting_check_output(cls):
             self,
             *args,
             **kwargs,
-        ):
+        ) -> None:
             super().__init__(*args, **kwargs)
             self.md = self.output_def()
 
@@ -197,7 +197,7 @@ class OutputVariableDef:
         r_hessian: bool = False,
         magnetic: bool = False,
         intensive: bool = False,
-    ):
+    ) -> None:
         self.name = name
         self.shape = list(shape)
         # jit doesn't support math.prod(self.shape)
@@ -230,7 +230,7 @@ class OutputVariableDef:
     def size(self):
         return self.output_size
 
-    def squeeze(self, dim):
+    def squeeze(self, dim) -> None:
         # squeeze the shape on given dimension
         if -len(self.shape) <= dim < len(self.shape) and self.shape[dim] == 1:
             self.shape.pop(dim)
@@ -252,7 +252,7 @@ class FittingOutputDef:
     def __init__(
         self,
         var_defs: list[OutputVariableDef],
-    ):
+    ) -> None:
         self.var_defs = {vv.name: vv for vv in var_defs}
 
     def __getitem__(
@@ -286,7 +286,7 @@ class ModelOutputDef:
     def __init__(
         self,
         fit_defs: FittingOutputDef,
-    ):
+    ) -> None:
         self.def_outp = fit_defs
         self.def_redu = do_reduce(self.def_outp.get_data())
         self.def_derv_r, self.def_derv_c = do_derivative(self.def_outp.get_data())

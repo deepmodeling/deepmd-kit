@@ -240,7 +240,7 @@ class BaseTabulate(ABC):
 
     def _build_lower(
         self, net, xx, idx, upper, lower, stride0, stride1, extrapolate, nspline
-    ):
+    ) -> None:
         vv, dd, d2 = self._make_data(xx, idx)
         self.data[net] = np.zeros(
             [nspline, 6 * self.last_layer_size], dtype=self.data_type
@@ -422,7 +422,7 @@ class BaseTabulate(ABC):
         """Convert self.data from np.ndarray to torch.Tensor."""
         pass
 
-    def _convert_numpy_float_to_int(self):
+    def _convert_numpy_float_to_int(self) -> None:
         """Convert self.lower and self.upper from np.float32 or np.float64 to int."""
         self.lower = {k: int(v) for k, v in self.lower.items()}
         self.upper = {k: int(v) for k, v in self.upper.items()}

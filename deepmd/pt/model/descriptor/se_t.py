@@ -73,11 +73,11 @@ from .base_descriptor import (
 if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_t"):
 
     def tabulate_fusion_se_t(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
-        argument4,
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: torch.Tensor,
+        argument4: int,
     ) -> list[torch.Tensor]:
         raise NotImplementedError(
             "tabulate_fusion_se_t is not available since customized PyTorch OP library is not built when freezing the model. "
@@ -147,13 +147,14 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         ntypes: Optional[int] = None,  # to be compat with input
         # not implemented
         spin=None,
-    ):
+    ) -> None:
         del ntypes
         if spin is not None:
             raise NotImplementedError("old implementation of spin is not supported.")
         super().__init__()
         self.type_map = type_map
         self.compress = False
+        self.prec = PRECISION_DICT[precision]
         self.seat = DescrptBlockSeT(
             rcut,
             rcut_smth,
@@ -219,7 +220,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
         """Returns the protection of building environment matrix."""
         return self.seat.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False):
+    def share_params(self, base_class, shared_level, resume=False) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -328,7 +329,7 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         """Update the type exclusions."""
         self.seat.reinit_exclude(exclude_types)
 
@@ -373,7 +374,18 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
-        return self.seat.forward(nlist, coord_ext, atype_ext, None, mapping)
+        # cast the input to internal precsion
+        coord_ext = coord_ext.to(dtype=self.prec)
+        g1, rot_mat, g2, h2, sw = self.seat.forward(
+            nlist, coord_ext, atype_ext, None, mapping
+        )
+        return (
+            g1.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            None,
+            None,
+            None,
+            sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+        )
 
     def set_stat_mean_and_stddev(
         self,
@@ -484,7 +496,7 @@ class DescrptBlockSeT(DescriptorBlock):
         precision: str = "float64",
         trainable: bool = True,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         r"""Construct an embedding net of type `se_e3`.
 
         The embedding takes angles between two neighboring atoms as input.
@@ -638,11 +650,11 @@ class DescrptBlockSeT(DescriptorBlock):
         return self.filter_neuron[-1]
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return 0
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -662,7 +674,7 @@ class DescrptBlockSeT(DescriptorBlock):
         self,
         merged: Union[Callable[[], list[dict]], list[dict]],
         path: Optional[DPPath] = None,
-    ):
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -712,7 +724,7 @@ class DescrptBlockSeT(DescriptorBlock):
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
-    ):
+    ) -> None:
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
@@ -752,6 +764,7 @@ class DescrptBlockSeT(DescriptorBlock):
         extended_atype: torch.Tensor,
         extended_atype_embd: Optional[torch.Tensor] = None,
         mapping: Optional[torch.Tensor] = None,
+        type_embedding: Optional[torch.Tensor] = None,
     ):
         """Compute the descriptor.
 
@@ -767,6 +780,9 @@ class DescrptBlockSeT(DescriptorBlock):
             The extended type embedding of atoms. shape: nf x nall
         mapping
             The index mapping, not required by this descriptor.
+        type_embedding
+            Full type embeddings. shape: (ntypes+1) x nt
+            Required for stripped type embeddings.
 
         Returns
         -------
@@ -801,7 +817,6 @@ class DescrptBlockSeT(DescriptorBlock):
             protection=self.env_protection,
         )
         dmatrix = dmatrix.view(-1, self.nnei, 4)
-        dmatrix = dmatrix.to(dtype=self.prec)
         nfnl = dmatrix.shape[0]
         # pre-allocate a shape to pass jit
         result = torch.zeros(
@@ -832,8 +847,6 @@ class DescrptBlockSeT(DescriptorBlock):
                 env_ij = torch.einsum("ijm,ikm->ijk", rr_i, rr_j)
                 if self.compress:
                     ebd_env_ij = env_ij.view(-1, 1)
-                    ebd_env_ij = ebd_env_ij.to(dtype=self.prec)
-                    env_ij = env_ij.to(dtype=self.prec)
                     res_ij = torch.ops.deepmd.tabulate_fusion_se_t(
                         compress_data_ii.contiguous(),
                         compress_info_ii.cpu().contiguous(),
@@ -853,7 +866,7 @@ class DescrptBlockSeT(DescriptorBlock):
         # xyz_scatter /= (self.nnei * self.nnei)
         result = result.view(nf, nloc, self.filter_neuron[-1])
         return (
-            result.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            result,
             None,
             None,
             None,

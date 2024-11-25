@@ -22,7 +22,7 @@ CUR_DIR = os.path.dirname(__file__)
 
 
 class TestDPA2(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         cell = [
             5.122106549439247480e00,
             4.016537340154059388e-01,
@@ -109,7 +109,7 @@ class TestDPA2(unittest.TestCase):
         self.file_model_param = Path(CUR_DIR) / "models" / "dpa2.pth"
         self.file_type_embed = Path(CUR_DIR) / "models" / "dpa2_tebd.pth"
 
-    def test_descriptor(self):
+    def test_descriptor(self) -> None:
         with open(Path(CUR_DIR) / "models" / "dpa2.json") as fp:
             self.model_json = json.load(fp)
         model_dpa2 = self.model_json

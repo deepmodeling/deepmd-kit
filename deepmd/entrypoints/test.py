@@ -67,7 +67,7 @@ def test(
     atomic: bool,
     head: Optional[str] = None,
     **kwargs,
-):
+) -> None:
     """Test model predictions.
 
     Parameters
@@ -182,24 +182,23 @@ def test(
     if len(all_sys) != len(err_coll):
         log.warning("Not all systems are tested! Check if the systems are valid")
 
-    if len(all_sys) > 1:
-        log.info("# ----------weighted average of errors----------- ")
-        log.info(f"# number of systems : {len(all_sys)}")
-        if isinstance(dp, DeepPot):
-            print_ener_sys_avg(avg_err)
-        elif isinstance(dp, DeepDOS):
-            print_dos_sys_avg(avg_err)
-        elif isinstance(dp, DeepProperty):
-            print_property_sys_avg(avg_err)
-        elif isinstance(dp, DeepDipole):
-            print_dipole_sys_avg(avg_err)
-        elif isinstance(dp, DeepPolar):
-            print_polar_sys_avg(avg_err)
-        elif isinstance(dp, DeepGlobalPolar):
-            print_polar_sys_avg(avg_err)
-        elif isinstance(dp, DeepGlobalPolar):
-            print_wfc_sys_avg(avg_err)
-        log.info("# ----------------------------------------------- ")
+    log.info("# ----------weighted average of errors----------- ")
+    log.info(f"# number of systems : {len(all_sys)}")
+    if isinstance(dp, DeepPot):
+        print_ener_sys_avg(avg_err)
+    elif isinstance(dp, DeepDOS):
+        print_dos_sys_avg(avg_err)
+    elif isinstance(dp, DeepProperty):
+        print_property_sys_avg(avg_err)
+    elif isinstance(dp, DeepDipole):
+        print_dipole_sys_avg(avg_err)
+    elif isinstance(dp, DeepPolar):
+        print_polar_sys_avg(avg_err)
+    elif isinstance(dp, DeepGlobalPolar):
+        print_polar_sys_avg(avg_err)
+    elif isinstance(dp, DeepWFC):
+        print_wfc_sys_avg(avg_err)
+    log.info("# ----------------------------------------------- ")
 
 
 def mae(diff: np.ndarray) -> float:
@@ -236,7 +235,7 @@ def rmse(diff: np.ndarray) -> float:
 
 def save_txt_file(
     fname: Path, data: np.ndarray, header: str = "", append: bool = False
-):
+) -> None:
     """Save numpy array to test file.
 
     Parameters
@@ -561,7 +560,7 @@ def test_ener(
         }
 
 
-def print_ener_sys_avg(avg: dict[str, float]):
+def print_ener_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for energy type potential.
 
     Parameters
@@ -733,7 +732,7 @@ def test_dos(
     }
 
 
-def print_dos_sys_avg(avg: dict[str, float]):
+def print_dos_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for DOS type potential.
 
     Parameters
@@ -887,7 +886,7 @@ def test_property(
     }
 
 
-def print_property_sys_avg(avg: dict[str, float]):
+def print_property_sys_avg(avg: dict[str, float]) -> None:
     """Print errors summary for Property type potential.
 
     Parameters
@@ -983,7 +982,7 @@ def test_wfc(
     return {"rmse": (rmse_f, wfc.size)}
 
 
-def print_wfc_sys_avg(avg):
+def print_wfc_sys_avg(avg) -> None:
     """Print errors summary for wfc type potential.
 
     Parameters
@@ -1125,7 +1124,7 @@ def test_polar(
     return {"rmse": (rmse_f, polar.size)}
 
 
-def print_polar_sys_avg(avg):
+def print_polar_sys_avg(avg) -> None:
     """Print errors summary for polar type potential.
 
     Parameters
@@ -1239,7 +1238,7 @@ def test_dipole(
     return {"rmse": (rmse_f, dipole.size)}
 
 
-def print_dipole_sys_avg(avg):
+def print_dipole_sys_avg(avg) -> None:
     """Print errors summary for dipole type potential.
 
     Parameters

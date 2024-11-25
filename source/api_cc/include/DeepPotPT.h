@@ -10,13 +10,13 @@ namespace deepmd {
 /**
  * @brief PyTorch implementation for Deep Potential.
  **/
-class DeepPotPT : public DeepPotBase {
+class DeepPotPT : public DeepPotBackend {
  public:
   /**
    * @brief DP constructor without initialization.
    **/
   DeepPotPT();
-  ~DeepPotPT();
+  virtual ~DeepPotPT();
   /**
    * @brief DP constructor with initialization.
    * @param[in] model The name of the frozen model file.
@@ -335,7 +335,7 @@ class DeepPotPT : public DeepPotBase {
   NeighborListData nlist_data;
   int max_num_neighbors;
   int gpu_id;
-  int do_message_passing;  // 1:dpa2 model 0:others
+  bool do_message_passing;  // 1:dpa2 model 0:others
   bool gpu_enabled;
   at::Tensor firstneigh_tensor;
   c10::optional<torch::Tensor> mapping_tensor;

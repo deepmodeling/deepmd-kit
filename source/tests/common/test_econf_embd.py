@@ -10,7 +10,7 @@ from deepmd.utils.econf_embd import (
 
 
 class TestEConfEmbd(unittest.TestCase):
-    def test_fe(self):
+    def test_fe(self) -> None:
         res = make_econf_embedding(["Fe"], flatten=False)["Fe"]
         expected_res = {
             (1, "s"): [2],
@@ -35,14 +35,14 @@ class TestEConfEmbd(unittest.TestCase):
         }
         self.assertDictEqual({kk: list(vv) for kk, vv in res.items()}, expected_res)
 
-    def test_fe_flatten(self):
+    def test_fe_flatten(self) -> None:
         res = make_econf_embedding(["Fe"], flatten=True)["Fe"]
         # fmt: off
         expected_res = [2,2,2,2,2,2,2,2,2,2,1,1,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
         # fmt: on
         self.assertEqual(list(res), expected_res)
 
-    def test_fe_spin(self):
+    def test_fe_spin(self) -> None:
         res = make_econf_embedding(["Fe"], flatten=True)
         res = transform_to_spin_rep(res)["Fe"]
         # fmt: off
@@ -50,7 +50,7 @@ class TestEConfEmbd(unittest.TestCase):
         # fmt: on
         self.assertEqual(list(res), expected_res)
 
-    def test_dict(self):
+    def test_dict(self) -> None:
         res = electronic_configuration_embedding["Fe"]
         # fmt: off
         expected_res = [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,-1,1,-1,1,-1,1,-1,1,1,1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]

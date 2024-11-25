@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-    DPAtomicModel,
+from deepmd.dpmodel.atomic_model import (
+    DPEnergyAtomicModel,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
@@ -13,7 +13,7 @@ from .make_model import (
     make_model,
 )
 
-DPEnergyModel_ = make_model(DPAtomicModel)
+DPEnergyModel_ = make_model(DPEnergyAtomicModel)
 
 
 @BaseModel.register("ener")
@@ -22,6 +22,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         DPModelCommon.__init__(self)
         DPEnergyModel_.__init__(self, *args, **kwargs)

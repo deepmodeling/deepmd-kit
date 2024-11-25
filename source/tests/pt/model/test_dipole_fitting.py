@@ -58,7 +58,7 @@ def finite_difference(f, x, a, delta=1e-6):
 
 
 class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.rng = np.random.default_rng(GLOBAL_SEED)
         self.nf, self.nloc, _ = self.nlist.shape
@@ -66,7 +66,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_consistency(
         self,
-    ):
+    ) -> None:
         rd0, gr, _, _, _ = self.dd0(
             torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
             torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
@@ -127,7 +127,7 @@ class TestDipoleFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_jit(
         self,
-    ):
+    ) -> None:
         for mixed_types, nfp, nap in itertools.product(
             [True, False],
             [0, 3],
@@ -164,7 +164,7 @@ class TestEquivalence(unittest.TestCase):
         )
         self.cell = (self.cell + self.cell.T) + 5.0 * torch.eye(3, device=env.DEVICE)
 
-    def test_rot(self):
+    def test_rot(self) -> None:
         atype = self.atype.reshape(1, 5)
         rmat = torch.tensor(special_ortho_group.rvs(3), dtype=dtype, device=env.DEVICE)
         coord_rot = torch.matmul(self.coord, rmat)
@@ -228,7 +228,7 @@ class TestEquivalence(unittest.TestCase):
                 to_numpy_array(res[1]), to_numpy_array(torch.matmul(res[0], rmat))
             )
 
-    def test_permu(self):
+    def test_permu(self) -> None:
         coord = torch.matmul(self.coord, self.cell)
         ft0 = DipoleFittingNet(
             3,  # ntype
@@ -262,14 +262,14 @@ class TestEquivalence(unittest.TestCase):
                 nlist,
             )
 
-            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+            ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
             res.append(ret0["dipole"])
 
         np.testing.assert_allclose(
             to_numpy_array(res[0][:, idx_perm]), to_numpy_array(res[1])
         )
 
-    def test_trans(self):
+    def test_trans(self) -> None:
         atype = self.atype.reshape(1, 5)
         coord_s = torch.matmul(
             torch.remainder(
@@ -303,14 +303,14 @@ class TestEquivalence(unittest.TestCase):
                 nlist,
             )
 
-            ret0 = ft0(rd0, atype, gr0, fparam=0, aparam=0)
+            ret0 = ft0(rd0, atype, gr0, fparam=None, aparam=None)
             res.append(ret0["dipole"])
 
         np.testing.assert_allclose(to_numpy_array(res[0]), to_numpy_array(res[1]))
 
 
 class TestDipoleModel(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.natoms = 5
         self.rcut = 4.0
         self.nt = 3
@@ -338,7 +338,7 @@ class TestDipoleModel(unittest.TestCase):
         self.model = DipoleModel(self.dd0, self.ft0, self.type_mapping)
         self.file_path = "model_output.pth"
 
-    def test_auto_diff(self):
+    def test_auto_diff(self) -> None:
         places = 5
         delta = 1e-5
         atype = self.atype.view(self.nf, self.natoms)
@@ -360,7 +360,7 @@ class TestDipoleModel(unittest.TestCase):
 
         np.testing.assert_almost_equal(fdf, rff.transpose(0, 2, 1, 3), decimal=places)
 
-    def test_deepdipole_infer(self):
+    def test_deepdipole_infer(self) -> None:
         atype = to_numpy_array(self.atype.view(self.nf, self.natoms))
         coord = to_numpy_array(self.coord.reshape(1, 5, 3))
         cell = to_numpy_array(self.cell.reshape(1, 9))

@@ -60,7 +60,7 @@ def filter_tensorVariableList(tensorVariableList) -> dict:
     return dic_name_tv
 
 
-def save_weight(sess, file_name: str = "nvnmd/weight.npy"):
+def save_weight(sess, file_name: str = "nvnmd/weight.npy") -> None:
     r"""Save the dictionary of weight to a npy file."""
     tvs = tf.global_variables()
     dic_key_tv = filter_tensorVariableList(tvs)

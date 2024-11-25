@@ -33,7 +33,7 @@ dtype = torch.float64
 class SmoothTest:
     def test(
         self,
-    ):
+    ) -> None:
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         # displacement of atoms
         epsilon = 1e-5 if self.epsilon is None else self.epsilon
@@ -121,7 +121,7 @@ class SmoothTest:
         )
         ret3 = {key: result_3[key].squeeze(0) for key in test_keys}
 
-        def compare(ret0, ret1):
+        def compare(ret0, ret1) -> None:
             for key in test_keys:
                 if key in ["energy"]:
                     torch.testing.assert_close(
@@ -146,7 +146,7 @@ class SmoothTest:
 
 
 class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
@@ -154,7 +154,7 @@ class TestEnergyModelSeA(unittest.TestCase, SmoothTest):
 
 
 class TestDOSModelSeA(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dos)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
@@ -162,7 +162,7 @@ class TestDOSModelSeA(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -173,7 +173,7 @@ class TestEnergyModelDPA1(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelDPA1Excl1(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         model_params["pair_exclude_types"] = [[0, 1]]
         self.type_split = True
@@ -185,7 +185,7 @@ class TestEnergyModelDPA1Excl1(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         model_params["pair_exclude_types"] = [[0, 1], [0, 2]]
         self.type_split = True
@@ -197,7 +197,7 @@ class TestEnergyModelDPA1Excl12(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         model_params["descriptor"]["repinit"]["rcut"] = 8
         model_params["descriptor"]["repinit"]["rcut_smth"] = 3.5
@@ -207,7 +207,7 @@ class TestEnergyModelDPA2(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
         self.type_split = True
@@ -217,7 +217,7 @@ class TestEnergyModelDPA2_1(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         model_params["fitting_net"]["type"] = "ener"
         self.type_split = True
@@ -227,7 +227,7 @@ class TestEnergyModelDPA2_2(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_hybrid)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -235,7 +235,7 @@ class TestEnergyModelHybrid(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_zbl)
         self.type_split = False
         self.model = get_model(model_params).to(env.DEVICE)
@@ -243,7 +243,7 @@ class TestEnergyModelZBL(unittest.TestCase, SmoothTest):
 
 
 class TestEnergyModelSpinSeA(unittest.TestCase, SmoothTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_spin)
         self.type_split = False
         self.test_spin = True

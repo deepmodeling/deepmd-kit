@@ -39,7 +39,7 @@ model_hybrid.pop("fitting_net")
 class PermutationDenoiseTest:
     def test(
         self,
-    ):
+    ) -> None:
         generator = torch.Generator(device=env.DEVICE).manual_seed(GLOBAL_SEED)
         natoms = 5
         cell = torch.rand([3, 3], dtype=dtype, generator=generator).to(env.DEVICE)
@@ -71,7 +71,7 @@ class PermutationDenoiseTest:
 
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA1(unittest.TestCase, PermutationDenoiseTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa1)
         self.type_split = True
         self.model = get_model(model_params).to(env.DEVICE)
@@ -79,7 +79,7 @@ class TestDenoiseModelDPA1(unittest.TestCase, PermutationDenoiseTest):
 
 @unittest.skip("support of the denoise is temporally disabled")
 class TestDenoiseModelDPA2(unittest.TestCase, PermutationDenoiseTest):
-    def setUp(self):
+    def setUp(self) -> None:
         model_params = copy.deepcopy(model_dpa2)
         self.type_split = True
         self.model = get_model(

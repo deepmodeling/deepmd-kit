@@ -44,6 +44,8 @@ struct InputNlist {
   void* world;
   /// mask to the neighbor index
   int mask = 0xFFFFFFFF;
+  /// mapping from all atoms to real atoms, in the size of nall
+  int* mapping = nullptr;
   InputNlist()
       : inum(0),
         ilist(NULL),
@@ -99,6 +101,10 @@ struct InputNlist {
    * @brief Set mask for this neighbor list.
    */
   void set_mask(int mask_) { mask = mask_; };
+  /**
+   * @brief Set mapping for this neighbor list.
+   */
+  void set_mapping(int* mapping_) { mapping = mapping_; };
 };
 
 /**

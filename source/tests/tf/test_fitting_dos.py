@@ -23,10 +23,10 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 
 class TestModel(tf.test.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         gen_data()
 
-    def test_fitting(self):
+    def test_fitting(self) -> None:
         jfile = "train_dos.json"
         jdata = j_loader(jfile)
 

@@ -31,20 +31,20 @@ void DeepPotPT::translate_error(std::function<void()> f) {
 }
 
 torch::Tensor createNlistTensor(const std::vector<std::vector<int>>& data) {
-  std::vector<torch::Tensor> row_tensors;
-
+  size_t total_size = 0;
   for (const auto& row : data) {
-    torch::Tensor row_tensor = torch::tensor(row, torch::kInt32).unsqueeze(0);
-    row_tensors.push_back(row_tensor);
+    total_size += row.size();
+  }
+  std::vector<int> flat_data;
+  flat_data.reserve(total_size);
+  for (const auto& row : data) {
+    flat_data.insert(flat_data.end(), row.begin(), row.end());
   }
 
-  torch::Tensor tensor;
-  if (row_tensors.size() > 0) {
-    tensor = torch::cat(row_tensors, 0).unsqueeze(0);
-  } else {
-    tensor = torch::empty({1, 0, 0}, torch::kInt32);
-  }
-  return tensor;
+  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
+  int nloc = data.size();
+  int nnei = nloc > 0 ? total_size / nloc : 0;
+  return flat_tensor.view({1, nloc, nnei});
 }
 DeepPotPT::DeepPotPT() : inited(false) {}
 DeepPotPT::DeepPotPT(const std::string& model,
@@ -88,6 +88,7 @@ void DeepPotPT::init(const std::string& model,
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
+  module.eval();
   do_message_passing = module.run_method("has_message_passing").toBool();
   torch::jit::FusionStrategy strategy;
   strategy = {{torch::jit::FusionBehavior::DYNAMIC, 10}};
@@ -171,7 +172,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-    if (do_message_passing == 1) {
+    if (do_message_passing) {
       int nswap = lmp_list.nswap;
       torch::Tensor sendproc_tensor =
           torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
@@ -203,6 +204,15 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
       comm_dict.insert("recv_num", recvnum_tensor);
       comm_dict.insert("communicator", communicator_tensor);
     }
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (size_t ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .to(device);
+    }
   }
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
@@ -225,7 +235,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             .to(device);
   }
   c10::Dict<c10::IValue, c10::IValue> outputs =
-      (do_message_passing == 1)
+      (do_message_passing)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
                             firstneigh_tensor, mapping_tensor, fparam_tensor,

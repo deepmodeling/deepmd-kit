@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
+    NoReturn,
     Optional,
     Union,
 )
@@ -9,6 +10,9 @@ import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.common import (
+    cast_precision,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -133,7 +137,7 @@ class InvarFitting(GeneralFitting):
         exclude_types: list[int] = [],
         type_map: Optional[list[str]] = None,
         seed: Optional[Union[int, list[int]]] = None,
-    ):
+    ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
         if spin is not None:
@@ -186,7 +190,7 @@ class InvarFitting(GeneralFitting):
         """Set the FittingNet output dim."""
         return self.dim_out
 
-    def compute_output_stats(self, merged):
+    def compute_output_stats(self, merged) -> NoReturn:
         """Update the output bias for fitting net."""
         raise NotImplementedError
 
@@ -203,6 +207,7 @@ class InvarFitting(GeneralFitting):
             ]
         )
 
+    @cast_precision
     def call(
         self,
         descriptor: np.ndarray,

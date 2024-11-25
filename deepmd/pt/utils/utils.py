@@ -19,7 +19,7 @@ from .env import PRECISION_DICT as PT_PRECISION_DICT
 
 
 class ActivationFn(torch.nn.Module):
-    def __init__(self, activation: Optional[str]):
+    def __init__(self, activation: Optional[str]) -> None:
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
 
@@ -101,7 +101,7 @@ def to_torch_tensor(
     return torch.tensor(xx, dtype=prec, device=DEVICE)
 
 
-def dict_to_device(sample_dict):
+def dict_to_device(sample_dict) -> None:
     for key in sample_dict:
         if isinstance(sample_dict[key], list):
             sample_dict[key] = [item.to(DEVICE) for item in sample_dict[key]]

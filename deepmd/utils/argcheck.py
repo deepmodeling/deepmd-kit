@@ -40,6 +40,21 @@ PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
+# descriptors
+doc_loc_frame = "Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame."
+doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor."
+doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
+doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
+doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor."
+doc_se_atten = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor."
+doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor."
+doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms."
+doc_hybrid = "Concatenate of a list of descriptors as a new descriptor."
+# fitting
+doc_ener = "Fit an energy model (potential energy surface)."
+doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter."
+doc_dipole = "Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter."
+doc_polar = "Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file with has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter."
 
 
 def list_to_doc(xx):
@@ -53,7 +68,7 @@ def list_to_doc(xx):
     return "".join(items)
 
 
-def make_link(content, ref_key):
+def make_link(content, ref_key) -> str:
     return (
         f"`{content} <{ref_key}_>`_"
         if not dargs.RAW_ANCHOR
@@ -70,7 +85,7 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: Optional[dict]):
+    def deprecate_something(data: Optional[dict]) -> bool:
         if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
@@ -229,7 +244,7 @@ class ArgsPlugin:
 descrpt_args_plugin = ArgsPlugin()
 
 
-@descrpt_args_plugin.register("loc_frame", doc=doc_only_tf_supported)
+@descrpt_args_plugin.register("loc_frame", doc=doc_only_tf_supported + doc_loc_frame)
 def descrpt_local_frame_args():
     doc_sel_a = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor."
     doc_sel_r = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius."
@@ -250,7 +265,7 @@ def descrpt_local_frame_args():
     ]
 
 
-@descrpt_args_plugin.register("se_e2_a", alias=["se_a"])
+@descrpt_args_plugin.register("se_e2_a", alias=["se_a"], doc=doc_se_e2_a)
 def descrpt_se_a_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -318,7 +333,9 @@ def descrpt_se_a_args():
     ]
 
 
-@descrpt_args_plugin.register("se_e3", alias=["se_at", "se_a_3be", "se_t"])
+@descrpt_args_plugin.register(
+    "se_e3", alias=["se_at", "se_a_3be", "se_t"], doc=doc_se_e3
+)
 def descrpt_se_t_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -373,7 +390,9 @@ def descrpt_se_t_args():
     ]
 
 
-@descrpt_args_plugin.register("se_a_tpe", alias=["se_a_ebd"], doc=doc_only_tf_supported)
+@descrpt_args_plugin.register(
+    "se_a_tpe", alias=["se_a_ebd"], doc=doc_only_tf_supported + doc_se_a_tpe
+)
 def descrpt_se_a_tpe_args():
     doc_type_nchanl = "number of channels for type embedding"
     doc_type_nlayer = "number of hidden layers of type embedding net"
@@ -387,7 +406,7 @@ def descrpt_se_a_tpe_args():
     ]
 
 
-@descrpt_args_plugin.register("se_e2_r", alias=["se_r"])
+@descrpt_args_plugin.register("se_e2_r", alias=["se_r"], doc=doc_se_e2_r)
 def descrpt_se_r_args():
     doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -446,7 +465,7 @@ def descrpt_se_r_args():
     ]
 
 
-@descrpt_args_plugin.register("hybrid")
+@descrpt_args_plugin.register("hybrid", doc=doc_hybrid)
 def descrpt_hybrid_args():
     doc_list = "A list of descriptor definitions"
 
@@ -538,7 +557,7 @@ def descrpt_se_atten_common_args():
     ]
 
 
-@descrpt_args_plugin.register("se_atten", alias=["dpa1"])
+@descrpt_args_plugin.register("se_atten", alias=["dpa1"], doc=doc_se_atten)
 def descrpt_se_atten_args():
     doc_smooth_type_embedding = f"Whether to use smooth process in attention weights calculation. {doc_only_tf_supported} When using stripped type embedding, whether to dot smooth factor on the network output of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
@@ -774,7 +793,7 @@ def descrpt_se_e3_tebd_args():
     ]
 
 
-@descrpt_args_plugin.register("se_atten_v2")
+@descrpt_args_plugin.register("se_atten_v2", doc=doc_se_atten_v2)
 def descrpt_se_atten_v2_args():
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `se_atten` descriptor or `atom_ener` in the energy fitting is used"
     doc_trainable_ln = (
@@ -1343,7 +1362,7 @@ def descrpt_se_a_ebd_v2_args():
     return descrpt_se_a_args()
 
 
-@descrpt_args_plugin.register("se_a_mask", doc=doc_only_tf_supported)
+@descrpt_args_plugin.register("se_a_mask", doc=doc_only_tf_supported + doc_se_a_mask)
 def descrpt_se_a_mask_args():
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
@@ -1397,27 +1416,7 @@ def descrpt_se_a_mask_args():
 
 
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
-    link_lf = make_link("loc_frame", "model[standard]/descriptor[loc_frame]")
-    link_se_e2_a = make_link("se_e2_a", "model[standard]/descriptor[se_e2_a]")
-    link_se_e2_r = make_link("se_e2_r", "model[standard]/descriptor[se_e2_r]")
-    link_se_e3 = make_link("se_e3", "model[standard]/descriptor[se_e3]")
-    link_se_a_tpe = make_link("se_a_tpe", "model[standard]/descriptor[se_a_tpe]")
-    link_hybrid = make_link("hybrid", "model[standard]/descriptor[hybrid]")
-    link_se_atten = make_link("se_atten", "model[standard]/descriptor[se_atten]")
-    link_se_atten_v2 = make_link(
-        "se_atten_v2", "model[standard]/descriptor[se_atten_v2]"
-    )
-    link_se_a_mask = make_link("se_a_mask", "model[standard]/descriptor[se_a_mask]")
-    doc_descrpt_type = f"The type of the descriptor. See explanation below. \n\n\
-- {link_lf}: Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame.\n\n\
-- {link_se_e2_a}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor.\n\n\
-- {link_se_e2_r}: Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor.\n\n\
-- {link_se_e3}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor.\n\n\
-- {link_se_a_tpe}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor.\n\n\
-- {link_se_atten}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor.\n\n\
-- {link_se_atten_v2}: Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor.\n\n\
-- {link_se_a_mask}: Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms. \n\n\
-- {link_hybrid}: Concatenate of a list of descriptors as a new descriptor."
+    doc_descrpt_type = "The type of the descriptor."
 
     return Variant(
         "type",
@@ -1430,7 +1429,7 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 fitting_args_plugin = ArgsPlugin()
 
 
-@fitting_args_plugin.register("ener")
+@fitting_args_plugin.register("ener", doc=doc_ener)
 def fitting_ener():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -1506,7 +1505,7 @@ def fitting_ener():
     ]
 
 
-@fitting_args_plugin.register("dos")
+@fitting_args_plugin.register("dos", doc=doc_dos)
 def fitting_dos():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
@@ -1594,8 +1593,10 @@ def fitting_property():
     ]
 
 
-@fitting_args_plugin.register("polar")
+@fitting_args_plugin.register("polar", doc=doc_polar)
 def fitting_polar():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -1610,6 +1611,20 @@ def fitting_polar():
     doc_shift_diag = "Whether to shift the diagonal of polar, which is beneficial to training. Default is true."
 
     return [
+        Argument(
+            "numb_fparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_fparam,
+        ),
+        Argument(
+            "numb_aparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
         Argument(
             "neuron",
             list[int],
@@ -1648,8 +1663,10 @@ def fitting_polar():
 #    return fitting_polar()
 
 
-@fitting_args_plugin.register("dipole")
+@fitting_args_plugin.register("dipole", doc=doc_dipole)
 def fitting_dipole():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
@@ -1657,6 +1674,20 @@ def fitting_dipole():
     doc_sel_type = "The atom types for which the atomic dipole will be provided. If not set, all types will be selected."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     return [
+        Argument(
+            "numb_fparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_fparam,
+        ),
+        Argument(
+            "numb_aparam",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_numb_aparam,
+        ),
         Argument(
             "neuron",
             list[int],
@@ -1687,11 +1718,7 @@ def fitting_dipole():
 
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
 def fitting_variant_type_args():
-    doc_descrpt_type = "The type of the fitting. See explanation below. \n\n\
-- `ener`: Fit an energy model (potential energy surface).\n\n\
-- `dos` : Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter. \n\n\
-- `dipole`: Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter.\n\n\
-- `polar`: Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file with has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter.\n\n"
+    doc_descrpt_type = "The type of the fitting."
 
     return Variant(
         "type",
@@ -1722,12 +1749,14 @@ def modifier_dipole_charge():
 
 
 def modifier_variant_type_args():
-    doc_modifier_type = "The type of modifier. See explanation below.\n\n\
--`dipole_charge`: Use WFCC to model the electronic structure of the system. Correct the long-range interaction"
+    doc_modifier_type = "The type of modifier."
+    doc_dipole_charge = "Use WFCC to model the electronic structure of the system. Correct the long-range interaction."
     return Variant(
         "type",
         [
-            Argument("dipole_charge", dict, modifier_dipole_charge()),
+            Argument(
+                "dipole_charge", dict, modifier_dipole_charge(), doc=doc_dipole_charge
+            ),
         ],
         optional=False,
         doc=doc_modifier_type,
@@ -1772,7 +1801,7 @@ def model_args(exclude_hybrid=False):
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
     doc_data_bias_nsample = "The number of training samples in a system to compute and change the energy bias."
-    doc_type_embedding = "The type embedding."
+    doc_type_embedding = "The type embedding. In other backends, the type embedding is already included in the descriptor."
     doc_modifier = "The modifier of model output."
     doc_use_srtab = "The table for the short-range pairwise interaction added on top of DP. The table is a text data file with (N_t + 1) * N_t / 2 + 1 columes. The first colume is the distance between atoms. The second to the last columes are energies for pairs of certain types. For example we have two atom types, 0 and 1. The columes from 2nd to 4th are for 0-0, 0-1 and 1-1 correspondingly."
     doc_smin_alpha = "The short-range tabulated interaction will be switched according to the distance of the nearest neighbor. This distance is calculated by softmin. This parameter is the decaying parameter in the softmin. It is only required when `use_srtab` is provided."
@@ -2084,7 +2113,7 @@ def learning_rate_args(fold_subdoc: bool = False) -> Argument:
 
 
 #  --- Loss configurations: --- #
-def start_pref(item, label=None, abbr=None):
+def start_pref(item, label=None, abbr=None) -> str:
     if label is None:
         label = item
     if abbr is None:
@@ -2092,7 +2121,7 @@ def start_pref(item, label=None, abbr=None):
     return f"The prefactor of {item} loss at the start of the training. Should be larger than or equal to 0. If set to none-zero value, the {label} label should be provided by file {label}.npy in each data system. If both start_pref_{abbr} and limit_pref_{abbr} are set to 0, then the {item} will be ignored."
 
 
-def limit_pref(item):
+def limit_pref(item) -> str:
     return f"The prefactor of {item} loss at the limit of the training, Should be larger than or equal to 0. i.e. the training step goes to infinity."
 
 

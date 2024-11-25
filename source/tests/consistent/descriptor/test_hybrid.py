@@ -87,7 +87,7 @@ class TestHybrid(CommonTest, DescriptorTest, unittest.TestCase):
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
-    def setUp(self):
+    def setUp(self) -> None:
         CommonTest.setUp(self)
 
         self.ntypes = 2

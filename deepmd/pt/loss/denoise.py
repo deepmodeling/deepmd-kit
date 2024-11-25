@@ -22,7 +22,7 @@ class DenoiseLoss(TaskLoss):
         mask_loss_coord=True,
         mask_loss_token=True,
         **kwargs,
-    ):
+    ) -> None:
         """Construct a layer to compute loss on coord, and type reconstruction."""
         super().__init__()
         self.ntypes = ntypes

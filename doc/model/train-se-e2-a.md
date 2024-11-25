@@ -94,3 +94,18 @@ The construction of the descriptor is given by section {ref}`descriptor <model[s
 - The {ref}`axis_neuron <model[standard]/descriptor[se_e2_a]/axis_neuron>` specifies the size of the submatrix of the embedding matrix, the axis matrix as explained in the [DeepPot-SE paper](https://arxiv.org/abs/1805.09003)
 - If the option {ref}`resnet_dt <model[standard]/descriptor[se_e2_a]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
 - {ref}`seed <model[standard]/descriptor[se_e2_a]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
+
+## Type embedding support
+
+Type embdding is only supported in the TensorFlow backends.
+`se_e2_a` with type embedding and [`se_atten`](./train-se-atten.md) (or its updated version) without any attention layer are mathematically equivalent, so `se_atten` can be a substitute in other backends.
+
+## Difference among different backends
+
+In the TensorFlow backend, {ref}`env_protection <model[standard]/descriptor[se_e2_a]/env_protection>` cannot be set to a non-zero value.
+In the JAX backend, {ref}`type_one_side <model[standard]/descriptor[se_e2_a]/type_one_side>` cannot be set to `false`.
+
+## Model compression
+
+Model compression is supported when type embedding is not used.
+To use model compression with type embedding in the TensorFlow backend, use `se_a_tebd_v2` instead.

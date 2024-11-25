@@ -19,16 +19,16 @@ from deepmd.tf.env import (
 )
 
 
-def setUpModule():
+def setUpModule() -> None:
     tf.compat.v1.enable_eager_execution()
 
 
-def tearDownModule():
+def tearDownModule() -> None:
     tf.compat.v1.disable_eager_execution()
 
 
 class TestDPTabulate(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.w = np.array(
             [[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1.0, 1.1, 1.2]],
             dtype=np.float64,
@@ -45,7 +45,7 @@ class TestDPTabulate(unittest.TestCase):
 
         self.y = np.tanh(self.xbar)
 
-    def test_ops(self):
+    def test_ops(self) -> None:
         dy_tf = op_module.unaggregated_dy_dx_s(
             tf.constant(self.y, dtype="double"),
             tf.constant(self.w, dtype="double"),

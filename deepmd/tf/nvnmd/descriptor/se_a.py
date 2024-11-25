@@ -35,7 +35,7 @@ def build_davg_dstd():
     return davg, dstd
 
 
-def check_switch_range(davg, dstd):
+def check_switch_range(davg, dstd) -> None:
     r"""Check the range of switch, let it in range [-2, 14]."""
     rmin = nvnmd_cfg.dscp["rcut_smth"]
     #

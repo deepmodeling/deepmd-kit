@@ -39,14 +39,14 @@ def j_loader(filename):
     return dp_j_loader(tests_path / filename)
 
 
-def del_data():
+def del_data() -> None:
     if os.path.isdir("system"):
         shutil.rmtree("system")
     if os.path.isdir("system_mixed_type"):
         shutil.rmtree("system_mixed_type")
 
 
-def gen_data_type_specific(nframes=1, dim_fparam=2):
+def gen_data_type_specific(nframes=1, dim_fparam=2) -> None:
     tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes, dim_fparam=dim_fparam)
     sys = dpdata.LabeledSystem()
     sys.data["atom_names"] = ["foo", "bar"]
@@ -67,7 +67,7 @@ def gen_data_type_specific(nframes=1, dim_fparam=2):
     )
 
 
-def gen_data_mixed_type(nframes=1, dim_fparam=2):
+def gen_data_mixed_type(nframes=1, dim_fparam=2) -> None:
     tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes, dim_fparam=dim_fparam)
     sys = dpdata.LabeledSystem()
     real_type_map = ["foo", "bar"]
@@ -94,7 +94,7 @@ def gen_data_mixed_type(nframes=1, dim_fparam=2):
     )
 
 
-def gen_data_virtual_type(nframes=1, nghost=4, dim_fparam=2):
+def gen_data_virtual_type(nframes=1, nghost=4, dim_fparam=2) -> None:
     tmpdata = Data(rand_pert=0.1, seed=1, nframes=nframes, dim_fparam=dim_fparam)
     sys = dpdata.LabeledSystem()
     real_type_map = ["foo", "bar"]
@@ -145,7 +145,7 @@ def gen_data_virtual_type(nframes=1, nghost=4, dim_fparam=2):
     )
 
 
-def gen_data(nframes=1, mixed_type=False, virtual_type=False, dim_fparam=2):
+def gen_data(nframes=1, mixed_type=False, virtual_type=False, dim_fparam=2) -> None:
     if not mixed_type:
         gen_data_type_specific(nframes, dim_fparam=dim_fparam)
     elif virtual_type:
@@ -155,7 +155,9 @@ def gen_data(nframes=1, mixed_type=False, virtual_type=False, dim_fparam=2):
 
 
 class Data:
-    def __init__(self, rand_pert=0.1, seed=1, box_scale=20, nframes=1, dim_fparam=2):
+    def __init__(
+        self, rand_pert=0.1, seed=1, box_scale=20, nframes=1, dim_fparam=2
+    ) -> None:
         coord = [
             [0.0, 0.0, 0.1],
             [1.1, 0.0, 0.1],
@@ -282,7 +284,7 @@ class Data:
 
 def force_test(
     inter, testCase, places=global_default_places, hh=global_default_fv_hh, suffix=""
-):
+) -> None:
     # set weights
     w0 = np.ones(inter.ndescrpt)
     inter.net_w_i = np.copy(w0)
@@ -348,7 +350,7 @@ def comp_vol(box):
 
 def virial_test(
     inter, testCase, places=global_default_places, hh=global_default_fv_hh, suffix=""
-):
+) -> None:
     # set weights
     w0 = np.ones(inter.ndescrpt)
     inter.net_w_i = np.copy(w0)
@@ -385,7 +387,7 @@ def virial_test(
 
 def force_dw_test(
     inter, testCase, places=global_default_places, hh=global_default_dw_hh, suffix=""
-):
+) -> None:
     dcoord, dbox, dtype = inter.data.get_data()
     defield = inter.data.efield
     feed_dict_test0 = {
@@ -451,7 +453,7 @@ def force_dw_test(
 
 def virial_dw_test(
     inter, testCase, places=global_default_places, hh=global_default_dw_hh, suffix=""
-):
+) -> None:
     dcoord, dbox, dtype = inter.data.get_data()
     defield = inter.data.efield
     feed_dict_test0 = {
@@ -646,7 +648,7 @@ class DataSets:
         This class is not maintained any more.
     """
 
-    def __init__(self, sys_path, set_prefix, seed=None, shuffle_test=True):
+    def __init__(self, sys_path, set_prefix, seed=None, shuffle_test=True) -> None:
         self.dirs = glob.glob(os.path.join(sys_path, set_prefix + ".*"))
         self.dirs.sort()
         # load atom type
@@ -824,14 +826,14 @@ class DataSets:
             data[ii] = data[ii][:, self.idx3_map]
         return data
 
-    def load_batch_set(self, set_name):
+    def load_batch_set(self, set_name) -> None:
         self.batch_set = self.load_set(set_name, True)
         self.reset_iter()
 
-    def load_test_set(self, set_name, shuffle_test):
+    def load_test_set(self, set_name, shuffle_test) -> None:
         self.test_set = self.load_set(set_name, shuffle_test)
 
-    def reset_iter(self):
+    def reset_iter(self) -> None:
         self.iterator = 0
         self.set_count += 1
 
@@ -914,7 +916,9 @@ class DataSystem:
         This class is not maintained any more.
     """
 
-    def __init__(self, systems, set_prefix, batch_size, test_size, rcut, run_opt=None):
+    def __init__(
+        self, systems, set_prefix, batch_size, test_size, rcut, run_opt=None
+    ) -> None:
         self.system_dirs = systems
         self.nsystems = len(self.system_dirs)
         self.batch_size = batch_size
@@ -1017,7 +1021,7 @@ class DataSystem:
             name = "-- " + name
             return name
 
-    def print_summary(self):
+    def print_summary(self) -> None:
         tmp_msg = ""
         # width 65
         sys_width = 42

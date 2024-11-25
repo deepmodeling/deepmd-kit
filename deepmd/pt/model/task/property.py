@@ -88,7 +88,7 @@ class PropertyFittingNet(InvarFitting):
         mixed_types: bool = True,
         seed: Optional[int] = None,
         **kwargs,
-    ):
+    ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
         self.bias_method = bias_method

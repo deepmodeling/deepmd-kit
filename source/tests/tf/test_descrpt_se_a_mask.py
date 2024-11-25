@@ -30,14 +30,14 @@ GLOBAL_NP_FLOAT_PRECISION = np.float64
 
 class TestModel(tf.test.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         convert_pbtxt_to_pb(
             str(infer_path / os.path.join("dp4mask.pbtxt")),
             str(infer_path / os.path.join("dp4mask.pb")),
         )
         cls.dp = DeepPot(str(infer_path / os.path.join("dp4mask.pb")))
 
-    def test_dp_mask_model(self):
+    def test_dp_mask_model(self) -> None:
         dcoord = np.array(
             [
                 3.345,
@@ -218,7 +218,7 @@ class TestModel(tf.test.TestCase):
 
         assert normalized_diff_ff < 100
 
-    def test_descriptor_se_a_mask(self):
+    def test_descriptor_se_a_mask(self) -> None:
         jfile = "zinc_se_a_mask.json"
         jdata = j_loader(jfile)
 
