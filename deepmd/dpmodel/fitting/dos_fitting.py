@@ -36,6 +36,7 @@ class DOSFittingNet(InvarFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        numb_dataid: int = 0,
         bias_dos: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         trainable: Union[bool, list[bool]] = True,
@@ -60,6 +61,7 @@ class DOSFittingNet(InvarFitting):
             bias_atom=bias_dos,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            numb_dataid=numb_dataid,
             rcond=rcond,
             trainable=trainable,
             activation_function=activation_function,
@@ -73,7 +75,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data["numb_dos"] = data.pop("dim_out")
         data.pop("tot_ener_zero", None)
         data.pop("var_name", None)

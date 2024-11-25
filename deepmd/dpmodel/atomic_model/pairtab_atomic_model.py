@@ -120,6 +120,15 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [self.sel]
 
+    def set_dataid(self, data_idx):
+        """
+        Set the data identification of this atomic model by the given data_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        raise NotImplementedError(
+            "Data identification not supported for PairTabAtomicModel!"
+        )
+
     def get_nsel(self) -> int:
         return self.sel
 

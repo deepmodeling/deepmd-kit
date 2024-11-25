@@ -65,6 +65,13 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
+    def set_dataid(self, data_idx):
+        """
+        Set the data identification of this atomic model by the given data_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.fitting.set_dataid(data_idx)
+
     def mixed_types(self) -> bool:
         """If true, the model
         1. assumes total number of atoms aligned across frames;

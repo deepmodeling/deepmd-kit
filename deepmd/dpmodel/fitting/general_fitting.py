@@ -105,6 +105,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        numb_dataid: int = 0,
         bias_atom_e: Optional[np.ndarray] = None,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
@@ -127,6 +128,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.numb_dataid = numb_dataid
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
@@ -171,11 +173,16 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.aparam_inv_std = np.ones(self.numb_aparam, dtype=self.prec)
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
+        if self.numb_dataid > 0:
+            self.dataid = np.zeros(self.numb_dataid, dtype=self.prec)
+        else:
+            self.dataid = None
         # init networks
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
+            + self.numb_dataid
         )
         self.nets = NetworkCollection(
             1 if not self.mixed_types else 0,
@@ -222,6 +229,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
+    def set_dataid(self, data_idx):
+        """
+        Set the data identification of this fitting net by the given data_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        self.dataid = np.eye(self.numb_dataid, dtype=self.prec)[data_idx]
+
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat=None
     ) -> None:
@@ -255,6 +269,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["dataid"]:
+            self.dataid = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -271,6 +287,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["dataid"]:
+            return self.dataid
         elif key in ["scale"]:
             return self.scale
         else:
@@ -287,7 +305,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 2,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -295,6 +313,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "numb_dataid": self.numb_dataid,
             "rcond": self.rcond,
             "activation_function": self.activation_function,
             "precision": self.precision,
@@ -303,6 +322,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "nets": self.nets.serialize(),
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "dataid": to_numpy_array(self.dataid),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -420,6 +440,19 @@ class GeneralFitting(NativeOP, BaseFitting):
             if xx_zeros is not None:
                 xx_zeros = xp.concat(
                     [xx_zeros, aparam],
+                    axis=-1,
+                )
+
+        if self.numb_dataid > 0:
+            assert self.dataid is not None
+            dataid = xp.tile(xp.reshape(self.dataid, [1, 1, -1]), [nf, nloc, 1])
+            xx = xp.concat(
+                [xx, dataid],
+                axis=-1,
+            )
+            if xx_zeros is not None:
+                xx_zeros = xp.concat(
+                    [xx_zeros, dataid],
                     axis=-1,
                 )
 

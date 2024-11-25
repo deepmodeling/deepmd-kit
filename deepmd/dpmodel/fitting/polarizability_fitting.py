@@ -101,6 +101,7 @@ class PolarFitting(GeneralFitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        numb_dataid: int = 0,
         rcond: Optional[float] = None,
         tot_ener_zero: bool = False,
         trainable: Optional[list[bool]] = None,
@@ -150,6 +151,7 @@ class PolarFitting(GeneralFitting):
             resnet_dt=resnet_dt,
             numb_fparam=numb_fparam,
             numb_aparam=numb_aparam,
+            numb_dataid=numb_dataid,
             rcond=rcond,
             tot_ener_zero=tot_ener_zero,
             trainable=trainable,
@@ -187,7 +189,7 @@ class PolarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 3
+        data["@version"] = 4
         data["embedding_width"] = self.embedding_width
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
@@ -198,7 +200,7 @@ class PolarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "polar"
         return super().deserialize(data)

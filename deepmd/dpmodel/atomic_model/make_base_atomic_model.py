@@ -68,6 +68,14 @@ def make_base_atomic_model(
             """Returns the number of selected atoms for each type."""
             pass
 
+        @abstractmethod
+        def set_dataid(self, data_idx) -> None:
+            """
+            Set the data identification of this atomic model by the given data_idx,
+            typically concatenated with the output of the descriptor and fed into the fitting net.
+            """
+            pass
+
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return sum(self.get_sel())
