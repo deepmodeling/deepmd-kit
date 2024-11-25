@@ -29,9 +29,9 @@ from .spin_model import (
 )
 
 __all__ = [
+    "DPModelCommon",
     "EnergyModel",
     "PropertyModel",
-    "DPModelCommon",
     "SpinModel",
     "make_model",
 ]

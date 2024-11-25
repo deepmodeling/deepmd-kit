@@ -35,7 +35,7 @@ from deepmd.tf.nvnmd.entrypoints.train import (
     train_nvnmd,
 )
 
-__all__ = ["main", "parse_args", "get_ll", "main_parser"]
+__all__ = ["get_ll", "main", "main_parser", "parse_args"]
 
 
 def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:

@@ -10,10 +10,10 @@ from .model_devi import (
 )
 
 __all__ = [
-    "DeepPot",
-    "calc_model_devi",
     "DeepEval",
+    "DeepPot",
     "DeepPotential",
+    "calc_model_devi",
 ]
 
 

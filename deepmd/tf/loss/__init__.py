@@ -12,9 +12,9 @@ from .tensor import (
 )
 
 __all__ = [
+    "DOSLoss",
     "EnerDipoleLoss",
     "EnerSpinLoss",
     "EnerStdLoss",
-    "DOSLoss",
     "TensorLoss",
 ]

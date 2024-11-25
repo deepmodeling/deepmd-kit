@@ -43,22 +43,22 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    # from deepmd.common
-    "select_idx_map",
-    "make_default_mesh",
-    "j_loader",
-    "expand_sys_str",
-    "get_np_precision",
+    "ACTIVATION_FN_DICT",
     # from self
     "PRECISION_DICT",
-    "gelu",
-    "gelu_tf",
-    "ACTIVATION_FN_DICT",
-    "get_activation_func",
-    "get_precision",
-    "safe_cast_tensor",
     "cast_precision",
     "clear_session",
+    "expand_sys_str",
+    "gelu",
+    "gelu_tf",
+    "get_activation_func",
+    "get_np_precision",
+    "get_precision",
+    "j_loader",
+    "make_default_mesh",
+    "safe_cast_tensor",
+    # from deepmd.common
+    "select_idx_map",
 ]
 
 # define constants
