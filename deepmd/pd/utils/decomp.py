@@ -10,37 +10,17 @@ from __future__ import (
     annotations,
 )
 
+import numpy as np
 import paddle
 
 __all__ = [
-    "softmax",
     "norm",
     "take_along_axis",
     "scatter_reduce",
     "sec",
     "masked_add_",
+    "numel",
 ]
-
-
-# decomposition for forward function
-def softmax_decomp(x: paddle.Tensor, axis: int = -1) -> paddle.Tensor:
-    """Forward decompsition function of softmax.
-
-    Parameters
-    ----------
-    x : paddle.Tensor
-        Input.
-    axis : int, defaults: -1.
-        A dimension along which softmax will be computed.
-
-    Returns
-    -------
-    paddle.Tensor
-        Computed output.
-    """
-    x_max = paddle.max(x, axis=axis, keepdim=True)
-    x = x - x_max
-    return paddle.exp(x) / paddle.sum(paddle.exp(x), axis=axis, keepdim=True)
 
 
 def norm_decomp(
@@ -65,10 +45,7 @@ def norm_decomp(
     paddle.Tensor
         A real-valued tensor, even when A is complex.
     """
-    if p == 2 or p == 2.0:
-        # clip for negative indexing, or 1/(0^(k-1)) will cause inf in backward
-        return (x * x).sum(axis=axis, keepdim=keepdim) ** 0.5
-    return (x.abs() ** p).sum(axis=axis, keepdim=keepdim) ** (1 / p)
+    return paddle.linalg.norm(x, p=p, axis=axis, keepdim=keepdim)
 
 
 def take_along_axis_decomp(
@@ -92,16 +69,7 @@ def take_along_axis_decomp(
     paddle.Tensor
         Computed output.
     """
-    # manually contruct indices for gather_nd(ind_gather_nd.ndim == indices.ndim + 1,
-    # the lsat 1 represents the number of dimension(s) of indices)
-    ind_gather_nd = paddle.stack(
-        paddle.meshgrid(*[paddle.arange(v) for v in indices.shape], indexing="ij"),
-        axis=-1,
-    )
-    ind_gather_nd[..., axis] = indices
-    # compute output using constructed indices via gather_nd
-    out = paddle.gather_nd(x, ind_gather_nd)
-    return out
+    return paddle.take_along_axis(x, indices, axis, broadcast)
 
 
 def scatter_reduce_decomp(
@@ -235,7 +203,13 @@ def normalize_decomp(
         Computed output.
     """
     return paddle.nn.functional.normalize(x, p, axis, epsilon)
-    # return x / norm(x, p=p, axis=axis, keepdim=True)
+
+
+def numel(x: paddle.Tensor) -> int:
+    if paddle.in_dynamic_mode():
+        return np.prod(x.shape)
+
+    return paddle.numel(x)
 
 
 # alias for decomposed functions for convinience
@@ -244,4 +218,3 @@ masked_add_ = masked_add__decomp
 scatter_reduce = scatter_reduce_decomp
 take_along_axis = take_along_axis_decomp
 norm = norm_decomp
-softmax = softmax_decomp

@@ -658,6 +658,7 @@ class Trainer:
             # Paddle Profiler
             if enable_profiling:
                 core.nvprof_nvtx_push(f"Training step {_step_id}")
+
             self.wrapper.train()
             if isinstance(self.lr_exp, dict):
                 _lr = self.lr_exp[task_key]
@@ -704,8 +705,6 @@ class Trainer:
 
                 self.scheduler.step()
 
-                if enable_profiling:
-                    core.nvprof_nvtx_pop()
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -878,6 +877,9 @@ class Trainer:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item].item(), _step_id
                     )
+
+            if enable_profiling:
+                core.nvprof_nvtx_pop()
 
         self.t0 = time.time()
         self.total_train_time = 0.0

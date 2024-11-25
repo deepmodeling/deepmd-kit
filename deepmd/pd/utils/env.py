@@ -77,13 +77,75 @@ inter_nthreads, intra_nthreads = get_default_nthreads()
 
 
 def enable_prim(enable: bool = True):
+    # operator in list below will not use composite
+    # operator but kernel instead
+    EAGER_COMP_OP_BLACK_LIST = [
+        "abs_grad",
+        "cast_grad",
+        "concat_grad",
+        "cos_double_grad",
+        "cos_grad",
+        "cumprod_grad",
+        "cumsum_grad",
+        "dropout_grad",
+        "erf_grad",
+        "exp_grad",
+        "expand_grad",
+        "floor_grad",
+        "gather_grad",
+        "gather_nd_grad",
+        "gelu_grad",
+        "group_norm_grad",
+        "instance_norm_grad",
+        "layer_norm_grad",
+        "leaky_relu_grad",
+        "log_grad",
+        "max_grad",
+        "pad_grad",
+        "pow_double_grad",
+        "pow_grad",
+        "prod_grad",
+        "relu_grad",
+        "roll_grad",
+        "rsqrt_grad",
+        "scatter_grad",
+        "scatter_nd_add_grad",
+        "sigmoid_grad",
+        "silu_grad",
+        "sin_double_grad",
+        "sin_grad",
+        "slice_grad",
+        "split_grad",
+        "split_grad",
+        "sqrt_grad",
+        "stack_grad",
+        "sum_grad",
+        "tanh_double_grad",
+        "tanh_grad",
+        "topk_grad",
+        "transpose_grad",
+        "add_double_grad",
+        "add_grad",
+        "assign_grad",
+        "batch_norm_grad",
+        "divide_grad",
+        "elementwise_pow_grad",
+        "maximum_grad",
+        "min_grad",
+        "minimum_grad",
+        "multiply_grad",
+        "subtract_grad",
+        "tile_grad",
+    ]
+
     """Enable running program in primitive C++ API in eager/static mode."""
     from paddle.framework import (
         core,
     )
 
     core.set_prim_eager_enabled(enable)
-    core._set_prim_all_enabled(enable)
+    if enable:
+        paddle.framework.core._set_prim_backward_blacklist(*EAGER_COMP_OP_BLACK_LIST)
     log = logging.getLogger(__name__)
     log.info(f"{'Enable' if enable else 'Disable'} prim in eager and static mode.")
 
