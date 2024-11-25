@@ -9,8 +9,14 @@ from .dpa1 import (
     DescrptBlockSeAtten,
     DescrptDPA1,
 )
+from .dpa2 import (
+    DescrptDPA2,
+)
 from .env_mat import (
     prod_env_mat,
+)
+from .repformers import (
+    DescrptBlockRepformers,
 )
 from .se_a import (
     DescrptBlockSeA,
@@ -23,6 +29,8 @@ __all__ = [
     "DescrptBlockSeA",
     "DescrptBlockSeAtten",
     "DescrptDPA1",
+    "DescrptDPA2",
     "DescrptSeA",
     "prod_env_mat",
+    "DescrptBlockRepformers",
 ]
