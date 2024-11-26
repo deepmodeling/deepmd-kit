@@ -64,7 +64,7 @@ class Fitting(torch.nn.Module, BaseFitting):
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
         if shared_level == 0:
-            # only not share the bias_atom_e and the dataid
+            # only not share the bias_atom_e and the caseid
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:
                 self._modules[item] = base_class._modules[item]
@@ -132,7 +132,7 @@ class GeneralFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_dataid: int = 0,
+        numb_caseid: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -154,7 +154,7 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
-        self.numb_dataid = numb_dataid
+        self.numb_caseid = numb_caseid
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -206,20 +206,20 @@ class GeneralFitting(Fitting):
         else:
             self.aparam_avg, self.aparam_inv_std = None, None
 
-        if self.numb_dataid > 0:
+        if self.numb_caseid > 0:
             self.register_buffer(
-                "dataid",
-                torch.zeros(self.numb_dataid, dtype=self.prec, device=device),
-                # torch.eye(self.numb_dataid, dtype=self.prec, device=device)[0],
+                "caseid",
+                torch.zeros(self.numb_caseid, dtype=self.prec, device=device),
+                # torch.eye(self.numb_caseid, dtype=self.prec, device=device)[0],
             )
         else:
-            self.dataid = None
+            self.caseid = None
 
         in_dim = (
             self.dim_descrpt
             + self.numb_fparam
             + (0 if self.use_aparam_as_mask else self.numb_aparam)
-            + self.numb_dataid
+            + self.numb_caseid
         )
 
         self.filter_layers = NetworkCollection(
@@ -287,7 +287,7 @@ class GeneralFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
-            "numb_dataid": self.numb_dataid,
+            "numb_caseid": self.numb_caseid,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -296,7 +296,7 @@ class GeneralFitting(Fitting):
             "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
-                "dataid": to_numpy_array(self.dataid),
+                "caseid": to_numpy_array(self.caseid),
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -356,13 +356,13 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_dataid(self, data_idx):
+    def set_caseid(self, case_idx):
         """
-        Set the data identification of this fitting net by the given data_idx,
+        Set the case identification of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
-        self.dataid = torch.eye(self.numb_dataid, dtype=self.prec, device=device)[
-            data_idx
+        self.caseid = torch.eye(self.numb_caseid, dtype=self.prec, device=device)[
+            case_idx
         ]
 
     def __setitem__(self, key, value) -> None:
@@ -377,8 +377,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
-        elif key in ["dataid"]:
-            self.dataid = value
+        elif key in ["caseid"]:
+            self.caseid = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -395,8 +395,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
-        elif key in ["dataid"]:
-            return self.dataid
+        elif key in ["caseid"]:
+            return self.caseid
         elif key in ["scale"]:
             return self.scale
         else:
@@ -495,16 +495,16 @@ class GeneralFitting(Fitting):
                     dim=-1,
                 )
 
-        if self.numb_dataid > 0:
-            assert self.dataid is not None
-            dataid = torch.tile(self.dataid.reshape([1, 1, -1]), [nf, nloc, 1])
+        if self.numb_caseid > 0:
+            assert self.caseid is not None
+            caseid = torch.tile(self.caseid.reshape([1, 1, -1]), [nf, nloc, 1])
             xx = torch.cat(
-                [xx, dataid],
+                [xx, caseid],
                 dim=-1,
             )
             if xx_zeros is not None:
                 xx_zeros = torch.cat(
-                    [xx_zeros, dataid],
+                    [xx_zeros, caseid],
                     dim=-1,
                 )
 

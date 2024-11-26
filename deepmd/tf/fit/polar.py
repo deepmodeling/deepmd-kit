@@ -95,7 +95,7 @@ class PolarFittingSeA(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_dataid: int = 0,
+        numb_caseid: int = 0,
         sel_type: Optional[list[int]] = None,
         fit_diag: bool = True,
         scale: Optional[list[float]] = None,
@@ -163,13 +163,13 @@ class PolarFittingSeA(Fitting):
         self.type_map = type_map
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
-        self.numb_dataid = numb_dataid
+        self.numb_caseid = numb_caseid
         if numb_fparam > 0:
             raise ValueError("numb_fparam is not supported in the dipole fitting")
         if numb_aparam > 0:
             raise ValueError("numb_aparam is not supported in the dipole fitting")
-        if numb_dataid > 0:
-            raise ValueError("numb_dataid is not supported in TensorFlow.")
+        if numb_caseid > 0:
+            raise ValueError("numb_caseid is not supported in TensorFlow.")
         self.fparam_avg = None
         self.fparam_std = None
         self.fparam_inv_std = None
@@ -592,7 +592,7 @@ class PolarFittingSeA(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
-            "numb_dataid": self.numb_dataid,
+            "numb_caseid": self.numb_caseid,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,
             "exclude_types": [],

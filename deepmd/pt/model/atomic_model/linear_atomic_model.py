@@ -158,13 +158,13 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [max([model.get_nsel() for model in self.models])]
 
-    def set_dataid(self, data_idx):
+    def set_caseid(self, case_idx):
         """
-        Set the data identification of this atomic model by the given data_idx,
+        Set the case identification of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
         for model in self.models:
-            model.set_dataid(data_idx)
+            model.set_caseid(case_idx)
 
     def get_model_nsels(self) -> list[int]:
         """Get the processed sels for each individual models. Not distinguishing types."""

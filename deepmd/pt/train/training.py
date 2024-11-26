@@ -1275,37 +1275,37 @@ def get_model_for_wrapper(_model_params, resuming=False):
     else:
         _model = {}
         model_keys = list(_model_params["model_dict"])
-        do_dataid, dataid_index = get_dataid_config(_model_params)
+        do_caseid, caseid_index = get_caseid_config(_model_params)
         for _model_key in model_keys:
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
-            if do_dataid and not resuming:
-                # only set dataid when from scratch multitask training
-                _model[_model_key].set_dataid(dataid_index[_model_key])
+            if do_caseid and not resuming:
+                # only set caseid when from scratch multitask training
+                _model[_model_key].set_caseid(caseid_index[_model_key])
     return _model
 
 
-def get_dataid_config(_model_params):
+def get_caseid_config(_model_params):
     assert (
         "model_dict" in _model_params
     ), "Only support setting data config for multi-task model!"
     model_keys = list(_model_params["model_dict"])
     sorted_model_keys = sorted(model_keys)
-    numb_dataid_list = [
+    numb_caseid_list = [
         _model_params["model_dict"][model_key]
         .get("fitting_net", {})
-        .get("numb_dataid", 0)
+        .get("numb_caseid", 0)
         for model_key in sorted_model_keys
     ]
-    if not all(item == numb_dataid_list[0] for item in numb_dataid_list):
+    if not all(item == numb_caseid_list[0] for item in numb_caseid_list):
         raise ValueError(
-            f"All models must have the same dimension of data identification, while the settings are: {numb_dataid_list}"
+            f"All models must have the same dimension of data identification, while the settings are: {numb_caseid_list}"
         )
-    if numb_dataid_list[0] == 0:
+    if numb_caseid_list[0] == 0:
         return False, {}
-    dataid_index = {model_key: idx for idx, model_key in enumerate(sorted_model_keys)}
-    return True, dataid_index
+    caseid_index = {model_key: idx for idx, model_key in enumerate(sorted_model_keys)}
+    return True, caseid_index
 
 
 def model_change_out_bias(

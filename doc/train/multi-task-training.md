@@ -55,13 +55,13 @@ Specifically, there are several parts that need to be modified:
     `"descriptor": "my_descriptor:shared_level", `
     and use the user-defined integer `shared_level` in the code to share the corresponding module to varying degrees.
     (The default value for `shared_level` is set to 0. If default sharing is enabled, all parameters in the descriptor will be shared,
-    whereas in the fitting network, all parameters will be shared except for `bias_atom_e` and `dataid`.).
+    whereas in the fitting network, all parameters will be shared except for `bias_atom_e` and `caseid`.).
     The parts that are exclusive to each model can be written following the previous definition.
 - - To conduct multitask training, there are two typical approaches:
     1. **Descriptor sharing only**: Share the descriptor with `shared_level`=0. See [here](../../examples/water_multi_task/pytorch_example/input_torch.json) for an example.
     2. **Descriptor and fitting network sharing with data identification**:
        - Share the descriptor and the fitting network with `shared_level`=0.
-       - {ref}`numb_dataid <model[standard]/fitting_net[ener]/numb_dataid>` must be set to the number of model branches, which will distinguish different data tasks using a one-hot embedding.
+       - {ref}`numb_caseid <model[standard]/fitting_net[ener]/numb_caseid>` must be set to the number of model branches, which will distinguish different data tasks using a one-hot embedding.
        - See [here](../../examples/water_multi_task/pytorch_example/input_torch_sharefit.json) for an example.
 
 - {ref}`loss_dict <loss_dict>`: The loss settings corresponding to each task model, specified by the `model_key`.

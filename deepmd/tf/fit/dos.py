@@ -111,7 +111,7 @@ class DOSFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
-        numb_dataid: int = 0,
+        numb_caseid: int = 0,
         numb_dos: int = 300,
         rcond: Optional[float] = None,
         trainable: Optional[list[bool]] = None,
@@ -133,9 +133,9 @@ class DOSFitting(Fitting):
 
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
-        self.numb_dataid = numb_dataid
-        if numb_dataid > 0:
-            raise ValueError("numb_dataid is not supported in TensorFlow.")
+        self.numb_caseid = numb_caseid
+        if numb_caseid > 0:
+            raise ValueError("numb_caseid is not supported in TensorFlow.")
 
         self.numb_dos = numb_dos
 
@@ -713,7 +713,7 @@ class DOSFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
-            "numb_dataid": self.numb_dataid,
+            "numb_caseid": self.numb_caseid,
             "rcond": self.rcond,
             "trainable": self.trainable,
             "activation_function": self.activation_function,
@@ -736,7 +736,7 @@ class DOSFitting(Fitting):
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
-                "dataid": None,
+                "caseid": None,
             },
             "type_map": self.type_map,
         }

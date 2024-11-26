@@ -65,12 +65,12 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
-    def set_dataid(self, data_idx):
+    def set_caseid(self, case_idx):
         """
-        Set the data identification of this atomic model by the given data_idx,
+        Set the case identification of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
-        self.fitting.set_dataid(data_idx)
+        self.fitting.set_caseid(case_idx)
 
     def mixed_types(self) -> bool:
         """If true, the model

@@ -69,9 +69,9 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def set_dataid(self, data_idx) -> None:
+        def set_caseid(self, case_idx) -> None:
             """
-            Set the data identification of this atomic model by the given data_idx,
+            Set the case identification of this atomic model by the given case_idx,
             typically concatenated with the output of the descriptor and fed into the fitting net.
             """
             pass

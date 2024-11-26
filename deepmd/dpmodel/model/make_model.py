@@ -552,8 +552,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def deserialize(cls, data) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        def set_dataid(self, data_idx):
-            self.atomic_model.set_dataid(data_idx)
+        def set_caseid(self, case_idx):
+            self.atomic_model.set_caseid(case_idx)
 
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
