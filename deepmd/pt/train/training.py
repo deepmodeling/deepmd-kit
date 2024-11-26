@@ -683,7 +683,7 @@ class Trainer:
                 )
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
+                    torch.nn.utils.clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
                         error_if_nonfinite=True,
