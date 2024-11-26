@@ -684,11 +684,8 @@ class Trainer:
                 loss.backward()
                 if self.gradient_max_norm > 0.0:
                     grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.wrapper.parameters(), self.gradient_max_norm
+                        self.wrapper.parameters(), self.gradient_max_norm, error_if_nonfinite=True
                     )
-                    if not torch.isfinite(grad_norm).all():
-                        # check local gradnorm single GPU case, trigger NanDetector
-                        raise FloatingPointError("gradients are Nan/Inf")
                 with torch.device("cpu"):
                     self.optimizer.step()
                 self.scheduler.step()
