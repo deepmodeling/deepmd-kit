@@ -120,7 +120,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [self.sel]
 
-    def set_caseid(self, case_idx):
+    def set_caseid(self, case_idx: int):
         """
         Set the case identification of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.

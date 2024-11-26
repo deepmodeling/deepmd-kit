@@ -69,7 +69,7 @@ def make_base_atomic_model(
             pass
 
         @abstractmethod
-        def set_caseid(self, case_idx) -> None:
+        def set_caseid(self, case_idx: int) -> None:
             """
             Set the case identification of this atomic model by the given case_idx,
             typically concatenated with the output of the descriptor and fed into the fitting net.

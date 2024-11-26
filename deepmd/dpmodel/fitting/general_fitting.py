@@ -229,7 +229,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_caseid(self, case_idx):
+    def set_caseid(self, case_idx: int):
         """
         Set the case identification of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
