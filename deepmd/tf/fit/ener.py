@@ -117,6 +117,8 @@ class EnerFitting(Fitting):
             Number of frame parameter
     numb_aparam
             Number of atomic parameter
+    numb_caseid
+        Number of case specific identification.
     rcond
             The condition number for the regression of atomic energy.
     tot_ener_zero

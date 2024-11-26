@@ -74,6 +74,8 @@ class DOSFitting(Fitting):
             Number of frame parameter
     numb_aparam
             Number of atomic parameter
+    numb_caseid
+            Number of case specific identification.
     ! numb_dos (added)
             Number of gridpoints on which the DOS is evaluated (NEDOS in VASP)
     rcond

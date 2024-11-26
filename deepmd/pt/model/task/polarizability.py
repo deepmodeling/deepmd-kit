@@ -53,6 +53,8 @@ class PolarFittingNet(GeneralFitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    numb_caseid : int
+        Number of case specific identification.
     activation_function : str
         Activation function.
     precision : str

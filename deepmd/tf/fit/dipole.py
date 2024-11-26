@@ -58,6 +58,8 @@ class DipoleFittingSeA(Fitting):
             Number of frame parameters
     numb_aparam
             Number of atomic parameters
+    numb_caseid
+            Number of case specific identification.
     sel_type : list[int]
             The atom types selected to have an atomic dipole prediction. If is None, all atoms are selected.
     seed : int

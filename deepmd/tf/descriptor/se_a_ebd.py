@@ -58,6 +58,8 @@ class DescrptSeAEbd(DescrptSeA):
             Number of hidden layers for the type embedding net (skip connected).
     numb_aparam
             Number of atomic parameters. If >0 it will be embedded with atom types.
+    numb_caseid
+            Number of case specific identification.
     set_davg_zero
             Set the shift of embedding net input to zero.
     activation_function
