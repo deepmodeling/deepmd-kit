@@ -436,6 +436,14 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         data.pop("type", None)
         return super().deserialize(data)
 
+    def set_caseid(self, case_idx: int):
+        """
+        Set the case identification of this atomic model by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        # only set case_idx for dpmodel
+        self.models[0].set_caseid(case_idx)
+
     def _compute_weight(
         self,
         extended_coord: np.ndarray,
