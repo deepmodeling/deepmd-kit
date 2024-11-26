@@ -216,19 +216,12 @@ class DeepmdDataSystem:
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
             if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
-                    "system %s required batch size is larger than the size of the dataset %s (%d > %d)"
-                    % (
-                        self.system_dirs[ii],
-                        chk_ret[0],
-                        self.batch_size[ii],
-                        chk_ret[1],
-                    )
+                    f"system {self.system_dirs[ii]} required batch size is larger than the size of the dataset {chk_ret[0]} ({self.batch_size[ii]} > {chk_ret[1]})"
                 )
             chk_ret = self.data_systems[ii].check_test_size(self.test_size[ii])
             if chk_ret is not None and not is_auto_bs and not self.mixed_systems:
                 warnings.warn(
-                    "system %s required test size is larger than the size of the dataset %s (%d > %d)"
-                    % (self.system_dirs[ii], chk_ret[0], self.test_size[ii], chk_ret[1])
+                    f"system {self.system_dirs[ii]} required test size is larger than the size of the dataset {chk_ret[0]} ({self.test_size[ii]} > {chk_ret[1]})"
                 )
 
     def _load_test(self, ntests=-1) -> None:
@@ -671,22 +664,14 @@ def print_summary(
     log.info(
         f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
     )
-    log.info("found %d system(s):" % nsystems)
+    log.info(f"found {nsystems} system(s):")
     log.info(
         ("{}  ".format(_format_name_length("system", sys_width)))
-        + ("%6s  %6s  %6s  %9s  %3s" % ("natoms", "bch_sz", "n_bch", "prob", "pbc"))
+        + (f'{"natoms":6s}  {"bch_sz":6s}  {"n_bch":6s}  {"prob":9s}  {"pbc":3s}')
     )
     for ii in range(nsystems):
         log.info(
-            "%s  %6d  %6d  %6d  %9.3e  %3s"
-            % (
-                _format_name_length(system_dirs[ii], sys_width),
-                natoms[ii],
-                batch_size[ii],
-                nbatches[ii],
-                sys_probs[ii],
-                "T" if pbc[ii] else "F",
-            )
+            f'{_format_name_length(system_dirs[ii], sys_width)}  {natoms[ii]:6d}  {batch_size[ii]:6d}  {nbatches[ii]:6d}  {sys_probs[ii]:9.3e}  {"T" if pbc[ii] else "F":3s}'
         )
     log.info(
         "--------------------------------------------------------------------------------------"

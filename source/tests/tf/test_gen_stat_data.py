@@ -39,7 +39,7 @@ def gen_sys(nframes, atom_types):
     data["atom_names"] = []
     data["atom_numbs"] = []
     for ii in range(len(types)):
-        data["atom_names"].append("TYPE_%d" % ii)
+        data["atom_names"].append(f"TYPE_{ii}")
         data["atom_numbs"].append(np.sum(atom_types == ii))
     data["atom_types"] = np.array(atom_types, dtype=int)
     return data

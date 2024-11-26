@@ -216,7 +216,7 @@ class EnerFitting(Fitting):
         for at, ae in enumerate(atom_ener if atom_ener is not None else []):
             if ae is not None:
                 self.atom_ener.append(
-                    tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name="atom_%d_ener" % at)
+                    tf.constant(ae, GLOBAL_TF_FLOAT_PRECISION, name=f"atom_{at}_ener")
                 )
             else:
                 self.atom_ener.append(None)

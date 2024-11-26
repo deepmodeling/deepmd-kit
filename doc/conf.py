@@ -28,9 +28,7 @@ import sphinx_contrib_exhale_multiproject  # noqa: F401
 # -- Project information -----------------------------------------------------
 
 project = "DeePMD-kit"
-copyright = (
-    "2017-%d, DeepModeling" % datetime.datetime.now(tz=datetime.timezone.utc).year
-)
+copyright = f"2017-{datetime.datetime.now(tz=datetime.timezone.utc).year}, DeepModeling"
 author = "DeepModeling"
 
 autoapi_dirs = ["../deepmd"]

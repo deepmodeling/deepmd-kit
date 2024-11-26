@@ -349,16 +349,11 @@ def get_module(module_name: str) -> "ModuleType":
             if TF_CXX11_ABI_FLAG != tf_cxx11_abi_flag:
                 raise RuntimeError(
                     "This deepmd-kit package was compiled with "
-                    "CXX11_ABI_FLAG=%d, but TensorFlow runtime was compiled "
-                    "with CXX11_ABI_FLAG=%d. These two library ABIs are "
-                    "incompatible and thus an error is raised when loading %s. "
+                    f"CXX11_ABI_FLAG={TF_CXX11_ABI_FLAG}, but TensorFlow runtime was compiled "
+                    f"with CXX11_ABI_FLAG={tf_cxx11_abi_flag}. These two library ABIs are "
+                    f"incompatible and thus an error is raised when loading {module_name}. "
                     "You need to rebuild deepmd-kit against this TensorFlow "
                     "runtime."
-                    % (
-                        TF_CXX11_ABI_FLAG,
-                        tf_cxx11_abi_flag,
-                        module_name,
-                    )
                 ) from e
 
             # different versions may cause incompatibility

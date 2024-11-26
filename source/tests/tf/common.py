@@ -340,7 +340,7 @@ def force_test(
                 c_force,
                 force[0, idx * 3 + dd],
                 places=places,
-                msg="force component [%d,%d] failed" % (idx, dd),
+                msg=f"force component [{idx},{dd}] failed",
             )
 
 
@@ -867,7 +867,7 @@ class DataSets:
         if self.iterator + batch_size > set_size:
             self.load_batch_set(self.train_dirs[self.set_count % self.get_numb_set()])
             set_size = self.batch_set["energy"].shape[0]
-        # print ("%d %d %d" % (self.iterator, self.iterator + batch_size, set_size))
+        # print ("%s %s %s" % (self.iterator, self.iterator + batch_size, set_size))
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
@@ -962,19 +962,12 @@ class DataSystem:
             chk_ret = self.data_systems[ii].check_batch_size(self.batch_size[ii])
             if chk_ret is not None:
                 raise RuntimeError(
-                    "system %s required batch size %d is larger than the size %d of the dataset %s"
-                    % (
-                        self.system_dirs[ii],
-                        self.batch_size[ii],
-                        chk_ret[1],
-                        chk_ret[0],
-                    )
+                    f"system {self.system_dirs[ii]} required batch size {self.batch_size[ii]} is larger than the size {chk_ret[1]} of the dataset {chk_ret[0]}"
                 )
             chk_ret = self.data_systems[ii].check_test_size(test_size)
             if chk_ret is not None:
                 warnings.warn(
-                    "WARNING: system %s required test size %d is larger than the size %d of the dataset %s"
-                    % (self.system_dirs[ii], test_size, chk_ret[1], chk_ret[0])
+                    f"WARNING: system {self.system_dirs[ii]} required test size {test_size} is larger than the size {chk_ret[1]} of the dataset {chk_ret[0]}"
                 )
 
         if run_opt is not None:
@@ -1026,16 +1019,11 @@ class DataSystem:
         # width 65
         sys_width = 42
         tmp_msg += "---Summary of DataSystem-----------------------------------------\n"
-        tmp_msg += "find %d system(s):\n" % self.nsystems
+        tmp_msg += f"find {self.nsystems} system(s):\n"
         tmp_msg += "{}  ".format(self.format_name_length("system", sys_width))
         tmp_msg += "{}  {}  {}\n".format("natoms", "bch_sz", "n_bch")
         for ii in range(self.nsystems):
-            tmp_msg += "%s  %6d  %6d  %5d\n" % (
-                self.format_name_length(self.system_dirs[ii], sys_width),
-                self.natoms[ii],
-                self.batch_size[ii],
-                self.nbatches[ii],
-            )
+            tmp_msg += f"{self.format_name_length(self.system_dirs[ii], sys_width)}  {self.natoms[ii]:6d}  {self.batch_size[ii]:6d}  {self.nbatches[ii]:5d}\n"
         tmp_msg += "-----------------------------------------------------------------\n"
         # log.info(tmp_msg)
 
