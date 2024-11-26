@@ -867,7 +867,7 @@ class DataSets:
         if self.iterator + batch_size > set_size:
             self.load_batch_set(self.train_dirs[self.set_count % self.get_numb_set()])
             set_size = self.batch_set["energy"].shape[0]
-        # print ("%s %s %s" % (self.iterator, self.iterator + batch_size, set_size))
+        # print ("%d %d %d" % (self.iterator, self.iterator + batch_size, set_size))
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
