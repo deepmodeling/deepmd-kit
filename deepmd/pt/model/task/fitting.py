@@ -64,15 +64,6 @@ class Fitting(torch.nn.Module, BaseFitting):
             self.__class__ == base_class.__class__
         ), "Only fitting nets of the same type can share params!"
         if shared_level == 0:
-            # link buffers
-            if hasattr(self, "bias_atom_e"):
-                self.bias_atom_e = base_class.bias_atom_e
-            if hasattr(self, "dataid"):
-                self.dataid = base_class.dataid
-            # the following will successfully link all the params except buffers, which need manually link.
-            for item in self._modules:
-                self._modules[item] = base_class._modules[item]
-        elif shared_level == 1:
             # only not share the bias_atom_e and the dataid
             # the following will successfully link all the params except buffers, which need manually link.
             for item in self._modules:

@@ -41,13 +41,13 @@
       "model_1": {
         "type_map": "my_type_map",
         "descriptor": "my_descriptor",
-        "fitting_net": "my_fitting:1",
+        "fitting_net": "my_fitting",
         "data_stat_nbatch": 1
       },
       "model_2": {
         "type_map": "my_type_map",
         "descriptor": "my_descriptor",
-        "fitting_net": "my_fitting:1",
+        "fitting_net": "my_fitting",
         "data_stat_nbatch": 1
       }
     }

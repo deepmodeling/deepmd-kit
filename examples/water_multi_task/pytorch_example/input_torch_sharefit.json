@@ -73,12 +73,12 @@
       "water_1": {
         "type_map": "type_map_all",
         "descriptor": "dpa2_descriptor",
-        "fitting_net": "shared_fit_with_id:1"
+        "fitting_net": "shared_fit_with_id"
       },
       "water_2": {
         "type_map": "type_map_all",
         "descriptor": "dpa2_descriptor",
-        "fitting_net": "shared_fit_with_id:1"
+        "fitting_net": "shared_fit_with_id"
       }
     }
   },
