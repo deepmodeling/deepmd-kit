@@ -988,7 +988,7 @@ class Trainer:
             if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
                 if self.start_step >= 2 * self.disp_freq:
                     log.info(
-                        "average training time: %.4f s/batch (exclude first %s batches)",
+                        "average training time: %.4f s/batch (exclude first %d batches)",
                         self.total_train_time
                         / (
                             elapsed_batch // self.disp_freq * self.disp_freq

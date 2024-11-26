@@ -595,7 +595,7 @@ class DPTrainer:
         if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
             if elapsed_batch >= 2 * self.disp_freq:
                 log.info(
-                    "average training time: %.4f s/batch (exclude first %s batches)",
+                    "average training time: %.4f s/batcsh (exclude first %d batches)",
                     total_train_time
                     / (
                         elapsed_batch // self.disp_freq * self.disp_freq
