@@ -111,6 +111,7 @@ class DOSFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        numb_dataid: int = 0,
         numb_dos: int = 300,
         rcond: Optional[float] = None,
         trainable: Optional[list[bool]] = None,
@@ -132,6 +133,9 @@ class DOSFitting(Fitting):
 
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.numb_dataid = numb_dataid
+        if numb_dataid > 0:
+            raise ValueError("numb_dataid is not supported in TensorFlow.")
 
         self.numb_dos = numb_dos
 
@@ -672,7 +676,7 @@ class DOSFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data["numb_dos"] = data.pop("dim_out")
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
@@ -699,7 +703,7 @@ class DOSFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dos",
-            "@version": 2,
+            "@version": 3,
             "var_name": "dos",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -709,6 +713,7 @@ class DOSFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "numb_dataid": self.numb_dataid,
             "rcond": self.rcond,
             "trainable": self.trainable,
             "activation_function": self.activation_function,
@@ -731,6 +736,7 @@ class DOSFitting(Fitting):
                 "fparam_inv_std": self.fparam_inv_std,
                 "aparam_avg": self.aparam_avg,
                 "aparam_inv_std": self.aparam_inv_std,
+                "dataid": None,
             },
             "type_map": self.type_map,
         }
