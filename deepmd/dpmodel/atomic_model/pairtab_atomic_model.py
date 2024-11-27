@@ -425,3 +425,14 @@ class PairTabAtomicModel(BaseAtomicModel):
         If False, the shape is (nframes, nloc, ndim).
         """
         return False
+
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Pairtab model does not support compression."""
+        pass
