@@ -175,7 +175,11 @@ class AutoBatchSize(ABC):
                 *[
                     (
                         vv[start_index:end_index, ...]
-                        if array_api_compat.is_array_api_obj(vv) and vv.ndim > 1
+                        if (
+                            array_api_compat.is_array_api_obj(vv)
+                            and vv.ndim > 1
+                            or str(vv.__class__) == "<class 'paddle.Tensor'>"
+                        )
                         else vv
                     )
                     for vv in args
@@ -183,7 +187,11 @@ class AutoBatchSize(ABC):
                 **{
                     kk: (
                         vv[start_index:end_index, ...]
-                        if array_api_compat.is_array_api_obj(vv) and vv.ndim > 1
+                        if (
+                            array_api_compat.is_array_api_obj(vv)
+                            and vv.ndim > 1
+                            or str(vv.__class__) == "<class 'paddle.Tensor'>"
+                        )
                         else vv
                     )
                     for kk, vv in kwargs.items()
@@ -222,6 +230,14 @@ class AutoBatchSize(ABC):
             if array_api_compat.is_array_api_obj(r[0]):
                 xp = array_api_compat.array_namespace(r[0])
                 ret = xp.concat(r, axis=0)
+            elif str(r[0].__class__) == "<class 'paddle.Tensor'>":
+                try:
+                    import paddle
+                except ModuleNotFoundError as e:
+                    raise ModuleNotFoundError(
+                        "The 'paddlepaddle' is required but not installed."
+                    ) from e
+                ret = paddle.concat(r, axis=0)
             else:
                 raise RuntimeError(f"Unexpected result type {type(r[0])}")
             return ret

@@ -6,23 +6,54 @@
         "O",
         "H"
       ],
-      "sea_descriptor_1": {
-        "type": "se_e2_a",
-        "sel": [
-          46,
-          92
-        ],
-        "rcut_smth": 0.50,
-        "rcut": 6.00,
-        "neuron": [
-          25,
-          50,
-          100
-        ],
-        "resnet_dt": false,
-        "axis_neuron": 16,
-        "type_one_side": true,
-        "seed": 1,
+      "dpa2_descriptor": {
+        "type": "dpa2",
+        "repinit": {
+          "tebd_dim": 8,
+          "rcut": 6.0,
+          "rcut_smth": 0.5,
+          "nsel": 120,
+          "neuron": [
+            25,
+            50,
+            100
+          ],
+          "axis_neuron": 12,
+          "activation_function": "tanh",
+          "three_body_sel": 48,
+          "three_body_rcut": 4.0,
+          "three_body_rcut_smth": 3.5,
+          "use_three_body": true
+        },
+        "repformer": {
+          "rcut": 4.0,
+          "rcut_smth": 3.5,
+          "nsel": 48,
+          "nlayers": 6,
+          "g1_dim": 128,
+          "g2_dim": 32,
+          "attn2_hidden": 32,
+          "attn2_nhead": 4,
+          "attn1_hidden": 128,
+          "attn1_nhead": 4,
+          "axis_neuron": 4,
+          "update_h2": false,
+          "update_g1_has_conv": true,
+          "update_g1_has_grrg": true,
+          "update_g1_has_drrd": true,
+          "update_g1_has_attn": false,
+          "update_g2_has_g1g1": false,
+          "update_g2_has_attn": true,
+          "update_style": "res_residual",
+          "update_residual": 0.01,
+          "update_residual_init": "norm",
+          "attn2_has_gate": true,
+          "use_sqrt_nnei": true,
+          "g1_out_conv": true,
+          "g1_out_mlp": true
+        },
+        "precision": "float64",
+        "add_tebd_to_repinit_out": false,
         "_comment": " that's all"
       },
       "_comment": "that's all"
@@ -30,7 +61,7 @@
     "model_dict": {
       "water_1": {
         "type_map": "type_map_all",
-        "descriptor": "sea_descriptor_1",
+        "descriptor": "dpa2_descriptor",
         "fitting_net": {
           "neuron": [
             240,
@@ -44,7 +75,7 @@
       },
       "water_2": {
         "type_map": "type_map_all",
-        "descriptor": "sea_descriptor_1",
+        "descriptor": "dpa2_descriptor",
         "fitting_net": {
           "neuron": [
             240,
