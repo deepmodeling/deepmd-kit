@@ -250,7 +250,7 @@ class BufferedIterator:
             wait_time > 1.0
         ):  # Even for Multi-Task training, each step usually takes < 1s
             log.warning(f"Data loading is slow, waited {wait_time:.2f} seconds.")
-        if isinstance(item, Exception):
+        if issubclass(item, Exception):
             raise item
         return item
 
