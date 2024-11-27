@@ -44,6 +44,9 @@ class DPPath(ABC):
             raise FileNotFoundError(f"{path} not found")
         return super().__new__(cls)
 
+    def __getnewargs__(self):
+        return (self.path, self.mode)
+
     @abstractmethod
     def load_numpy(self) -> np.ndarray:
         """Load NumPy array.
