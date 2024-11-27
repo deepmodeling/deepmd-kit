@@ -655,7 +655,7 @@ class Trainer:
         def step(_step_id, task_key="Default") -> None:
             if self.multi_task:
                 model_index = dp_random.choice(
-                    np.arange(self.num_model),
+                    np.arange(self.num_model, dtype=np.int_),
                     p=self.model_prob,
                 )
                 task_key = self.model_keys[model_index]
