@@ -168,6 +168,7 @@ class GeneralFitting(Fitting):
         self.dim_case_embd = dim_case_embd
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported yet in PaddlePaddle.")
+        self.case_embd = None
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -377,6 +378,8 @@ class GeneralFitting(Fitting):
             self.aparam_avg = value
         elif key in ["aparam_inv_std"]:
             self.aparam_inv_std = value
+        elif key in ["case_embd"]:
+            self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
         else:
@@ -393,6 +396,8 @@ class GeneralFitting(Fitting):
             return self.aparam_avg
         elif key in ["aparam_inv_std"]:
             return self.aparam_inv_std
+        elif key in ["case_embd"]:
+            return self.case_embd
         elif key in ["scale"]:
             return self.scale
         else:
