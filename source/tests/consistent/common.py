@@ -63,12 +63,12 @@ if INSTALLED_TF:
 
 
 __all__ = [
-    "CommonTest",
-    "INSTALLED_TF",
-    "INSTALLED_PT",
+    "INSTALLED_ARRAY_API_STRICT",
     "INSTALLED_JAX",
     "INSTALLED_PD",
-    "INSTALLED_ARRAY_API_STRICT",
+    "INSTALLED_PT",
+    "INSTALLED_TF",
+    "CommonTest",
     "CommonTest",
 ]
 

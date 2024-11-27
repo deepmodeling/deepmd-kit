@@ -175,8 +175,7 @@ class AutoBatchSize(ABC):
                     (
                         vv[start_index:end_index, ...]
                         if (
-                            array_api_compat.is_array_api_obj(vv)
-                            and vv.ndim > 1
+                            (array_api_compat.is_array_api_obj(vv) and vv.ndim > 1)
                             or str(vv.__class__) == "<class 'paddle.Tensor'>"
                         )
                         else vv
@@ -187,8 +186,7 @@ class AutoBatchSize(ABC):
                     kk: (
                         vv[start_index:end_index, ...]
                         if (
-                            array_api_compat.is_array_api_obj(vv)
-                            and vv.ndim > 1
+                            (array_api_compat.is_array_api_obj(vv) and vv.ndim > 1)
                             or str(vv.__class__) == "<class 'paddle.Tensor'>"
                         )
                         else vv
