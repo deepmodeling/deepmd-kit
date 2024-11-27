@@ -764,7 +764,7 @@ class Trainer:
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
-                self.wrapper.eval() # Will set to train mode before fininshing validation
+                self.wrapper.eval()  # Will set to train mode before fininshing validation
 
                 def log_loss_train(_loss, _more_loss, _task_key="Default"):
                     results = {}
@@ -925,6 +925,7 @@ class Trainer:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item], display_step_id
                     )
+
         self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
