@@ -758,20 +758,9 @@ def process_systems(systems: Union[str, list[str]]) -> list[str]:
     help_msg = "Please check your setting for data systems"
     # check length of systems
     if len(systems) == 0:
-        msg = "cannot find valid a data system"
+        msg = "Can not find any valid data systems"
         log.fatal(msg)
         raise OSError(msg, help_msg)
-    # roughly check all items in systems are valid
-    for ii in systems:
-        ii = DPPath(ii)
-        if not ii.is_dir():
-            msg = f"dir {ii} is not a valid dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
-        if not (ii / "type.raw").is_file():
-            msg = f"dir {ii} is not a valid data system dir"
-            log.fatal(msg)
-            raise OSError(msg, help_msg)
     return systems
 
 
