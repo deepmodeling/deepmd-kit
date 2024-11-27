@@ -103,6 +103,9 @@ class GeneralFitting(Fitting):
         Number of frame parameters.
     numb_aparam : int
         Number of atomic parameters.
+    dim_case_embd : int
+        (Not supported yet)
+        Dimension of case specific embedding.
     activation_function : str
         Activation function.
     precision : str
@@ -140,6 +143,7 @@ class GeneralFitting(Fitting):
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
+        dim_case_embd: int = 0,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
@@ -161,6 +165,9 @@ class GeneralFitting(Fitting):
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
+        self.dim_case_embd = dim_case_embd
+        if dim_case_embd > 0:
+            raise ValueError("dim_case_embd is not supported yet in PaddlePaddle.")
         self.activation_function = activation_function
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
@@ -274,7 +281,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 2,
+            "@version": 3,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -282,6 +289,7 @@ class GeneralFitting(Fitting):
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
+            "dim_case_embd": self.dim_case_embd,
             "activation_function": self.activation_function,
             "precision": self.precision,
             "mixed_types": self.mixed_types,
@@ -290,6 +298,7 @@ class GeneralFitting(Fitting):
             "exclude_types": self.exclude_types,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
+                "case_embd": None,
                 "fparam_avg": to_numpy_array(self.fparam_avg),
                 "fparam_inv_std": to_numpy_array(self.fparam_inv_std),
                 "aparam_avg": to_numpy_array(self.aparam_avg),
@@ -348,6 +357,13 @@ class GeneralFitting(Fitting):
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
+
+    def set_case_embd(self, case_idx: int):
+        """
+        Set the case embedding of this fitting net by the given case_idx,
+        typically concatenated with the output of the descriptor and fed into the fitting net.
+        """
+        raise NotImplementedError("set_case_embd is not supported yet in PaddlePaddle.")
 
     def __setitem__(self, key, value):
         if key in ["bias_atom_e"]:
