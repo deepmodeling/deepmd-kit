@@ -573,7 +573,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         data.pop("@class", None)
         data.pop("type", None)
         return super().deserialize(data)
-    
+
     def enable_compression(
         self,
         min_nbor_dist: float,
