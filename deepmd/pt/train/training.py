@@ -1053,13 +1053,16 @@ class Trainer:
             checkpoint_files[0].unlink()
 
     def get_data(self, is_train=True, task_key="Default"):
-        data, dataloader = (self.training_data, self.training_dataloader) \
-            if is_train else (self.validation_data, self.validation_dataloader)
+        data, dataloader = (
+            (self.training_data, self.training_dataloader)
+            if is_train
+            else (self.validation_data, self.validation_dataloader)
+        )
         if data is None and not is_train:
             return {}, {}, {}
         if self.multi_task:
-            data=data[task_key]
-            dataloader=dataloader[task_key]
+            data = data[task_key]
+            dataloader = dataloader[task_key]
         try:
             batch_data = next(iter(data))
         except StopIteration:
