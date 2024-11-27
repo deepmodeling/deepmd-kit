@@ -572,7 +572,7 @@ class DPZBLLinearEnergyAtomicModel(LinearEnergyAtomicModel):
         data["dp_model"], data["zbl_model"] = models[0], models[1]
         data.pop("@class", None)
         data.pop("type", None)
-        return super().deserialize(data)   
+        return super().deserialize(data)
 
     def _compute_weight(
         self,
