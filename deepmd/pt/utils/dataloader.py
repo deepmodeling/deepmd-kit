@@ -56,11 +56,13 @@ def setup_seed(seed) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
 
+
 def construct_dataset(system, type_map):
     return DeepmdDataSetForLoader(
         system=system,
         type_map=type_map,
     )
+
 
 class DpLoaderSet(Dataset):
     """A dataset for storing DataLoaders to multiple Systems.
@@ -97,7 +99,7 @@ class DpLoaderSet(Dataset):
         if len(systems) >= 100:
             log.info(f"Constructing DataLoaders from {len(systems)} systems")
 
-        construct_dataset_systems=partial(construct_dataset, type_map=type_map)
+        construct_dataset_systems = partial(construct_dataset, type_map=type_map)
 
         with Pool(
             os.cpu_count()
@@ -222,7 +224,9 @@ class BackgroundConsumer(Thread):
         # Signal the consumer we are done; this should not happen for DataLoader
         self._queue.put(StopIteration)
 
+
 QUEUESIZE = 32
+
 
 class BufferedIterator:
     def __init__(self, iterable) -> None:
@@ -242,7 +246,9 @@ class BufferedIterator:
         start_wait = time.time()
         item = self._queue.get()
         wait_time = time.time() - start_wait
-        if wait_time > 1.0: # Even for Multi-Task training, each step usually takes < 1s
+        if (
+            wait_time > 1.0
+        ):  # Even for Multi-Task training, each step usually takes < 1s
             log.warning(f"Data loading is slow, waited {wait_time:.2f} seconds.")
         if isinstance(item, Exception):
             raise item
