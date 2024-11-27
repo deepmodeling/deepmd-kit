@@ -420,7 +420,12 @@ class DPTrainer:
         is_first_step = True
         self.cur_batch = cur_batch
         log.info(
-            f"start training at lr {run_sess(self.sess, self.learning_rate):.2e} (== {self.lr.value(cur_batch):.2e}), decay_step {self.lr.decay_steps_}, decay_rate {self.lr.decay_rate_:f}, final lr will be {self.lr.value(stop_batch):.2e}"
+            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e",
+            run_sess(self.sess, self.learning_rate),
+            self.lr.value(cur_batch),
+            self.lr.decay_steps_,
+            self.lr.decay_rate_,
+            self.lr.value(stop_batch),
         )
 
         prf_options = None
@@ -595,7 +600,7 @@ class DPTrainer:
         if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
             if elapsed_batch >= 2 * self.disp_freq:
                 log.info(
-                    "average training time: %.4f s/batcsh (exclude first %d batches)",
+                    "average training time: %.4f s/batch (exclude first %d batches)",
                     total_train_time
                     / (
                         elapsed_batch // self.disp_freq * self.disp_freq
@@ -685,7 +690,7 @@ class DPTrainer:
     @staticmethod
     def print_header(fp, train_results, valid_results) -> None:
         print_str = ""
-        print_str += f'# {"step":5s}'
+        print_str += "# {:5s}".format("step")
         if valid_results is not None:
             prop_fmt = "   %11s %11s"
             for k in train_results.keys():
@@ -694,7 +699,7 @@ class DPTrainer:
             prop_fmt = "   %11s"
             for k in train_results.keys():
                 print_str += prop_fmt % (k + "_trn")
-        print_str += f'   {"lr":8s}\n'
+        print_str += "   {:8s}\n".format("lr")
         print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fp.write(print_str)
         fp.flush()

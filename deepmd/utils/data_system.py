@@ -664,14 +664,25 @@ def print_summary(
     log.info(
         f"---Summary of DataSystem: {name:13s}-----------------------------------------------"
     )
-    log.info(f"found {nsystems} system(s):")
+    log.info("found %d system(s):", nsystems)
     log.info(
-        ("{}  ".format(_format_name_length("system", sys_width)))
-        + (f'{"natoms":6s}  {"bch_sz":6s}  {"n_bch":6s}  {"prob":9s}  {"pbc":3s}')
+        "%s  %6s  %6s  %6s  %9s  %3s",
+        _format_name_length("system", sys_width),
+        "natoms",
+        "bch_sz",
+        "n_bch",
+        "prob",
+        "pbc",
     )
     for ii in range(nsystems):
         log.info(
-            f'{_format_name_length(system_dirs[ii], sys_width)}  {natoms[ii]:6d}  {batch_size[ii]:6d}  {nbatches[ii]:6d}  {sys_probs[ii]:9.3e}  {"T" if pbc[ii] else "F":3s}'
+            "%s %6d %6d %6d %9.3e %3s",
+            _format_name_length(system_dirs[ii], sys_width),
+            natoms[ii],
+            batch_size[ii],
+            nbatches[ii],
+            sys_probs[ii],
+            "T" if pbc[ii] else "F",
         )
     log.info(
         "--------------------------------------------------------------------------------------"

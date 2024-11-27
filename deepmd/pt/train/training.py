@@ -1132,7 +1132,7 @@ class Trainer:
     def print_header(self, fout, train_results, valid_results) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
-        print_str += f"# {'step':5s}"
+        print_str += "# {:5s}".format("step")
         if not self.multi_task:
             if valid_results:
                 prop_fmt = "   %11s %11s"
@@ -1155,7 +1155,7 @@ class Trainer:
                     prop_fmt = "   %11s"
                     for k in sorted(train_results[model_key].keys()):
                         print_str += prop_fmt % (k + f"_trn_{model_key}")
-        print_str += f"   {'lr':8s}\n"
+        print_str += "   {:8s}\n".format("lr")
         print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
         fout.write(print_str)
         fout.flush()
