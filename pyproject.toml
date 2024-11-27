@@ -224,12 +224,12 @@ replacement = '\1="https://github.com/deepmodeling/deepmd-kit/raw/master/\g<2>"'
 [tool.cibuildwheel]
 test-command = [
     "python -m deepmd -h",
-    """python -c "import deepmd.tf;import deepmd.pt" """,
+    """python -c "import deepmd.tf;import deepmd.pt;import deepmd.pd" """,
     "dp -h",
     "dp_ipi",
     "pytest {project}/source/tests/tf/test_lammps.py"
 ]
-test-extras = ["cpu", "test", "lmp", "ipi", "torch"]
+test-extras = ["cpu", "test", "lmp", "ipi", "torch", "paddle"]
 build = ["cp311-*"]
 skip = ["*-win32", "*-manylinux_i686", "*-musllinux*"]
 # TODO: uncomment to use the latest image when CUDA 11 is deprecated
@@ -248,6 +248,7 @@ PIP_PREFER_BINARY = "1"
 DP_LAMMPS_VERSION = "stable_29Aug2024_update1"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
+DP_ENABLE_PADDLE = "1"
 # for unclear reason, when enabling PyTorch, OpenMP is found accidentally
 CMAKE_ARGS = "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=1"
 
@@ -284,6 +285,7 @@ PIP_PREFER_BINARY = "1"
 DP_LAMMPS_VERSION = "stable_29Aug2024_update1"
 DP_ENABLE_IPI = "1"
 DP_ENABLE_PYTORCH = "1"
+DP_ENABLE_PADDLE = "1"
 MPI_HOME = "/usr/lib64/mpich"
 PATH = "/usr/lib64/mpich/bin:$PATH"
 # use CPU version of torch for building, which should also work for GPU
@@ -294,7 +296,7 @@ UV_EXTRA_INDEX_URL = "https://download.pytorch.org/whl/cpu"
 CMAKE_PREFIX_PATH="/opt/python/cp311-cp311/"
 
 [tool.cibuildwheel.windows]
-test-extras = ["cpu", "torch"]
+test-extras = ["cpu", "torch", "paddle"]
 test-command = [
     "python -m deepmd -h",
     "dp -h",
@@ -302,6 +304,7 @@ test-command = [
 [tool.cibuildwheel.windows.environment]
 PIP_PREFER_BINARY = "1"
 DP_ENABLE_PYTORCH = "1"
+DP_ENABLE_PADDLE = "1"
 
 # One can run `tox` or `tox -e gpu`
 # to run pytest in an isolated environment
@@ -407,10 +410,12 @@ convention = "numpy"
 banned-module-level-imports = [
     "deepmd.tf",
     "deepmd.pt",
+    "deepmd.pd",
     "deepmd.jax",
     "tensorflow",
     "torch",
     "jax",
+    "paddle",
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
@@ -424,10 +429,13 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253"]
 "deepmd/jax/**" = ["TID253"]
+"deepmd/pd/**" = ["TID253"]
 "source/tests/tf/**" = ["TID253"]
 "source/tests/pt/**" = ["TID253"]
 "source/tests/jax/**" = ["TID253"]
+"source/tests/pd/**" = ["TID253"]
 "source/tests/universal/pt/**" = ["TID253"]
+"source/tests/universal/pd/**" = ["TID253"]
 "source/jax2tf_tests/**" = ["TID253"]
 "source/ipi/tests/**" = ["TID253"]
 "source/lmp/tests/**" = ["TID253"]
