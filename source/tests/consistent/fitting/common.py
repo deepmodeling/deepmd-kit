@@ -2,6 +2,7 @@
 
 
 from ..common import (
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
 )
@@ -13,6 +14,8 @@ if INSTALLED_TF:
         GLOBAL_TF_FLOAT_PRECISION,
         tf,
     )
+if INSTALLED_PD:
+    pass
 
 
 class FittingTest:

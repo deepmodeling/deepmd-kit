@@ -14,6 +14,7 @@ from deepmd.env import (
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
+    INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
@@ -31,6 +32,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
 else:
     DescrptSeATF = None
+if INSTALLED_PD:
+    from deepmd.pd.model.descriptor.se_a import DescrptSeA as DescrptSeAPD
+else:
+    DescrptSeAPD = None
 from deepmd.utils.argcheck import (
     descrpt_se_a_args,
 )
@@ -123,6 +128,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
         return not type_one_side or not INSTALLED_JAX
 
     @property
+    def skip_pd(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return CommonTest.skip_pd
+
+    @property
     def skip_array_api_strict(self) -> bool:
         (
             resnet_dt,
@@ -137,6 +153,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
     jax_class = DescrptSeAJAX
+    pd_class = DescrptSeAPD
     array_api_strict_class = DescrptSeAArrayAPIStrict
     args = descrpt_se_a_args()
 
@@ -217,6 +234,15 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_pd(self, pd_obj: Any) -> Any:
+        return self.eval_pd_descriptor(
+            pd_obj,
             self.natoms,
             self.coords,
             self.atype,
