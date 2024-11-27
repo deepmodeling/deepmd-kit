@@ -1289,7 +1289,7 @@ def get_model_for_wrapper(_model_params, resuming=False):
 def get_case_embd_config(_model_params):
     assert (
         "model_dict" in _model_params
-    ), "Only support setting data config for multi-task model!"
+    ), "Only support setting case embedding for multi-task model!"
     model_keys = list(_model_params["model_dict"])
     sorted_model_keys = sorted(model_keys)
     numb_case_embd_list = [
@@ -1300,7 +1300,7 @@ def get_case_embd_config(_model_params):
     ]
     if not all(item == numb_case_embd_list[0] for item in numb_case_embd_list):
         raise ValueError(
-            f"All models must have the same dimension of data identification, while the settings are: {numb_case_embd_list}"
+            f"All models must have the same dimension of case embedding, while the settings are: {numb_case_embd_list}"
         )
     if numb_case_embd_list[0] == 0:
         return False, {}
